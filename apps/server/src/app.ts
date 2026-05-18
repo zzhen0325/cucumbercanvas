@@ -162,7 +162,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const uploadService =
     options.uploadService ?? createUploadService({ createUserClient });
   const pgmq = env.supabaseDbUrl
-    ? createPgmqClient(env.supabaseDbUrl)
+    ? createPgmqClient(env.supabaseDbUrl, {
+        applicationName: "cucumber_api_pgmq",
+      })
     : undefined;
   const jobService =
     options.jobService ??
