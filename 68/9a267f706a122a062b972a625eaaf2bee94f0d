@@ -1,0 +1,23 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "689a267f706a122a062b972a625eaaf2bee94f0d",
+  "prompts": {
+    "bf9b4673967f6531": {
+      "agent_id": {
+        "tool": "trae-cue",
+        "id": "ai_tab-icr-6ccf069c-0b96-4c11-9f1d-b62b492c331e",
+        "model": "default"
+      },
+      "human_author": "Your Name <you@example.com>",
+      "messages": [],
+      "total_additions": 1,
+      "total_deletions": 1,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
