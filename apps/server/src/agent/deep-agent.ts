@@ -1,5 +1,5 @@
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
-import { ChatDeepSeek } from "@langchain/deepseek";
+import { ChatDeepSeek, type ChatDeepSeekInput } from "@langchain/deepseek";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatVertexAI } from "@langchain/google-vertexai";
 import type {
@@ -20,6 +20,7 @@ import {
   createAgentBackend,
 } from "./backends/index.js";
 import { CUCUMBER_SYSTEM_PROMPT } from "./prompts/cucumber-main.js";
+import { createReasoningContentChatDeepSeek } from "./reasoning-content-deepseek.js";
 import { createReasoningContentChatOpenAI } from "./reasoning-content-openai.js";
 import { createVideoSubAgent } from "./sub-agents.js";
 import type {
@@ -88,8 +89,7 @@ export function createCucumberDeepAgent(options: {
     });
 
   let systemPrompt = options.brandKitId
-    ? CUCUMBER_SYSTEM_PROMPT +
-      "\n\n当前项目已绑定品牌套件。在进行设计相关工作时，请先使用 get_brand_kit 工具查询品牌信息，确保设计符合品牌规范。"
+    ? `${CUCUMBER_SYSTEM_PROMPT}\n\n当前项目已绑定品牌套件。在进行设计相关工作时，请先使用 get_brand_kit 工具查询品牌信息，确保设计符合品牌规范。`
     : CUCUMBER_SYSTEM_PROMPT;
 
   // Inject enabled skills (both system and user-created) into the system prompt.
@@ -235,11 +235,10 @@ function createStreamingChatModel(specifier: string): BaseLanguageModel {
           baseURL: process.env.DEEPSEEK_API_BASE,
         };
       }
-      return new ChatDeepSeek(
-        deepseekConfig as ConstructorParameters<typeof ChatDeepSeek>[0],
+      return createReasoningContentChatDeepSeek(
+        deepseekConfig as ChatDeepSeekInput,
       );
     }
-    case "openai":
     default:
       return createReasoningContentChatOpenAI({
         model: modelName,

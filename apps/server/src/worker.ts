@@ -86,9 +86,14 @@ async function main() {
   const tag = `[worker:${workerId}]`;
 
   let running = true;
+  let shuttingDown = false;
 
   // Graceful shutdown — wait for in-flight jobs then exit
   const shutdown = async () => {
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
     const totalInFlight = [...inFlightByQueue.values()].reduce((n, s) => n + s.size, 0);
     console.log(`${tag} Shutting down, waiting for ${totalInFlight} in-flight jobs...`);
     running = false;
@@ -144,6 +149,10 @@ async function main() {
           inFlight.add(task);
         }
       } catch (err) {
+        if (!running) {
+          break;
+        }
+
         if (isFatalDatabaseAuthenticationError(err)) {
           await stopWorkerAfterFatalDatabaseAuthError(tag, queue, err, pgmq);
         }

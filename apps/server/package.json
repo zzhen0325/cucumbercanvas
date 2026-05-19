@@ -42,7 +42,7 @@
   "scripts": {
     "build": "node ../../scripts/validate-foundation-app.mjs build",
     "predev": "pnpm --filter @cucumber/shared build",
-    "dev": "node --watch --env-file=../../.env.local --import tsx ./src/server.ts & CUCUMBER_WORKER_ID=w1 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & wait",
+    "dev": "node ./scripts/dev-launcher.mjs",
     "dev:server": "node --watch --env-file=../../.env.local --import tsx ./src/server.ts",
     "dev:worker": "node --watch --env-file=../../.env.local --import tsx ./src/worker.ts",
     "dev:workers:2": "CUCUMBER_WORKER_ID=w1 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & CUCUMBER_WORKER_ID=w2 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & wait",

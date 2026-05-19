@@ -30,3 +30,21 @@ try {
   app.log.error(error);
   process.exitCode = 1;
 }
+
+// Graceful shutdown — close Fastify server and exit cleanly on SIGINT/SIGTERM.
+// This prevents the process from becoming an orphan when the parent shell
+// (e.g. turbo / pnpm dev) is killed with Ctrl+C.
+const shutdown = async (signal: string) => {
+  console.log(`@cucumber/server received ${signal}, shutting down...`);
+  try {
+    await app.close();
+    console.log("@cucumber/server shutdown complete.");
+  } catch (err) {
+    console.error("@cucumber/server error during shutdown:", err);
+  } finally {
+    process.exit(0);
+  }
+};
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
