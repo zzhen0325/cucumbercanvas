@@ -11,9 +11,9 @@ if (process.env.GLOBAL_AGENT_HTTP_PROXY) {
 
 import { randomUUID } from "node:crypto";
 import { loadServerEnv } from "./config/env.js";
-import { createPgmqClient, type PgmqMessage } from "./queue/pgmq-client.js";
+import { type ExecutorContext, getExecutor } from "./features/jobs/job-executor.js";
 import { createJobService } from "./features/jobs/job-service.js";
-import { getExecutor, type ExecutorContext } from "./features/jobs/job-executor.js";
+import { type PgmqMessage, createPgmqClient } from "./queue/pgmq-client.js";
 import { createAdminSupabaseClient } from "./supabase/admin.js";
 import { createUserSupabaseClientFactory } from "./supabase/user.js";
 
@@ -104,6 +104,11 @@ async function main() {
   process.on("SIGTERM", shutdown);
 
   const concurrencyDesc = QUEUES.map((q) => `${q}=${CONCURRENCY_BY_QUEUE[q] ?? 1}`).join(", ");
+  console.log(`${tag} Postgres target: ${describePostgresTarget(env.supabaseDbUrl)}`);
+  const dbUrlWarning = getSupabaseDbUrlWarning(env.supabaseDbUrl);
+  if (dbUrlWarning) {
+    console.warn(`${tag} ${dbUrlWarning}`);
+  }
   console.log(
     `${tag} Started. concurrency={${concurrencyDesc}}, longPollTimeout=${pollTimeoutSeconds}s`,
   );
@@ -111,7 +116,12 @@ async function main() {
   while (running) {
     for (const queue of QUEUES) {
       try {
-        const inFlight = inFlightByQueue.get(queue)!;
+        const inFlight = inFlightByQueue.get(queue);
+        if (!inFlight) {
+          console.error(`${tag} Missing in-flight queue state for ${queue}; skipping poll cycle.`);
+          continue;
+        }
+
         const cap = CONCURRENCY_BY_QUEUE[queue] ?? 1;
         const available = cap - inFlight.size;
         if (available <= 0) continue;
@@ -134,10 +144,89 @@ async function main() {
           inFlight.add(task);
         }
       } catch (err) {
+        if (isFatalDatabaseAuthenticationError(err)) {
+          await stopWorkerAfterFatalDatabaseAuthError(tag, queue, err, pgmq);
+        }
+
         console.error(`${tag} Error polling ${queue}:`, err);
       }
     }
   }
+}
+
+function describePostgresTarget(databaseUrl: string): string {
+  try {
+    const url = new URL(databaseUrl);
+    const username = url.username || "<missing-user>";
+    const database = url.pathname || "/<missing-database>";
+    return `${username}@${url.host}${database}`;
+  } catch {
+    return "<invalid CUCUMBER_SUPABASE_DB_URL>";
+  }
+}
+
+function getSupabaseDbUrlWarning(databaseUrl: string): string | null {
+  try {
+    const url = new URL(databaseUrl);
+    const isSupabaseApiHost =
+      url.hostname.endsWith(".supabase.co") && !url.hostname.startsWith("db.");
+    if (!isSupabaseApiHost || url.port !== "5432") {
+      return null;
+    }
+
+    return "CUCUMBER_SUPABASE_DB_URL looks like a Supabase API hostname on port 5432. Use the Dashboard database connection host instead, usually db.<project-ref>.supabase.co or the Supavisor pooler host.";
+  } catch {
+    return "CUCUMBER_SUPABASE_DB_URL is not a valid PostgreSQL URL. Worker database polling cannot start until it is fixed.";
+  }
+}
+
+function isFatalDatabaseAuthenticationError(error: unknown): boolean {
+  const pgError = error as { code?: unknown; message?: unknown };
+  if (pgError.code === "28P01") {
+    return true;
+  }
+
+  const message = typeof pgError.message === "string"
+    ? pgError.message.toLowerCase()
+    : String(error).toLowerCase();
+
+  return (
+    message.includes("ecircuitbreaker") ||
+    message.includes("password authentication failed") ||
+    message.includes("too many authentication failures")
+  );
+}
+
+function summarizeDatabaseError(error: unknown) {
+  const pgError = error as {
+    code?: unknown;
+    message?: unknown;
+    severity?: unknown;
+  };
+
+  return {
+    code: typeof pgError.code === "string" ? pgError.code : undefined,
+    severity: typeof pgError.severity === "string" ? pgError.severity : undefined,
+    message: typeof pgError.message === "string" ? pgError.message : String(error),
+  };
+}
+
+async function stopWorkerAfterFatalDatabaseAuthError(
+  tag: string,
+  queue: string,
+  error: unknown,
+  pgmq: Pick<ReturnType<typeof createPgmqClient>, "shutdown">,
+): Promise<never> {
+  console.error(
+    `${tag} Fatal database authentication error while polling ${queue}. Check CUCUMBER_SUPABASE_DB_URL host, username, password, and pooler/direct connection mode. Stopping the worker to avoid repeated failed logins and Supabase circuit breaker blocks.`,
+    summarizeDatabaseError(error),
+  );
+
+  await pgmq.shutdown().catch((shutdownError: unknown) => {
+    console.warn(`${tag} Failed to close PGMQ pool after fatal database auth error:`, shutdownError);
+  });
+
+  process.exit(1);
 }
 
 async function processMessage(

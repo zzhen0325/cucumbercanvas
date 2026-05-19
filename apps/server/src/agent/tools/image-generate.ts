@@ -5,10 +5,11 @@ import { randomUUID } from "node:crypto";
 
 import { generateImage } from "../../generation/image-generation.js";
 import {
+  type AvailableModel,
   getAvailableImageModels,
   resolveImageProviderName,
-  type AvailableModel,
 } from "../../generation/providers/registry.js";
+import type { ImageQuality, OutputFormat } from "../../generation/types.js";
 
 const DEFAULT_MODEL = "bytedance/seedream-4.6";
 
@@ -20,27 +21,31 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
   const modelIds = models.map((m) => m.id);
   const defaultModel = modelIds.includes(DEFAULT_MODEL)
     ? DEFAULT_MODEL
-    : modelIds[0] ?? DEFAULT_MODEL;
+    : (modelIds[0] ?? DEFAULT_MODEL);
 
   const modelDescription = models.length
     ? `Model to use. Available:\n${models.map((m) => `- ${m.id}: ${m.displayName} — ${m.description}`).join("\n")}`
     : "Model identifier (no providers currently registered)";
 
-  // z.enum needs [string, ...string[]], but we may have 0 models at test time.
-  const modelField =
-    modelIds.length >= 1
-      ? z
-          .enum(modelIds as [string, ...string[]])
-          .default(defaultModel as (typeof modelIds)[number])
-          .describe(modelDescription)
-      : z.string().default(DEFAULT_MODEL).describe(modelDescription);
+  // Keep this as a string instead of z.enum. The agent sometimes emits a
+  // display name like "Seedream 4.6"; strict enum parsing throws before the
+  // tool body runs and turns a recoverable model-choice issue into run.failed.
+  const modelField = z
+    .string()
+    .optional()
+    .default(defaultModel)
+    .describe(
+      `${modelDescription}\nUse the exact model id when possible; display names are accepted and normalized by the server.`,
+    );
 
   return z.object({
     title: z
       .string()
+      .trim()
       .min(1)
+      .optional()
       .describe(
-        "Short descriptive title for the generated image, used as metadata so the image content is understood without re-analysis",
+        "Optional short descriptive title for the generated image. If omitted, the server derives one from the prompt.",
       ),
     prompt: z.string().min(1).describe("Detailed image generation prompt"),
     model: modelField,
@@ -48,24 +53,24 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
       .string()
       .optional()
       .default("1:1")
-      .describe("Aspect ratio (e.g. 1:1, 16:9, 9:16, 4:3, 3:4, 4:5, 5:4, 2:3, 3:2). Provider auto-normalizes unsupported ratios to nearest match."),
+      .describe(
+        "Aspect ratio (e.g. 1:1, 16:9, 9:16, 4:3, 3:4, 4:5, 5:4, 2:3, 3:2). Provider auto-normalizes unsupported ratios to nearest match.",
+      ),
     quality: z
-      .enum(["standard", "hd", "ultra"])
+      .string()
       .optional()
       .default("hd")
       .describe(
-        "Image quality/resolution level. standard: ~1K fast preview, hd: ~2K production quality (default), ultra: ~4K print quality (not all models support this, will use max available).",
+        "Image quality/resolution level. Accepted values: standard, hd/high, ultra/4k.",
       ),
     outputFormat: z
-      .enum(["png", "jpg", "webp"])
+      .string()
       .optional()
-      .describe("Output image format. PNG for transparency, JPG for photos, WebP for web."),
+      .describe("Output image format. Accepted values: png, jpg/jpeg, webp."),
     inputImages: z
       .array(z.string())
       .optional()
-      .describe(
-        "Reference image URLs for Seedream image generation.",
-      ),
+      .describe("Reference image URLs for Seedream image generation."),
     placementX: z
       .number()
       .optional()
@@ -92,9 +97,9 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
 }
 
 type ImageGenerateInput = {
-  title: string;
+  title?: string;
   prompt: string;
-  model: string;
+  model?: string;
   aspectRatio?: string;
   quality?: string;
   outputFormat?: string;
@@ -103,6 +108,22 @@ type ImageGenerateInput = {
   placementY?: number;
   placementWidth?: number;
   placementHeight?: number;
+};
+
+type ResolvedImageGenerateInput = Omit<
+  ImageGenerateInput,
+  "model" | "title" | "quality" | "outputFormat"
+> & {
+  model: string;
+  title: string;
+  quality?: ImageQuality;
+  outputFormat?: OutputFormat;
+};
+
+type ImageToolConfig = {
+  configurable?: {
+    user_attachment_map?: Record<string, string>;
+  };
 };
 
 type ImageGenerateResult = {
@@ -118,6 +139,141 @@ type ImageGenerateResult = {
   jobType?: "image_generation";
   placement?: { x: number; y: number; width: number; height: number };
 };
+
+function normalizeModelToken(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function resolveRequestedImageModel(
+  requestedModel: string | undefined,
+  models: AvailableModel[],
+): { model: string; warning?: Record<string, unknown> } {
+  const fallbackModel =
+    models.find((m) => m.id === DEFAULT_MODEL)?.id ??
+    models[0]?.id ??
+    DEFAULT_MODEL;
+  const requested = requestedModel?.trim();
+
+  if (!requested) {
+    return {
+      model: fallbackModel,
+      warning: {
+        reason: "missing_model",
+        fallbackModel,
+      },
+    };
+  }
+
+  const exact = models.find((m) => m.id === requested);
+  if (exact) return { model: exact.id };
+
+  const requestedToken = normalizeModelToken(requested);
+  const aliasMatch = models.find(
+    (m) =>
+      normalizeModelToken(m.id) === requestedToken ||
+      normalizeModelToken(m.displayName) === requestedToken,
+  );
+  if (aliasMatch) {
+    return {
+      model: aliasMatch.id,
+      warning: {
+        reason: "alias_model",
+        requestedModel: requested,
+        resolvedModel: aliasMatch.id,
+      },
+    };
+  }
+
+  return {
+    model: fallbackModel,
+    warning: {
+      reason: "unknown_model",
+      requestedModel: requested,
+      fallbackModel,
+      availableModels: models.map((m) => m.id),
+    },
+  };
+}
+
+function resolveImageTitle(
+  requestedTitle: string | undefined,
+  prompt: string,
+): { title: string; warning?: Record<string, unknown> } {
+  const title = requestedTitle?.trim();
+  if (title) return { title: title.slice(0, 120) };
+
+  const promptTitle = prompt.trim().replace(/\s+/g, " ").slice(0, 80);
+  const fallbackTitle = promptTitle || "Generated image";
+  return {
+    title: fallbackTitle,
+    warning: {
+      reason: "missing_title",
+      fallbackTitle,
+    },
+  };
+}
+
+function resolveImageQuality(requestedQuality: string | undefined): {
+  quality: ImageQuality;
+  warning?: Record<string, unknown>;
+} {
+  const normalized = requestedQuality?.trim().toLowerCase();
+  if (!normalized || normalized === "hd") return { quality: "hd" };
+  if (normalized === "standard" || normalized === "low") {
+    return { quality: "standard" };
+  }
+  if (normalized === "high") {
+    return {
+      quality: "hd",
+      warning: {
+        reason: "quality_alias",
+        requestedQuality,
+        resolvedQuality: "hd",
+      },
+    };
+  }
+  if (normalized === "ultra" || normalized === "4k") {
+    return { quality: "ultra" };
+  }
+
+  return {
+    quality: "hd",
+    warning: {
+      reason: "unknown_quality",
+      requestedQuality,
+      fallbackQuality: "hd",
+    },
+  };
+}
+
+function resolveOutputFormat(requestedFormat: string | undefined): {
+  outputFormat?: OutputFormat;
+  warning?: Record<string, unknown>;
+} {
+  const normalized = requestedFormat?.trim().toLowerCase();
+  if (!normalized) return {};
+  if (normalized === "png" || normalized === "jpg" || normalized === "webp") {
+    return { outputFormat: normalized };
+  }
+  if (normalized === "jpeg") {
+    return {
+      outputFormat: "jpg",
+      warning: {
+        reason: "output_format_alias",
+        requestedFormat,
+        resolvedFormat: "jpg",
+      },
+    };
+  }
+
+  return {
+    warning: {
+      reason: "unknown_output_format",
+      requestedFormat,
+      availableFormats: ["png", "jpg", "webp"],
+    },
+  };
+}
 
 /**
  * Optional function to persist a generated image to OSS.
@@ -139,7 +295,7 @@ export type SubmitImageJobFn = (input: {
   model: string;
   aspectRatio: string;
   inputImages?: string[];
-  quality?: string;
+  quality?: ImageQuality;
 }) => Promise<{
   jobId: string;
   elementId?: string;
@@ -155,53 +311,104 @@ export async function runImageGenerate(
   persistImage?: PersistImageFn,
   submitImageJob?: SubmitImageJobFn,
   attachmentMap?: Record<string, string>,
+  availableModels: AvailableModel[] = getAvailableImageModels(),
 ): Promise<ImageGenerateResult> {
   const t0 = Date.now();
   const lap = (label: string, extra?: Record<string, unknown>) => {
-    console.log(`[generate_image] ${label} +${Date.now() - t0}ms`, extra ? JSON.stringify(extra) : "");
+    console.log(
+      `[generate_image] ${label} +${Date.now() - t0}ms`,
+      extra ? JSON.stringify(extra) : "",
+    );
+  };
+
+  const modelResolution = resolveRequestedImageModel(
+    input.model,
+    availableModels,
+  );
+  const model = modelResolution.model;
+  if (modelResolution.warning) {
+    // TODO(model-routing): Surface normalized model-choice warnings in the UI
+    // once users can choose among multiple image providers.
+    lap("model_normalized", modelResolution.warning);
+  }
+  const titleResolution = resolveImageTitle(input.title, input.prompt);
+  if (titleResolution.warning) {
+    lap("title_normalized", titleResolution.warning);
+  }
+  const qualityResolution = resolveImageQuality(input.quality);
+  if (qualityResolution.warning) {
+    lap("quality_normalized", qualityResolution.warning);
+  }
+  const outputFormatResolution = resolveOutputFormat(input.outputFormat);
+  if (outputFormatResolution.warning) {
+    lap("output_format_normalized", outputFormatResolution.warning);
+  }
+  let request: ResolvedImageGenerateInput = {
+    prompt: input.prompt,
+    model,
+    title: titleResolution.title,
+    ...(input.aspectRatio ? { aspectRatio: input.aspectRatio } : {}),
+    quality: qualityResolution.quality,
+    ...(outputFormatResolution.outputFormat
+      ? { outputFormat: outputFormatResolution.outputFormat }
+      : {}),
+    ...(input.inputImages ? { inputImages: input.inputImages } : {}),
+    ...(input.placementX != null ? { placementX: input.placementX } : {}),
+    ...(input.placementY != null ? { placementY: input.placementY } : {}),
+    ...(input.placementWidth != null
+      ? { placementWidth: input.placementWidth }
+      : {}),
+    ...(input.placementHeight != null
+      ? { placementHeight: input.placementHeight }
+      : {}),
   };
 
   // Resolve assetId references in inputImages to base64 data URIs
-  if (input.inputImages?.length && attachmentMap) {
-    input = {
-      ...input,
-      inputImages: input.inputImages.map((ref) =>
-        attachmentMap[ref] ?? ref,
-      ),
+  if (request.inputImages?.length && attachmentMap) {
+    request = {
+      ...request,
+      inputImages: request.inputImages.map((ref) => attachmentMap[ref] ?? ref),
     };
   }
 
   // Filter out invalid image references — only keep valid URLs.
   // Agent may pass canvas element IDs or unresolved assetIds that aren't
   // in the attachmentMap. These would cause provider input errors.
-  if (input.inputImages?.length) {
-    const validImages = input.inputImages.filter((img) =>
-      img.startsWith("http://") || img.startsWith("https://") || img.startsWith("data:"),
+  if (request.inputImages?.length) {
+    const validImages = request.inputImages.filter(
+      (img) =>
+        img.startsWith("http://") ||
+        img.startsWith("https://") ||
+        img.startsWith("data:"),
     );
-    if (validImages.length !== input.inputImages.length) {
+    if (validImages.length !== request.inputImages.length) {
       lap("filtered_invalid_refs", {
-        before: input.inputImages.length,
+        before: request.inputImages.length,
         after: validImages.length,
-        dropped: input.inputImages.filter((img) =>
-          !img.startsWith("http://") && !img.startsWith("https://") && !img.startsWith("data:"),
+        dropped: request.inputImages.filter(
+          (img) =>
+            !img.startsWith("http://") &&
+            !img.startsWith("https://") &&
+            !img.startsWith("data:"),
         ),
       });
     }
-    input = validImages.length > 0
-      ? { ...input, inputImages: validImages }
-      : { ...input, inputImages: [] };
+    request =
+      validImages.length > 0
+        ? { ...request, inputImages: validImages }
+        : { ...request, inputImages: [] };
   }
 
   // Job mode: submit to PGMQ and wait for worker to complete
   if (submitImageJob) {
     try {
-      lap("job_submit", { model: input.model });
+      lap("job_submit", { model });
       const jobResult = await submitImageJob({
-        prompt: input.prompt,
-        title: input.title,
-        model: input.model,
-        aspectRatio: input.aspectRatio ?? "1:1",
-        ...(input.inputImages ? { inputImages: input.inputImages } : {}),
+        prompt: request.prompt,
+        title: request.title,
+        model,
+        aspectRatio: request.aspectRatio ?? "1:1",
+        ...(request.inputImages ? { inputImages: request.inputImages } : {}),
       });
 
       if (jobResult.error) {
@@ -209,8 +416,8 @@ export async function runImageGenerate(
         const isTimeout = jobResult.error.includes("timed out");
         return {
           summary: isTimeout
-            ? `Image is still being generated by the server. It will automatically appear on the canvas once ready - no action needed from the user.`
-            : `Image generation failed with model ${input.model}: ${jobResult.error}. Consider trying a different model or simplifying the prompt.`,
+            ? "Image is still being generated by the server. It will automatically appear on the canvas once ready - no action needed from the user."
+            : `Image generation failed with model ${model}: ${jobResult.error}. Consider trying a different model or simplifying the prompt.`,
           error: jobResult.error,
           // Expose jobId so frontend can poll for late-arriving results
           // (worker may still succeed after agent poll timeout)
@@ -221,27 +428,29 @@ export async function runImageGenerate(
       lap("job_complete", { jobId: jobResult.jobId });
 
       const result: ImageGenerateResult = {
-        summary: `Generated image (${jobResult.width ?? 0}x${jobResult.height ?? 0}) via ${input.model}`,
-        title: input.title,
-        ...(jobResult.elementId != null ? { elementId: jobResult.elementId } : {}),
+        summary: `Generated image (${jobResult.width ?? 0}x${jobResult.height ?? 0}) via ${model}`,
+        title: request.title,
+        ...(jobResult.elementId != null
+          ? { elementId: jobResult.elementId }
+          : {}),
         imageUrl: jobResult.imageUrl ?? "",
         mimeType: jobResult.mimeType ?? "image/png",
         ...(jobResult.width != null ? { width: jobResult.width } : {}),
         ...(jobResult.height != null ? { height: jobResult.height } : {}),
       };
-      if (input.placementX != null && input.placementY != null) {
+      if (request.placementX != null && request.placementY != null) {
         result.placement = {
-          x: input.placementX,
-          y: input.placementY,
-          width: input.placementWidth ?? 512,
-          height: input.placementHeight ?? 512,
+          x: request.placementX,
+          y: request.placementY,
+          width: request.placementWidth ?? 512,
+          height: request.placementHeight ?? 512,
         };
       }
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       return {
-        summary: `Image generation failed with model ${input.model}: ${message}. Consider trying a different model or simplifying the prompt.`,
+        summary: `Image generation failed with model ${model}: ${message}. Consider trying a different model or simplifying the prompt.`,
         error: message,
       };
     }
@@ -249,22 +458,28 @@ export async function runImageGenerate(
 
   // Direct generation: resolve provider from model ID via registry
   try {
-    lap("direct_generate_start", { model: input.model });
-    const providerName = resolveImageProviderName(input.model);
+    lap("direct_generate_start", { model });
+    const providerName = resolveImageProviderName(model);
     const result = await generateImage(providerName, {
-      prompt: input.prompt,
-      model: input.model,
-      ...(input.aspectRatio ? { aspectRatio: input.aspectRatio } : {}),
-      ...(input.quality ? { quality: input.quality as any } : {}),
-      ...(input.outputFormat ? { outputFormat: input.outputFormat as any } : {}),
-      ...(input.inputImages?.length ? { inputImages: input.inputImages } : {}),
+      prompt: request.prompt,
+      model,
+      ...(request.aspectRatio ? { aspectRatio: request.aspectRatio } : {}),
+      ...(request.quality ? { quality: request.quality } : {}),
+      ...(request.outputFormat ? { outputFormat: request.outputFormat } : {}),
+      ...(request.inputImages?.length
+        ? { inputImages: request.inputImages }
+        : {}),
     });
     lap("direct_generate_done", { width: result.width, height: result.height });
 
     let imageUrl = result.url;
     if (persistImage) {
       try {
-        imageUrl = await persistImage(result.url, result.mimeType, input.prompt);
+        imageUrl = await persistImage(
+          result.url,
+          result.mimeType,
+          request.prompt,
+        );
         lap("persist_image_done");
       } catch {
         // Fall back to ephemeral URL if upload fails
@@ -272,19 +487,19 @@ export async function runImageGenerate(
     }
 
     const directResult: ImageGenerateResult = {
-      summary: `Generated image (${result.width}x${result.height}) via ${input.model}`,
-      title: input.title,
+      summary: `Generated image (${result.width}x${result.height}) via ${model}`,
+      title: request.title,
       imageUrl,
       mimeType: result.mimeType,
       width: result.width,
       height: result.height,
     };
-    if (input.placementX != null && input.placementY != null) {
+    if (request.placementX != null && request.placementY != null) {
       directResult.placement = {
-        x: input.placementX,
-        y: input.placementY,
-        width: input.placementWidth ?? 512,
-        height: input.placementHeight ?? 512,
+        x: request.placementX,
+        y: request.placementY,
+        width: request.placementWidth ?? 512,
+        height: request.placementHeight ?? 512,
       };
     }
     return directResult;
@@ -311,14 +526,14 @@ export function createImageGenerateTool(deps?: {
 
   return tool(
     async (input: ImageGenerateInput, config) => {
-      const attachmentMap =
-        (config as any)?.configurable?.user_attachment_map as
-          Record<string, string> | undefined;
+      const attachmentMap = (config as ImageToolConfig | undefined)
+        ?.configurable?.user_attachment_map;
       return await runImageGenerate(
         input,
         deps?.persistImage,
         deps?.submitImageJob,
         attachmentMap,
+        models,
       );
     },
     {

@@ -1,0 +1,21 @@
+# Project-level Codex defaults. This file is loaded only when the repository is
+# trusted in the user's Codex config.
+
+model = "gpt-5.5"
+model_reasoning_effort = "high"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+personality = "pragmatic"
+
+[features]
+multi_agent = true
+tool_search = true
+browser_use = true
+
+[shell_environment_policy]
+inherit = "core"
+
+[agents]
+max_threads = 4
+max_depth = 2
+job_max_runtime_seconds = 3600

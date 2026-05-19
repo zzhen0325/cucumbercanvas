@@ -6,7 +6,6 @@ import type {
   BaseCheckpointSaver,
   BaseStore,
 } from "@langchain/langgraph-checkpoint";
-import { ChatOpenAI } from "@langchain/openai";
 import { createDeepAgent } from "deepagents";
 
 import {
@@ -21,6 +20,7 @@ import {
   createAgentBackend,
 } from "./backends/index.js";
 import { CUCUMBER_SYSTEM_PROMPT } from "./prompts/cucumber-main.js";
+import { createReasoningContentChatOpenAI } from "./reasoning-content-openai.js";
 import { createVideoSubAgent } from "./sub-agents.js";
 import type {
   PersistImageFn,
@@ -241,7 +241,7 @@ function createStreamingChatModel(specifier: string): BaseLanguageModel {
     }
     case "openai":
     default:
-      return new ChatOpenAI({
+      return createReasoningContentChatOpenAI({
         model: modelName,
         streaming: true,
         streamUsage: false,

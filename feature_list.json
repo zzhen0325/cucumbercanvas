@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-05-19T12:16:00+08:00",
+  "features": [
+    {
+      "id": "HARNESS-001",
+      "name": "Codex project harness",
+      "status": "done",
+      "priority": "P0",
+      "owner": "engineering",
+      "summary": "Project-level agent manual, Codex config, command rules, verification scripts, progress log, feature registry, and core docs.",
+      "artifacts": [
+        "AGENTS.md",
+        ".codex/config.toml",
+        ".codex/rules/default.rules",
+        "scripts/codex-setup.sh",
+        "scripts/codex-check.sh",
+        "progress.md",
+        "feature_list.json",
+        "docs/architecture.md",
+        "docs/design-system.md",
+        "docs/workflow.md"
+      ]
+    },
+    {
+      "id": "CORE-001",
+      "name": "AI-native canvas workspace",
+      "status": "active",
+      "priority": "P0",
+      "owner": "product-engineering",
+      "summary": "Infinite canvas and chat-driven creative workspace for projects, assets, generation, and editing.",
+      "artifacts": [
+        "apps/web/src/components/canvas-editor.tsx",
+        "apps/web/src/app/canvas/page.tsx",
+        "apps/server/src/features/canvas/canvas-service.ts"
+      ]
+    },
+    {
+      "id": "CORE-002",
+      "name": "Agent runtime and tool execution",
+      "status": "active",
+      "priority": "P0",
+      "owner": "agent-engineering",
+      "summary": "Deep Agents/LangChain runtime with typed tools, persistence, streaming, and workspace skill execution.",
+      "artifacts": [
+        "apps/server/src/agent/deep-agent.ts",
+        "apps/server/src/agent/runtime.ts",
+        "apps/server/src/agent/tools/index.ts",
+        "apps/server/src/agent/workspace-skills.ts"
+      ]
+    },
+    {
+      "id": "CORE-003",
+      "name": "Brand Kit and workspace assets",
+      "status": "active",
+      "priority": "P1",
+      "owner": "product-engineering",
+      "summary": "Brand Kit editing, selection, persistence, and generated asset reuse across creative flows.",
+      "artifacts": [
+        "apps/web/src/components/brand-kit/brand-kit-page.tsx",
+        "apps/server/src/features/brand-kit/brand-kit-service.ts",
+        "packages/shared/src/brand-kit-contracts.ts"
+      ]
+    },
+    {
+      "id": "CORE-004",
+      "name": "Image and video generation",
+      "status": "active",
+      "priority": "P0",
+      "owner": "generation-engineering",
+      "summary": "Seedream/Volcengine-backed image and video generation through jobs, providers, worker execution, and UI panels.",
+      "artifacts": [
+        "apps/server/src/generation/providers/seedream.ts",
+        "apps/server/src/features/jobs/job-executor.ts",
+        "apps/web/src/components/canvas/image-generator-panel.tsx",
+        "apps/web/src/components/canvas/video-generator-panel.tsx"
+      ]
+    },
+    {
+      "id": "QUALITY-001",
+      "name": "Deterministic canvas smoke test",
+      "status": "todo",
+      "priority": "P1",
+      "owner": "quality-engineering",
+      "summary": "Add an e2e smoke test for create project, send prompt, receive generated canvas artifact, and persist state.",
+      "artifacts": []
+    }
+  ]
+}
