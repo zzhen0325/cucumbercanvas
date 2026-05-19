@@ -105,16 +105,47 @@ class SeedreamClient {
   }
 
   async submitAndPoll(reqKey: string, body: Record<string, unknown>) {
+    const traceId = createHash("sha256")
+      .update(`${reqKey}:${JSON.stringify(body)}:${Date.now()}`)
+      .digest("hex")
+      .slice(0, 12);
+    const tag = `[seedream:${traceId}]`;
+    console.log(
+      `${tag} submit_start`,
+      JSON.stringify({
+        reqKey,
+        ...summarizeSeedreamBody(body),
+      }),
+    );
     const submit = await this.signedPost("CVSync2AsyncSubmitTask", {
       req_key: reqKey,
       ...body,
     });
+    console.log(
+      `${tag} submit_response`,
+      JSON.stringify({
+        reqKey,
+        httpStatus: submit.status,
+        code: submit.body.code ?? null,
+        message:
+          typeof submit.body.message === "string" ? submit.body.message : null,
+        requestId: getRequestId(submit.body),
+      }),
+    );
     assertSeedreamOk("submit", submit);
 
     const taskId = getNestedString(submit.body, ["data", "task_id"]);
     if (!taskId) {
       throw new GenerationError("seedream", "no_task_id", "Seedream did not return task_id");
     }
+    console.log(
+      `${tag} submit_ok`,
+      JSON.stringify({
+        reqKey,
+        taskId,
+        requestId: getRequestId(submit.body),
+      }),
+    );
 
     let last: Record<string, unknown> | null = null;
     for (let attempt = 1; attempt <= 30; attempt++) {
@@ -124,11 +155,40 @@ class SeedreamClient {
         task_id: taskId,
         req_json: JSON.stringify({ return_url: true }),
       });
+      console.log(
+        `${tag} poll_response`,
+        JSON.stringify({
+          reqKey,
+          taskId,
+          attempt,
+          httpStatus: result.status,
+          code: result.body.code ?? null,
+          message:
+            typeof result.body.message === "string" ? result.body.message : null,
+          taskStatus: getNestedString(result.body, ["data", "status"]) ?? null,
+          imageUrlCount: getNestedArray(result.body, ["data", "image_urls"]).length,
+          videoUrlCount: getNestedArray(result.body, ["data", "video_urls"]).length,
+          requestId: getRequestId(result.body),
+        }),
+      );
       assertSeedreamOk("poll", result);
       last = result.body;
 
       const status = getNestedString(result.body, ["data", "status"]);
-      if (status === "done") return result.body;
+      if (status === "done") {
+        console.log(
+          `${tag} poll_done`,
+          JSON.stringify({
+            reqKey,
+            taskId,
+            attempt,
+            imageUrlCount: getNestedArray(result.body, ["data", "image_urls"]).length,
+            videoUrlCount: getNestedArray(result.body, ["data", "video_urls"]).length,
+            requestId: getRequestId(result.body),
+          }),
+        );
+        return result.body;
+      }
       if (status === "not_found" || status === "expired") {
         throw new GenerationError(
           "seedream",
@@ -278,12 +338,33 @@ function assertSeedreamOk(step: string, result: SignedPostResult) {
       typeof result.body.message === "string"
         ? result.body.message
         : JSON.stringify(result.body);
+    const requestId = getRequestId(result.body);
     throw new GenerationError(
       "seedream",
       "api_error",
-      `Seedream ${step} failed (${result.status}/${String(code)}): ${message}`,
+      `Seedream ${step} failed (${result.status}/${String(code)}${requestId ? ` request_id=${requestId}` : ""}): ${message}`,
     );
   }
+}
+
+function getRequestId(source: Record<string, unknown>): string | undefined {
+  const requestId = source.request_id;
+  return typeof requestId === "string" ? requestId : undefined;
+}
+
+function summarizeSeedreamBody(body: Record<string, unknown>) {
+  const imageUrls = Array.isArray(body.image_urls) ? body.image_urls : [];
+  return {
+    hasPrompt: typeof body.prompt === "string" && body.prompt.length > 0,
+    promptLength: typeof body.prompt === "string" ? body.prompt.length : 0,
+    imageCount: imageUrls.length,
+    size: typeof body.size === "number" ? body.size : null,
+    forceSingle: body.force_single === true,
+    duration: typeof body.duration === "number" ? body.duration : null,
+    resolution: typeof body.resolution === "string" ? body.resolution : null,
+    aspectRatio:
+      typeof body.aspect_ratio === "string" ? body.aspect_ratio : null,
+  };
 }
 
 function getNestedString(

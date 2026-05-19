@@ -27,6 +27,17 @@ test("root manifest exposes dev, build, test, and lint scripts", async () => {
   assert.equal(typeof manifest.scripts?.lint, "string");
 });
 
+test("root dev command uses the custom launcher for signal-safe shutdown", async () => {
+  const manifest = await readJson("package.json");
+  const launcher = await readText("scripts/dev-launcher.mjs");
+
+  assert.match(manifest.scripts.dev, /scripts\/dev-launcher\.mjs/);
+  assert.match(launcher, /spawnChild\("web"/);
+  assert.match(launcher, /spawnChild\("server"/);
+  assert.match(launcher, /process\.on\("SIGINT"/);
+  assert.match(launcher, /process\.on\("SIGTERM"/);
+});
+
 test("workspace includes apps and packages globs", async () => {
   const workspace = await readText("pnpm-workspace.yaml");
 
