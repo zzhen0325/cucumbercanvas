@@ -26,6 +26,7 @@ import type { ConnectionManager } from "../ws/connection-manager.js";
 // 不需要自定义代码执行工具
 import type { SubmitImageJobFn } from "./tools/image-generate.js";
 import type { SubmitVideoJobFn } from "./tools/video-generate.js";
+import { resolveImagePlacement } from "./tools/image-generate.js";
 import { createAgentBackend } from "./backends/index.js";
 import {
   type CucumberAgent,
@@ -479,14 +480,15 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               if (canvasId && result.object_path) {
                 try {
                   const writerClient = createClient(accessToken) as UserSupabaseClient;
-                  const explicitPlacement = (input as any).placementX != null && (input as any).placementY != null
-                    ? {
-                        x: (input as any).placementX,
-                        y: (input as any).placementY,
-                        width: (input as any).placementWidth ?? 512,
-                        height: (input as any).placementHeight ?? 512,
-                      }
-                    : undefined;
+                  const explicitPlacement = resolveImagePlacement({
+                    placementX: (input as any).placementX,
+                    placementY: (input as any).placementY,
+                    placementWidth: (input as any).placementWidth,
+                    placementHeight: (input as any).placementHeight,
+                    sourceWidth: result.width ?? 1024,
+                    sourceHeight: result.height ?? 1024,
+                    aspectRatio: input.aspectRatio,
+                  });
 
                   const insertResult = await insertImageElement(
                     writerClient,

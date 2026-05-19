@@ -10,6 +10,7 @@ import {
   resolveImageProviderName,
 } from "../../generation/providers/registry.js";
 import type { ImageQuality, OutputFormat } from "../../generation/types.js";
+import { aspectRatioToDimensions } from "../../generation/utils.js";
 
 const DEFAULT_MODEL = "bytedance/seedream-4.6";
 
@@ -86,13 +87,15 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
     placementWidth: z
       .number()
       .optional()
-      .default(512)
-      .describe("Display width on canvas"),
+      .describe(
+        "Optional display width on canvas. If omitted, the server preserves the generated aspect ratio.",
+      ),
     placementHeight: z
       .number()
       .optional()
-      .default(512)
-      .describe("Display height on canvas"),
+      .describe(
+        "Optional display height on canvas. If omitted, the server preserves the generated aspect ratio.",
+      ),
   });
 }
 
@@ -139,6 +142,8 @@ type ImageGenerateResult = {
   jobType?: "image_generation";
   placement?: { x: number; y: number; width: number; height: number };
 };
+
+type Placement = { x: number; y: number; width: number; height: number };
 
 function normalizeModelToken(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -272,6 +277,102 @@ function resolveOutputFormat(requestedFormat: string | undefined): {
       requestedFormat,
       availableFormats: ["png", "jpg", "webp"],
     },
+  };
+}
+
+function scalePlacementToFit(
+  width: number,
+  height: number,
+  maxSize: number,
+): { width: number; height: number } {
+  if (width <= maxSize && height <= maxSize) {
+    return { width, height };
+  }
+
+  const scale = Math.min(maxSize / width, maxSize / height);
+  return {
+    width: Math.round(width * scale),
+    height: Math.round(height * scale),
+  };
+}
+
+function resolvePlacementDimensions(options: {
+  placementWidth?: number;
+  placementHeight?: number;
+  sourceWidth?: number;
+  sourceHeight?: number;
+  aspectRatio?: string;
+  defaultMaxSize?: number;
+}): { width: number; height: number } {
+  const placementWidth =
+    options.placementWidth != null && options.placementWidth > 0
+      ? options.placementWidth
+      : undefined;
+  const placementHeight =
+    options.placementHeight != null && options.placementHeight > 0
+      ? options.placementHeight
+      : undefined;
+
+  const sourceDimensions =
+    options.sourceWidth != null &&
+    options.sourceWidth > 0 &&
+    options.sourceHeight != null &&
+    options.sourceHeight > 0
+      ? {
+          width: options.sourceWidth,
+          height: options.sourceHeight,
+        }
+      : aspectRatioToDimensions(options.aspectRatio ?? "1:1");
+
+  if (placementWidth != null && placementHeight != null) {
+    return { width: placementWidth, height: placementHeight };
+  }
+
+  if (placementWidth != null) {
+    return {
+      width: placementWidth,
+      height: Math.round(
+        placementWidth * (sourceDimensions.height / sourceDimensions.width),
+      ),
+    };
+  }
+
+  if (placementHeight != null) {
+    return {
+      width: Math.round(
+        placementHeight * (sourceDimensions.width / sourceDimensions.height),
+      ),
+      height: placementHeight,
+    };
+  }
+
+  return scalePlacementToFit(
+    sourceDimensions.width,
+    sourceDimensions.height,
+    options.defaultMaxSize ?? 512,
+  );
+}
+
+export function resolveImagePlacement(options: {
+  placementX?: number;
+  placementY?: number;
+  placementWidth?: number;
+  placementHeight?: number;
+  sourceWidth?: number;
+  sourceHeight?: number;
+  aspectRatio?: string;
+  defaultMaxSize?: number;
+}): Placement | undefined {
+  if (options.placementX == null || options.placementY == null) {
+    return undefined;
+  }
+
+  const { width, height } = resolvePlacementDimensions(options);
+  return {
+    x: options.placementX,
+    y: options.placementY,
+    width,
+    height,
   };
 }
 
@@ -438,14 +539,16 @@ export async function runImageGenerate(
         ...(jobResult.width != null ? { width: jobResult.width } : {}),
         ...(jobResult.height != null ? { height: jobResult.height } : {}),
       };
-      if (request.placementX != null && request.placementY != null) {
-        result.placement = {
-          x: request.placementX,
-          y: request.placementY,
-          width: request.placementWidth ?? 512,
-          height: request.placementHeight ?? 512,
-        };
-      }
+      const placement = resolveImagePlacement({
+        placementX: request.placementX,
+        placementY: request.placementY,
+        placementWidth: request.placementWidth,
+        placementHeight: request.placementHeight,
+        sourceWidth: jobResult.width,
+        sourceHeight: jobResult.height,
+        aspectRatio: request.aspectRatio,
+      });
+      if (placement) result.placement = placement;
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
@@ -494,14 +597,16 @@ export async function runImageGenerate(
       width: result.width,
       height: result.height,
     };
-    if (request.placementX != null && request.placementY != null) {
-      directResult.placement = {
-        x: request.placementX,
-        y: request.placementY,
-        width: request.placementWidth ?? 512,
-        height: request.placementHeight ?? 512,
-      };
-    }
+    const placement = resolveImagePlacement({
+      placementX: request.placementX,
+      placementY: request.placementY,
+      placementWidth: request.placementWidth,
+      placementHeight: request.placementHeight,
+      sourceWidth: result.width,
+      sourceHeight: result.height,
+      aspectRatio: request.aspectRatio,
+    });
+    if (placement) directResult.placement = placement;
     return directResult;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { AvailableModel } from "../../generation/providers/registry.js";
-import { createImageGenerateTool } from "./image-generate.js";
+import {
+  createImageGenerateTool,
+  resolveImagePlacement,
+} from "./image-generate.js";
 
 const availableModels: AvailableModel[] = [
   {
@@ -81,5 +84,21 @@ describe("createImageGenerateTool", () => {
       jobType: "image_generation",
     });
     expect(submittedTitle).toBe("cinematic 3d Christmas villain");
+  });
+
+  it("preserves source aspect ratio when placement size is omitted", () => {
+    expect(
+      resolveImagePlacement({
+        placementX: 100,
+        placementY: 200,
+        sourceWidth: 1024,
+        sourceHeight: 576,
+      }),
+    ).toEqual({
+      x: 100,
+      y: 200,
+      width: 512,
+      height: 288,
+    });
   });
 });
