@@ -229,6 +229,13 @@ function createStreamingChatModel(specifier: string): BaseLanguageModel {
         model: modelName,
         apiKey: process.env.DEEPSEEK_API_KEY!,
         streaming: true,
+        // Disable DeepSeek thinking mode to avoid reasoning_content round-trip
+        // failures during multi-turn agent/tool loops.
+        extra_body: {
+          thinking: {
+            type: "disabled",
+          },
+        },
       };
       if (process.env.DEEPSEEK_API_BASE) {
         deepseekConfig.configuration = {
