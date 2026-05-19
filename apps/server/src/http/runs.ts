@@ -9,6 +9,7 @@ import {
 } from "@cucumber/shared";
 
 import type { AgentRunService } from "../agent/runtime.js";
+import type { RunEventPump } from "../agent/run-event-pump.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import {
   AgentRunPersistenceError,
@@ -27,6 +28,7 @@ export async function registerRunRoutes(
   options: {
     agentRunMetadataService?: AgentRunMetadataService;
     auth?: RequestAuthenticator;
+    runEventPump?: RunEventPump;
     settingsService?: SettingsService;
     threadService?: ThreadService;
     viewerService?: ViewerService;
@@ -75,22 +77,55 @@ export async function registerRunRoutes(
         }
       }
 
+      const resolvedModel = payload.model ?? model;
+
       const response = runCreateResponseSchema.parse(
         agentRuns.createRun(payload, {
-          ...(authenticatedUser ? { accessToken: authenticatedUser.accessToken, userId: authenticatedUser.id } : {}),
-          ...(model ? { model } : {}),
+          ...(authenticatedUser
+            ? {
+                accessToken: authenticatedUser.accessToken,
+                userId: authenticatedUser.id,
+              }
+            : {}),
+          ...(resolvedModel ? { model: resolvedModel } : {}),
           ...(sessionThread ? { threadId: sessionThread.threadId } : {}),
         }),
       );
 
       if (sessionThread && options.agentRunMetadataService) {
         await options.agentRunMetadataService.createAcceptedRun({
-          ...(model ? { model } : {}),
+          ...(resolvedModel ? { model: resolvedModel } : {}),
           runId: response.runId,
           sessionId: payload.sessionId,
           threadId: sessionThread.threadId,
         });
       }
+
+      options.runEventPump?.startRun({
+        authenticatedUser,
+        payload: {
+          sessionId: payload.sessionId,
+          conversationId: payload.conversationId,
+          prompt: payload.prompt,
+          ...(payload.canvasId !== undefined ? { canvasId: payload.canvasId } : {}),
+          ...(payload.attachments !== undefined
+            ? { attachments: payload.attachments }
+            : {}),
+          ...(payload.imageGenerationPreference !== undefined
+            ? {
+                imageGenerationPreference: payload.imageGenerationPreference,
+              }
+            : {}),
+          ...(payload.videoGenerationPreference !== undefined
+            ? {
+                videoGenerationPreference: payload.videoGenerationPreference,
+              }
+            : {}),
+          ...(payload.mentions !== undefined ? { mentions: payload.mentions } : {}),
+          ...(payload.model !== undefined ? { model: payload.model } : {}),
+        },
+        runId: response.runId,
+      });
 
       return reply.code(202).send(response);
     } catch (error) {

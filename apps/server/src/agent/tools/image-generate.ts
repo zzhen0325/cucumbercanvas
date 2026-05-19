@@ -512,21 +512,15 @@ export async function runImageGenerate(
   // Agent may pass canvas element IDs or unresolved assetIds that aren't
   // in the attachmentMap. These would cause provider input errors.
   if (request.inputImages?.length) {
-    const validImages = request.inputImages.filter(
-      (img) =>
-        img.startsWith("http://") ||
-        img.startsWith("https://") ||
-        img.startsWith("data:"),
+    const validImages = request.inputImages.filter((img) =>
+      /^(https?:\/\/|data:)/i.test(img),
     );
     if (validImages.length !== request.inputImages.length) {
       lap("filtered_invalid_refs", {
         before: request.inputImages.length,
         after: validImages.length,
         dropped: request.inputImages.filter(
-          (img) =>
-            !img.startsWith("http://") &&
-            !img.startsWith("https://") &&
-            !img.startsWith("data:"),
+          (img) => !/^(https?:\/\/|data:)/i.test(img),
         ),
       });
     }

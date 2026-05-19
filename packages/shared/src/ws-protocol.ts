@@ -1,15 +1,4 @@
 import { z } from "zod";
-import { streamEventSchema } from "./events.js";
-import { runCreateRequestSchema } from "./contracts.js";
-
-// --- Server → Client: Push Event (replaces SSE) ---
-
-export const wsServerEventSchema = z.object({
-  type: z.literal("event"),
-  event: streamEventSchema,
-});
-
-// --- Server → Client: RPC Request ---
 
 export const wsRpcRequestSchema = z.object({
   type: z.literal("rpc.request"),
@@ -18,45 +7,6 @@ export const wsRpcRequestSchema = z.object({
   params: z.record(z.unknown()).default({}),
 });
 
-// --- Server → Client: Command Ack ---
-
-export const wsCommandAckSchema = z.object({
-  type: z.literal("command.ack"),
-  action: z.string().min(1),
-  payload: z.record(z.unknown()),
-});
-
-// --- Client → Server: Command ---
-
-export const wsRunCommandSchema = z.object({
-  type: z.literal("command"),
-  action: z.literal("agent.run"),
-  payload: runCreateRequestSchema,
-});
-
-export const wsCancelCommandSchema = z.object({
-  type: z.literal("command"),
-  action: z.literal("agent.cancel"),
-  payload: z.object({ runId: z.string().min(1) }),
-});
-
-export const wsResumeCommandSchema = z.object({
-  type: z.literal("command"),
-  action: z.literal("canvas.resume"),
-  payload: z.object({
-    canvasId: z.string().min(1),
-    lastSeq: z.number().int().min(0).default(0),
-  }),
-});
-
-export const wsCommandSchema = z.discriminatedUnion("action", [
-  wsRunCommandSchema,
-  wsCancelCommandSchema,
-  wsResumeCommandSchema,
-]);
-
-// --- Client → Server: RPC Response ---
-
 export const wsRpcResponseSchema = z.object({
   type: z.literal("rpc.response"),
   id: z.string().min(1),
@@ -64,40 +14,14 @@ export const wsRpcResponseSchema = z.object({
   error: z.string().optional(),
 });
 
-// --- Union: Client → Server ---
-// Uses z.union instead of z.discriminatedUnion because wsCommandSchema is itself
-// a discriminated union (by "action"), which Zod v3 does not support as a nested
-// element in another discriminatedUnion.
+export const wsClientMessageSchema = wsRpcResponseSchema;
 
-export const wsClientMessageSchema = z.union([
-  wsRunCommandSchema,
-  wsCancelCommandSchema,
-  wsResumeCommandSchema,
-  wsRpcResponseSchema,
-]);
+export const wsServerMessageSchema = wsRpcRequestSchema;
 
-// --- Union: Server → Client ---
-
-export const wsServerMessageSchema = z.discriminatedUnion("type", [
-  wsServerEventSchema,
-  wsRpcRequestSchema,
-  wsCommandAckSchema,
-]);
-
-// --- Type exports ---
-
-export type WsServerEvent = z.infer<typeof wsServerEventSchema>;
 export type WsRpcRequest = z.infer<typeof wsRpcRequestSchema>;
-export type WsCommandAck = z.infer<typeof wsCommandAckSchema>;
-export type WsRunCommand = z.infer<typeof wsRunCommandSchema>;
-export type WsCancelCommand = z.infer<typeof wsCancelCommandSchema>;
-export type WsResumeCommand = z.infer<typeof wsResumeCommandSchema>;
-export type WsCommand = z.infer<typeof wsCommandSchema>;
 export type WsRpcResponse = z.infer<typeof wsRpcResponseSchema>;
 export type WsClientMessage = z.infer<typeof wsClientMessageSchema>;
 export type WsServerMessage = z.infer<typeof wsServerMessageSchema>;
-
-// --- Screenshot-specific params/result ---
 
 export const screenshotParamsSchema = z.object({
   mode: z.enum(["full", "region", "viewport"]),

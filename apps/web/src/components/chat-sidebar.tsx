@@ -13,9 +13,11 @@ import type {
   VideoArtifact,
   VideoGenerationPreference,
 } from "@cucumber/shared";
+import type { WebSocketHandle } from "../hooks/use-websocket";
 import { useAgentModel } from "../hooks/use-agent-model";
-import { mapServerMessages, useChatSessions } from "../hooks/use-chat-sessions";
+import { useChatSessions } from "../hooks/use-chat-sessions";
 import { useChatStream } from "../hooks/use-chat-stream";
+import { useSseStream } from "../hooks/use-sse-stream";
 import {
   INITIAL_AGENT_MODEL_KEY,
   INITIAL_ATTACHMENTS_KEY,
@@ -25,9 +27,13 @@ import type { ReadyAttachment } from "../hooks/use-image-attachments";
 import { useImageAttachments } from "../hooks/use-image-attachments";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { useVideoModelPreference } from "../hooks/use-video-model-preference";
-import type { WebSocketHandle } from "../hooks/use-websocket";
 import { fetchBrandKit } from "../lib/brand-kit-api";
-import { fetchImageModels, fetchWorkspaceSkills, saveMessage } from "../lib/server-api";
+import {
+  createRun,
+  fetchImageModels,
+  fetchWorkspaceSkills,
+  saveMessage,
+} from "../lib/server-api";
 import type { CanvasSelectedElement } from "./canvas-editor";
 import {
   type BrandKitMentionItem,
@@ -59,8 +65,8 @@ type ChatSidebarProps = {
   onSessionChange?: (sessionId: string) => void;
   onRequestCanvasImages?: () => CanvasImageItem[];
   currentBrandKitId?: string | null;
-  ws: WebSocketHandle;
   selectedCanvasElements?: CanvasSelectedElement[];
+  ws: WebSocketHandle;
 };
 
 export function ChatSidebar({
@@ -77,8 +83,8 @@ export function ChatSidebar({
   onSessionChange,
   onRequestCanvasImages,
   currentBrandKitId,
-  ws,
   selectedCanvasElements,
+  ws,
 }: ChatSidebarProps) {
   const breakpoint = useBreakpoint();
   const isOverlay = breakpoint !== "desktop";
@@ -89,8 +95,6 @@ export function ChatSidebar({
     activeSessionId,
     activeSessionIdRef,
     messages,
-    messagesRef,
-    setMessages,
     sessionsLoading,
     messagesLoading,
     streaming,
@@ -100,7 +104,6 @@ export function ChatSidebar({
     handleNewChat,
     handleDeleteSession,
     autoTitleSession,
-    reloadMessages,
     accessTokenRef,
   } = useChatSessions({
     canvasId,
@@ -133,7 +136,7 @@ export function ChatSidebar({
   messageMentionsRef.current = messageMentions;
   const selectedCanvasElementsRef = useRef(selectedCanvasElements);
   selectedCanvasElementsRef.current = selectedCanvasElements;
-  const prevConnectedRef = useRef(false);
+  const { startStream } = useSseStream(accessToken);
 
   const {
     attachments: imageAttachments,
@@ -468,136 +471,110 @@ export function ChatSidebar({
       try {
         const perf = {
           t0Send: performance.now(),
-          tAck: 0,
+          tAccepted: 0,
           tFirstToken: 0,
           gotFirstToken: false,
         };
 
-        let resolveStream: () => void;
-        const streamDone = new Promise<void>((r) => {
-          resolveStream = r;
-        });
-        const runIdRef = { current: "" };
+        const run = await createRun(
+          {
+            sessionId: currentSessionId,
+            conversationId: canvasId,
+            prompt: text,
+            canvasId,
+            ...(currentAttachments.length > 0
+              ? { attachments: currentAttachments }
+              : {}),
+            ...(currentMentions.length > 0
+              ? { mentions: currentMentions }
+              : {}),
+            ...(currentImageGenerationPreference
+              ? {
+                  imageGenerationPreference: currentImageGenerationPreference,
+                }
+              : {}),
+            ...(currentVideoGenerationPreference
+              ? {
+                  videoGenerationPreference: currentVideoGenerationPreference,
+                }
+              : {}),
+            ...(agentModelRef.current
+              ? { model: agentModelRef.current }
+              : {}),
+          },
+          { accessToken: accessTokenRef.current },
+        );
 
-        const cleanup = ws.onEvent((event) => {
-          if (!runIdRef.current || event.runId !== runIdRef.current) return;
-          if (abortRef.current) {
-            resolveStream();
-            return;
-          }
+        perf.tAccepted = performance.now();
+        console.log(
+          `[perf] send → accepted: ${(perf.tAccepted - perf.t0Send).toFixed(0)}ms`,
+        );
 
-          // Track first token timing
-          if (!perf.gotFirstToken && event.type === "message.delta") {
-            perf.tFirstToken = performance.now();
-            perf.gotFirstToken = true;
-            console.log(
-              `[perf] send → first token: ${(perf.tFirstToken - perf.t0Send).toFixed(0)}ms` +
-                ` (ack→token: ${(perf.tFirstToken - perf.tAck).toFixed(0)}ms)`,
-            );
-          }
-
-          // Apply event to messages (single source of truth — shared with reconnect)
-          applyStreamEvent(event, assistantId, currentSessionId);
-
-          // Forward event to parent for fallback job polling (timed-out generation recovery)
-          onStreamEvent?.(event);
-
-          // Fire canvas insertion callbacks for image/video artifacts.
-          // Skip if the backend already inserted the element (elementId in output).
-          const backendInserted = event.type === "tool.completed"
-            && event.output
-            && typeof (event.output as Record<string, unknown>).elementId === "string";
-          if (
-            event.type === "tool.completed" &&
-            event.artifacts &&
-            event.toolName !== "screenshot_canvas" &&
-            !backendInserted
-          ) {
-            for (const artifact of event.artifacts) {
-              if (artifact.type === "image" && onImageGenerated) {
-                onImageGenerated(artifact as ImageArtifact);
-              }
-              if (artifact.type === "video" && onVideoGenerated) {
-                onVideoGenerated(artifact as VideoArtifact);
-              }
+        const streamHandle = startStream({
+          canvasId,
+          onError: (error) => {
+            console.warn("[chat-stream] SSE reconnect pending:", error.message);
+          },
+          onEvent: (event) => {
+            if (event.runId !== run.runId) {
+              return;
             }
-          }
-
-          if (event.type === "canvas.sync" && onCanvasSync) {
-            onCanvasSync();
-          }
-
-          // Preview model hint: suggest switching when run fails
-          if (event.type === "run.failed") {
-            const currentModel = agentModelRef.current ?? "";
-            if (currentModel.includes("preview")) {
-              showToast(
-                "当前 Preview 模型请求不稳定，建议切换模型后重试",
-                "error",
-              );
+            if (abortRef.current) {
+              return;
             }
-          }
 
-          if (
-            event.type === "run.completed" ||
-            event.type === "run.failed" ||
-            event.type === "run.canceled"
-          ) {
-            resolveStream();
-          }
-        });
-
-        // Start run via WebSocket
-        const runId = await new Promise<string>((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            cleanup();
-            reject(new Error("WebSocket ack timeout — connection may be down"));
-          }, 10_000);
-
-          ws.startRun(
-            {
-              sessionId: currentSessionId,
-              conversationId: canvasId,
-              prompt: text,
-              canvasId,
-              accessToken: accessTokenRef.current,
-              ...(currentAttachments.length > 0
-                ? { attachments: currentAttachments }
-                : {}),
-              ...(currentMentions.length > 0
-                ? { mentions: currentMentions }
-                : {}),
-              ...(currentImageGenerationPreference
-                ? {
-                    imageGenerationPreference: currentImageGenerationPreference,
-                  }
-                : {}),
-              ...(currentVideoGenerationPreference
-                ? {
-                    videoGenerationPreference: currentVideoGenerationPreference,
-                  }
-                : {}),
-              ...(agentModelRef.current
-                ? { model: agentModelRef.current }
-                : {}),
-            },
-            (ack) => {
-              clearTimeout(timeout);
-              perf.tAck = performance.now();
+            if (!perf.gotFirstToken && event.type === "message.delta") {
+              perf.tFirstToken = performance.now();
+              perf.gotFirstToken = true;
               console.log(
-                `[perf] send → ack: ${(perf.tAck - perf.t0Send).toFixed(0)}ms`,
+                `[perf] send → first token: ${(perf.tFirstToken - perf.t0Send).toFixed(0)}ms` +
+                  ` (accepted→token: ${(perf.tFirstToken - perf.tAccepted).toFixed(0)}ms)`,
               );
-              const id = ack.payload.runId as string;
-              runIdRef.current = id;
-              resolve(id);
-            },
-          );
+            }
+
+            applyStreamEvent(event, assistantId, currentSessionId);
+            onStreamEvent?.(event);
+
+            const backendInserted =
+              event.type === "tool.completed" &&
+              event.output &&
+              typeof (event.output as Record<string, unknown>).elementId ===
+                "string";
+            if (
+              event.type === "tool.completed" &&
+              event.artifacts &&
+              event.toolName !== "screenshot_canvas" &&
+              !backendInserted
+            ) {
+              for (const artifact of event.artifacts) {
+                if (artifact.type === "image" && onImageGenerated) {
+                  onImageGenerated(artifact as ImageArtifact);
+                }
+                if (artifact.type === "video" && onVideoGenerated) {
+                  onVideoGenerated(artifact as VideoArtifact);
+                }
+              }
+            }
+
+            if (event.type === "canvas.sync" && onCanvasSync) {
+              onCanvasSync();
+            }
+
+            if (event.type === "run.failed") {
+              const currentModel = agentModelRef.current ?? "";
+              if (currentModel.includes("preview")) {
+                showToast(
+                  "当前 Preview 模型请求不稳定，建议切换模型后重试",
+                  "error",
+                );
+              }
+            }
+          },
         });
+
         clearAttachments();
         setMessageMentions([]);
-
-        await streamDone;
-        cleanup();
+        await streamHandle.done;
       } catch {
         updateSessionMessages(currentSessionId, (prev) =>
           prev.map((m) => {
@@ -628,7 +605,6 @@ export function ChatSidebar({
       onStreamEvent,
       readyAttachments,
       clearAttachments,
-      ws,
       autoTitleSession,
       accessTokenRef,
       activeSessionIdRef,
@@ -705,7 +681,6 @@ export function ChatSidebar({
     if (
       !initialPrompt ||
       sessionsLoading ||
-      !ws.connected ||
       initialPromptSent.current
     )
       return;
@@ -757,116 +732,10 @@ export function ChatSidebar({
   }, [
     initialPrompt,
     sessionsLoading,
-    ws.connected,
     handleSend,
     activeSessionIdRef,
   ]);
 
-  // ── Reconnection: resume canvas binding + reload messages ──
-  // Uses the shared applyStreamEvent to handle live events — no duplicated logic.
-  useEffect(() => {
-    if (!ws.connected || sessionsLoading) {
-      if (!ws.connected) prevConnectedRef.current = false;
-      return;
-    }
-    if (prevConnectedRef.current) return;
-    prevConnectedRef.current = true;
-
-    const sessionId = activeSessionIdRef.current;
-    if (!sessionId) return;
-
-    // Skip if initialPrompt effect will handle binding
-    if (initialPrompt && !initialPromptSent.current) return;
-
-    void (async () => {
-      // Reload messages from DB (server may have persisted while disconnected)
-      await reloadMessages(sessionId);
-
-      // Resume canvas binding (after DB messages are set)
-      ws.resumeCanvas(canvasId, (ack) => {
-        const activeRunId = (ack.payload as Record<string, unknown>)
-          .activeRunId;
-        if (activeRunId && typeof activeRunId === "string") {
-          setStreaming(true);
-
-          const assistantId = `resumed_${activeRunId}`;
-          // Must use updateSessionMessages (not setMessages) so the placeholder
-          // lands in msgCacheRef as well as React state. applyStreamEvent reads
-          // from the cache — if the placeholder only lives in React state, stream
-          // events can't find it and the first updateSessionMessages call
-          // overwrites state back to the stale cache (losing the placeholder).
-          updateSessionMessages(sessionId, (prev) => {
-            if (prev.some((m) => m.id === assistantId)) return prev;
-            return [
-              ...prev,
-              {
-                id: assistantId,
-                role: "assistant" as const,
-                contentBlocks: [],
-              },
-            ];
-          });
-
-          // Reuse the shared stream event handler — eliminates ~70 lines of duplication
-          const unsub = ws.onEvent((evt) => {
-            if (evt.runId !== activeRunId) return;
-
-            applyStreamEvent(evt, assistantId, sessionId);
-            onStreamEvent?.(evt);
-
-            // Fire canvas insertion callbacks for artifacts arriving after reconnect.
-            // Skip if the backend already inserted the element (elementId in output).
-            const wsBackendInserted = evt.type === "tool.completed"
-              && evt.output
-              && typeof (evt.output as Record<string, unknown>).elementId === "string";
-            if (
-              evt.type === "tool.completed" &&
-              evt.artifacts &&
-              evt.toolName !== "screenshot_canvas" &&
-              !wsBackendInserted
-            ) {
-              for (const artifact of evt.artifacts) {
-                if (artifact.type === "image" && onImageGenerated) {
-                  onImageGenerated(artifact as ImageArtifact);
-                }
-                if (artifact.type === "video" && onVideoGenerated) {
-                  onVideoGenerated(artifact as VideoArtifact);
-                }
-              }
-            }
-
-            if (evt.type === "canvas.sync" && onCanvasSync) {
-              onCanvasSync();
-            }
-
-            if (
-              evt.type === "run.completed" ||
-              evt.type === "run.failed" ||
-              evt.type === "run.canceled"
-            ) {
-              setStreaming(false);
-              unsub();
-            }
-          });
-        }
-      });
-    })();
-  }, [
-    ws.connected,
-    ws,
-    canvasId,
-    sessionsLoading,
-    applyStreamEvent,
-    onStreamEvent,
-    onImageGenerated,
-    onVideoGenerated,
-    onCanvasSync,
-    activeSessionIdRef,
-    reloadMessages,
-    updateSessionMessages,
-    setStreaming,
-    initialPrompt,
-  ]);
 
   // ── Collapsed state ──
   if (!open) {

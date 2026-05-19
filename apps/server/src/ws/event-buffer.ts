@@ -6,13 +6,19 @@ type BufferedEvent = {
   seq: number;
 };
 
+type CanvasSubscriber = (entry: BufferedEvent) => void;
+
 /**
- * Per-canvas ring buffer for recent StreamEvents.
- * Enables event replay on client reconnection.
+ * Per-canvas stream buffer for recent StreamEvents.
+ *
+ * Transport-agnostic: used by SSE replay/reconnect today, and can support any
+ * future streaming transport that needs cursor-based resumption.
  */
 export class CanvasEventBuffer {
   private buffers = new Map<string, BufferedEvent[]>();
   private seqCounters = new Map<string, number>();
+  private subscribers = new Map<string, Set<CanvasSubscriber>>();
+  private activeRuns = new Map<string, { runId: string; startedAt: number }>();
   private readonly maxPerCanvas: number;
   private readonly ttlMs: number;
   private lastWrite = new Map<string, number>();
@@ -22,7 +28,7 @@ export class CanvasEventBuffer {
     this.ttlMs = options?.ttlMs ?? 10 * 60 * 1000;
   }
 
-  push(canvasId: string, event: StreamEvent): void {
+  publish(canvasId: string, event: StreamEvent): BufferedEvent {
     let buf = this.buffers.get(canvasId);
     if (!buf) {
       buf = [];
@@ -32,13 +38,52 @@ export class CanvasEventBuffer {
 
     const seq = (this.seqCounters.get(canvasId) ?? 0) + 1;
     this.seqCounters.set(canvasId, seq);
-    buf.push({ event, timestamp: Date.now(), seq });
 
+    const entry: BufferedEvent = {
+      event,
+      timestamp: Date.now(),
+      seq,
+    };
+
+    buf.push(entry);
     if (buf.length > this.maxPerCanvas) {
       buf.splice(0, buf.length - this.maxPerCanvas);
     }
 
-    this.lastWrite.set(canvasId, Date.now());
+    this.lastWrite.set(canvasId, entry.timestamp);
+
+    const subscribers = this.subscribers.get(canvasId);
+    if (subscribers) {
+      for (const subscriber of subscribers) {
+        subscriber(entry);
+      }
+    }
+
+    return entry;
+  }
+
+  push(canvasId: string, event: StreamEvent): void {
+    this.publish(canvasId, event);
+  }
+
+  subscribe(canvasId: string, subscriber: CanvasSubscriber): () => void {
+    let subscribers = this.subscribers.get(canvasId);
+    if (!subscribers) {
+      subscribers = new Set();
+      this.subscribers.set(canvasId, subscribers);
+    }
+    subscribers.add(subscriber);
+
+    return () => {
+      const current = this.subscribers.get(canvasId);
+      if (!current) {
+        return;
+      }
+      current.delete(subscriber);
+      if (current.size === 0) {
+        this.subscribers.delete(canvasId);
+      }
+    };
   }
 
   getAfter(canvasId: string, afterSeq?: number): BufferedEvent[] {
@@ -52,6 +97,18 @@ export class CanvasEventBuffer {
     return this.seqCounters.get(canvasId) ?? 0;
   }
 
+  setActiveRun(canvasId: string, runId: string): void {
+    this.activeRuns.set(canvasId, { runId, startedAt: Date.now() });
+  }
+
+  clearActiveRun(canvasId: string): void {
+    this.activeRuns.delete(canvasId);
+  }
+
+  getActiveRun(canvasId: string): { runId: string; startedAt: number } | null {
+    return this.activeRuns.get(canvasId) ?? null;
+  }
+
   cleanup(): void {
     const now = Date.now();
     for (const [canvasId, lastTime] of this.lastWrite) {
@@ -59,6 +116,8 @@ export class CanvasEventBuffer {
         this.buffers.delete(canvasId);
         this.seqCounters.delete(canvasId);
         this.lastWrite.delete(canvasId);
+        this.activeRuns.delete(canvasId);
+        this.subscribers.delete(canvasId);
       }
     }
   }
@@ -66,6 +125,8 @@ export class CanvasEventBuffer {
   dispose(): void {
     this.buffers.clear();
     this.seqCounters.clear();
+    this.subscribers.clear();
     this.lastWrite.clear();
+    this.activeRuns.clear();
   }
 }

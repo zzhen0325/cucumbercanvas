@@ -20,7 +20,7 @@
 1. 前端通过 HTTP 或 WebSocket 发起 run。
 2. 服务端解析会话、线程、模型、画布上下文和技能上下文。
 3. `createCucumberDeepAgent()` 装配主模型、主工具、子代理、backend、store、checkpointer。
-4. 模型直接输出文本，或调用工具执行搜索、画布操作、图片生成、视频生成、文件持久化等动作。
+4. 模型直接输出文本，或调用通过 MCP registry 暴露的工具执行搜索、画布操作、图片生成、视频生成、文件持久化等动作。
 5. 运行期事件被转换为统一的 `StreamEvent`，经 WebSocket 广播给前端。
 6. 生成产物最终落到持久化存储，并在需要时同步回写到画布和聊天消息。
 
@@ -41,6 +41,8 @@
 - Agent runtime 主体：`apps/server/src/agent/runtime.ts`
 - Deep Agent 装配入口：`apps/server/src/agent/deep-agent.ts`
 - 主工具注册表：`apps/server/src/agent/tools/index.ts`
+- MCP tool registry / server：`apps/server/src/mcp/server.ts`
+- MCP → Deep Agents bridge：`apps/server/src/mcp/deepagents-bridge.ts`
 - 子代理注册：`apps/server/src/agent/sub-agents.ts`
 - 流式事件适配：`apps/server/src/agent/stream-adapter.ts`
 
@@ -90,7 +92,7 @@
 这里有两个关键点：
 
 - 文本回答不是通过单独的 `generate_text` 工具实现，而是主模型直接输出。
-- 图片附件不会直接塞给工具，而是先被转换成 `assetId -> data URI` 的映射，后续工具再按需取用。
+- 图片附件不会直接塞给 provider，而是先被转换成 `assetId -> data URI` 的映射；`generate_image` 在 worker 执行前会把其中的 `data:` 引用上传成合法的 public URL，再传给 provider 的 `image_urls`。
 
 ### 4. Runtime 装配 Deep Agent
 
@@ -98,7 +100,7 @@
 
 - `model`
 - `backend`
-- `tools`
+- `tools`（由 `apps/server/src/mcp/server.ts` 统一注册，再经 `apps/server/src/mcp/deepagents-bridge.ts` 适配给 Deep Agents）
 - `subagents`
 - `store`
 - `checkpointer`
@@ -215,8 +217,8 @@ WebSocket 层会做三件事：
 如果走异步模式，整体链路如下：
 
 1. `JobService` 写入 `background_jobs`
-2. `pgmq` 入队
-3. `worker.ts` 从 `image_generation_jobs` 或 `video_generation_jobs` 轮询消息
+2. `TaskManager` 写入 `tasks`
+3. `worker.ts` 通过 `claim_background_tasks_with_poll(...)` 从 `image_generation_jobs` 或 `video_generation_jobs` 抢占可执行任务并建立 lease
 4. executor 调用 provider
 5. 下载产物
 6. 上传到 `project-assets`
@@ -345,7 +347,7 @@ Agent 在 sandbox 中通过 `execute` 生成的文件，不会自动成为用户
 
 ### 1. 主 agent 自定义业务工具
 
-这些工具统一在 `apps/server/src/agent/tools/index.ts` 的 `createMainAgentTools()` 中注册。
+这些工具统一在 `apps/server/src/mcp/server.ts` 中以 MCP-compatible definitions 注册，业务实现仍复用 `apps/server/src/agent/tools/`；最终由 `apps/server/src/mcp/deepagents-bridge.ts` 适配给 Deep Agents / LangChain runtime。
 
 ### 常驻工具
 

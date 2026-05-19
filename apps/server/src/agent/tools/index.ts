@@ -1,10 +1,10 @@
 import type { StructuredTool } from "@langchain/core/tools";
 import type { BackendFactory, BackendProtocol } from "deepagents";
 
+import { bridgeMcpServerToolsToDeepAgent } from "../../mcp/deepagents-bridge.js";
+import { createCucumberMcpServer } from "../../mcp/server.js";
 import type { ConnectionManager } from "../../ws/connection-manager.js";
 import { createBrandKitTool } from "./brand-kit.js";
-import { createInspectCanvasTool } from "./inspect-canvas.js";
-import { createManipulateCanvasTool } from "./manipulate-canvas.js";
 import {
   createImageGenerateTool,
   type PersistImageFn,
@@ -16,7 +16,6 @@ import {
   createVideoGenerateTool,
   type SubmitVideoJobFn,
 } from "./video-generate.js";
-import { createPersistSandboxFileTool } from "./persist-sandbox-file.js";
 
 export { createImageGenerateTool } from "./image-generate.js";
 export { createVideoGenerateTool } from "./video-generate.js";
@@ -63,21 +62,9 @@ export function createMainAgentTools(
     submitVideoJob?: SubmitVideoJobFn;
   },
 ) {
+  const mcpServer = createCucumberMcpServer(backend, deps);
   const tools: StructuredTool[] = [
-    createProjectSearchTool(backend),
-    createInspectCanvasTool(deps),
-    createManipulateCanvasTool(deps),
-    createImageGenerateTool({
-      ...(deps.persistImage ? { persistImage: deps.persistImage } : {}),
-      ...(deps.submitImageJob ? { submitImageJob: deps.submitImageJob } : {}),
-    }),
-    createVideoGenerateTool({
-      ...(deps.submitVideoJob ? { submitVideoJob: deps.submitVideoJob } : {}),
-    }),
-    createPersistSandboxFileTool({
-      createUserClient: deps.createUserClient,
-      ...(deps.sandboxDir ? { sandboxDir: deps.sandboxDir } : {}),
-    }),
+    ...bridgeMcpServerToolsToDeepAgent(mcpServer),
     // execute 工具由 deepagents FilesystemMiddleware 自动注入，
     // 因为 CompositeBackend 的 default backend 是 LocalShellBackend。
     // 不需要在这里手动注册。

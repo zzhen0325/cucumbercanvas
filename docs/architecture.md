@@ -43,7 +43,9 @@ The backend is split into route, service, agent, generation, and worker layers:
 - `apps/server/src/http/`: HTTP route registration. Routes should validate inputs and call services.
 - `apps/server/src/features/`: domain services for projects, chat, canvas, jobs, brand kits, skills, uploads, settings, and agent runs.
 - `apps/server/src/agent/`: Deep Agents/LangChain runtime, persistence, prompts, sub-agents, tools, and skill discovery.
+- `apps/server/src/mcp/`: MCP-compatible tool registry, schemas, and Deep Agents bridge for server-side business tools.
 - `apps/server/src/generation/`: provider registry and Seedream image/video generation implementation.
+- `apps/server/src/queue/`: Supabase-backed background task queue helpers for async generation jobs.
 - `apps/server/src/ws/`: WebSocket connection, buffering, logging, and handler logic.
 - `apps/server/src/worker.ts`: background job worker entry point.
 
@@ -55,7 +57,7 @@ Agent work flows through:
 
 1. Chat/session state enters the server through HTTP or WebSocket paths.
 2. Runtime code under `apps/server/src/agent/` builds the agent, prompt, persistence, backend mode, tools, and skills.
-3. Tools under `apps/server/src/agent/tools/` perform bounded operations such as canvas inspection, manipulation, generation requests, asset persistence, project search, and Brand Kit reads.
+3. Tools are registered as MCP-compatible definitions, then bridged into the Deep Agents runtime for bounded operations such as canvas inspection, manipulation, generation requests, asset persistence, project search, and Brand Kit reads.
 4. Streaming adapters translate agent/tool progress into user-visible events.
 5. Persistence stores thread, run, project, canvas, and artifact state through Supabase-backed services.
 
@@ -82,6 +84,8 @@ Preferred flow:
 4. Worker/provider produces the artifact.
 5. Upload/persistence service stores the artifact.
 6. Frontend receives a durable URL/state update.
+
+Async generation jobs are tracked in `public.background_jobs` for product-visible status and scheduled through `public.tasks`, which uses Postgres row locking plus lease renewal instead of `pgmq`.
 
 Avoid UI-only state for anything the user expects to survive refresh, navigation, or another session.
 

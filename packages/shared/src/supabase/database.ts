@@ -213,6 +213,98 @@ export type Database = {
           },
         ]
       }
+      tasks: {
+        Row: {
+          available_at: string
+          canceled_at: string | null
+          canvas_id: string | null
+          completed_at: string | null
+          created_at: string
+          id: string
+          job_id: string
+          job_type: Database["public"]["Enums"]["background_job_type"]
+          last_error_code: string | null
+          last_error_message: string | null
+          lease_until: string | null
+          locked_at: string | null
+          locked_by: string | null
+          queue_name: string
+          session_id: string | null
+          status: Database["public"]["Enums"]["task_status"]
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          available_at?: string
+          canceled_at?: string | null
+          canvas_id?: string | null
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          job_id: string
+          job_type: Database["public"]["Enums"]["background_job_type"]
+          last_error_code?: string | null
+          last_error_message?: string | null
+          lease_until?: string | null
+          locked_at?: string | null
+          locked_by?: string | null
+          queue_name: string
+          session_id?: string | null
+          status?: Database["public"]["Enums"]["task_status"]
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          available_at?: string
+          canceled_at?: string | null
+          canvas_id?: string | null
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          job_id?: string
+          job_type?: Database["public"]["Enums"]["background_job_type"]
+          last_error_code?: string | null
+          last_error_message?: string | null
+          lease_until?: string | null
+          locked_at?: string | null
+          locked_by?: string | null
+          queue_name?: string
+          session_id?: string | null
+          status?: Database["public"]["Enums"]["task_status"]
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tasks_canvas_id_fkey"
+            columns: ["canvas_id"]
+            isOneToOne: false
+            referencedRelation: "canvases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "background_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "chat_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       brand_kit_assets: {
         Row: {
           asset_type: Database["public"]["Enums"]["brand_kit_asset_type"]
@@ -777,6 +869,12 @@ export type Database = {
         | "canceled"
         | "dead_letter"
       background_job_type: "image_generation" | "video_generation"
+      task_status:
+        | "queued"
+        | "running"
+        | "succeeded"
+        | "canceled"
+        | "dead_letter"
       brand_kit_asset_type: "color" | "font" | "logo" | "image"
       workspace_member_role: "owner" | "admin" | "member"
       workspace_type: "personal" | "team"
@@ -1073,6 +1171,7 @@ export const Constants = {
         "dead_letter",
       ],
       background_job_type: ["image_generation", "video_generation"],
+      task_status: ["queued", "running", "succeeded", "canceled", "dead_letter"],
       brand_kit_asset_type: ["color", "font", "logo", "image"],
       workspace_member_role: ["owner", "admin", "member"],
       workspace_type: ["personal", "team"],

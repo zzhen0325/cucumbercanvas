@@ -1,25 +1,25 @@
 import type { BackgroundJobType } from "@cucumber/shared";
 
-import type { JobService } from "./job-service.js";
-import type { PgmqClient } from "../../queue/pgmq-client.js";
-import type { AdminSupabaseClient } from "../../supabase/admin.js";
 import type { ServerEnv } from "../../config/env.js";
+import type { TaskManager } from "../../queue/task-manager.js";
+import type { AdminSupabaseClient } from "../../supabase/admin.js";
+import type { JobService } from "./job-service.js";
 
 export type ExecutorContext = {
   jobService: JobService;
-  pgmq: PgmqClient;
+  taskManager: TaskManager;
   getAdminClient: () => AdminSupabaseClient;
   env: ServerEnv;
-  /** PGMQ queue name for the current job (set per-message by the worker). */
-  queue: string;
-  /** PGMQ message id for the current job (set per-message by the worker). */
-  msgId: number;
+  /** Queue name for the current task (set per-task by the worker). */
+  queueName: string;
+  /** Current leased task id (set per-task by the worker). */
+  taskId: string;
   /**
-   * Best-effort VT renewal — extends visibility timeout so the message
-   * stays invisible while the executor is still working.
+   * Best-effort lease renewal — extends the current task lease so it stays
+   * owned by this worker while the executor is still running.
    * Never throws; logs on failure.
    */
-  renewVt: (vtSeconds: number) => Promise<void>;
+  renewLease: (leaseSeconds: number) => Promise<void>;
 };
 
 export type JobExecutor = (
@@ -30,10 +30,15 @@ export type JobExecutor = (
 
 const executors = new Map<BackgroundJobType, JobExecutor>();
 
-export function registerExecutor(jobType: BackgroundJobType, executor: JobExecutor): void {
+export function registerExecutor(
+  jobType: BackgroundJobType,
+  executor: JobExecutor,
+): void {
   executors.set(jobType, executor);
 }
 
-export function getExecutor(jobType: BackgroundJobType): JobExecutor | undefined {
+export function getExecutor(
+  jobType: BackgroundJobType,
+): JobExecutor | undefined {
   return executors.get(jobType);
 }
