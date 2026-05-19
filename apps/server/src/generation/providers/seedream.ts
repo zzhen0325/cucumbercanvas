@@ -9,7 +9,8 @@ import type {
   VideoGenerateParams,
   VideoProvider,
 } from "../types.js";
-import { aspectRatioToDimensions, GenerationError } from "../utils.js";
+import { GenerationError, aspectRatioToDimensions } from "../utils.js";
+import { normalizeSeedreamImagePrompt } from "./seedream-prompt.js";
 
 const IMAGE_MODEL_ID = "bytedance/seedream-4.6";
 const VIDEO_MODEL_ID = "bytedance/seedream-video";
@@ -136,7 +137,11 @@ class SeedreamClient {
 
     const taskId = getNestedString(submit.body, ["data", "task_id"]);
     if (!taskId) {
-      throw new GenerationError("seedream", "no_task_id", "Seedream did not return task_id");
+      throw new GenerationError(
+        "seedream",
+        "no_task_id",
+        "Seedream did not return task_id",
+      );
     }
     console.log(
       `${tag} submit_ok`,
@@ -164,10 +169,14 @@ class SeedreamClient {
           httpStatus: result.status,
           code: result.body.code ?? null,
           message:
-            typeof result.body.message === "string" ? result.body.message : null,
+            typeof result.body.message === "string"
+              ? result.body.message
+              : null,
           taskStatus: getNestedString(result.body, ["data", "status"]) ?? null,
-          imageUrlCount: getNestedArray(result.body, ["data", "image_urls"]).length,
-          videoUrlCount: getNestedArray(result.body, ["data", "video_urls"]).length,
+          imageUrlCount: getNestedArray(result.body, ["data", "image_urls"])
+            .length,
+          videoUrlCount: getNestedArray(result.body, ["data", "video_urls"])
+            .length,
           requestId: getRequestId(result.body),
         }),
       );
@@ -182,8 +191,10 @@ class SeedreamClient {
             reqKey,
             taskId,
             attempt,
-            imageUrlCount: getNestedArray(result.body, ["data", "image_urls"]).length,
-            videoUrlCount: getNestedArray(result.body, ["data", "video_urls"]).length,
+            imageUrlCount: getNestedArray(result.body, ["data", "image_urls"])
+              .length,
+            videoUrlCount: getNestedArray(result.body, ["data", "video_urls"])
+              .length,
             requestId: getRequestId(result.body),
           }),
         );
@@ -223,9 +234,34 @@ export class SeedreamImageProvider implements ImageProvider {
   }
 
   async generate(params: ImageGenerateParams): Promise<GeneratedImage> {
-    const { width, height } = aspectRatioToDimensions(params.aspectRatio ?? "1:1");
+    const { width, height } = aspectRatioToDimensions(
+      params.aspectRatio ?? "1:1",
+    );
+    const promptNormalization = normalizeSeedreamImagePrompt(params.prompt);
+    if (!promptNormalization.prompt) {
+      throw new GenerationError(
+        "seedream",
+        "invalid_prompt",
+        "Seedream image prompt is empty after applying provider prompt constraints.",
+      );
+    }
+    if (
+      promptNormalization.truncated ||
+      promptNormalization.removedSpecialSymbolCount > 0
+    ) {
+      console.log(
+        "[seedream] image_prompt_normalized",
+        JSON.stringify({
+          originalLength: promptNormalization.originalLength,
+          normalizedLength: promptNormalization.normalizedLength,
+          truncated: promptNormalization.truncated,
+          removedSpecialSymbolCount:
+            promptNormalization.removedSpecialSymbolCount,
+        }),
+      );
+    }
     const body: Record<string, unknown> = {
-      prompt: params.prompt,
+      prompt: promptNormalization.prompt,
       size: width * height,
       force_single: true,
     };
@@ -237,7 +273,11 @@ export class SeedreamImageProvider implements ImageProvider {
     const urls = getNestedArray(result, ["data", "image_urls"]);
     const url = urls.find((item): item is string => typeof item === "string");
     if (!url) {
-      throw new GenerationError("seedream", "no_output", "Seedream returned no image URL");
+      throw new GenerationError(
+        "seedream",
+        "no_output",
+        "Seedream returned no image URL",
+      );
     }
 
     return { url, mimeType: "image/png", width, height };
@@ -274,7 +314,9 @@ export class SeedreamVideoProvider implements VideoProvider {
 
   async generate(params: VideoGenerateParams): Promise<GeneratedVideo> {
     const reqKey = this.config.videoReqKey ?? this.config.reqKey;
-    const { width, height } = aspectRatioToDimensions(params.aspectRatio ?? "16:9");
+    const { width, height } = aspectRatioToDimensions(
+      params.aspectRatio ?? "16:9",
+    );
     const body: Record<string, unknown> = {
       prompt: params.prompt,
       duration: params.duration ?? 5,
@@ -292,7 +334,11 @@ export class SeedreamVideoProvider implements VideoProvider {
         (item): item is string => typeof item === "string",
       );
     if (!videoUrl) {
-      throw new GenerationError("seedream-video", "no_output", "Seedream returned no video URL");
+      throw new GenerationError(
+        "seedream-video",
+        "no_output",
+        "Seedream returned no video URL",
+      );
     }
 
     return {
@@ -305,7 +351,12 @@ export class SeedreamVideoProvider implements VideoProvider {
   }
 }
 
-function signingKey(secretKey: string, dateStamp: string, region: string, service: string) {
+function signingKey(
+  secretKey: string,
+  dateStamp: string,
+  region: string,
+  service: string,
+) {
   const kDate = hmac(secretKey, dateStamp);
   const kRegion = hmac(kDate, region);
   const kService = hmac(kRegion, service);

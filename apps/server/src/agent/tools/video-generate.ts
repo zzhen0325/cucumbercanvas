@@ -1,18 +1,19 @@
 import { tool } from "langchain";
 import { z } from "zod";
 
-import { generateVideo } from "../../generation/video-generation.js";
 import {
+  type AvailableModel,
   getAvailableVideoModels,
   resolveVideoProviderName,
-  type AvailableModel,
 } from "../../generation/providers/registry.js";
+import { generateVideo } from "../../generation/video-generation.js";
 
 const DEFAULT_MODEL = "bytedance/seedream-video";
 
 // ── Submit function type ───────────────────────────────────────────────────
 
 export type SubmitVideoJobFn = (input: {
+  title: string;
   prompt: string;
   model: string;
   duration?: number;
@@ -21,6 +22,10 @@ export type SubmitVideoJobFn = (input: {
   inputImages?: string[];
   inputVideo?: string;
   enableAudio?: boolean;
+  placementX?: number;
+  placementY?: number;
+  placementWidth?: number;
+  placementHeight?: number;
 }) => Promise<{
   jobId: string;
   elementId?: string;
@@ -38,7 +43,7 @@ function buildVideoGenerateSchema(models: AvailableModel[]) {
   const modelIds = models.map((m) => m.id);
   const defaultModel = modelIds.includes(DEFAULT_MODEL)
     ? DEFAULT_MODEL
-    : modelIds[0] ?? DEFAULT_MODEL;
+    : (modelIds[0] ?? DEFAULT_MODEL);
 
   const modelDescription = models.length
     ? `Video model to use. Available:\n${models.map((m) => `- ${m.id}: ${m.description}`).join("\n")}`
@@ -80,12 +85,16 @@ function buildVideoGenerateSchema(models: AvailableModel[]) {
       .enum(["480p", "720p", "1080p", "4k"])
       .optional()
       .default("720p")
-      .describe("Output resolution. 720p is recommended for balance of quality and speed."),
+      .describe(
+        "Output resolution. 720p is recommended for balance of quality and speed.",
+      ),
     aspectRatio: z
       .enum(["1:1", "16:9", "9:16", "4:3", "3:4"])
       .optional()
       .default("16:9")
-      .describe("Video aspect ratio. 16:9 for landscape, 9:16 for portrait/mobile."),
+      .describe(
+        "Video aspect ratio. 16:9 for landscape, 9:16 for portrait/mobile.",
+      ),
     inputImages: z
       .array(z.string())
       .max(7)
@@ -96,7 +105,9 @@ function buildVideoGenerateSchema(models: AvailableModel[]) {
     inputVideo: z
       .string()
       .optional()
-      .describe("Source video URL for video-to-video editing when supported by Seedream."),
+      .describe(
+        "Source video URL for video-to-video editing when supported by Seedream.",
+      ),
     enableAudio: z
       .boolean()
       .optional()
@@ -156,30 +167,58 @@ export async function runVideoGenerate(
 ): Promise<VideoGenerateResult> {
   const t0 = Date.now();
   const lap = (label: string, extra?: Record<string, unknown>) => {
-    console.log(`[generate_video] ${label} +${Date.now() - t0}ms`, extra ? JSON.stringify(extra) : "");
+    console.log(
+      `[generate_video] ${label} +${Date.now() - t0}ms`,
+      extra ? JSON.stringify(extra) : "",
+    );
   };
 
   // Filter invalid image references
-  if (input.inputImages?.length) {
+  const normalizedInput: VideoGenerateInput = (() => {
+    if (!input.inputImages?.length) return input;
     const validImages = input.inputImages.filter(
-      (img) => img.startsWith("http://") || img.startsWith("https://") || img.startsWith("data:"),
+      (img) =>
+        img.startsWith("http://") ||
+        img.startsWith("https://") ||
+        img.startsWith("data:"),
     );
-    input = { ...input, inputImages: validImages.length > 0 ? validImages : undefined };
-  }
+    if (validImages.length > 0) {
+      return { ...input, inputImages: validImages };
+    }
+    const { inputImages: _droppedInputImages, ...rest } = input;
+    return rest as VideoGenerateInput;
+  })();
 
   // Job mode: submit to PGMQ and wait for worker
   if (submitVideoJob) {
     try {
-      lap("job_submit", { model: input.model });
+      lap("job_submit", { model: normalizedInput.model });
       const jobResult = await submitVideoJob({
-        prompt: input.prompt,
-        model: input.model,
-        duration: input.duration,
-        resolution: input.resolution,
-        aspectRatio: input.aspectRatio,
-        ...(input.inputImages ? { inputImages: input.inputImages } : {}),
-        ...(input.inputVideo ? { inputVideo: input.inputVideo } : {}),
-        enableAudio: input.enableAudio,
+        title: normalizedInput.title,
+        prompt: normalizedInput.prompt,
+        model: normalizedInput.model,
+        duration: normalizedInput.duration,
+        resolution: normalizedInput.resolution,
+        aspectRatio: normalizedInput.aspectRatio,
+        ...(normalizedInput.inputImages
+          ? { inputImages: normalizedInput.inputImages }
+          : {}),
+        ...(normalizedInput.inputVideo
+          ? { inputVideo: normalizedInput.inputVideo }
+          : {}),
+        enableAudio: normalizedInput.enableAudio,
+        ...(normalizedInput.placementX != null
+          ? { placementX: normalizedInput.placementX }
+          : {}),
+        ...(normalizedInput.placementY != null
+          ? { placementY: normalizedInput.placementY }
+          : {}),
+        ...(normalizedInput.placementWidth != null
+          ? { placementWidth: normalizedInput.placementWidth }
+          : {}),
+        ...(normalizedInput.placementHeight != null
+          ? { placementHeight: normalizedInput.placementHeight }
+          : {}),
       });
 
       if (jobResult.error) {
@@ -187,8 +226,8 @@ export async function runVideoGenerate(
         const isTimeout = jobResult.error.includes("timed out");
         return {
           summary: isTimeout
-            ? `Video is still being generated by the server. It will automatically appear on the canvas once ready — no action needed from the user.`
-            : `Video generation failed with model ${input.model}: ${jobResult.error}. Consider trying a different model or simplifying the prompt.`,
+            ? "Video is still being generated by the server. It will automatically appear on the canvas once ready — no action needed from the user."
+            : `Video generation failed with model ${normalizedInput.model}: ${jobResult.error}. Consider trying a different model or simplifying the prompt.`,
           error: jobResult.error,
           // Expose jobId so frontend can poll for late-arriving results
           // (worker may still succeed after agent poll timeout)
@@ -199,29 +238,36 @@ export async function runVideoGenerate(
       lap("job_complete", { jobId: jobResult.jobId });
 
       const result: VideoGenerateResult = {
-        summary: `Generated ${jobResult.durationSeconds ?? input.duration}s video (${jobResult.width ?? 0}x${jobResult.height ?? 0}) via ${input.model}`,
-        title: input.title,
-        prompt: input.prompt,
-        ...(jobResult.elementId != null ? { elementId: jobResult.elementId } : {}),
+        summary: `Generated ${jobResult.durationSeconds ?? normalizedInput.duration}s video (${jobResult.width ?? 0}x${jobResult.height ?? 0}) via ${normalizedInput.model}`,
+        title: normalizedInput.title,
+        prompt: normalizedInput.prompt,
+        ...(jobResult.elementId != null
+          ? { elementId: jobResult.elementId }
+          : {}),
         mimeType: jobResult.mimeType ?? "video/mp4",
         ...(jobResult.videoUrl != null ? { videoUrl: jobResult.videoUrl } : {}),
         ...(jobResult.width != null ? { width: jobResult.width } : {}),
         ...(jobResult.height != null ? { height: jobResult.height } : {}),
-        ...(jobResult.durationSeconds != null ? { durationSeconds: jobResult.durationSeconds } : {}),
+        ...(jobResult.durationSeconds != null
+          ? { durationSeconds: jobResult.durationSeconds }
+          : {}),
       };
-      if (input.placementX != null && input.placementY != null) {
+      if (
+        normalizedInput.placementX != null &&
+        normalizedInput.placementY != null
+      ) {
         result.placement = {
-          x: input.placementX,
-          y: input.placementY,
-          width: input.placementWidth ?? 640,
-          height: input.placementHeight ?? 360,
+          x: normalizedInput.placementX,
+          y: normalizedInput.placementY,
+          width: normalizedInput.placementWidth ?? 640,
+          height: normalizedInput.placementHeight ?? 360,
         };
       }
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       return {
-        summary: `Video generation failed with model ${input.model}: ${message}`,
+        summary: `Video generation failed with model ${normalizedInput.model}: ${message}`,
         error: message,
       };
     }
@@ -229,36 +275,49 @@ export async function runVideoGenerate(
 
   // Direct mode: call provider directly
   try {
-    lap("direct_generate_start", { model: input.model });
-    const providerName = resolveVideoProviderName(input.model);
+    lap("direct_generate_start", { model: normalizedInput.model });
+    const providerName = resolveVideoProviderName(normalizedInput.model);
     const result = await generateVideo(providerName, {
-      prompt: input.prompt,
-      model: input.model,
-      duration: input.duration,
-      aspectRatio: input.aspectRatio,
-      ...(input.resolution ? { resolution: input.resolution as "480p" | "720p" | "1080p" } : {}),
-      ...(input.inputImages ? { inputImages: input.inputImages } : {}),
-      ...(input.inputVideo ? { inputVideo: input.inputVideo } : {}),
-      ...(input.enableAudio != null ? { enableAudio: input.enableAudio } : {}),
+      prompt: normalizedInput.prompt,
+      model: normalizedInput.model,
+      duration: normalizedInput.duration,
+      aspectRatio: normalizedInput.aspectRatio,
+      ...(normalizedInput.resolution
+        ? {
+            resolution: normalizedInput.resolution as "480p" | "720p" | "1080p",
+          }
+        : {}),
+      ...(normalizedInput.inputImages
+        ? { inputImages: normalizedInput.inputImages }
+        : {}),
+      ...(normalizedInput.inputVideo
+        ? { inputVideo: normalizedInput.inputVideo }
+        : {}),
+      ...(normalizedInput.enableAudio != null
+        ? { enableAudio: normalizedInput.enableAudio }
+        : {}),
     });
     lap("direct_generate_done");
 
     const directResult: VideoGenerateResult = {
-      summary: `Generated ${result.durationSeconds}s video (${result.width}x${result.height}) via ${input.model}`,
-      title: input.title,
-      prompt: input.prompt,
+      summary: `Generated ${result.durationSeconds}s video (${result.width}x${result.height}) via ${normalizedInput.model}`,
+      title: normalizedInput.title,
+      prompt: normalizedInput.prompt,
       videoUrl: result.url,
       mimeType: result.mimeType,
       width: result.width,
       height: result.height,
       durationSeconds: result.durationSeconds,
     };
-    if (input.placementX != null && input.placementY != null) {
+    if (
+      normalizedInput.placementX != null &&
+      normalizedInput.placementY != null
+    ) {
       directResult.placement = {
-        x: input.placementX,
-        y: input.placementY,
-        width: input.placementWidth ?? 640,
-        height: input.placementHeight ?? 360,
+        x: normalizedInput.placementX,
+        y: normalizedInput.placementY,
+        width: normalizedInput.placementWidth ?? 640,
+        height: normalizedInput.placementHeight ?? 360,
       };
     }
     return directResult;

@@ -1,20 +1,20 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-19 12:16 CST
+Last updated: 2026-05-19 18:11 CST
 
 ## Current Session
 
-Goal: initialize a Codex harness framework for the repository.
+Goal: make agent image generation materialize directly on the canvas as a grouped creative workflow.
 
 Status:
 
-- `AGENTS.md` expanded into the project agent operating manual.
-- `.codex/config.toml` added for project-level Codex defaults.
-- `.codex/rules/default.rules` added to guard destructive or high-risk commands.
-- `scripts/codex-setup.sh` and `scripts/codex-check.sh` added as stable harness entry points.
-- `package.json` now exposes `pnpm check:quick`, `pnpm check:full`, and `pnpm codex:setup`.
-- `docs/architecture.md`, `docs/design-system.md`, and `docs/workflow.md` are the canonical docs for architecture, UI rules, and agent workflow.
-- `feature_list.json` tracks feature IDs, status, and priorities.
+- Agent image jobs now create a grouped canvas structure immediately: original user request, optimized tool prompt, and a generating image placeholder.
+- The three containers and their arrows share a group id so users can move/copy/delete the creative workflow as one unit.
+- Worker success replaces the placeholder in place and rewires arrow bindings to the final image element.
+- Runtime polling still handles synchronous completion and pushes `canvas.sync`; worker-side replacement preserves results after agent wait timeouts.
+- Failure paths mark the image placeholder with a concrete error message instead of leaving a silent or code-only state.
+- Seedream image prompts are normalized before provider calls: max 800 characters, symbol characters such as `$`/emoji removed, whitespace collapsed, and normalization metadata logged.
+- Focused tests cover group creation, placeholder replacement, and failure marking.
 
 ## Next Targets
 
@@ -32,11 +32,8 @@ Status:
 
 ## Verification Log
 
-- Passed: `bash -n scripts/codex-setup.sh scripts/codex-check.sh`.
-- Passed: `python3 -m json.tool feature_list.json`.
-- Passed: Python `tomllib` parse for `.codex/config.toml`.
-- Passed: `git diff --check` on harness files.
-- Passed: `codex debug prompt-input 'config validation smoke'`.
-- Passed: `pnpm exec biome check package.json feature_list.json`.
-- Failed: `pnpm check:quick` stops at `pnpm lint` because the repository has existing Biome failures outside the harness files. First examples: `vercel.json`, `apps/server/src/agent/persistence/supabase-checkpointer.ts`, `apps/server/src/agent/backends/dev.ts`, `apps/server/src/agent/deep-agent.ts`, `apps/server/src/agent/tools/brand-kit.ts`.
-- Failed: standalone `pnpm typecheck` fails in existing frontend code at `apps/web/src/lib/auth-context.tsx:26` because `expires_at: undefined` is not assignable to Supabase `Session` under `exactOptionalPropertyTypes`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm --filter @cucumber/server test src/features/canvas/canvas-element-writer.test.ts src/generation/providers/seedream-prompt.test.ts src/agent/tools/image-generate.test.ts`.
+- Passed: `pnpm exec biome check apps/server/src/generation/providers/seedream-prompt.ts apps/server/src/generation/providers/seedream-prompt.test.ts apps/server/src/generation/providers/seedream.ts apps/server/src/agent/tools/image-generate.ts apps/server/src/features/jobs/executors/image-generation.ts apps/server/src/features/canvas/canvas-element-writer.ts apps/server/src/features/canvas/canvas-element-writer.test.ts apps/server/src/agent/runtime.ts apps/server/src/agent/tools/video-generate.ts feature_list.json`.
+- Passed: `pnpm --filter @cucumber/server build`.
+- Failed: full `pnpm lint` still reports existing repository-wide Biome issues outside this change, including `apps/server/src/agent/backends/dev.ts`, `apps/server/src/agent/persistence/supabase-checkpointer.ts`, `apps/server/src/agent/deep-agent.ts`, `apps/server/src/agent/tools/brand-kit.ts`, and `vercel.json`.

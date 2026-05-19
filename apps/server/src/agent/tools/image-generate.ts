@@ -9,6 +9,7 @@ import {
   getAvailableImageModels,
   resolveImageProviderName,
 } from "../../generation/providers/registry.js";
+import { normalizeSeedreamImagePrompt } from "../../generation/providers/seedream-prompt.js";
 import type { ImageQuality, OutputFormat } from "../../generation/types.js";
 import { aspectRatioToDimensions } from "../../generation/utils.js";
 
@@ -132,6 +133,8 @@ type ImageToolConfig = {
 type ImageGenerateResult = {
   summary: string;
   title?: string;
+  groupId?: string;
+  placeholderId?: string;
   elementId?: string;
   imageUrl?: string;
   mimeType?: string;
@@ -397,8 +400,14 @@ export type SubmitImageJobFn = (input: {
   aspectRatio: string;
   inputImages?: string[];
   quality?: ImageQuality;
+  placementX?: number;
+  placementY?: number;
+  placementWidth?: number;
+  placementHeight?: number;
 }) => Promise<{
   jobId: string;
+  groupId?: string;
+  placeholderId?: string;
   elementId?: string;
   imageUrl?: string;
   width?: number;
@@ -463,6 +472,33 @@ export async function runImageGenerate(
       ? { placementHeight: input.placementHeight }
       : {}),
   };
+  const selectedProvider = availableModels.find(
+    (m) => m.id === model,
+  )?.provider;
+  if (selectedProvider === "seedream" || model.includes("seedream")) {
+    const promptNormalization = normalizeSeedreamImagePrompt(request.prompt);
+    if (!promptNormalization.prompt) {
+      return {
+        summary:
+          "Image generation failed: Seedream prompt is empty after applying provider prompt constraints.",
+        error:
+          "Seedream prompt is empty after applying provider prompt constraints.",
+      };
+    }
+    if (
+      promptNormalization.truncated ||
+      promptNormalization.removedSpecialSymbolCount > 0
+    ) {
+      lap("seedream_prompt_normalized", {
+        originalLength: promptNormalization.originalLength,
+        normalizedLength: promptNormalization.normalizedLength,
+        truncated: promptNormalization.truncated,
+        removedSpecialSymbolCount:
+          promptNormalization.removedSpecialSymbolCount,
+      });
+      request = { ...request, prompt: promptNormalization.prompt };
+    }
+  }
 
   // Resolve assetId references in inputImages to base64 data URIs
   if (request.inputImages?.length && attachmentMap) {
@@ -510,6 +546,18 @@ export async function runImageGenerate(
         model,
         aspectRatio: request.aspectRatio ?? "1:1",
         ...(request.inputImages ? { inputImages: request.inputImages } : {}),
+        ...(request.placementX != null
+          ? { placementX: request.placementX }
+          : {}),
+        ...(request.placementY != null
+          ? { placementY: request.placementY }
+          : {}),
+        ...(request.placementWidth != null
+          ? { placementWidth: request.placementWidth }
+          : {}),
+        ...(request.placementHeight != null
+          ? { placementHeight: request.placementHeight }
+          : {}),
       });
 
       if (jobResult.error) {
@@ -523,6 +571,10 @@ export async function runImageGenerate(
           // Expose jobId so frontend can poll for late-arriving results
           // (worker may still succeed after agent poll timeout)
           jobId: jobResult.jobId,
+          ...(jobResult.groupId != null ? { groupId: jobResult.groupId } : {}),
+          ...(jobResult.placeholderId != null
+            ? { placeholderId: jobResult.placeholderId }
+            : {}),
           jobType: "image_generation" as const,
         };
       }
@@ -531,6 +583,10 @@ export async function runImageGenerate(
       const result: ImageGenerateResult = {
         summary: `Generated image (${jobResult.width ?? 0}x${jobResult.height ?? 0}) via ${model}`,
         title: request.title,
+        ...(jobResult.groupId != null ? { groupId: jobResult.groupId } : {}),
+        ...(jobResult.placeholderId != null
+          ? { placeholderId: jobResult.placeholderId }
+          : {}),
         ...(jobResult.elementId != null
           ? { elementId: jobResult.elementId }
           : {}),
@@ -540,13 +596,23 @@ export async function runImageGenerate(
         ...(jobResult.height != null ? { height: jobResult.height } : {}),
       };
       const placement = resolveImagePlacement({
-        placementX: request.placementX,
-        placementY: request.placementY,
-        placementWidth: request.placementWidth,
-        placementHeight: request.placementHeight,
-        sourceWidth: jobResult.width,
-        sourceHeight: jobResult.height,
-        aspectRatio: request.aspectRatio,
+        ...(request.placementX != null
+          ? { placementX: request.placementX }
+          : {}),
+        ...(request.placementY != null
+          ? { placementY: request.placementY }
+          : {}),
+        ...(request.placementWidth != null
+          ? { placementWidth: request.placementWidth }
+          : {}),
+        ...(request.placementHeight != null
+          ? { placementHeight: request.placementHeight }
+          : {}),
+        ...(jobResult.width != null ? { sourceWidth: jobResult.width } : {}),
+        ...(jobResult.height != null ? { sourceHeight: jobResult.height } : {}),
+        ...(request.aspectRatio != null
+          ? { aspectRatio: request.aspectRatio }
+          : {}),
       });
       if (placement) result.placement = placement;
       return result;
@@ -598,13 +664,19 @@ export async function runImageGenerate(
       height: result.height,
     };
     const placement = resolveImagePlacement({
-      placementX: request.placementX,
-      placementY: request.placementY,
-      placementWidth: request.placementWidth,
-      placementHeight: request.placementHeight,
+      ...(request.placementX != null ? { placementX: request.placementX } : {}),
+      ...(request.placementY != null ? { placementY: request.placementY } : {}),
+      ...(request.placementWidth != null
+        ? { placementWidth: request.placementWidth }
+        : {}),
+      ...(request.placementHeight != null
+        ? { placementHeight: request.placementHeight }
+        : {}),
       sourceWidth: result.width,
       sourceHeight: result.height,
-      aspectRatio: request.aspectRatio,
+      ...(request.aspectRatio != null
+        ? { aspectRatio: request.aspectRatio }
+        : {}),
     });
     if (placement) directResult.placement = placement;
     return directResult;

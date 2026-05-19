@@ -59,6 +59,10 @@ Agent work flows through:
 4. Streaming adapters translate agent/tool progress into user-visible events.
 5. Persistence stores thread, run, project, canvas, and artifact state through Supabase-backed services.
 
+Detailed workflow and tool inventory:
+
+- `docs/tech/agent-runtime-workflow.md`: current agent execution flow, output types, tool inventory, sub-agents, and skill exposure model.
+
 When editing agent code:
 
 - Preserve tool input/output contracts.
