@@ -34,11 +34,10 @@ describe("registerSseRoutes", () => {
       });
 
       expect(response.status).toBe(200);
-      const reader = response.body?.getReader();
-      expect(reader).toBeDefined();
+      const reader = requireReader(response);
 
       const replayText = await readChunksUntil(
-        reader!,
+        reader,
         (text) => text.includes("id: 3") && text.includes('"id":"evt-3"'),
       );
 
@@ -49,7 +48,7 @@ describe("registerSseRoutes", () => {
 
       eventBuffer.publish("canvas-1", createStreamEvent("evt-4"));
       const liveText = await readChunksUntil(
-        reader!,
+        reader,
         (text) => text.includes("id: 4") && text.includes('"id":"evt-4"'),
       );
       expect(liveText).toContain("id: 4");
@@ -73,12 +72,11 @@ describe("registerSseRoutes", () => {
       });
 
       expect(response.status).toBe(200);
-      const reader = response.body?.getReader();
-      expect(reader).toBeDefined();
+      const reader = requireReader(response);
 
-      await readChunksUntil(reader!, (text) => text.includes("retry: 1000"));
+      await readChunksUntil(reader, (text) => text.includes("retry: 1000"));
 
-      const heartbeatChunkPromise = reader!.read();
+      const heartbeatChunkPromise = reader.read();
       await vi.advanceTimersByTimeAsync(30_000);
       const heartbeatChunk = await heartbeatChunkPromise;
       const heartbeatText = decodeChunk(heartbeatChunk.value);
@@ -90,14 +88,49 @@ describe("registerSseRoutes", () => {
       await app.close();
     }
   });
+
+  it("preserves CORS headers on hijacked SSE responses", async () => {
+    const { app, streamUrl } = await createHarness({
+      webOrigin: "http://localhost:3000",
+    });
+    const controller = new AbortController();
+
+    try {
+      const response = await fetch(streamUrl, {
+        headers: {
+          authorization: "Bearer token",
+          origin: "http://localhost:3000",
+        },
+        signal: controller.signal,
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("access-control-allow-origin")).toBe(
+        "http://localhost:3000",
+      );
+      expect(response.headers.get("vary")).toBe("Origin");
+    } finally {
+      controller.abort();
+      await app.close();
+    }
+  });
 });
 
-async function createHarness() {
+async function createHarness(options: { webOrigin?: string } = {}) {
   const app = Fastify();
   const eventBuffer = new CanvasEventBuffer();
   const auth: RequestAuthenticator = {
     authenticate: async () => TEST_USER,
   };
+
+  if (options.webOrigin) {
+    app.addHook("onRequest", async (request, reply) => {
+      if (request.headers.origin === options.webOrigin) {
+        reply.header("access-control-allow-origin", options.webOrigin);
+        reply.header("vary", "Origin");
+      }
+    });
+  }
 
   await registerSseRoutes(app, {
     auth,
@@ -138,6 +171,15 @@ function createStreamEvent(id: string) {
 
 function decodeChunk(chunk?: Uint8Array) {
   return new TextDecoder().decode(chunk);
+}
+
+function requireReader(response: Response) {
+  const reader = response.body?.getReader();
+  expect(reader).toBeDefined();
+  if (!reader) {
+    throw new Error("Expected SSE response body.");
+  }
+  return reader;
 }
 
 async function readChunksUntil(

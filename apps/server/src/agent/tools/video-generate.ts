@@ -79,7 +79,7 @@ function buildVideoGenerateSchema(models: AvailableModel[]) {
       .optional()
       .default(5)
       .describe(
-        "Video duration in seconds. Seedream defaults to 5 seconds unless the model configuration says otherwise.",
+        "Video duration in seconds. Seedance 3.0 Pro supports 5 or 10 seconds; Seedream defaults to 5 seconds unless the model configuration says otherwise.",
       ),
     resolution: z
       .enum(["480p", "720p", "1080p", "4k"])
@@ -89,18 +89,18 @@ function buildVideoGenerateSchema(models: AvailableModel[]) {
         "Output resolution. 720p is recommended for balance of quality and speed.",
       ),
     aspectRatio: z
-      .enum(["1:1", "16:9", "9:16", "4:3", "3:4"])
+      .enum(["1:1", "16:9", "9:16", "4:3", "3:4", "21:9"])
       .optional()
       .default("16:9")
       .describe(
-        "Video aspect ratio. 16:9 for landscape, 9:16 for portrait/mobile.",
+        "Video aspect ratio. 16:9 for landscape, 9:16 for portrait/mobile, 21:9 for cinematic widescreen.",
       ),
     inputImages: z
       .array(z.string())
-      .max(7)
+      .max(1)
       .optional()
       .describe(
-        "Reference image URLs for image-to-video. First image used as first frame. Only for models with I2V capability.",
+        "Reference image URL or JPEG/PNG data URI for image-to-video. Used as the first frame. Only for models with I2V capability.",
       ),
     inputVideo: z
       .string()

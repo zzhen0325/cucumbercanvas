@@ -12,6 +12,8 @@ export async function registerVideoModelRoutes(app: FastifyInstance) {
       description: m.description,
       iconUrl: m.iconUrl,
       provider: m.provider,
+      capabilities: m.capabilities,
+      limits: m.limits,
       accessible: true,
     }));
 

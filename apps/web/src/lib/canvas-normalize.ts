@@ -8,23 +8,29 @@
 
 type CanvasElement = Record<string, unknown>;
 
+const CANVAS_FONT_FAMILY = 2;
+
 const EXCALIDRAW_FONT_FAMILY_MAP: Record<number, string> = {
   1: "20px Virgil, Segoe Print, Comic Sans MS, cursive",
   2: "20px Helvetica, Arial, sans-serif",
   3: "20px Cascadia, monospace",
 };
+const DEFAULT_CANVAS_FONT =
+  EXCALIDRAW_FONT_FAMILY_MAP[CANVAS_FONT_FAMILY] ??
+  "20px Helvetica, Arial, sans-serif";
 
 function measureTextDOM(
   text: string,
   fontSize: number,
-  fontFamily: number = 1,
+  fontFamily: number = CANVAS_FONT_FAMILY,
 ): { width: number; height: number } {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
   if (!ctx) {
     return { width: text.length * fontSize * 0.6, height: fontSize * 1.25 };
   }
-  const baseFontStr = EXCALIDRAW_FONT_FAMILY_MAP[fontFamily] ?? EXCALIDRAW_FONT_FAMILY_MAP[1]!;
+  const baseFontStr =
+    EXCALIDRAW_FONT_FAMILY_MAP[fontFamily] ?? DEFAULT_CANVAS_FONT;
   const fontStr = baseFontStr.replace("20px", `${fontSize}px`);
   ctx.font = fontStr;
   const lines = text.split("\n");
@@ -57,11 +63,17 @@ function validateBindings(elements: CanvasElement[]): boolean {
     }
     if (el.startBinding) {
       const binding = el.startBinding as { elementId: string };
-      if (!activeIds.has(binding.elementId)) { el.startBinding = null; changed = true; }
+      if (!activeIds.has(binding.elementId)) {
+        el.startBinding = null;
+        changed = true;
+      }
     }
     if (el.endBinding) {
       const binding = el.endBinding as { elementId: string };
-      if (!activeIds.has(binding.elementId)) { el.endBinding = null; changed = true; }
+      if (!activeIds.has(binding.elementId)) {
+        el.endBinding = null;
+        changed = true;
+      }
     }
   }
   return changed;
@@ -80,7 +92,7 @@ function recenterBoundTextElements(elements: CanvasElement[]): boolean {
     const text = el.text as string;
     if (!text) continue;
     const fontSize = (el.fontSize as number) || 20;
-    const fontFamily = (el.fontFamily as number) || 1;
+    const fontFamily = (el.fontFamily as number) || CANVAS_FONT_FAMILY;
     const measured = measureTextDOM(text, fontSize, fontFamily);
     const currentW = Number(el.width) || 0;
     const currentH = Number(el.height) || 0;
@@ -97,8 +109,14 @@ function recenterBoundTextElements(elements: CanvasElement[]): boolean {
     const minContainerH = measured.height + paddingY * 2;
     const containerW = Number(container.width) || 0;
     const containerH = Number(container.height) || 0;
-    if (containerW < minContainerW) { container.width = minContainerW; changed = true; }
-    if (containerH < minContainerH) { container.height = minContainerH; changed = true; }
+    if (containerW < minContainerW) {
+      container.width = minContainerW;
+      changed = true;
+    }
+    if (containerH < minContainerH) {
+      container.height = minContainerH;
+      changed = true;
+    }
     const finalContainerW = Number(container.width);
     const finalContainerH = Number(container.height);
     const finalTextW = Number(el.width);
@@ -107,7 +125,10 @@ function recenterBoundTextElements(elements: CanvasElement[]): boolean {
     const expectedY = Number(container.y) + (finalContainerH - finalTextH) / 2;
     const currentX = Number(el.x) || 0;
     const currentY = Number(el.y) || 0;
-    if (Math.abs(expectedX - currentX) > 2 || Math.abs(expectedY - currentY) > 2) {
+    if (
+      Math.abs(expectedX - currentX) > 2 ||
+      Math.abs(expectedY - currentY) > 2
+    ) {
       el.x = expectedX;
       el.y = expectedY;
       changed = true;
@@ -116,10 +137,55 @@ function recenterBoundTextElements(elements: CanvasElement[]): boolean {
   return changed;
 }
 
-export function normalizeCanvasElements(
-  elements: CanvasElement[],
-): { elements: CanvasElement[]; changed: boolean } {
+export function normalizeCanvasElements(elements: CanvasElement[]): {
+  elements: CanvasElement[];
+  changed: boolean;
+} {
   let changed = false;
+
+  for (const el of elements) {
+    if (el.isDeleted) continue;
+
+    // Keep canvas output production-styled even when content was created by
+    // older agents, pasted from Excalidraw defaults, or imported from JSON.
+    if (el.type === "text") {
+      if (el.fontFamily !== CANVAS_FONT_FAMILY) {
+        el.fontFamily = CANVAS_FONT_FAMILY;
+        changed = true;
+      }
+    } else if (
+      el.fontFamily !== undefined &&
+      el.fontFamily !== CANVAS_FONT_FAMILY
+    ) {
+      el.fontFamily = CANVAS_FONT_FAMILY;
+      changed = true;
+    }
+
+    if (el.roughness !== undefined && el.roughness !== 0) {
+      el.roughness = 0;
+      changed = true;
+    }
+
+    if (el.fillStyle !== undefined && el.fillStyle !== "solid") {
+      el.fillStyle = "solid";
+      changed = true;
+    }
+
+    if (
+      (el.type === "line" || el.type === "arrow") &&
+      el.strokeStyle !== undefined &&
+      el.strokeStyle !== "solid"
+    ) {
+      el.strokeStyle = "solid";
+      changed = true;
+    }
+
+    if (el.strokeSharpness !== undefined && el.strokeSharpness !== "sharp") {
+      el.strokeSharpness = "sharp";
+      changed = true;
+    }
+  }
+
   if (validateBindings(elements)) changed = true;
   if (recenterBoundTextElements(elements)) changed = true;
   return { elements, changed };

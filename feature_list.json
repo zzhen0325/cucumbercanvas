@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-19T22:32:18+08:00",
+  "updatedAt": "2026-05-20T12:22:00+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -70,7 +70,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "generation-engineering",
-      "summary": "Seedream/Volcengine-backed image and video generation through provider adapters, background_jobs state, Supabase tasks leasing, worker execution, prompt normalization, UI panels, and grouped canvas-native image generation flows.",
+      "summary": "Seedream/Seedance Volcengine-backed image and video generation through provider adapters, background_jobs state, Supabase tasks leasing, worker execution, prompt normalization, UI panels, and grouped canvas-native image generation flows.",
       "artifacts": [
         "apps/server/src/generation/providers/seedream.ts",
         "apps/server/src/generation/providers/seedream-prompt.ts",

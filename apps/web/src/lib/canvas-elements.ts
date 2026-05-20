@@ -1,5 +1,6 @@
 import type { ImageArtifact, VideoArtifact } from "@cucumber/shared";
 
+import { normalizeCanvasElements } from "./canvas-normalize";
 import { getServerBaseUrl } from "./env";
 
 /** Video file extensions recognized for inline playback on canvas. */
@@ -189,7 +190,7 @@ export async function insertImageOnCanvas(
     } else {
       // Has elements → place to the right of the rightmost element with gap
       const GAP = 40;
-      let maxRight = -Infinity;
+      let maxRight = Number.NEGATIVE_INFINITY;
       let rightEdgeY = 0;
 
       for (const el of elements) {
@@ -240,7 +241,9 @@ export async function insertVideoOnCanvas(
   artifact: VideoArtifact,
 ): Promise<void> {
   // Dynamic import — excalidraw is client-only and cannot be imported at module level
-  const { convertToExcalidrawElements } = await import("@excalidraw/excalidraw");
+  const { convertToExcalidrawElements } = await import(
+    "@excalidraw/excalidraw"
+  );
 
   let x: number;
   let y: number;
@@ -268,7 +271,7 @@ export async function insertVideoOnCanvas(
     } else {
       // Has elements -- place to the right of the rightmost element with gap
       const GAP = 40;
-      let maxRight = -Infinity;
+      let maxRight = Number.NEGATIVE_INFINITY;
       let rightEdgeY = 0;
       for (const el of elements) {
         const elRight = (el.x ?? 0) + (el.width ?? 0);
@@ -299,17 +302,22 @@ export async function insertVideoOnCanvas(
       },
     } as any, // ExcalidrawElementSkeleton includes IframeLikeElement but TS needs a nudge
   ]);
+  const normalized = normalizeCanvasElements(
+    newElements as Record<string, unknown>[],
+  );
+  if (normalized.changed) {
+    console.log("[canvas-elements] normalized inserted video element style");
+  }
 
   const existing = api.getSceneElements();
   api.updateScene({
-    elements: [...existing, ...newElements],
+    elements: [...existing, ...normalized.elements],
     captureUpdate: "IMMEDIATELY",
   });
 }
 
 function generateId(): string {
   return (
-    Math.random().toString(36).slice(2) +
-    Math.random().toString(36).slice(2)
+    Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
   ).slice(0, 20);
 }

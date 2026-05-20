@@ -50,7 +50,7 @@
 
 - 生成 provider 注册中心：`apps/server/src/generation/providers/registry.ts`
 - provider 装配：`apps/server/src/generation/providers/register-all.ts`
-- 当前核心 provider 实现：`apps/server/src/generation/providers/seedream.ts`
+- 当前核心 provider 实现：`apps/server/src/generation/providers/seedream.ts`（Seedream image/video 与 Seedance 3.0 Pro video 共用 Volcengine 签名与异步任务客户端）
 - 后台任务服务：`apps/server/src/features/jobs/job-service.ts`
 - Worker 入口：`apps/server/src/worker.ts`
 
@@ -202,7 +202,7 @@ WebSocket 层会做三件事：
 - 实现：`apps/server/src/agent/tools/video-generate.ts`
 - 支持类型：
   - text-to-video
-  - image-to-video
+  - image-to-video（Seedance 3.0 Pro 仅支持 1 张首帧图）
   - video editing
 - 可能的执行方式：
   - 直接同步调 provider

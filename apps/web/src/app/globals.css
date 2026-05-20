@@ -56,20 +56,20 @@
 }
 
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
+    --background: oklch(0.99 0.003 240);
+    --foreground: oklch(0.25 0.02 240);
     --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
+    --card-foreground: oklch(0.25 0.02 240);
     --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.90 0.17 115);
-    --accent-foreground: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.25 0.02 240);
+    --primary: oklch(0.25 0.02 240);
+    --primary-foreground: oklch(0.99 0.003 240);
+    --secondary: oklch(0.96 0.005 240);
+    --secondary-foreground: oklch(0.25 0.02 240);
+    --muted: oklch(0.96 0.005 240);
+    --muted-foreground: oklch(0.55 0.01 240);
+    --accent: oklch(0.65 0.16 200);
+    --accent-foreground: oklch(1 0 0);
     --destructive: oklch(0.577 0.245 27.325);
     --success: oklch(0.60 0.15 145);
     --success-foreground: oklch(0.985 0 0);
@@ -77,65 +77,65 @@
     --warning-foreground: oklch(0.985 0 0);
     --info: oklch(0.65 0.1 250);
     --info-foreground: oklch(0.985 0 0);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.90 0.17 115);
-    --border-light: oklch(0.94 0 0);
-    --input-border: oklch(0.84 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
+    --border: oklch(0.93 0.005 240);
+    --input: oklch(0.93 0.005 240);
+    --ring: oklch(0.65 0.16 200);
+    --border-light: oklch(0.96 0.003 240);
+    --input-border: oklch(0.88 0.005 240);
+    --chart-1: oklch(0.65 0.16 200);
+    --chart-2: oklch(0.55 0.01 240);
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
     --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+    --sidebar: oklch(0.99 0.003 240);
+    --sidebar-foreground: oklch(0.25 0.02 240);
+    --sidebar-primary: oklch(0.25 0.02 240);
+    --sidebar-primary-foreground: oklch(0.99 0.003 240);
+    --sidebar-accent: oklch(0.96 0.005 240);
+    --sidebar-accent-foreground: oklch(0.25 0.02 240);
+    --sidebar-border: oklch(0.93 0.005 240);
+    --sidebar-ring: oklch(0.65 0.16 200);
 }
 
 .dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
+    --background: oklch(0.10 0.015 240);
+    --foreground: oklch(0.96 0.01 240);
+    --card: oklch(0.14 0.02 240);
+    --card-foreground: oklch(0.96 0.01 240);
+    --popover: oklch(0.14 0.02 240);
+    --popover-foreground: oklch(0.96 0.01 240);
+    --primary: oklch(0.96 0.01 240);
+    --primary-foreground: oklch(0.10 0.015 240);
+    --secondary: oklch(0.18 0.025 240);
+    --secondary-foreground: oklch(0.96 0.01 240);
+    --muted: oklch(0.18 0.025 240);
+    --muted-foreground: oklch(0.65 0.015 240);
+    --accent: oklch(0.74 0.16 195);
+    --accent-foreground: oklch(0.10 0.015 240);
     --destructive: oklch(0.704 0.191 22.216);
     --success: oklch(0.65 0.15 145);
-    --success-foreground: oklch(0.145 0 0);
+    --success-foreground: oklch(0.10 0.015 240);
     --warning: oklch(0.80 0.12 85);
-    --warning-foreground: oklch(0.145 0 0);
+    --warning-foreground: oklch(0.10 0.015 240);
     --info: oklch(0.70 0.08 250);
-    --info-foreground: oklch(0.145 0 0);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
+    --info-foreground: oklch(0.10 0.015 240);
+    --border: oklch(0.22 0.015 240 / 0.5);
+    --input: oklch(0.22 0.015 240 / 0.5);
+    --ring: oklch(0.74 0.16 195);
+    --chart-1: oklch(0.74 0.16 195);
+    --chart-2: oklch(0.65 0.015 240);
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+    --sidebar: oklch(0.12 0.018 240);
+    --sidebar-foreground: oklch(0.96 0.01 240);
+    --sidebar-primary: oklch(0.74 0.16 195);
+    --sidebar-primary-foreground: oklch(0.10 0.015 240);
+    --sidebar-accent: oklch(0.18 0.025 240);
+    --sidebar-accent-foreground: oklch(0.96 0.01 240);
+    --sidebar-border: oklch(0.22 0.015 240 / 0.5);
+    --sidebar-ring: oklch(0.74 0.16 195);
 }
 
 @layer base {
@@ -333,38 +333,48 @@
   font-weight: 600;
 }
 
-/* ── Excalidraw UI overrides (aligned with Jaaz) ── */
+/* ── Canvas Excalidraw UI overrides ── */
+
+.cucumber-canvas-shell {
+  background: radial-gradient(
+      circle at 16px 16px,
+      oklch(0.64 0.03 240 / 0.12) 1px,
+      transparent 1px
+    ),
+    var(--color-background);
+  background-size: 24px 24px;
+}
 
 /* Hide left menu button — replaced by CanvasLogoMenu */
-.excalidraw .App-menu_top__left {
+.cucumber-canvas-shell .excalidraw .App-menu_top__left {
   display: none !important;
 }
 
 /* Hide top-right buttons (Library, Share, Export) */
-.excalidraw .layer-ui__wrapper__top-right {
+.cucumber-canvas-shell .excalidraw .layer-ui__wrapper__top-right {
   display: none !important;
 }
 
 /* Hide native top toolbar — replaced by CanvasToolMenu */
-.excalidraw .FixedSideContainer.FixedSideContainer_side_top.App-top-bar {
+.cucumber-canvas-shell .excalidraw .FixedSideContainer.FixedSideContainer_side_top.App-top-bar {
   display: none !important;
 }
 
 /* Hide bottom menu bar */
-.excalidraw .layer-ui__wrapper__footer.App-menu.App-menu_bottom {
+.cucumber-canvas-shell .excalidraw .layer-ui__wrapper__footer.App-menu.App-menu_bottom {
   display: none !important;
 }
-.excalidraw .App-bottom-bar {
+.cucumber-canvas-shell .excalidraw .App-bottom-bar {
   display: none !important;
 }
 
 /* Hide shapes sidebar panel */
-.excalidraw .shapes-section {
+.cucumber-canvas-shell .excalidraw .shapes-section {
   display: none !important;
 }
 
 /* Hide keyboard shortcut labels on tools */
-.excalidraw .ToolIcon__keybinding {
+.cucumber-canvas-shell .excalidraw .ToolIcon__keybinding {
   display: none !important;
 }
 
@@ -485,4 +495,69 @@
 /* Dark mode overrides for hero glow blobs */
 .dark .landing-hero-glow-1 { opacity: 0.15 !important; }
 .dark .landing-hero-glow-2 { opacity: 0.12 !important; }
+
+/* Canvas-scoped Excalidraw theme. Keep this isolated from the rest of the app. */
+.cucumber-canvas-shell .excalidraw {
+  --ui-font: var(--font-sans), ui-sans-serif, system-ui, sans-serif !important;
+  --theme-filter: none !important;
+  --color-primary: var(--color-accent) !important;
+  --color-primary-darker: var(--color-accent) !important;
+  --color-primary-darkest: var(--color-accent) !important;
+  --color-surface-primary-container: oklch(0.86 0.08 200 / 0.55) !important;
+  --color-on-primary-container: var(--color-foreground) !important;
+  
+  --island-bg-color: oklch(1 0 0 / 0.86) !important;
+  --sidebar-bg-color: var(--color-card) !important;
+  --sidebar-border-color: var(--color-border) !important;
+  --popup-bg-color: var(--color-card) !important;
+  --input-border-color: var(--color-border) !important;
+  --button-hover-bg: oklch(0.95 0.01 240 / 0.88) !important;
+  --select-border-color: var(--color-border) !important;
+  color: var(--color-foreground);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif !important;
+}
+
+.cucumber-canvas-shell .excalidraw.theme--dark,
+.cucumber-canvas-shell .excalidraw.dark {
+  --island-bg-color: oklch(0.14 0.02 240 / 0.82) !important;
+  --color-gray-100: var(--color-background) !important; /* Infinite Canvas bg */
+  --color-gray-90: var(--color-card) !important;       /* Main panel bg */
+  --color-gray-80: var(--color-secondary) !important;
+  --color-gray-70: var(--color-muted-foreground) !important;
+  --color-gray-60: var(--color-border) !important;
+  --color-gray-50: var(--color-border) !important;
+  --color-gray-40: var(--color-border) !important;
+  --color-gray-30: var(--color-border) !important;
+  --color-gray-20: var(--color-foreground) !important;
+  --color-gray-10: var(--color-foreground) !important;
+  --color-gray-0: var(--color-foreground) !important;
+  --text-primary-color: var(--color-foreground) !important;
+  --bg-color-main: var(--color-background) !important;
+  --bg-color-card: var(--color-card) !important;
+  --color-border-outline: var(--color-border) !important;
+}
+
+/* Make Excalidraw panels visually match the product shell. */
+.cucumber-canvas-shell .excalidraw .Island, 
+.cucumber-canvas-shell .excalidraw .layer-ui__wrapper .dropdown-menu,
+.cucumber-canvas-shell .excalidraw .layer-ui__wrapper .popover,
+.cucumber-canvas-shell .excalidraw .sidebar {
+  background: var(--island-bg-color) !important;
+  backdrop-filter: blur(16px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(160%) !important;
+  border: 1px solid var(--color-border) !important;
+  box-shadow: 0 14px 36px oklch(0 0 0 / 0.12) !important;
+}
+
+/* Custom premium design system utility classes */
+.flowith-glass {
+  background: rgba(15, 23, 42, 0.45) !important;
+  backdrop-filter: blur(16px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.flowith-glow {
+  box-shadow: 0 0 40px oklch(0.74 0.16 195 / 0.12);
+}
 

@@ -4,6 +4,10 @@ import { getViewportCenter } from "./canvas-elements";
 const RATIO_DIMENSIONS: Record<string, { w: number; h: number }> = {
   "16:9": { w: 1024, h: 576 },
   "9:16": { w: 576, h: 1024 },
+  "4:3": { w: 1024, h: 768 },
+  "3:4": { w: 768, h: 1024 },
+  "1:1": { w: 1024, h: 1024 },
+  "21:9": { w: 1024, h: 439 },
 };
 
 export type VideoGeneratorStatus = "idle" | "generating" | "completed" | "error";
@@ -35,7 +39,10 @@ export function getDisplayDimensions(
   aspectRatio: string,
   displayMaxSize = 400,
 ): { width: number; height: number } {
-  const dims = RATIO_DIMENSIONS[aspectRatio] ?? RATIO_DIMENSIONS["16:9"]!;
+  const dims = RATIO_DIMENSIONS[aspectRatio] ?? RATIO_DIMENSIONS["16:9"];
+  if (!dims) {
+    throw new Error("Missing default video generator aspect ratio dimensions.");
+  }
   const scale = Math.min(displayMaxSize / dims.w, displayMaxSize / dims.h);
   return {
     width: Math.round(dims.w * scale),

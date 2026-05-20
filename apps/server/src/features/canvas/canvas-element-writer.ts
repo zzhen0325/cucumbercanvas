@@ -355,6 +355,7 @@ function buildTextContainer(args: {
   groupId: string;
   backgroundColor: string;
   strokeColor: string;
+  textColor?: string;
 }): { container: CanvasElement; text: CanvasElement; height: number } {
   const padding = 24;
   const fontSize = 18;
@@ -395,10 +396,10 @@ function buildTextContainer(args: {
     width: args.width - padding * 2,
     height: measured.height,
     fontSize,
-    fontFamily: 1,
+    fontFamily: 2,
     textAlign: "left",
     verticalAlign: "top",
-    strokeColor: "#111827",
+    strokeColor: args.textColor ?? "#1e293b",
     containerId,
     autoResize: false,
     lineHeight: 1.25,
@@ -420,11 +421,16 @@ function buildImagePlaceholder(args: {
   runId: string;
   sessionId: string;
   aspectRatio: string;
+  isDark?: boolean;
 }): { placeholder: CanvasElement; text: CanvasElement } {
   const placeholderId = generateId();
   const textId = generateId();
   const placeholderText = "生成结果\n\n生成中...";
   const measured = textSize(placeholderText, 18);
+
+  const placeholderBg = args.isDark ? "#141b2d" : "#f8fafc";
+  const placeholderBorder = args.isDark ? "#22314f" : "#e2e8f0";
+  const placeholderTextColor = args.isDark ? "#5f759e" : "#475569";
 
   const placeholder: CanvasElement = {
     ...buildElementBase(args.groupId),
@@ -434,8 +440,8 @@ function buildImagePlaceholder(args: {
     y: args.y,
     width: args.width,
     height: args.height,
-    strokeColor: "#94A3B8",
-    backgroundColor: "#F8FAFC",
+    strokeColor: placeholderBorder,
+    backgroundColor: placeholderBg,
     fillStyle: "solid",
     roundness: { type: 3 },
     customData: {
@@ -464,10 +470,10 @@ function buildImagePlaceholder(args: {
     width: measured.width,
     height: measured.height,
     fontSize: 18,
-    fontFamily: 1,
+    fontFamily: 2,
     textAlign: "center",
     verticalAlign: "middle",
-    strokeColor: "#475569",
+    strokeColor: placeholderTextColor,
     containerId: placeholderId,
     autoResize: true,
     lineHeight: 1.25,
@@ -502,8 +508,9 @@ function buildBoundArrow(args: {
     width: Math.abs(relEnd[0]),
     height: Math.abs(relEnd[1]),
     points: [[0, 0], relEnd],
-    strokeColor: "#64748B",
-    strokeWidth: 2,
+    strokeColor: "#0ea5e9",
+    strokeWidth: 1.5,
+    roundness: { type: 2 },
     lastCommittedPoint: relEnd,
     startBinding: {
       elementId: args.start.id,
@@ -677,7 +684,7 @@ async function downloadStorageObjectAsDataURL(
 
 export function buildImageGenerationGroupElements(
   existingElements: CanvasElement[],
-  opts: Omit<ImageGenerationGroupOpts, "canvasId">,
+  opts: Omit<ImageGenerationGroupOpts, "canvasId"> & { isDark?: boolean },
 ): {
   elements: CanvasElement[];
   groupId: string;
@@ -694,6 +701,17 @@ export function buildImageGenerationGroupElements(
         GENERATION_IMAGE_MAX_SIZE,
       );
 
+  const isDark = !!opts.isDark;
+
+  // 根据 isDark 动态定义卡片配色 (Flowith 极光青 & 科技感暗调自适应)
+  const demandBg = isDark ? "#0F172A" : "#F8FAFC";
+  const demandBorder = isDark ? "#1E293B" : "#E2E8F0";
+  const demandText = isDark ? "#94A3B8" : "#334155";
+
+  const promptBg = isDark ? "#042F2E" : "#F0FDFA";
+  const promptBorder = isDark ? "#0D9488" : "#99F6E4";
+  const promptText = isDark ? "#2DD4BF" : "#0F766E";
+
   const userTextPreview = buildTextContainer({
     label: "我的需求",
     body: opts.userPrompt,
@@ -701,8 +719,9 @@ export function buildImageGenerationGroupElements(
     y: 0,
     width: GENERATION_TEXT_WIDTH,
     groupId,
-    backgroundColor: "#F8FAFC",
-    strokeColor: "#CBD5E1",
+    backgroundColor: demandBg,
+    strokeColor: demandBorder,
+    textColor: demandText,
   });
   const promptTextPreview = buildTextContainer({
     label: "优化后的 Prompt",
@@ -711,8 +730,9 @@ export function buildImageGenerationGroupElements(
     y: 0,
     width: GENERATION_TEXT_WIDTH,
     groupId,
-    backgroundColor: "#F8FAFC",
-    strokeColor: "#CBD5E1",
+    backgroundColor: promptBg,
+    strokeColor: promptBorder,
+    textColor: promptText,
   });
 
   const groupHeight = Math.max(
@@ -753,8 +773,9 @@ export function buildImageGenerationGroupElements(
     y: groupPlacement.y + (groupHeight - userTextPreview.height) / 2,
     width: GENERATION_TEXT_WIDTH,
     groupId,
-    backgroundColor: "#F8FAFC",
-    strokeColor: "#CBD5E1",
+    backgroundColor: demandBg,
+    strokeColor: demandBorder,
+    textColor: demandText,
   });
   const prompt = buildTextContainer({
     label: "优化后的 Prompt",
@@ -763,8 +784,9 @@ export function buildImageGenerationGroupElements(
     y: groupPlacement.y + (groupHeight - promptTextPreview.height) / 2,
     width: GENERATION_TEXT_WIDTH,
     groupId,
-    backgroundColor: "#F8FAFC",
-    strokeColor: "#CBD5E1",
+    backgroundColor: promptBg,
+    strokeColor: promptBorder,
+    textColor: promptText,
   });
   const image = buildImagePlaceholder({
     x: imageX,
@@ -779,6 +801,7 @@ export function buildImageGenerationGroupElements(
     runId: opts.runId,
     sessionId: opts.sessionId,
     aspectRatio: opts.aspectRatio,
+    isDark,
   });
 
   const firstArrow = buildBoundArrow({
@@ -814,7 +837,24 @@ export async function createImageGenerationGroup(
 ): Promise<ImageGenerationGroupResult> {
   const content = await readCanvasContent(client, opts.canvasId);
   const elements: CanvasElement[] = (content.elements as CanvasElement[]) ?? [];
-  const group = buildImageGenerationGroupElements(elements, opts);
+
+  // 智能推断亮/暗模式
+  let isDark = false;
+  const bg = content.appState?.viewBackgroundColor as string | undefined;
+  if (bg) {
+    const bgLower = bg.toLowerCase();
+    isDark =
+      bgLower === "#141414" ||
+      bgLower === "#121212" ||
+      bgLower === "#0b0f19" ||
+      bgLower === "#0f172a" ||
+      bgLower === "#1e1e1e" ||
+      bgLower.includes("oklch(0.1") ||
+      bgLower.includes("oklch(0.0") ||
+      bgLower.includes("oklch(0.2");
+  }
+
+  const group = buildImageGenerationGroupElements(elements, { ...opts, isDark });
 
   await writeCanvasContent(client, opts.canvasId, {
     ...content,
@@ -822,7 +862,7 @@ export async function createImageGenerationGroup(
   });
 
   console.log(
-    `[canvas-element-writer] image generation group created canvasId=${opts.canvasId} jobId=${opts.jobId} runId=${opts.runId} groupId=${group.groupId} placeholderId=${group.placeholderId}`,
+    `[canvas-element-writer] image generation group created canvasId=${opts.canvasId} jobId=${opts.jobId} runId=${opts.runId} groupId=${group.groupId} placeholderId=${group.placeholderId} isDark=${isDark}`,
   );
   return {
     groupId: group.groupId,

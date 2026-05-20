@@ -920,7 +920,7 @@ export function ChatSidebar({
         aria-valuemin={SIDEBAR_MIN}
         aria-valuemax={SIDEBAR_MAX}
         tabIndex={0}
-        className="w-2 shrink-0 cursor-col-resize bg-gradient-to-r from-transparent via-border to-transparent shadow-[1px_0_10px_rgba(15,23,42,0.06)] transition-all hover:via-muted-foreground/40 hover:shadow-[1px_0_14px_rgba(15,23,42,0.1)] active:via-muted-foreground/60 active:shadow-[1px_0_16px_rgba(15,23,42,0.14)] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="w-1 shrink-0 cursor-col-resize bg-border  via-border to-transparent  transition-all hover:via-muted-foreground/40 hover:shadow-[1px_0_14px_rgba(15,23,42,0.1)] active:via-muted-foreground/60 active:shadow-[1px_0_16px_rgba(15,23,42,0.14)] outline-none focus-visible:ring-1 focus-visible:ring-ring"
         onMouseDown={handleMouseDown}
         onTouchStart={handleTouchStart}
         onKeyDown={handleResizeKeyDown}

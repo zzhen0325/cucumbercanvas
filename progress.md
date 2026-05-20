@@ -1,12 +1,20 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-19 18:11 CST
+Last updated: 2026-05-20 12:22 CST
 
 ## Current Session
 
-Goal: make agent image generation materialize directly on the canvas as a grouped creative workflow.
+Goal: polish canvas presentation and remove Excalidraw hand-drawn defaults from canvas output.
 
 Status:
+
+- Canvas shell styling is now scoped under the canvas editor and gives Excalidraw panels a cleaner product-surface treatment.
+- Loaded, synced, pasted/imported, and converted video elements are normalized to sans-serif text, solid fill, solid connector strokes, and `roughness: 0`.
+- Excalidraw current-item defaults now prefer solid fill/strokes, sharp arrows, sans-serif text, and a theme-aware canvas background.
+- Focused web tests cover the normalization path for legacy Virgil/hachure/dashed content.
+- Seedance 3.0 Pro is now available as a Volcengine video model (`bytedance/seedance-3.0-pro`) with 5s/10s frame mapping, first-frame image-to-video support, provider logs, and model-limit metadata for UI/tool selection.
+
+Previous session:
 
 - Agent image jobs now create a grouped canvas structure immediately: original user request, optimized tool prompt, and a generating image placeholder.
 - The three containers and their arrows share a group id so users can move/copy/delete the creative workflow as one unit.
@@ -32,6 +40,19 @@ Status:
 
 ## Verification Log
 
+- Passed: `pnpm --filter @cucumber/web test -- canvas-normalize.test.ts` (the package script ran the web test suite: 14 files, 46 tests).
+- Passed: `pnpm --filter @cucumber/web typecheck`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm --filter @cucumber/web build`.
+- Passed: `pnpm exec biome check apps/web/src/lib/canvas-normalize.ts apps/web/test/canvas-normalize.test.ts apps/web/src/app/globals.css apps/server/src/agent/tools/canvas-element-helpers.ts`.
+- Blocked: Browser visual validation could not reach a usable canvas. The Browser plugin timed out on navigation after the first dev compile, the authenticated `/canvas` route redirected to login without dev auth, and local dev project creation against the skip-auth server returned `project_create_failed`.
+- Passed: `pnpm --filter @cucumber/server test src/generation/providers/seedance-video.test.ts`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm --filter @cucumber/web typecheck`.
+- Passed: `pnpm exec biome check apps/server/src/generation/providers/seedream.ts apps/server/src/generation/providers/seedance-video.test.ts apps/server/src/generation/providers/registry.ts apps/server/src/http/video-models.ts apps/server/src/http/generate.ts apps/server/src/agent/tools/video-generate.ts`.
+- Passed: `pnpm --filter @cucumber/server build`.
+- Passed: `pnpm --filter @cucumber/web build`.
+- Failed: `pnpm exec biome check apps/web/src/lib/server-api.ts apps/web/src/lib/canvas-video-generator.ts apps/web/src/components/canvas/video-generator-panel.tsx` still reports existing `any`, import ordering, and SVG accessibility lint debt in those files.
 - Passed: `pnpm --filter @cucumber/server typecheck`.
 - Passed: `pnpm --filter @cucumber/server test src/features/canvas/canvas-element-writer.test.ts src/generation/providers/seedream-prompt.test.ts src/agent/tools/image-generate.test.ts`.
 - Passed: `pnpm exec biome check apps/server/src/generation/providers/seedream-prompt.ts apps/server/src/generation/providers/seedream-prompt.test.ts apps/server/src/generation/providers/seedream.ts apps/server/src/agent/tools/image-generate.ts apps/server/src/features/jobs/executors/image-generation.ts apps/server/src/features/canvas/canvas-element-writer.ts apps/server/src/features/canvas/canvas-element-writer.test.ts apps/server/src/agent/runtime.ts apps/server/src/agent/tools/video-generate.ts feature_list.json`.

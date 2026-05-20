@@ -443,6 +443,18 @@ export type VideoModelInfo = {
   description: string;
   provider: string;
   iconUrl?: string;
+  capabilities?: {
+    textToVideo: boolean;
+    imageToVideo: boolean;
+    videoToVideo: boolean;
+    audio: boolean;
+  };
+  limits?: {
+    maxDuration: number;
+    allowedDurations?: number[];
+    maxResolution: "480p" | "720p" | "1080p" | "2160p";
+    maxInputImages: number;
+  };
   accessible?: boolean;
 };
 

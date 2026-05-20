@@ -170,4 +170,38 @@ describe("canvas-element-writer image generation groups", () => {
     expect(String(message?.text)).toContain("Provider rejected the prompt");
     expect(String(message?.text)).not.toMatch(/null|undefined/);
   });
+
+  it("applies dark mode palette for demand and prompt elements when isDark is true", () => {
+    const group = buildImageGenerationGroupElements([], {
+      userPrompt: "生成一张图片",
+      optimizedPrompt: "Generate a clean product image.",
+      title: "Clean product image",
+      model: "bytedance/seedream-4.6",
+      jobId: "job_4",
+      runId: "run_4",
+      sessionId: "session_4",
+      aspectRatio: "1:1",
+      isDark: true,
+    });
+
+    const rectangles = group.elements.filter((el) => el.type === "rectangle");
+    const texts = group.elements.filter((el) => el.type === "text");
+
+    expect(rectangles).toHaveLength(3);
+
+    // demand container
+    const demandContainer = rectangles.find((el) => el.strokeColor === "#1E293B");
+    expect(demandContainer).toBeTruthy();
+    expect(demandContainer?.backgroundColor).toBe("#0F172A");
+
+    // prompt container
+    const promptContainer = rectangles.find((el) => el.strokeColor === "#0D9488");
+    expect(promptContainer).toBeTruthy();
+    expect(promptContainer?.backgroundColor).toBe("#042F2E");
+
+    // prompt text strokeColor
+    const promptText = texts.find((el) => el.strokeColor === "#2DD4BF");
+    expect(promptText).toBeTruthy();
+  });
 });
+

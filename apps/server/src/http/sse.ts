@@ -1,3 +1,5 @@
+import type { OutgoingHttpHeader, OutgoingHttpHeaders } from "node:http";
+
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
@@ -9,11 +11,27 @@ import {
 import type { RequestAuthenticator } from "../supabase/user.js";
 import type { CanvasEventBuffer } from "../ws/event-buffer.js";
 
+type CanvasLookupClient = {
+  from: (table: string) => {
+    select: (columns: string) => {
+      eq: (
+        column: string,
+        value: string,
+      ) => {
+        maybeSingle: () => PromiseLike<{
+          data: unknown;
+          error: unknown;
+        }>;
+      };
+    };
+  };
+};
+
 export async function registerSseRoutes(
   app: FastifyInstance,
   options: {
     auth: RequestAuthenticator;
-    createUserClient: (accessToken: string) => any;
+    createUserClient: (accessToken: string) => unknown;
     eventBuffer: CanvasEventBuffer;
   },
 ) {
@@ -24,14 +42,16 @@ export async function registerSseRoutes(
     }
 
     const { canvasId } = request.params as { canvasId: string };
-    const client = options.createUserClient(user.accessToken);
+    const client = options.createUserClient(
+      user.accessToken,
+    ) as CanvasLookupClient;
     const { data: canvas, error } = await client
       .from("canvases")
       .select("id")
       .eq("id", canvasId)
       .maybeSingle();
 
-    if (error || !canvas) {
+    if (error || !isCanvasRecord(canvas)) {
       return reply.code(404).send(
         applicationErrorResponseSchema.parse({
           error: {
@@ -46,12 +66,25 @@ export async function registerSseRoutes(
     const queryLastEventId = parsedQuery.success
       ? parsedQuery.data.lastEventId
       : undefined;
-    const headerLastEventId = parseLastEventId(request.headers["last-event-id"]);
+    const headerLastEventId = parseLastEventId(
+      request.headers["last-event-id"],
+    );
     const lastEventId = headerLastEventId ?? queryLastEventId ?? 0;
 
+    request.log.debug(
+      {
+        canvasId,
+        lastEventId,
+        userId: user.id,
+      },
+      "Opening canvas SSE stream",
+    );
+
+    const responseHeaders = normalizeResponseHeaders(reply.getHeaders());
     reply.hijack();
     const response = reply.raw;
     response.writeHead(200, {
+      ...responseHeaders,
       "content-type": "text/event-stream; charset=utf-8",
       "cache-control": "no-cache, no-transform",
       connection: "keep-alive",
@@ -110,4 +143,25 @@ function parseLastEventId(value: string | string[] | undefined) {
   }
 
   return parsed;
+}
+
+function isCanvasRecord(value: unknown): value is { id: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "id" in value &&
+    typeof value.id === "string"
+  );
+}
+
+function normalizeResponseHeaders(
+  headers: Record<string, OutgoingHttpHeader | undefined>,
+): OutgoingHttpHeaders {
+  return Object.fromEntries(
+    Object.entries(headers).filter(
+      (entry): entry is [string, OutgoingHttpHeader] => {
+        return entry[1] !== undefined;
+      },
+    ),
+  );
 }

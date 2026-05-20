@@ -4,14 +4,15 @@ import { Lock, Plus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { useGenerationErrorHandler } from "../../hooks/use-generation-error-handler";
+import { normalizeCanvasElements } from "../../lib/canvas-normalize";
+import {
+  type VideoGeneratorData,
+  resizeVideoGeneratorElement,
+  updateVideoGeneratorElement,
+} from "../../lib/canvas-video-generator";
 import type { VideoModelInfo } from "../../lib/server-api";
 import { fetchVideoModels, generateVideoDirect } from "../../lib/server-api";
-import { useGenerationErrorHandler } from "../../hooks/use-generation-error-handler";
-import {
-  updateVideoGeneratorElement,
-  resizeVideoGeneratorElement,
-  type VideoGeneratorData,
-} from "../../lib/canvas-video-generator";
 // No longer needs poster frame extraction -- videos use embeddable elements
 
 type VideoGeneratorPanelProps = {
@@ -24,8 +25,8 @@ type VideoGeneratorPanelProps = {
   onClose: () => void;
 };
 
-const ASPECT_RATIOS = ["16:9", "9:16"] as const;
-const DURATIONS = [4, 5, 6, 8] as const;
+const ASPECT_RATIOS = ["16:9", "9:16", "4:3", "3:4", "1:1", "21:9"] as const;
+const DURATIONS = [4, 5, 6, 8, 10] as const;
 
 export function VideoGeneratorPanel({
   elementId,
@@ -42,9 +43,7 @@ export function VideoGeneratorPanel({
   const [duration, setDuration] = useState(data.duration);
   const [resolution, setResolution] = useState(data.resolution);
   const [loading, setLoading] = useState(data.status === "generating");
-  const [error, setError] = useState<string | null>(
-    data.errorMessage ?? null,
-  );
+  const [error, setError] = useState<string | null>(data.errorMessage ?? null);
   const [models, setModels] = useState<VideoModelInfo[]>([]);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showParamsPopover, setShowParamsPopover] = useState(false);
@@ -77,7 +76,9 @@ export function VideoGeneratorPanel({
       .catch((err) => {
         console.warn("[video-gen] Failed to fetch models:", err);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Close dropdowns when clicking outside the panel
@@ -110,10 +111,26 @@ export function VideoGeneratorPanel({
   // Calculate panel screen position from canvas coordinates
   const { scrollX, scrollY, zoom } = canvasScrollZoom;
   const screenX = (elementBounds.x + scrollX) * zoom;
-  const screenY =
-    (elementBounds.y + elementBounds.height + scrollY) * zoom + 8;
+  const screenY = (elementBounds.y + elementBounds.height + scrollY) * zoom + 8;
 
   const currentModel = models.find((m) => m.id === model);
+  const availableDurations =
+    currentModel?.limits?.allowedDurations?.length
+      ? currentModel.limits.allowedDurations
+      : DURATIONS;
+  const supportsLastFrame = (currentModel?.limits?.maxInputImages ?? 1) > 1;
+
+  useEffect(() => {
+    if (!currentModel?.limits?.allowedDurations?.length) return;
+    if (currentModel.limits.allowedDurations.includes(duration)) return;
+
+    const nextDuration = currentModel.limits.allowedDurations[0];
+    if (nextDuration == null) return;
+    setDuration(nextDuration);
+    updateVideoGeneratorElement(excalidrawApi, elementId, {
+      duration: nextDuration,
+    });
+  }, [currentModel, duration, excalidrawApi, elementId]);
 
   const handleAspectRatioChange = useCallback(
     (ratio: string) => {
@@ -136,11 +153,24 @@ export function VideoGeneratorPanel({
 
   const handleModelChange = useCallback(
     (m: string) => {
+      const nextModel = models.find((item) => item.id === m);
+      const allowedDurations = nextModel?.limits?.allowedDurations;
+      if (allowedDurations?.length && !allowedDurations.includes(duration)) {
+        const nextDuration = allowedDurations[0];
+        if (nextDuration == null) return;
+        setDuration(nextDuration);
+        updateVideoGeneratorElement(excalidrawApi, elementId, {
+          duration: nextDuration,
+        });
+      }
+      if ((nextModel?.limits?.maxInputImages ?? 1) <= 1) {
+        setLastFrame(null);
+      }
       setModel(m);
       setShowModelDropdown(false);
       updateVideoGeneratorElement(excalidrawApi, elementId, { model: m });
     },
-    [excalidrawApi, elementId],
+    [duration, excalidrawApi, elementId, models],
   );
 
   const handleFrameUpload = useCallback(
@@ -186,7 +216,7 @@ export function VideoGeneratorPanel({
     try {
       const inputImages: string[] = [];
       if (firstFrame) inputImages.push(firstFrame.dataUrl);
-      if (lastFrame) inputImages.push(lastFrame.dataUrl);
+      if (supportsLastFrame && lastFrame) inputImages.push(lastFrame.dataUrl);
 
       const result = await generateVideoDirect(
         accessTokenRef.current,
@@ -205,7 +235,9 @@ export function VideoGeneratorPanel({
 
       // Create embeddable element for inline video playback on canvas.
       // Dynamic import -- excalidraw is client-only.
-      const { convertToExcalidrawElements } = await import("@excalidraw/excalidraw");
+      const { convertToExcalidrawElements } = await import(
+        "@excalidraw/excalidraw"
+      );
       if (controller.signal.aborted) return;
 
       const newElements = convertToExcalidrawElements([
@@ -225,6 +257,12 @@ export function VideoGeneratorPanel({
           },
         } as any,
       ]);
+      const normalized = normalizeCanvasElements(
+        newElements as Record<string, unknown>[],
+      );
+      if (normalized.changed) {
+        console.log("[video-gen] normalized generated video element style");
+      }
 
       // Replace generator placeholder with video embeddable element
       const elements = excalidrawApi
@@ -233,7 +271,7 @@ export function VideoGeneratorPanel({
           el.id === elementId ? { ...el, isDeleted: true } : el,
         );
       excalidrawApi.updateScene({
-        elements: [...elements, ...newElements],
+        elements: [...elements, ...normalized.elements],
         captureUpdate: "IMMEDIATELY",
       });
 
@@ -262,6 +300,7 @@ export function VideoGeneratorPanel({
     resolution,
     firstFrame,
     lastFrame,
+    supportsLastFrame,
     excalidrawApi,
     elementId,
     elementBounds,
@@ -303,41 +342,43 @@ export function VideoGeneratorPanel({
           ) : (
             <>
               <Plus className="h-4 w-4 text-muted-foreground" />
-              <span className="text-[10px] text-muted-foreground">
-                首帧
-              </span>
+              <span className="text-[10px] text-muted-foreground">首帧</span>
             </>
           )}
         </button>
 
-        {/* Last frame */}
-        <input
-          ref={lastFrameInputRef}
-          type="file"
-          accept="image/png,image/jpeg,image/webp"
-          className="hidden"
-          onChange={handleFrameUpload("last", setLastFrame)}
-        />
-        <button
-          type="button"
-          onClick={() => lastFrameInputRef.current?.click()}
-          className="flex h-[68px] w-[56px] flex-col items-center justify-center gap-1 rounded-2xl bg-muted/60 transition-colors hover:bg-muted"
-        >
-          {lastFrame ? (
-            <img
-              src={lastFrame.dataUrl}
-              alt="尾帧"
-              className="h-full w-full rounded-2xl object-cover"
+        {supportsLastFrame && (
+          <>
+            {/* Last frame */}
+            <input
+              ref={lastFrameInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={handleFrameUpload("last", setLastFrame)}
             />
-          ) : (
-            <>
-              <Plus className="h-4 w-4 text-muted-foreground" />
-              <span className="text-[10px] text-muted-foreground">
-                尾帧
-              </span>
-            </>
-          )}
-        </button>
+            <button
+              type="button"
+              onClick={() => lastFrameInputRef.current?.click()}
+              className="flex h-[68px] w-[56px] flex-col items-center justify-center gap-1 rounded-2xl bg-muted/60 transition-colors hover:bg-muted"
+            >
+              {lastFrame ? (
+                <img
+                  src={lastFrame.dataUrl}
+                  alt="尾帧"
+                  className="h-full w-full rounded-2xl object-cover"
+                />
+              ) : (
+                <>
+                  <Plus className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-[10px] text-muted-foreground">
+                    尾帧
+                  </span>
+                </>
+              )}
+            </button>
+          </>
+        )}
       </div>
 
       {/* Prompt textarea */}
@@ -413,7 +454,7 @@ export function VideoGeneratorPanel({
                   Duration
                 </div>
                 <div className="flex gap-1">
-                  {DURATIONS.map((d) => (
+                  {availableDurations.map((d) => (
                     <button
                       key={d}
                       type="button"
