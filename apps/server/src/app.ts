@@ -1,84 +1,90 @@
-import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
+import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 
 import type { CucumberAgentFactory } from "./agent/deep-agent.js";
 import {
-  createAgentPersistenceService,
   type AgentPersistenceService,
+  createAgentPersistenceService,
 } from "./agent/persistence/index.js";
+import { RunEventPump } from "./agent/run-event-pump.js";
 import { createAgentRunService } from "./agent/runtime.js";
-import { registerAllProviders } from "./generation/providers/register-all.js";
 import {
-  createViewerService,
-  type ViewerService,
-} from "./features/bootstrap/ensure-user-foundation.js";
+  type ServerEnv,
+  loadServerEnv,
+  resolveDefaultAgentModel,
+} from "./config/env.js";
 import {
-  createCanvasService,
-  type CanvasService,
-} from "./features/canvas/canvas-service.js";
-import {
-  createBrandKitService,
-  type BrandKitService,
-} from "./features/brand-kit/brand-kit-service.js";
-import {
-  createProjectService,
-  type ProjectService,
-} from "./features/projects/project-service.js";
-import {
-  createChatService,
-  type ChatService,
-} from "./features/chat/chat-service.js";
-import {
-  createThreadService,
-  type ThreadService,
-} from "./features/chat/thread-service.js";
-import {
-  createAgentRunMetadataService,
   type AgentRunMetadataService,
+  createAgentRunMetadataService,
 } from "./features/agent-runs/agent-run-service.js";
 import {
-  createSettingsService,
+  type ViewerService,
+  createViewerService,
+} from "./features/bootstrap/ensure-user-foundation.js";
+import {
+  type BrandKitService,
+  createBrandKitService,
+} from "./features/brand-kit/brand-kit-service.js";
+import {
+  type CanvasService,
+  createCanvasService,
+} from "./features/canvas/canvas-service.js";
+import {
+  type ChatService,
+  createChatService,
+} from "./features/chat/chat-service.js";
+import {
+  type ThreadService,
+  createThreadService,
+} from "./features/chat/thread-service.js";
+import {
+  type JobService,
+  createJobService,
+} from "./features/jobs/job-service.js";
+import {
+  type ProjectService,
+  createProjectService,
+} from "./features/projects/project-service.js";
+import {
   type SettingsService,
+  createSettingsService,
 } from "./features/settings/settings-service.js";
 import {
-  createUploadService,
   type UploadService,
+  createUploadService,
 } from "./features/uploads/upload-service.js";
-import { type ServerEnv, loadServerEnv, resolveDefaultAgentModel } from "./config/env.js";
-import { createPgmqClient } from "./queue/pgmq-client.js";
-import {
-  createJobService,
-  type JobService,
-} from "./features/jobs/job-service.js";
-import { registerFontsRoutes } from "./http/fonts.js";
-import { registerJobRoutes } from "./http/jobs.js";
+import { registerAllProviders } from "./generation/providers/register-all.js";
 import { registerBrandKitRoutes } from "./http/brand-kits.js";
 import { registerCanvasRoutes } from "./http/canvases.js";
 import { registerChatRoutes } from "./http/chat.js";
+import { registerFontsRoutes } from "./http/fonts.js";
 import { registerGenerateRoutes } from "./http/generate.js";
 import { registerHealthRoutes } from "./http/health.js";
-import { registerImageProxyRoute } from "./http/image-proxy.js";
-import { registerModelRoutes } from "./http/models.js";
 import { registerImageModelRoutes } from "./http/image-models.js";
-import { registerVideoModelRoutes } from "./http/video-models.js";
+import { registerImageProxyRoute } from "./http/image-proxy.js";
+import { registerJobRoutes } from "./http/jobs.js";
+import { registerModelRoutes } from "./http/models.js";
 import { registerProjectRoutes } from "./http/projects.js";
 import { registerRunRoutes } from "./http/runs.js";
 import { registerSettingsRoutes } from "./http/settings.js";
-import { registerUploadRoutes } from "./http/uploads.js";
-import { registerSkillRoutes } from "./http/skills.js";
 import { registerMarketplaceRoutes } from "./http/skills-marketplace.js";
+import { registerSkillRoutes } from "./http/skills.js";
+import { registerSseRoutes } from "./http/sse.js";
+import { registerUploadRoutes } from "./http/uploads.js";
+import { registerVideoModelRoutes } from "./http/video-models.js";
 import { registerViewerRoutes } from "./http/viewer.js";
-import { CanvasEventBuffer } from "./ws/event-buffer.js";
-import { ConnectionManager } from "./ws/connection-manager.js";
-import { registerWsRoute } from "./ws/handler.js";
+import { createTaskManager } from "./queue/task-manager.js";
 import { createAdminSupabaseClient } from "./supabase/admin.js";
 import {
+  type RequestAuthenticator,
   createSupabaseRequestAuthenticator,
   createUserSupabaseClientFactory,
-  type RequestAuthenticator,
 } from "./supabase/user.js";
+import { ConnectionManager } from "./ws/connection-manager.js";
+import { CanvasEventBuffer } from "./ws/event-buffer.js";
+import { registerWsRoute } from "./ws/handler.js";
 
 export type BuildAppOptions = {
   agentFactory?: CucumberAgentFactory;
@@ -115,22 +121,13 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void app.register(async (instance) => {
     await instance.register(websocket);
     await registerWsRoute(instance, {
-      agentRuns,
-      agentRunMetadataService,
       auth,
-      chatService,
       connectionManager,
-      eventBuffer,
-      settingsService,
-      threadService,
-      viewerService,
     });
   });
   const auth = options.auth ?? createSupabaseRequestAuthenticator(env);
   const createUserClient = createUserSupabaseClientFactory(env);
-  let adminClient:
-    | ReturnType<typeof createAdminSupabaseClient>
-    | undefined;
+  let adminClient: ReturnType<typeof createAdminSupabaseClient> | undefined;
   const getAdminClient = () => {
     adminClient ??= createAdminSupabaseClient(env);
     return adminClient;
@@ -147,7 +144,8 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const threadService =
     options.threadService ?? createThreadService({ createUserClient });
   const chatService =
-    options.chatService ?? createChatService({ createUserClient, threadService });
+    options.chatService ??
+    createChatService({ createUserClient, threadService });
   const agentRunMetadataService =
     options.agentRunMetadataService ??
     createAgentRunMetadataService({ getAdminClient });
@@ -155,22 +153,23 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     options.agentPersistenceService ?? createAgentPersistenceService(env);
   const settingsService =
     options.settingsService ??
-      createSettingsService({
-        createUserClient,
-        defaultModel: resolveDefaultAgentModel(env),
-      });
+    createSettingsService({
+      createUserClient,
+      defaultModel: resolveDefaultAgentModel(env),
+    });
   const uploadService =
     options.uploadService ?? createUploadService({ createUserClient });
-  const pgmq = env.supabaseDbUrl
-    ? createPgmqClient(env.supabaseDbUrl)
+  const taskManager = env.supabaseDbUrl
+    ? createTaskManager(env.supabaseDbUrl)
     : undefined;
   const jobService =
     options.jobService ??
-    (pgmq
-      ? createJobService({ createUserClient, getAdminClient, pgmq })
+    (taskManager
+      ? createJobService({ createUserClient, getAdminClient, taskManager })
       : undefined);
 
-  const connectionManager = options.connectionManager ?? new ConnectionManager();
+  const connectionManager =
+    options.connectionManager ?? new ConnectionManager();
   const eventBuffer = new CanvasEventBuffer();
   setInterval(() => eventBuffer.cleanup(), 5 * 60 * 1000);
   const agentRuns = createAgentRunService({
@@ -184,8 +183,20 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       ? {}
       : { eventDelayMs: options.mockEventDelayMs }),
     env,
+    eventBuffer,
     ...(jobService ? { jobService } : {}),
     viewerService,
+  });
+  const runEventPump = new RunEventPump({
+    agentRuns,
+    chatService,
+    eventBuffer,
+  });
+
+  app.addHook("onClose", async () => {
+    if (taskManager) {
+      await taskManager.shutdown();
+    }
   });
 
   app.addHook("onRequest", async (request, reply) => {
@@ -203,7 +214,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     }
 
     if (corsResult.isBrowserRequest) {
-      reply.header("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+      reply.header(
+        "access-control-allow-methods",
+        "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+      );
       reply.header(
         "access-control-allow-headers",
         resolveAllowedHeaders(
@@ -223,9 +237,15 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void registerRunRoutes(app, agentRuns, {
     agentRunMetadataService,
     auth,
+    runEventPump,
     settingsService,
     threadService,
     viewerService,
+  });
+  void registerSseRoutes(app, {
+    auth,
+    createUserClient,
+    eventBuffer,
   });
   void registerViewerRoutes(app, {
     auth,
@@ -271,7 +291,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     void registerJobRoutes(app, { auth, jobService, viewerService });
   }
   void registerSkillRoutes(app, { auth, createUserClient, viewerService });
-  void registerMarketplaceRoutes(app, { auth, createUserClient, viewerService });
+  void registerMarketplaceRoutes(app, {
+    auth,
+    createUserClient,
+    viewerService,
+  });
 
   return app;
 }

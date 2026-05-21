@@ -176,11 +176,8 @@ export async function runVideoGenerate(
   // Filter invalid image references
   const normalizedInput: VideoGenerateInput = (() => {
     if (!input.inputImages?.length) return input;
-    const validImages = input.inputImages.filter(
-      (img) =>
-        img.startsWith("http://") ||
-        img.startsWith("https://") ||
-        img.startsWith("data:"),
+    const validImages = input.inputImages.filter((img) =>
+      /^(https?:\/\/|data:)/i.test(img),
     );
     if (validImages.length > 0) {
       return { ...input, inputImages: validImages };

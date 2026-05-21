@@ -2,29 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type {
-  StreamEvent,
-  WsCommandAck,
-  WsRpcRequest,
-  RunCreateRequest,
-} from "@cucumber/shared";
+import type { WsRpcRequest } from "@cucumber/shared";
 import { getServerBaseUrl } from "../lib/env";
 
-type EventCallback = (event: StreamEvent) => void;
 type RPCHandler = (
   params: Record<string, unknown>,
 ) => Promise<Record<string, unknown>>;
 
 export type WebSocketHandle = {
   connected: boolean;
-  startRun: (
-    payload: RunCreateRequest,
-    onAck?: (ack: WsCommandAck) => void,
-  ) => void;
-  cancelRun: (runId: string) => void;
-  onEvent: (cb: EventCallback) => () => void;
   registerRPC: (method: string, handler: RPCHandler) => () => void;
-  resumeCanvas: (canvasId: string, onAck?: (ack: WsCommandAck) => void) => void;
 };
 
 export function useWebSocket(
@@ -51,29 +38,20 @@ export function useWebSocket(
   const reconnectAttempt = useRef(0);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disposed = useRef(false);
-
-  const eventListeners = useRef<Set<EventCallback>>(new Set());
-  const ackListeners = useRef<
-    Map<string, (ack: WsCommandAck) => void>
-  >(new Map());
   const rpcHandlers = useRef<Map<string, RPCHandler>>(new Map());
 
   const connect = useCallback(() => {
     const token = getToken();
     if (disposed.current) return;
-    // Skip if already connected -- prevents React Strict Mode double-mount
-    // from replacing an active connection mid-stream
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       return;
     }
-    // Close any existing connection before creating a new one
     if (wsRef.current) {
-      wsRef.current.onclose = null; // prevent reconnect from old socket
+      wsRef.current.onclose = null;
       wsRef.current.close();
       wsRef.current = null;
     }
     if (!token) {
-      // Token not yet available (auth loading) -- retry shortly
       reconnectTimer.current = setTimeout(connect, 500);
       return;
     }
@@ -87,9 +65,9 @@ export function useWebSocket(
     wsRef.current = ws;
 
     ws.onopen = () => {
-      console.log("[ws] connected, connectionId:", connectionIdRef.current);
       setConnected(true);
       reconnectAttempt.current = 0;
+      console.log("[ws] browser bridge connected:", connectionIdRef.current);
     };
 
     ws.onmessage = (event) => {
@@ -101,49 +79,19 @@ export function useWebSocket(
         return;
       }
 
-      if (msg.type === "event") {
-        const streamEvent = msg.event as StreamEvent;
-        // Defensive: skip malformed events without proper structure
-        if (!streamEvent || typeof streamEvent !== "object") {
-          console.warn("[ws] received malformed stream event:", msg);
-          return;
-        }
-        for (const cb of eventListeners.current) {
-          try {
-            cb(streamEvent);
-          } catch (listenerErr) {
-            // Prevent one listener's error from breaking others
-            console.error("[ws] event listener threw:", listenerErr);
-          }
-        }
-      } else if (msg.type === "command.ack") {
-        const cb = ackListeners.current.get(msg.action as string);
-        if (cb) {
-          ackListeners.current.delete(msg.action as string);
-          try {
-            cb(msg as unknown as WsCommandAck);
-          } catch (ackErr) {
-            console.error("[ws] ack listener threw:", ackErr);
-          }
-        }
-      } else if (msg.type === "rpc.request") {
+      if (msg.type === "rpc.request") {
         void handleRpcRequest(ws, msg as unknown as WsRpcRequest);
       }
-      // Unknown message types are silently ignored -- server may add new types
     };
 
     ws.onclose = (event) => {
-      // Only handle close for the CURRENT connection.
-      // React Strict Mode creates two connections; when the server replaces
-      // the old one, its close event fires after remount resets disposed=false.
-      // Without this guard, we'd enter a reconnect loop.
       if (wsRef.current !== ws) return;
 
       setConnected(false);
       wsRef.current = null;
 
       if (event.code === 4001) {
-        console.warn("[ws] Auth rejected, will retry with fresh token");
+        console.warn("[ws] auth rejected, will retry with fresh token");
       }
 
       if (!disposed.current) {
@@ -151,11 +99,7 @@ export function useWebSocket(
           30_000,
           1000 * Math.pow(2, reconnectAttempt.current),
         );
-        const attempt = reconnectAttempt.current + 1;
-        console.log(
-          `[ws] scheduling reconnect attempt ${attempt} in ${delay}ms (code: ${event.code})`,
-        );
-        reconnectAttempt.current = attempt;
+        reconnectAttempt.current += 1;
         reconnectTimer.current = setTimeout(connect, delay);
       }
     };
@@ -212,72 +156,6 @@ export function useWebSocket(
     };
   }, [connect]);
 
-  const sendCommand = useCallback(
-    (action: string, payload: Record<string, unknown>): boolean => {
-      const ws = wsRef.current;
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        console.warn("[ws] command dropped -- not connected, readyState:", ws?.readyState);
-        return false;
-      }
-      try {
-        ws.send(JSON.stringify({ type: "command", action, payload }));
-        return true;
-      } catch (err) {
-        // Guard against serialization errors (e.g. circular refs in payload)
-        console.error("[ws] failed to send command:", action, err);
-        return false;
-      }
-    },
-    [],
-  );
-
-  const startRun = useCallback(
-    (
-      payload: RunCreateRequest,
-      onAck?: (ack: WsCommandAck) => void,
-    ) => {
-      if (onAck) {
-        ackListeners.current.set("agent.run", onAck);
-      }
-      const sent = sendCommand(
-        "agent.run",
-        payload as unknown as Record<string, unknown>,
-      );
-      if (!sent) {
-        // Remove the dangling ack listener so callers don't hang forever
-        ackListeners.current.delete("agent.run");
-      }
-    },
-    [sendCommand],
-  );
-
-  const cancelRun = useCallback(
-    (runId: string) => {
-      sendCommand("agent.cancel", { runId });
-    },
-    [sendCommand],
-  );
-
-  const resumeCanvas = useCallback(
-    (canvasId: string, onAck?: (ack: WsCommandAck) => void) => {
-      if (onAck) {
-        ackListeners.current.set("canvas.resume", onAck);
-      }
-      const sent = sendCommand("canvas.resume", { canvasId, lastSeq: 0 });
-      if (!sent) {
-        ackListeners.current.delete("canvas.resume");
-      }
-    },
-    [sendCommand],
-  );
-
-  const onEvent = useCallback((cb: EventCallback) => {
-    eventListeners.current.add(cb);
-    return () => {
-      eventListeners.current.delete(cb);
-    };
-  }, []);
-
   const registerRPC = useCallback(
     (method: string, handler: RPCHandler) => {
       rpcHandlers.current.set(method, handler);
@@ -288,5 +166,5 @@ export function useWebSocket(
     [],
   );
 
-  return { connected, startRun, cancelRun, onEvent, registerRPC, resumeCanvas };
+  return { connected, registerRPC };
 }

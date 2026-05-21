@@ -27,7 +27,7 @@ function makeDevSession(): Session {
     access_token: DEV_ACCESS_TOKEN,
     token_type: "bearer",
     expires_in: 999999,
-    expires_at: undefined,
+    expires_at: Math.floor(Date.now() / 1000) + 999999,
     refresh_token: "",
     user: {
       id: MOCK_USER_ID,

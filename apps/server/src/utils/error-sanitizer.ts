@@ -5,8 +5,7 @@
 
 const PROVIDER_PATTERN =
   /google|vertex|openai|deepseek|seedream|volcengine|langchain|gaxios|undici|fetch failed/i;
-const DB_PATTERN =
-  /supabase|postgres|pgmq|database|relation|column|constraint/i;
+const DB_PATTERN = /supabase|postgres|database|relation|column|constraint/i;
 const AUTH_PATTERN =
   /jwt|token|unauthorized|forbidden|credential|service.account/i;
 const INFRA_PATTERN =
@@ -14,24 +13,45 @@ const INFRA_PATTERN =
 
 export function sanitizeErrorForClient(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
+  const errorWithExtras = error as Error & {
+    cause?: unknown;
+    response?: { status?: unknown; data?: unknown; body?: unknown };
+    details?: unknown;
+  };
 
   // Log full detail server-side for debugging
   console.error("[error-sanitizer] Raw error:", raw);
   if (error instanceof Error) {
     // Log nested cause chain (LangChain wraps errors multiple levels deep)
-    let cause = (error as any).cause;
+    let cause: unknown = errorWithExtras.cause;
     while (cause) {
-      console.error("[error-sanitizer] Caused by:", cause.message ?? cause);
-      cause = cause.cause;
+      console.error(
+        "[error-sanitizer] Caused by:",
+        cause instanceof Error ? cause.message : cause,
+      );
+      cause =
+        typeof cause === "object" && cause !== null && "cause" in cause
+          ? (cause as { cause?: unknown }).cause
+          : undefined;
     }
     // Log response details if present (Google API errors attach response/details)
-    const errAny = error as any;
-    if (errAny.response) {
-      console.error("[error-sanitizer] Response status:", errAny.response.status);
-      console.error("[error-sanitizer] Response data:", JSON.stringify(errAny.response.data ?? errAny.response.body ?? "").substring(0, 2000));
+    if (errorWithExtras.response) {
+      console.error(
+        "[error-sanitizer] Response status:",
+        errorWithExtras.response.status,
+      );
+      console.error(
+        "[error-sanitizer] Response data:",
+        JSON.stringify(
+          errorWithExtras.response.data ?? errorWithExtras.response.body ?? "",
+        ).substring(0, 2000),
+      );
     }
-    if (errAny.details) {
-      console.error("[error-sanitizer] Details:", JSON.stringify(errAny.details).substring(0, 2000));
+    if (errorWithExtras.details) {
+      console.error(
+        "[error-sanitizer] Details:",
+        JSON.stringify(errorWithExtras.details).substring(0, 2000),
+      );
     }
     if (error.stack) {
       console.error("[error-sanitizer] Stack:", error.stack);

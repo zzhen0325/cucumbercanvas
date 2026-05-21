@@ -31,6 +31,7 @@ import type {
 } from "../supabase/user.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
+import type { CanvasEventBuffer } from "../ws/event-buffer.js";
 import { createPipelineLogger } from "../ws/logger.js";
 import { createAgentBackend } from "./backends/index.js";
 import {
@@ -263,6 +264,7 @@ type CreateAgentRuntimeOptions = {
   connectionManager?: ConnectionManager;
   createUserClient?: (accessToken: string) => unknown;
   env: ServerEnv;
+  eventBuffer?: CanvasEventBuffer;
   eventDelayMs?: number;
   jobService?: JobService;
   model?: BaseLanguageModel | string;
@@ -529,7 +531,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               );
             }
 
-            options.connectionManager?.pushToCanvas(canvasId, {
+            options.eventBuffer?.publish(canvasId, {
               type: "canvas.sync" as const,
               runId,
               timestamp: new Date().toISOString(),
@@ -610,7 +612,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               }
 
               if (canvasId) {
-                options.connectionManager?.pushToCanvas(canvasId, {
+                options.eventBuffer?.publish(canvasId, {
                   type: "canvas.sync" as const,
                   runId,
                   timestamp: new Date().toISOString(),
@@ -650,7 +652,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     current.error_message ??
                     `Image generation ${current.status}`,
                 });
-                options.connectionManager?.pushToCanvas(canvasId, {
+                options.eventBuffer?.publish(canvasId, {
                   type: "canvas.sync" as const,
                   runId,
                   timestamp: new Date().toISOString(),
@@ -685,7 +687,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     current.error_message ??
                     "Image generation failed after max retries",
                 });
-                options.connectionManager?.pushToCanvas(canvasId, {
+                options.eventBuffer?.publish(canvasId, {
                   type: "canvas.sync" as const,
                   runId,
                   timestamp: new Date().toISOString(),
@@ -821,7 +823,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   elementId = insertResult.elementId;
 
                   // Notify connected frontends to refresh canvas
-                  options.connectionManager?.pushToCanvas(canvasId, {
+                  options.eventBuffer?.publish(canvasId, {
                     type: "canvas.sync" as const,
                     runId,
                     timestamp: new Date().toISOString(),

@@ -1,0 +1,25 @@
+{
+  "step": "D7",
+  "description": "不合格时回流路径验证，评分容器→专项Agent重新优化循环",
+  "iterations": [
+    {
+      "iteration": 0,
+      "score": 50,
+      "passed": false
+    },
+    {
+      "iteration": 1,
+      "score": 65,
+      "passed": false
+    },
+    {
+      "iteration": 2,
+      "score": 80,
+      "passed": true
+    }
+  ],
+  "totalIterations": 3,
+  "maxAllowed": 3,
+  "finalStatus": "completed",
+  "noDeadLoop": true
+}

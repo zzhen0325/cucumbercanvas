@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-19T18:11:00+08:00",
+  "updatedAt": "2026-05-19T22:32:18+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -41,11 +41,13 @@
       "status": "active",
       "priority": "P0",
       "owner": "agent-engineering",
-      "summary": "Deep Agents/LangChain runtime with typed tools, persistence, streaming, and workspace skill execution.",
+      "summary": "Deep Agents/LangChain runtime with SSE streaming, MCP-compatible typed tools, persistence, and workspace skill execution.",
       "artifacts": [
         "apps/server/src/agent/deep-agent.ts",
         "apps/server/src/agent/runtime.ts",
         "apps/server/src/agent/tools/index.ts",
+        "apps/server/src/mcp/server.ts",
+        "apps/server/src/mcp/deepagents-bridge.ts",
         "apps/server/src/agent/workspace-skills.ts"
       ]
     },
@@ -68,13 +70,17 @@
       "status": "active",
       "priority": "P0",
       "owner": "generation-engineering",
-      "summary": "Seedream/Volcengine-backed image and video generation through jobs, providers, worker execution, prompt normalization, UI panels, and grouped canvas-native image generation flows.",
+      "summary": "Seedream/Volcengine-backed image and video generation through provider adapters, background_jobs state, Supabase tasks leasing, worker execution, prompt normalization, UI panels, and grouped canvas-native image generation flows.",
       "artifacts": [
         "apps/server/src/generation/providers/seedream.ts",
         "apps/server/src/generation/providers/seedream-prompt.ts",
         "apps/server/src/features/jobs/job-executor.ts",
+        "apps/server/src/features/jobs/job-service.ts",
+        "apps/server/src/queue/task-manager.ts",
+        "apps/server/src/worker.ts",
         "apps/server/src/features/canvas/canvas-element-writer.ts",
         "apps/server/src/agent/runtime.ts",
+        "supabase/migrations/20260331150000_supabase_tasks.sql",
         "apps/web/src/components/canvas/image-generator-panel.tsx",
         "apps/web/src/components/canvas/video-generator-panel.tsx"
       ]

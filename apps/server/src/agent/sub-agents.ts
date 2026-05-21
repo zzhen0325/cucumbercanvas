@@ -1,6 +1,7 @@
 import type { SubAgent } from "deepagents";
 
-import { createVideoGenerateTool } from "./tools/video-generate.js";
+import { bridgeMcpToolToDeepAgent } from "../mcp/deepagents-bridge.js";
+import { createGenerateVideoMcpTool } from "../mcp/tools/generate-video.js";
 
 export function createVideoSubAgent(): SubAgent {
   return {
@@ -10,6 +11,6 @@ export function createVideoSubAgent(): SubAgent {
     systemPrompt: `You are a video generation specialist. Given a description, generate a video using the generate_video tool and return the result.
 
 If video generation is not available or fails, clearly explain the limitation.`,
-    tools: [createVideoGenerateTool()],
+    tools: [bridgeMcpToolToDeepAgent(createGenerateVideoMcpTool())],
   };
 }

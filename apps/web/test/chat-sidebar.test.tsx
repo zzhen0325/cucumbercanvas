@@ -10,6 +10,7 @@ import { ToastProvider } from "../src/components/toast";
 import { ChatSidebar } from "../src/components/chat-sidebar";
 
 const {
+  createRunMock,
   createSessionMock,
   deleteSessionMock,
   fetchImageModelsMock,
@@ -18,8 +19,10 @@ const {
   fetchSessionsMock,
   fetchWorkspaceSkillsMock,
   saveMessageMock,
+  startStreamMock,
   updateSessionTitleMock,
 } = vi.hoisted(() => ({
+  createRunMock: vi.fn(),
   createSessionMock: vi.fn(),
   deleteSessionMock: vi.fn(),
   fetchImageModelsMock: vi.fn(),
@@ -28,10 +31,12 @@ const {
   fetchSessionsMock: vi.fn(),
   fetchWorkspaceSkillsMock: vi.fn(),
   saveMessageMock: vi.fn(),
+  startStreamMock: vi.fn(),
   updateSessionTitleMock: vi.fn(),
 }));
 
 vi.mock("../src/lib/server-api", () => ({
+  createRun: createRunMock,
   createSession: createSessionMock,
   deleteSession: deleteSessionMock,
   fetchImageModels: fetchImageModelsMock,
@@ -43,21 +48,16 @@ vi.mock("../src/lib/server-api", () => ({
   updateSessionTitle: updateSessionTitleMock,
 }));
 
+vi.mock("../src/hooks/use-sse-stream", () => ({
+  useSseStream: () => ({
+    startStream: startStreamMock,
+  }),
+}));
+
 function createMockWs(): WebSocketHandle {
   return {
     connected: true,
-    startRun: vi.fn((payload, onAck) => {
-      // Simulate server ack
-      onAck?.({
-        type: "command.ack",
-        action: "agent.run",
-        payload: { runId: "run_123" },
-      });
-    }),
-    cancelRun: vi.fn(),
-    onEvent: vi.fn(() => () => {}),
     registerRPC: vi.fn(() => () => {}),
-    resumeCanvas: vi.fn(),
   };
 }
 
@@ -85,6 +85,8 @@ describe("ChatSidebar", () => {
       writable: true,
     });
     mockWs = createMockWs();
+    createRunMock.mockReset();
+    createRunMock.mockResolvedValue({ runId: "run_123" });
     createSessionMock.mockReset();
     createSessionMock.mockResolvedValue({
       session: {
@@ -114,6 +116,11 @@ describe("ChatSidebar", () => {
     fetchWorkspaceSkillsMock.mockResolvedValue({ skills: [] });
     saveMessageMock.mockReset();
     saveMessageMock.mockResolvedValue(undefined);
+    startStreamMock.mockReset();
+    startStreamMock.mockReturnValue({
+      done: Promise.resolve(),
+      stop: vi.fn(),
+    });
     updateSessionTitleMock.mockReset();
     updateSessionTitleMock.mockResolvedValue(undefined);
   });
@@ -124,7 +131,7 @@ describe("ChatSidebar", () => {
     vi.restoreAllMocks();
   });
 
-  it("starts runs via WebSocket with the active real session id", async () => {
+  it("starts runs via HTTP createRun with the active real session id", async () => {
     render(
       <ToastProvider>
         <ChatSidebar
@@ -143,21 +150,29 @@ describe("ChatSidebar", () => {
     await userEvent.type(input, "hello cucumber{Enter}");
 
     await waitFor(() =>
-      expect(mockWs.startRun).toHaveBeenCalledWith(
+      expect(createRunMock).toHaveBeenCalledWith(
         expect.objectContaining({
           sessionId: "session-real",
           conversationId: "canvas-1",
           prompt: "hello cucumber",
           canvasId: "canvas-1",
         }),
-        expect.any(Function),
+        expect.objectContaining({
+          accessToken: "token_abc",
+        }),
       ),
     );
-    expect(mockWs.startRun).not.toHaveBeenCalledWith(
+    expect(createRunMock).not.toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: "session-canvas-1",
       }),
       expect.anything(),
+    );
+    expect(startStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        canvasId: "canvas-1",
+        onEvent: expect.any(Function),
+      }),
     );
   });
 });

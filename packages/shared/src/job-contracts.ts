@@ -18,6 +18,15 @@ export const backgroundJobTypeSchema = z.enum([
 ]);
 export type BackgroundJobType = z.infer<typeof backgroundJobTypeSchema>;
 
+export const backgroundTaskStatusSchema = z.enum([
+  "queued",
+  "running",
+  "succeeded",
+  "canceled",
+  "dead_letter",
+]);
+export type BackgroundTaskStatus = z.infer<typeof backgroundTaskStatusSchema>;
+
 // --- Payloads ---
 
 export const imageGenerationPayloadSchema = z.object({
@@ -25,7 +34,9 @@ export const imageGenerationPayloadSchema = z.object({
   model: z.string().optional(),
   aspect_ratio: z.string().optional(),
 });
-export type ImageGenerationPayload = z.infer<typeof imageGenerationPayloadSchema>;
+export type ImageGenerationPayload = z.infer<
+  typeof imageGenerationPayloadSchema
+>;
 
 export const videoGenerationPayloadSchema = z.object({
   prompt: z.string().min(1),
@@ -37,7 +48,9 @@ export const videoGenerationPayloadSchema = z.object({
   input_video: z.string().optional(),
   enable_audio: z.boolean().optional(),
 });
-export type VideoGenerationPayload = z.infer<typeof videoGenerationPayloadSchema>;
+export type VideoGenerationPayload = z.infer<
+  typeof videoGenerationPayloadSchema
+>;
 
 export const createVideoJobRequestSchema = z.object({
   project_id: z.string().uuid().optional(),
@@ -82,6 +95,28 @@ export const backgroundJobSchema = z.object({
   canceled_at: z.string().nullable(),
 });
 export type BackgroundJob = z.infer<typeof backgroundJobSchema>;
+
+export const backgroundTaskSchema = z.object({
+  id: z.string().uuid(),
+  job_id: z.string().uuid(),
+  workspace_id: z.string().uuid(),
+  canvas_id: z.string().uuid().nullable(),
+  session_id: z.string().uuid().nullable(),
+  queue_name: z.string(),
+  job_type: backgroundJobTypeSchema,
+  status: backgroundTaskStatusSchema,
+  available_at: z.string(),
+  lease_until: z.string().nullable(),
+  locked_at: z.string().nullable(),
+  locked_by: z.string().nullable(),
+  last_error_code: z.string().nullable(),
+  last_error_message: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  completed_at: z.string().nullable(),
+  canceled_at: z.string().nullable(),
+});
+export type BackgroundTask = z.infer<typeof backgroundTaskSchema>;
 
 // --- API Request schemas ---
 

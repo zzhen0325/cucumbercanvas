@@ -6,6 +6,7 @@ import {
   replaceImageGenerationPlaceholder,
 } from "../../canvas/canvas-element-writer.js";
 import { type ExecutorContext, registerExecutor } from "../job-executor.js";
+import { persistInlineInputImages } from "./inline-input-images.js";
 
 registerExecutor(
   "image_generation",
@@ -52,11 +53,11 @@ registerExecutor(
     const model = payload.model ?? "bytedance/seedream-4.6";
     const providerName = resolveImageProviderName(model);
 
-    // Renew VT every 60s (half of the 120s image queue VT) to prevent
-    // the message from becoming visible while we are still processing.
-    const IMAGE_VT_SECONDS = 120;
+    // Renew the task lease every 60s (half of the 120s image worker lease)
+    // so another worker does not reclaim the same job mid-flight.
+    const IMAGE_LEASE_SECONDS = 120;
     const heartbeatTimer = setInterval(() => {
-      ctx.renewVt(IMAGE_VT_SECONDS);
+      ctx.renewLease(IMAGE_LEASE_SECONDS);
     }, 60_000);
 
     // Log input image format for debugging the data-URI-passthrough pipeline
@@ -70,6 +71,14 @@ registerExecutor(
     }
 
     try {
+      const normalizedInputImages = await persistInlineInputImages({
+        admin,
+        ...(payload.input_images ? { inputImages: payload.input_images } : {}),
+        jobId,
+        loggerTag: tag,
+        workspaceId,
+      });
+
       // Generate image via the registered provider
       lap(`${providerName}_call_start`);
       let generated: GeneratedImage;
@@ -80,8 +89,8 @@ registerExecutor(
           ...(payload.aspect_ratio !== undefined
             ? { aspectRatio: payload.aspect_ratio }
             : {}),
-          ...(payload.input_images?.length
-            ? { inputImages: payload.input_images }
+          ...(normalizedInputImages?.length
+            ? { inputImages: normalizedInputImages }
             : {}),
         });
       } catch (genError) {
