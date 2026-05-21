@@ -30,7 +30,7 @@ export interface AgentBinding {
   role?: 'designer' | 'developer' | 'reviewer' | 'assistant';
   color?: string;
   name?: string;
-  status?: 'idle' | 'thinking' | 'running' | 'blocked' | 'done';
+  status?: 'idle' | 'thinking' | 'running' | 'blocked' | 'completed';
   permissions?: ('read' | 'write' | 'spawn')[];
   assignedAt?: number;
 }

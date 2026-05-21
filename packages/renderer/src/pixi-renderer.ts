@@ -268,7 +268,7 @@ export class PixiRenderer {
       case 'running': return '#00ff88';
       case 'thinking': return '#ffdd00';
       case 'blocked': return '#ff4444';
-      case 'done': return '#888888';
+      case 'completed': return '#888888';
       case 'idle':
       default: return '#ffffff';
     }
