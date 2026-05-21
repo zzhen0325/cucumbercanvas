@@ -1,0 +1,66 @@
+{
+  "step": "D1",
+  "description": "5个Agent容器创建完成",
+  "containers": [
+    {
+      "id": "container_1779375538246_1",
+      "label": "风格定义Agent",
+      "agentId": "style-agent",
+      "role": "designer",
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "width": 280,
+        "height": 180
+      }
+    },
+    {
+      "id": "container_1779375538246_2",
+      "label": "排版布局Agent",
+      "agentId": "layout-agent",
+      "role": "designer",
+      "bounds": {
+        "x": 0,
+        "y": 220,
+        "width": 280,
+        "height": 180
+      }
+    },
+    {
+      "id": "container_1779375538246_3",
+      "label": "字体设计Agent",
+      "agentId": "typography-agent",
+      "role": "designer",
+      "bounds": {
+        "x": 0,
+        "y": 440,
+        "width": 280,
+        "height": 180
+      }
+    },
+    {
+      "id": "container_1779375538246_4",
+      "label": "色彩搭配Agent",
+      "agentId": "color-agent",
+      "role": "designer",
+      "bounds": {
+        "x": 0,
+        "y": 660,
+        "width": 280,
+        "height": 180
+      }
+    },
+    {
+      "id": "container_1779375538246_5",
+      "label": "总监审核Agent",
+      "agentId": "director-agent",
+      "role": "reviewer",
+      "bounds": {
+        "x": 400,
+        "y": 300,
+        "width": 320,
+        "height": 240
+      }
+    }
+  ]
+}

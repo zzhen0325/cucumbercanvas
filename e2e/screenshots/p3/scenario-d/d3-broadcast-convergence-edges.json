@@ -1,0 +1,55 @@
+{
+  "step": "D3",
+  "description": "4个专项Agent输出端口全部连线到总监Agent输入端口",
+  "edges": [
+    {
+      "id": "edge-style-to-director",
+      "source": {
+        "nodeId": "container_1779375538252_11",
+        "portId": "port_1779375538252_1"
+      },
+      "target": {
+        "nodeId": "container_1779375538252_15",
+        "portId": "port_1779375538252_5"
+      },
+      "status": "idle"
+    },
+    {
+      "id": "edge-layout-to-director",
+      "source": {
+        "nodeId": "container_1779375538252_12",
+        "portId": "port_1779375538252_2"
+      },
+      "target": {
+        "nodeId": "container_1779375538252_15",
+        "portId": "port_1779375538252_6"
+      },
+      "status": "idle"
+    },
+    {
+      "id": "edge-typo-to-director",
+      "source": {
+        "nodeId": "container_1779375538252_13",
+        "portId": "port_1779375538252_3"
+      },
+      "target": {
+        "nodeId": "container_1779375538252_15",
+        "portId": "port_1779375538252_7"
+      },
+      "status": "idle"
+    },
+    {
+      "id": "edge-color-to-director",
+      "source": {
+        "nodeId": "container_1779375538252_14",
+        "portId": "port_1779375538252_4"
+      },
+      "target": {
+        "nodeId": "container_1779375538252_15",
+        "portId": "port_1779375538252_8"
+      },
+      "status": "idle"
+    }
+  ],
+  "directorInputCount": 4
+}

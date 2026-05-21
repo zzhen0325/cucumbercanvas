@@ -1,0 +1,8 @@
+{
+  "step": "D8-4",
+  "description": "全部Agent标记completed，流程结束",
+  "totalContainers": 7,
+  "completedAgents": 7,
+  "runningAgents": 0,
+  "finalStatus": "all-completed"
+}

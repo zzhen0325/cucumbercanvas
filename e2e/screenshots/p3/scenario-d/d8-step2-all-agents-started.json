@@ -1,0 +1,42 @@
+{
+  "step": "D8-2",
+  "description": "全部Agent启动运行",
+  "runningCount": 7,
+  "agents": [
+    {
+      "agentId": "style-agent",
+      "containerId": "container_1779375538260_29",
+      "startedAt": 1779375538261
+    },
+    {
+      "agentId": "layout-agent",
+      "containerId": "container_1779375538260_30",
+      "startedAt": 1779375538261
+    },
+    {
+      "agentId": "typography-agent",
+      "containerId": "container_1779375538260_31",
+      "startedAt": 1779375538261
+    },
+    {
+      "agentId": "color-agent",
+      "containerId": "container_1779375538260_32",
+      "startedAt": 1779375538261
+    },
+    {
+      "agentId": "director-agent",
+      "containerId": "container_1779375538260_33",
+      "startedAt": 1779375538261
+    },
+    {
+      "agentId": "imagegen-agent",
+      "containerId": "container_1779375538260_34",
+      "startedAt": 1779375538261
+    },
+    {
+      "agentId": "scoring-agent",
+      "containerId": "container_1779375538260_35",
+      "startedAt": 1779375538261
+    }
+  ]
+}
