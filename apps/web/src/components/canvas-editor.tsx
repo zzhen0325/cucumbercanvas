@@ -7,11 +7,16 @@ import dynamic from "next/dynamic";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { WebSocketHandle } from "../hooks/use-websocket";
+import {
+  registerCanvasContainerRenderer,
+  renderCanvasContainer,
+} from "../lib/canvas-containers";
 import { isVideoUrl } from "../lib/canvas-elements";
 import { normalizeCanvasElements } from "../lib/canvas-normalize";
 import { getServerBaseUrl } from "../lib/env";
 import { saveCanvas, uploadThumbnail } from "../lib/server-api";
 import { CanvasToolMenu } from "./canvas-tool-menu";
+import { AgentFlowContainerRenderer } from "./canvas/agent-flow-container-renderer";
 import { VideoCanvasElement } from "./canvas/video-canvas-element";
 import { ErrorBoundary } from "./error-boundary";
 
@@ -34,6 +39,10 @@ const cic: typeof cancelIdleCallback =
 // Memoize CanvasToolMenu to prevent re-renders when parent state changes
 // (e.g. selection changes in the editor don't need to re-render the toolbar)
 const MemoizedCanvasToolMenu = memo(CanvasToolMenu);
+
+registerCanvasContainerRenderer("agent_flow", ({ element }) => (
+  <AgentFlowContainerRenderer element={element} />
+));
 
 export type CanvasSelectedElement = {
   id: string;
@@ -63,6 +72,7 @@ type CanvasEditorProps = {
     elements: Record<string, unknown>[];
     appState: Record<string, unknown>;
     files: Record<string, Record<string, unknown>>;
+    containers?: Record<string, unknown>;
   };
   onApiReady?: (api: any) => void;
   ws?: WebSocketHandle;
@@ -119,6 +129,7 @@ export function CanvasEditor({
     elements: Record<string, unknown>[];
     appState: Record<string, unknown>;
     files: Record<string, Record<string, unknown>>;
+    containers?: Record<string, unknown>;
   } | null>(null);
 
   // Ref to hold initialContent.files for storageUrl lookup in handleChange
@@ -275,6 +286,32 @@ export function CanvasEditor({
       // which would wipe the persisted canvas via FULL REPLACE.
       if (!hydratedRef.current) return;
 
+      const repairedElements = elements.map((element: any) =>
+        typeof element?.backgroundColor === "string" &&
+          Array.isArray(element?.groupIds)
+          ? element
+          : {
+              ...element,
+              ...(typeof element?.backgroundColor === "string"
+                ? {}
+                : { backgroundColor: "transparent" }),
+              ...(Array.isArray(element?.groupIds) ? {} : { groupIds: [] }),
+            },
+      );
+      const repairedInvalidSceneFields = repairedElements.some(
+        (element: any, index: number) => element !== elements[index],
+      );
+      if (repairedInvalidSceneFields && excalidrawApi) {
+        console.warn(
+          "[canvas-editor] repaired element(s) missing required scene fields",
+        );
+        excalidrawApi.updateScene({
+          elements: repairedElements,
+          captureUpdate: "NONE",
+        });
+        return;
+      }
+
       // --- 1. Debounced save ---
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
 
@@ -297,7 +334,7 @@ export function CanvasEditor({
           }
         }
         const content = {
-          elements: elements.filter((el: any) => !el.isDeleted) as Record<
+          elements: repairedElements.filter((el: any) => !el.isDeleted) as Record<
             string,
             unknown
           >[],
@@ -306,6 +343,7 @@ export function CanvasEditor({
             gridModeEnabled: appState.gridModeEnabled,
           },
           files,
+          containers: initialContent.containers ?? {},
         };
         pendingSaveRef.current = content;
 
@@ -372,7 +410,7 @@ export function CanvasEditor({
             const idSet = new Set(selectedIds.split(","));
             const selFiles: Record<string, any> =
               excalidrawApi?.getFiles() ?? {};
-            const selected: CanvasSelectedElement[] = elements
+            const selected: CanvasSelectedElement[] = repairedElements
               .filter((el: any) => idSet.has(el.id) && !el.isDeleted)
               .map((el: any) => {
                 const base: CanvasSelectedElement = {
@@ -567,6 +605,7 @@ export function CanvasEditor({
           gridModeEnabled: appState.gridModeEnabled,
         },
         files,
+        containers: initialContent.containers ?? {},
       };
     } catch (err) {
       console.warn(
@@ -639,6 +678,9 @@ export function CanvasEditor({
   // Excalidraw calls this for every embeddable element; we intercept video URLs
   // and render an inline player, falling back to default for everything else.
   const renderEmbeddable = useCallback((element: any, _appState: any) => {
+    const container = renderCanvasContainer({ element });
+    if (container) return container;
+
     const link = element?.link;
     if (typeof link === "string" && isVideoUrl(link)) {
       return (
@@ -668,8 +710,7 @@ export function CanvasEditor({
             appState: {
               ...initialContent.appState,
               viewBackgroundColor:
-                initialContent.appState.viewBackgroundColor ??
-                (resolvedTheme === "dark" ? "#0f172a" : "#f2f3f4"),
+                initialContent.appState.viewBackgroundColor ?? "transparent",
               ...CANVAS_ITEM_STYLE_DEFAULTS,
             } as any,
             files: inlineFiles as any,

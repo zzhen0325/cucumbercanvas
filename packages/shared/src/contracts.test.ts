@@ -64,7 +64,7 @@ describe("@cucumber/shared contracts", () => {
       ],
     });
     expect(result.attachments).toHaveLength(1);
-    expect(result.attachments![0].assetId).toBe("asset-123");
+    expect(result.attachments?.[0].assetId).toBe("asset-123");
   });
 
   it("accepts optional canvas context refs in run creation", () => {
@@ -105,6 +105,43 @@ describe("@cucumber/shared contracts", () => {
           height: 360,
         },
       ],
+      canvasAgentContext: {
+        viewport: { x: 0, y: 0, zoom: 1, width: 1440, height: 900 },
+        selectedCards: [
+          {
+            kind: "text",
+            elementId: "text-1",
+            text: "主标题：Fresh Market",
+            x: 120,
+            y: 80,
+            width: 320,
+            height: 64,
+          },
+        ],
+        nearbyCards: [
+          {
+            kind: "image",
+            elementId: "image-1",
+            assetId: "asset-123",
+            storageUrl: "https://example.com/ref.png",
+            mimeType: "image/png",
+            x: 480,
+            y: 80,
+            width: 640,
+            height: 360,
+          },
+        ],
+        canvasSummary:
+          "Canvas has 3 visible elements. Selected cards: text#text-1.",
+        cardRelations: [
+          {
+            type: "arrow",
+            sourceId: "text-1",
+            targetId: "image-1",
+            ids: ["arrow-1"],
+          },
+        ],
+      },
     });
 
     expect(result.canvasContextRefs).toHaveLength(3);
@@ -119,6 +156,15 @@ describe("@cucumber/shared contracts", () => {
     expect(result.canvasContextRefs?.[2]).toMatchObject({
       kind: "video",
       durationSeconds: 5,
+    });
+    expect(result.canvasAgentContext?.viewport).toMatchObject({
+      x: 0,
+      zoom: 1,
+    });
+    expect(result.canvasAgentContext?.nearbyCards).toHaveLength(1);
+    expect(result.canvasAgentContext?.cardRelations?.[0]).toMatchObject({
+      type: "arrow",
+      targetId: "image-1",
     });
   });
 
@@ -394,6 +440,10 @@ describe("@cucumber/shared contracts", () => {
     const eventTypes = [
       "run.started",
       "message.delta",
+      "task.plan.created",
+      "task.step.updated",
+      "agent.flow.container.created",
+      "agent.flow.container.updated",
       "tool.started",
       "tool.completed",
       "run.canceled",
@@ -422,12 +472,91 @@ describe("@cucumber/shared contracts", () => {
               timestamp: "2026-03-23T12:00:00.000Z",
             });
             break;
+          case "task.plan.created":
+            streamEventSchema.parse({
+              type,
+              runId: "run_123",
+              plan: {
+                planId: "plan_123",
+                title: "Create campaign board",
+                steps: [
+                  {
+                    stepId: "step_1",
+                    title: "Inspect selected references",
+                    status: "pending",
+                  },
+                ],
+              },
+              timestamp: "2026-03-23T12:00:00.000Z",
+            });
+            break;
+          case "task.step.updated":
+            streamEventSchema.parse({
+              type,
+              runId: "run_123",
+              planId: "plan_123",
+              step: {
+                stepId: "step_1",
+                title: "Inspect selected references",
+                status: "running",
+              },
+              timestamp: "2026-03-23T12:00:00.000Z",
+            });
+            break;
+          case "agent.flow.container.created":
+            streamEventSchema.parse({
+              type,
+              runId: "run_123",
+              container: {
+                containerId: "container_123",
+                kind: "agent_flow",
+                version: 0,
+                hostElementId: "element_123",
+                bounds: { x: 0, y: 0, width: 760, height: 420 },
+              },
+              data: {
+                planId: "plan_123",
+                runId: "run_123",
+                steps: [
+                  {
+                    stepId: "step_1",
+                    title: "Inspect selected references",
+                    status: "pending",
+                  },
+                ],
+              },
+              timestamp: "2026-03-23T12:00:00.000Z",
+            });
+            break;
+          case "agent.flow.container.updated":
+            streamEventSchema.parse({
+              type,
+              runId: "run_123",
+              containerId: "container_123",
+              data: {
+                planId: "plan_123",
+                runId: "run_123",
+                steps: [
+                  {
+                    stepId: "step_1",
+                    title: "Inspect selected references",
+                    status: "completed",
+                  },
+                ],
+                toolLinks: [],
+                artifacts: [],
+              },
+              timestamp: "2026-03-23T12:00:00.000Z",
+            });
+            break;
           case "tool.started":
             streamEventSchema.parse({
               type,
               runId: "run_123",
               toolCallId: "tool_123",
               toolName: "example_tool",
+              planId: "plan_123",
+              stepId: "step_1",
               timestamp: "2026-03-23T12:00:00.000Z",
             });
             break;

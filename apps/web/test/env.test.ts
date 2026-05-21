@@ -8,14 +8,11 @@ describe("@cucumber/web env helpers", () => {
   });
 
   it("loads the browser-safe Supabase env and explicit server base url", () => {
-    const env = loadWebEnv(
-      {},
-      {
-        NEXT_PUBLIC_CUCUMBER_SERVER_BASE_URL: "http://localhost:4010",
-        NEXT_PUBLIC_CUCUMBER_SUPABASE_URL: " https://example.supabase.co ",
-        NEXT_PUBLIC_CUCUMBER_SUPABASE_ANON_KEY: " anon-key ",
-      } as unknown as NodeJS.ProcessEnv,
-    );
+    const env = loadWebEnv({}, {
+      NEXT_PUBLIC_CUCUMBER_SERVER_BASE_URL: "http://localhost:4010",
+      NEXT_PUBLIC_CUCUMBER_SUPABASE_URL: " https://example.supabase.co ",
+      NEXT_PUBLIC_CUCUMBER_SUPABASE_ANON_KEY: " anon-key ",
+    } as unknown as NodeJS.ProcessEnv);
 
     expect(env).toEqual({
       serverBaseUrl: "http://localhost:4010",
@@ -26,12 +23,9 @@ describe("@cucumber/web env helpers", () => {
 
   it("rejects missing browser-safe Supabase env values", () => {
     expect(() =>
-      loadWebEnv(
-        {},
-        {
-          NEXT_PUBLIC_CUCUMBER_SUPABASE_URL: "https://example.supabase.co",
-        } as unknown as NodeJS.ProcessEnv,
-      ),
+      loadWebEnv({}, {
+        NEXT_PUBLIC_CUCUMBER_SUPABASE_URL: "https://example.supabase.co",
+      } as unknown as NodeJS.ProcessEnv),
     ).toThrow(/NEXT_PUBLIC_CUCUMBER_SUPABASE_ANON_KEY/);
   });
 

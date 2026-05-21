@@ -77,6 +77,30 @@ export const canvasContextRefSchema = z.discriminatedUnion("kind", [
   canvasShapeContextRefSchema,
 ]);
 
+export const canvasAgentViewportSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  zoom: z.number().positive(),
+  width: z.number().nonnegative(),
+  height: z.number().nonnegative(),
+});
+
+export const canvasCardRelationSchema = z.object({
+  type: z.enum(["arrow", "bound_text", "group", "container"]),
+  sourceId: z.string().min(1),
+  targetId: z.string().min(1).optional(),
+  ids: z.array(z.string().min(1)).optional(),
+  label: z.string().min(1).optional(),
+});
+
+export const canvasAgentContextSchema = z.object({
+  viewport: canvasAgentViewportSchema,
+  selectedCards: z.array(canvasContextRefSchema).default([]),
+  nearbyCards: z.array(canvasContextRefSchema).default([]),
+  canvasSummary: z.string().min(1),
+  cardRelations: z.array(canvasCardRelationSchema).default([]),
+});
+
 export const imageModelMentionSchema = z.object({
   mentionType: z.literal("image-model"),
   id: z.string().min(1),
@@ -115,6 +139,90 @@ export const videoGenerationPreferenceSchema = z.object({
   models: z.array(z.string().min(1)),
 });
 
+export const canvasContainerKindSchema = z.enum(["agent_flow"]);
+
+export const canvasBoundsSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  width: z.number().positive(),
+  height: z.number().positive(),
+});
+
+export const canvasContainerRefSchema = z.object({
+  containerId: z.string().min(1),
+  kind: canvasContainerKindSchema,
+  version: z.number().int().nonnegative(),
+  hostElementId: z.string().min(1),
+  bounds: canvasBoundsSchema,
+});
+
+export const canvasTaskTargetSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("selection"),
+    elementIds: z.array(z.string().min(1)).default([]),
+  }),
+  z.object({
+    kind: z.literal("elementIds"),
+    elementIds: z.array(z.string().min(1)).min(1),
+  }),
+  z.object({
+    kind: z.literal("region"),
+    bounds: canvasBoundsSchema,
+  }),
+  z.object({
+    kind: z.literal("new_container"),
+    label: z.string().min(1).optional(),
+    bounds: canvasBoundsSchema.optional(),
+  }),
+]);
+
+export const agentTaskStepStatusSchema = z.enum([
+  "pending",
+  "running",
+  "completed",
+  "failed",
+  "canceled",
+]);
+
+export const agentTaskStepSchema = z.object({
+  stepId: z.string().min(1),
+  title: z.string().min(1),
+  description: z.string().min(1).optional(),
+  status: agentTaskStepStatusSchema.default("pending"),
+  target: canvasTaskTargetSchema.optional(),
+  agentName: z.string().min(1).optional(),
+});
+
+export const agentTaskPlanSchema = z.object({
+  planId: z.string().min(1),
+  title: z.string().min(1),
+  summary: z.string().min(1).optional(),
+  steps: z.array(agentTaskStepSchema).min(1),
+});
+
+export const agentFlowToolLinkSchema = z.object({
+  toolCallId: z.string().min(1),
+  toolName: z.string().min(1),
+  stepId: z.string().min(1).optional(),
+  status: z.enum(["running", "completed"]),
+  subAgentName: z.string().min(1).optional(),
+  outputSummary: z.string().min(1).optional(),
+});
+
+export const agentFlowContainerDataSchema = z.object({
+  planId: z.string().min(1),
+  runId: runIdSchema,
+  steps: z.array(agentTaskStepSchema),
+  toolLinks: z.array(agentFlowToolLinkSchema).default([]),
+  artifacts: z.array(toolArtifactSchema).default([]),
+});
+
+export const runExecutionModeSchema = z.enum([
+  "plan_preview",
+  "execute_plan",
+  "direct",
+]);
+
 export const runCreateRequestSchema = z.object({
   sessionId: sessionIdSchema,
   conversationId: conversationIdSchema,
@@ -122,9 +230,12 @@ export const runCreateRequestSchema = z.object({
   canvasId: canvasIdSchema.optional(),
   attachments: z.array(imageAttachmentSchema).optional(),
   canvasContextRefs: z.array(canvasContextRefSchema).optional(),
+  canvasAgentContext: canvasAgentContextSchema.optional(),
   imageGenerationPreference: imageGenerationPreferenceSchema.optional(),
   videoGenerationPreference: videoGenerationPreferenceSchema.optional(),
   mentions: z.array(messageMentionSchema).optional(),
+  executionMode: runExecutionModeSchema.optional(),
+  acceptedPlan: agentTaskPlanSchema.optional(),
   accessToken: z.string().optional(),
   model: z.string().optional(),
 });
@@ -178,6 +289,7 @@ export const canvasContentSchema = z.object({
   elements: z.array(z.record(z.unknown())).default([]),
   appState: z.record(z.unknown()).default({}),
   files: z.record(z.record(z.unknown())).default({}),
+  containers: z.record(z.unknown()).default({}),
 });
 
 export const canvasDetailSchema = z.object({
@@ -211,6 +323,10 @@ export const chatToolActivitySchema = z.object({
   output: z.record(z.unknown()).optional(),
   outputSummary: z.string().optional(),
   artifacts: z.array(toolArtifactSchema).optional(),
+  planId: z.string().min(1).optional(),
+  stepId: z.string().min(1).optional(),
+  subAgentName: z.string().min(1).optional(),
+  parentToolCallId: z.string().min(1).optional(),
 });
 
 export const chatSessionSummarySchema = z.object({
@@ -238,6 +354,10 @@ export const toolBlockSchema = z.object({
   output: z.record(z.unknown()).optional(),
   outputSummary: z.string().optional(),
   artifacts: z.array(toolArtifactSchema).optional(),
+  planId: z.string().min(1).optional(),
+  stepId: z.string().min(1).optional(),
+  subAgentName: z.string().min(1).optional(),
+  parentToolCallId: z.string().min(1).optional(),
 });
 
 export const imageBlockSchema = z.object({
@@ -328,6 +448,21 @@ export type MessageMention = z.infer<typeof messageMentionSchema>;
 export type MentionBlock = z.infer<typeof mentionBlockSchema>;
 export type ImageAttachment = z.infer<typeof imageAttachmentSchema>;
 export type CanvasContextRef = z.infer<typeof canvasContextRefSchema>;
+export type CanvasAgentViewport = z.infer<typeof canvasAgentViewportSchema>;
+export type CanvasCardRelation = z.infer<typeof canvasCardRelationSchema>;
+export type CanvasAgentContext = z.infer<typeof canvasAgentContextSchema>;
+export type CanvasBounds = z.infer<typeof canvasBoundsSchema>;
+export type CanvasContainerKind = z.infer<typeof canvasContainerKindSchema>;
+export type CanvasContainerRef = z.infer<typeof canvasContainerRefSchema>;
+export type CanvasTaskTarget = z.infer<typeof canvasTaskTargetSchema>;
+export type AgentTaskStepStatus = z.infer<typeof agentTaskStepStatusSchema>;
+export type AgentTaskStep = z.infer<typeof agentTaskStepSchema>;
+export type AgentTaskPlan = z.infer<typeof agentTaskPlanSchema>;
+export type AgentFlowToolLink = z.infer<typeof agentFlowToolLinkSchema>;
+export type AgentFlowContainerData = z.infer<
+  typeof agentFlowContainerDataSchema
+>;
+export type RunExecutionMode = z.infer<typeof runExecutionModeSchema>;
 export type ImageGenerationPreference = z.infer<
   typeof imageGenerationPreferenceSchema
 >;
@@ -337,7 +472,9 @@ export type VideoGenerationPreference = z.infer<
 export type ContentBlock = z.infer<typeof contentBlockSchema>;
 export type ChatSessionSummary = z.infer<typeof chatSessionSummarySchema>;
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
-export type ChatMessageCreateRequest = z.infer<typeof chatMessageCreateRequestSchema>;
+export type ChatMessageCreateRequest = z.infer<
+  typeof chatMessageCreateRequestSchema
+>;
 export type ChatToolActivity = z.infer<typeof chatToolActivitySchema>;
 export type ProfileUpdateRequest = z.infer<typeof profileUpdateRequestSchema>;
 export type WorkspaceSettings = z.infer<typeof workspaceSettingsSchema>;

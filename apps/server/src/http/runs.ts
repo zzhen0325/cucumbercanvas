@@ -8,16 +8,16 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@cucumber/shared";
 
-import type { AgentRunService } from "../agent/runtime.js";
 import type { RunEventPump } from "../agent/run-event-pump.js";
+import type { AgentRunService } from "../agent/runtime.js";
+import {
+  type AgentRunMetadataService,
+  AgentRunPersistenceError,
+} from "../features/agent-runs/agent-run-service.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import {
-  AgentRunPersistenceError,
-  type AgentRunMetadataService,
-} from "../features/agent-runs/agent-run-service.js";
-import {
-  ThreadServiceError,
   type ThreadService,
+  ThreadServiceError,
 } from "../features/chat/thread-service.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
@@ -107,12 +107,17 @@ export async function registerRunRoutes(
           sessionId: payload.sessionId,
           conversationId: payload.conversationId,
           prompt: payload.prompt,
-          ...(payload.canvasId !== undefined ? { canvasId: payload.canvasId } : {}),
+          ...(payload.canvasId !== undefined
+            ? { canvasId: payload.canvasId }
+            : {}),
           ...(payload.attachments !== undefined
             ? { attachments: payload.attachments }
             : {}),
           ...(payload.canvasContextRefs !== undefined
             ? { canvasContextRefs: payload.canvasContextRefs }
+            : {}),
+          ...(payload.canvasAgentContext !== undefined
+            ? { canvasAgentContext: payload.canvasAgentContext }
             : {}),
           ...(payload.imageGenerationPreference !== undefined
             ? {
@@ -124,7 +129,15 @@ export async function registerRunRoutes(
                 videoGenerationPreference: payload.videoGenerationPreference,
               }
             : {}),
-          ...(payload.mentions !== undefined ? { mentions: payload.mentions } : {}),
+          ...(payload.mentions !== undefined
+            ? { mentions: payload.mentions }
+            : {}),
+          ...(payload.executionMode !== undefined
+            ? { executionMode: payload.executionMode }
+            : {}),
+          ...(payload.acceptedPlan !== undefined
+            ? { acceptedPlan: payload.acceptedPlan }
+            : {}),
           ...(payload.model !== undefined ? { model: payload.model } : {}),
         },
         runId: response.runId,

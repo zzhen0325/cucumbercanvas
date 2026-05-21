@@ -10,7 +10,11 @@ const RATIO_DIMENSIONS: Record<string, { w: number; h: number }> = {
   "21:9": { w: 1024, h: 439 },
 };
 
-export type VideoGeneratorStatus = "idle" | "generating" | "completed" | "error";
+export type VideoGeneratorStatus =
+  | "idle"
+  | "generating"
+  | "completed"
+  | "error";
 
 export type VideoGeneratorData = {
   type: "video-generator";
@@ -26,8 +30,7 @@ export type VideoGeneratorData = {
 
 function generateId(): string {
   return (
-    Math.random().toString(36).slice(2) +
-    Math.random().toString(36).slice(2)
+    Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
   ).slice(0, 20);
 }
 
@@ -122,7 +125,9 @@ export function createVideoGeneratorElement(
 /**
  * Check if an Excalidraw element is a video-generator placeholder.
  */
-export function isVideoGeneratorElement(element: any): element is { customData: VideoGeneratorData } & Record<string, unknown> {
+export function isVideoGeneratorElement(
+  element: any,
+): element is { customData: VideoGeneratorData } & Record<string, unknown> {
   return element?.customData?.type === "video-generator";
 }
 

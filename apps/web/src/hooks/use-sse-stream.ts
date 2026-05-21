@@ -116,7 +116,9 @@ export function useSseStream(accessToken: string) {
           });
 
           if (!response.ok || !response.body) {
-            throw new Error(`SSE connection failed with status ${response.status}`);
+            throw new Error(
+              `SSE connection failed with status ${response.status}`,
+            );
           }
 
           if (attempt === 0) {

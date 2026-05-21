@@ -84,6 +84,10 @@ For complex tasks:
 
 关于 LangChain、LangGraph、Deep Agents 相关开发，先查看官方 `llms.txt` 作为索引，再进入对应文档获取最佳实践：https://docs.langchain.com/llms.txt
 
+当前项目的 agent runtime 以 `deepagents.createDeepAgent()` 为主装配入口，底层复用 LangChain 模型、工具、消息和流式事件，并通过 LangGraph checkpoint/store 做线程与记忆持久化。核心入口包括 `apps/server/src/agent/deep-agent.ts`、`apps/server/src/agent/runtime.ts`、`apps/server/src/agent/tools/index.ts`、`apps/server/src/mcp/deepagents-bridge.ts`、`apps/server/src/agent/persistence/` 和 `docs/tech/agent-runtime-workflow.md`。
+
+用户对 agent 开发和 LangChain/LangGraph/Deep Agents 框架不熟悉。涉及 agent 方案时，不要机械执行表层想法；先验证用户真实目的，再对照官方 skill/文档、项目现有 Deep Agents/LangGraph runtime、工具协议、backend、store/checkpointer 和流式事件适配判断是否符合最佳实践。如用户想法与框架约束或项目架构冲突，明确指出冲突点与风险，并给出符合当前 runtime 的合理替代方案。
+
 When changing agent runtime code under `apps/server/src/agent/`, inspect the current Deep Agents/LangGraph patterns in the repository before editing. Do not change framework-level orchestration, checkpointer/store behavior, or tool protocol shape without documenting the reason in `docs/architecture.md` or an adjacent technical note.
 
 ## External Frameworks

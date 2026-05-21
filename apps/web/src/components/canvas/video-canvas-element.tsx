@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pause, Play, Volume2, VolumeX } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type VideoCanvasElementProps = {
   src: string;
@@ -64,15 +64,18 @@ export function VideoCanvasElement({
     [playing, play, pause],
   );
 
-  const toggleMuted = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const video = videoRef.current;
-    if (!video) return;
-    const nextMuted = !muted;
-    video.muted = nextMuted;
-    setMuted(nextMuted);
-  }, [muted]);
+  const toggleMuted = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const video = videoRef.current;
+      if (!video) return;
+      const nextMuted = !muted;
+      video.muted = nextMuted;
+      setMuted(nextMuted);
+    },
+    [muted],
+  );
 
   const handleLoadedMetadata = useCallback(() => {
     const video = videoRef.current;

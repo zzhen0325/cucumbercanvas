@@ -2,11 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type {
-  StreamEvent,
-  ToolBlock,
-  ToolArtifact,
-} from "@cucumber/shared";
+import type { StreamEvent, ToolArtifact, ToolBlock } from "@cucumber/shared";
 import type { CanvasSelectedElement } from "../../../components/canvas-editor";
 import { CanvasEditor } from "../../../components/canvas-editor";
 import { TraceDetailPanel } from "../../../components/canvas/trace-detail-panel";
@@ -37,7 +33,12 @@ type HarnessApi = {
     files: { id: string; dataURL: string; mimeType: string; created: number }[],
   ) => void;
   getAppState: () => {
+    scrollX: number;
+    scrollY: number;
     selectedElementIds?: Record<string, boolean>;
+    width: number;
+    height: number;
+    zoom: { value: number };
   };
   getSceneElements: () => readonly any[];
   scrollToContent?: (elements?: any[]) => void;
@@ -121,6 +122,10 @@ function createTimestamp(seed: number) {
 }
 
 function buildDemoEvents(): StreamEvent[] {
+  const generateImageBlock = TOOL_BLOCKS[0]!;
+  const searchWebBlock = TOOL_BLOCKS[1]!;
+  const brandKitBlock = TOOL_BLOCKS[2]!;
+
   return [
     {
       type: "run.started",
@@ -134,7 +139,7 @@ function buildDemoEvents(): StreamEvent[] {
       runId: "run-alpha",
       toolCallId: "tool-call-1",
       toolName: "generate_image",
-      input: TOOL_BLOCKS[0].input,
+      input: generateImageBlock.input,
       timestamp: createTimestamp(2),
     },
     {
@@ -142,8 +147,8 @@ function buildDemoEvents(): StreamEvent[] {
       runId: "run-alpha",
       toolCallId: "tool-call-1",
       toolName: "generate_image",
-      output: TOOL_BLOCKS[0].output,
-      outputSummary: TOOL_BLOCKS[0].outputSummary,
+      output: generateImageBlock.output,
+      outputSummary: generateImageBlock.outputSummary,
       artifacts: DEMO_ARTIFACTS,
       timestamp: createTimestamp(3),
     },
@@ -152,7 +157,7 @@ function buildDemoEvents(): StreamEvent[] {
       runId: "run-alpha",
       toolCallId: "tool-call-2",
       toolName: "search_web",
-      input: TOOL_BLOCKS[1].input,
+      input: searchWebBlock.input,
       timestamp: createTimestamp(4),
     },
     {
@@ -160,7 +165,7 @@ function buildDemoEvents(): StreamEvent[] {
       runId: "run-alpha",
       toolCallId: "tool-call-2",
       toolName: "search_web",
-      outputSummary: TOOL_BLOCKS[1].outputSummary,
+      outputSummary: searchWebBlock.outputSummary,
       timestamp: createTimestamp(5),
     },
     {
@@ -180,7 +185,7 @@ function buildDemoEvents(): StreamEvent[] {
       runId: "run-beta",
       toolCallId: "tool-call-3",
       toolName: "get_brand_kit",
-      input: TOOL_BLOCKS[2].input,
+      input: brandKitBlock.input,
       timestamp: createTimestamp(8),
     },
     {
@@ -188,7 +193,7 @@ function buildDemoEvents(): StreamEvent[] {
       runId: "run-beta",
       toolCallId: "tool-call-3",
       toolName: "get_brand_kit",
-      outputSummary: TOOL_BLOCKS[2].outputSummary,
+      outputSummary: brandKitBlock.outputSummary,
       timestamp: createTimestamp(9),
     },
     {
@@ -242,8 +247,7 @@ function getTraceSceneState(api: HarnessApi): TraceSceneElementState[] {
     .filter((element) => !element.isDeleted && element.customData?.traceType)
     .map((element) => ({
       id: String(element.id),
-      opacity:
-        typeof element.opacity === "number" ? element.opacity : null,
+      opacity: typeof element.opacity === "number" ? element.opacity : null,
       runId:
         typeof element.customData?.runId === "string"
           ? element.customData.runId
@@ -310,22 +314,23 @@ export function TraceCanvasChatHarness() {
     CanvasSelectedElement[]
   >([]);
   const [linkedToolCallId, setLinkedToolCallId] = useState<string | null>(null);
-  const [traceSceneState, setTraceSceneState] = useState<TraceSceneElementState[]>(
-    [],
-  );
+  const [traceSceneState, setTraceSceneState] = useState<
+    TraceSceneElementState[]
+  >([]);
   const [projectedRuns, setProjectedRuns] = useState(0);
 
   const selectedTraceElement =
     selectedCanvasElements.find(
       (element) =>
-        element.customData &&
-        typeof element.customData.traceType === "string",
+        element.customData && typeof element.customData.traceType === "string",
     ) ?? null;
   const selectedTraceToolCallId =
     (selectedTraceElement?.customData?.toolCallId as string | undefined) ??
-    (selectedTraceElement?.customData?.traceDetail as
-      | { toolCallId?: string }
-      | undefined)?.toolCallId ??
+    (
+      selectedTraceElement?.customData?.traceDetail as
+        | { toolCallId?: string }
+        | undefined
+    )?.toolCallId ??
     null;
   const activeTraceToolCallId = selectedTraceToolCallId ?? linkedToolCallId;
 
@@ -345,49 +350,52 @@ export function TraceCanvasChatHarness() {
     setTraceSceneState(getTraceSceneState(api));
   }, []);
 
-  const handleApiReady = useCallback((api: HarnessApi) => {
-    canvasApiRef.current = api;
-    if (seededRef.current) {
+  const handleApiReady = useCallback(
+    async (api: HarnessApi) => {
+      canvasApiRef.current = api;
+      if (seededRef.current) {
+        setCanvasReady(true);
+        syncTraceScene(api);
+        return;
+      }
+
+      seededRef.current = true;
+      api.addFiles([
+        {
+          id: IMAGE_FILE_ID,
+          dataURL: IMAGE_DATA_URL,
+          mimeType: "image/svg+xml",
+          created: Date.now(),
+        },
+      ]);
+
+      const imageElement = (await createExcalidrawImageElement({
+        fileId: IMAGE_FILE_ID,
+        x: -220,
+        y: -80,
+        width: 240,
+        height: 120,
+        title: "Harness image",
+      })) as Record<string, unknown>;
+      imageElement.id = IMAGE_ELEMENT_ID;
+      imageElement.customData = {
+        ...(imageElement.customData as Record<string, unknown> | undefined),
+        harnessId: "canvas-image",
+      };
+
+      api.updateScene({
+        elements: [
+          ...api.getSceneElements(),
+          imageElement,
+          createVideoElement(),
+        ],
+        captureUpdate: "IMMEDIATELY",
+      });
       setCanvasReady(true);
       syncTraceScene(api);
-      return;
-    }
-
-    seededRef.current = true;
-    api.addFiles([
-      {
-        id: IMAGE_FILE_ID,
-        dataURL: IMAGE_DATA_URL,
-        mimeType: "image/svg+xml",
-        created: Date.now(),
-      },
-    ]);
-
-    const imageElement = createExcalidrawImageElement({
-      fileId: IMAGE_FILE_ID,
-      x: -220,
-      y: -80,
-      width: 240,
-      height: 120,
-      title: "Harness image",
-    }) as Record<string, unknown>;
-    imageElement.id = IMAGE_ELEMENT_ID;
-    imageElement.customData = {
-      ...(imageElement.customData as Record<string, unknown> | undefined),
-      harnessId: "canvas-image",
-    };
-
-    api.updateScene({
-      elements: [
-        ...api.getSceneElements(),
-        imageElement,
-        createVideoElement(),
-      ],
-      captureUpdate: "IMMEDIATELY",
-    });
-    setCanvasReady(true);
-    syncTraceScene(api);
-  }, [syncTraceScene]);
+    },
+    [syncTraceScene],
+  );
 
   const applySelection = useCallback((elementId: string) => {
     const api = canvasApiRef.current;
@@ -423,20 +431,23 @@ export function TraceCanvasChatHarness() {
     }
   }, []);
 
-  const selectSceneElement = useCallback((predicate: (element: any) => boolean) => {
-    const api = canvasApiRef.current;
-    if (!api) return;
+  const selectSceneElement = useCallback(
+    (predicate: (element: any) => boolean) => {
+      const api = canvasApiRef.current;
+      if (!api) return;
 
-    const target =
-      api
-        .getSceneElements()
-        .filter((element) => !element.isDeleted)
-        .find(predicate) ?? null;
-    if (!target) return;
+      const target =
+        api
+          .getSceneElements()
+          .filter((element) => !element.isDeleted)
+          .find(predicate) ?? null;
+      if (!target) return;
 
-    applySelection(String(target.id));
-    syncTraceScene(api);
-  }, [applySelection, syncTraceScene]);
+      applySelection(String(target.id));
+      syncTraceScene(api);
+    },
+    [applySelection, syncTraceScene],
+  );
 
   const handleProjectTrace = useCallback(async () => {
     const api = canvasApiRef.current;
@@ -491,38 +502,41 @@ export function TraceCanvasChatHarness() {
     ]);
   }, []);
 
-  const handleLinkToTrace = useCallback((toolCallId: string) => {
-    setLinkedToolCallId(toolCallId);
-    const api = canvasApiRef.current;
-    if (!api) return;
+  const handleLinkToTrace = useCallback(
+    (toolCallId: string) => {
+      setLinkedToolCallId(toolCallId);
+      const api = canvasApiRef.current;
+      if (!api) return;
 
-    const targetElement =
-      api
-        .getSceneElements()
-        .filter((element) => !element.isDeleted)
-        .find(
-          (element) =>
-            element.customData?.traceType === "tool-node" &&
-            element.customData?.toolCallId === toolCallId,
-        ) ??
-      api
-        .getSceneElements()
-        .filter((element) => !element.isDeleted)
-        .find((element) => element.customData?.toolCallId === toolCallId) ??
-      null;
+      const targetElement =
+        api
+          .getSceneElements()
+          .filter((element) => !element.isDeleted)
+          .find(
+            (element) =>
+              element.customData?.traceType === "tool-node" &&
+              element.customData?.toolCallId === toolCallId,
+          ) ??
+        api
+          .getSceneElements()
+          .filter((element) => !element.isDeleted)
+          .find((element) => element.customData?.toolCallId === toolCallId) ??
+        null;
 
-    if (!targetElement) return;
+      if (!targetElement) return;
 
-    applySelection(String(targetElement.id));
-    if (typeof api.scrollToContent === "function") {
-      try {
-        api.scrollToContent([targetElement]);
-      } catch {
-        api.scrollToContent();
+      applySelection(String(targetElement.id));
+      if (typeof api.scrollToContent === "function") {
+        try {
+          api.scrollToContent([targetElement]);
+        } catch {
+          api.scrollToContent();
+        }
       }
-    }
-    syncTraceScene(api);
-  }, [applySelection, syncTraceScene]);
+      syncTraceScene(api);
+    },
+    [applySelection, syncTraceScene],
+  );
 
   const handleJumpToChat = useCallback((toolCallId: string) => {
     setLinkedToolCallId(toolCallId);
@@ -547,7 +561,9 @@ export function TraceCanvasChatHarness() {
   useEffect(() => {
     if (!linkedToolCallId) return;
     const frame = window.requestAnimationFrame(() => {
-      const target = document.getElementById(`chat-tool-block-${linkedToolCallId}`);
+      const target = document.getElementById(
+        `chat-tool-block-${linkedToolCallId}`,
+      );
       target?.scrollIntoView({ behavior: "auto", block: "center" });
     });
 
@@ -616,8 +632,12 @@ export function TraceCanvasChatHarness() {
             <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
               <div data-testid="harness-ready">{String(canvasReady)}</div>
               <div data-testid="projected-runs">{projectedRuns}</div>
-              <div data-testid="selected-element-summary">{selectedElementSummary}</div>
-              <div data-testid="linked-tool-call-id">{linkedToolCallId ?? "none"}</div>
+              <div data-testid="selected-element-summary">
+                {selectedElementSummary}
+              </div>
+              <div data-testid="linked-tool-call-id">
+                {linkedToolCallId ?? "none"}
+              </div>
               <div data-testid="selected-trace-tool-call-id">
                 {selectedTraceToolCallId ?? "none"}
               </div>
@@ -655,7 +675,9 @@ export function TraceCanvasChatHarness() {
 
         <aside className="flex w-[420px] shrink-0 flex-col gap-3">
           <section className="rounded-2xl border border-border bg-card p-3">
-            <h1 className="text-base font-semibold">Trace Canvas Chat Harness</h1>
+            <h1 className="text-base font-semibold">
+              Trace Canvas Chat Harness
+            </h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Exercises trace projection, detail linking, inline media, and
               chat-to-canvas navigation in one browser test page.

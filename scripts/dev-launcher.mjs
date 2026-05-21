@@ -13,7 +13,10 @@ import { fileURLToPath } from "node:url";
 
 const supportsProcessGroups = process.platform !== "win32";
 const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const rootDir = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
 
 const children = [];
 let shuttingDown = false;
@@ -76,7 +79,9 @@ function shutdown(reason, exitCode = 0, childSignal = "SIGTERM") {
 
   shuttingDown = true;
   shutdownExitCode = exitCode;
-  console.log(`\n[root-dev-launcher] received ${reason}, shutting down web and server...`);
+  console.log(
+    `\n[root-dev-launcher] received ${reason}, shutting down web and server...`,
+  );
 
   for (const child of children) {
     killChildTree(child, childSignal);

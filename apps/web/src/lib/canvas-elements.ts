@@ -51,7 +51,11 @@ export function fitMediaIntoPlacement(
   mediaHeight: number,
   placement: { x: number; y: number; width: number; height: number },
 ): { x: number; y: number; width: number; height: number } {
-  const fitted = scaleToFit(mediaWidth, mediaHeight, Math.max(placement.width, placement.height));
+  const fitted = scaleToFit(
+    mediaWidth,
+    mediaHeight,
+    Math.max(placement.width, placement.height),
+  );
   const placementRatio = placement.width / placement.height;
   const mediaRatio = mediaWidth / mediaHeight;
 
@@ -92,9 +96,11 @@ export function getViewportCenter(appState: {
 }
 
 /**
- * Create an Excalidraw image element with all required fields.
+ * Create a fully-qualified Excalidraw image element via the official skeleton
+ * conversion API so hit-testing receives every internal field it expects.
  */
-export function createExcalidrawImageElement(opts: {
+export async function createExcalidrawImageElement(opts: {
+  id?: string;
   fileId: string;
   x: number;
   y: number;
@@ -103,15 +109,15 @@ export function createExcalidrawImageElement(opts: {
   title?: string;
   source?: "generated" | "uploaded";
   storageUrl?: string;
-}): Record<string, unknown> {
-  const element: Record<string, unknown> = {
+}): Promise<Record<string, unknown>> {
+  const { convertToExcalidrawElements } = await import("@excalidraw/excalidraw");
+  const skeleton: Record<string, unknown> = {
     type: "image",
-    id: generateId(),
+    id: opts.id ?? generateId(),
     x: opts.x,
     y: opts.y,
     width: opts.width,
     height: opts.height,
-    angle: 0,
     fileId: opts.fileId,
     strokeColor: "#000000",
     backgroundColor: "transparent",
@@ -122,27 +128,49 @@ export function createExcalidrawImageElement(opts: {
     opacity: 100,
     groupIds: [],
     roundness: null,
-    boundElements: null,
-    frameId: null,
-    index: null,
-    seed: Math.floor(Math.random() * 2_000_000_000),
-    version: 1,
-    versionNonce: Math.floor(Math.random() * 2_000_000_000),
-    isDeleted: false,
-    updated: Date.now(),
-    link: null,
-    locked: false,
     status: "saved",
     scale: [1, 1],
     crop: null,
   };
   if (opts.title || opts.source || opts.storageUrl) {
-    element.customData = {
+    skeleton.customData = {
       ...(opts.title ? { title: opts.title } : {}),
       ...(opts.source ? { source: opts.source } : {}),
       ...(opts.storageUrl ? { storageUrl: opts.storageUrl } : {}),
     };
   }
+  const [element] = convertToExcalidrawElements([skeleton as any], {
+    regenerateIds: false,
+  }) as Record<string, unknown>[];
+  if (!element) {
+    throw new Error("Failed to convert image skeleton into Excalidraw element");
+  }
+
+  // #region debug-point A:image-element-shape
+  fetch("http://127.0.0.1:7777/event", {
+    method: "POST",
+    body: JSON.stringify({
+      sessionId: "canvas-image-hit-test",
+      runId: "post-fix",
+      hypothesisId: "A",
+      location: "canvas-elements.ts:createExcalidrawImageElement",
+      msg: "[DEBUG] built image element candidate",
+      data: {
+        fileId: opts.fileId,
+        width: opts.width,
+        height: opts.height,
+        keys: Object.keys(element).sort(),
+        status: element.status,
+        scale: element.scale,
+        crop: element.crop,
+        roundness: element.roundness,
+        boundElements: element.boundElements,
+        source: opts.source ?? null,
+      },
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
   return element;
 }
 
@@ -245,7 +273,7 @@ export async function insertImageOnCanvas(
     }
   }
 
-  const element = createExcalidrawImageElement({
+  const element = await createExcalidrawImageElement({
     fileId,
     x,
     y,
@@ -256,10 +284,76 @@ export async function insertImageOnCanvas(
     storageUrl: artifact.url,
   });
 
+  // #region debug-point B:insert-image-scene
+  fetch("http://127.0.0.1:7777/event", {
+    method: "POST",
+    body: JSON.stringify({
+      sessionId: "canvas-image-hit-test",
+      runId: "post-fix",
+      hypothesisId: "B",
+      location: "canvas-elements.ts:insertImageOnCanvas:before-update",
+      msg: "[DEBUG] inserting generated image into scene",
+      data: {
+        artifact: {
+          width: artifact.width,
+          height: artifact.height,
+          mimeType: artifact.mimeType,
+          hasPlacement: Boolean(artifact.placement),
+        },
+        element: {
+          id: element.id,
+          fileId: element.fileId,
+          width: element.width,
+          height: element.height,
+          status: element.status,
+          scale: element.scale,
+          crop: element.crop,
+          keys: Object.keys(element).sort(),
+        },
+        existingElementCount: api.getSceneElements().length,
+      },
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
+
   api.updateScene({
     elements: [...api.getSceneElements(), element],
     captureUpdate: "IMMEDIATELY",
   });
+
+  // #region debug-point B:insert-image-scene-after
+  queueMicrotask(() => {
+    const inserted = api
+      .getSceneElements()
+      .find((sceneElement: any) => sceneElement.id === element.id);
+    fetch("http://127.0.0.1:7777/event", {
+      method: "POST",
+      body: JSON.stringify({
+        sessionId: "canvas-image-hit-test",
+        runId: "post-fix",
+        hypothesisId: "B",
+        location: "canvas-elements.ts:insertImageOnCanvas:after-update",
+        msg: "[DEBUG] image scene snapshot after insert",
+        data: inserted
+          ? {
+              id: inserted.id,
+              type: inserted.type,
+              fileId: inserted.fileId,
+              status: inserted.status,
+              scale: inserted.scale,
+              crop: inserted.crop,
+              keys: Object.keys(inserted).sort(),
+            }
+          : {
+              missingInsertedElement: true,
+              insertedId: element.id,
+            },
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+  });
+  // #endregion
 }
 
 /**

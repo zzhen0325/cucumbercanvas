@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 
 import { CucumberLogo } from "@/components/icons/cucumber-logo";
+import { useToast } from "@/components/toast";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,20 +25,18 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useCreateProject } from "@/hooks/use-create-project";
 import {
   createExcalidrawImageElement,
   getViewportCenter,
   scaleToFit,
 } from "@/lib/canvas-elements";
 import { deleteProject } from "@/lib/server-api";
-import { useToast } from "@/components/toast";
-import { useCreateProject } from "@/hooks/use-create-project";
 
 interface CanvasLogoMenuProps {
   accessToken: string;
   projectId: string;
   canvasId: string;
-  // biome-ignore lint/suspicious/noExplicitAny: Excalidraw API has no public type definition
   excalidrawApi: any | null;
 }
 
@@ -130,7 +129,7 @@ export function CanvasLogoMenu({
       reader.onload = () => {
         const dataURL = reader.result as string;
         const img = new Image();
-        img.onload = () => {
+        img.onload = async () => {
           const fileId = generateFileId();
 
           excalidrawApi.addFiles([
@@ -147,7 +146,7 @@ export function CanvasLogoMenu({
           const x = center.x - scaled.width / 2;
           const y = center.y - scaled.height / 2;
 
-          const element = createExcalidrawImageElement({
+          const element = await createExcalidrawImageElement({
             fileId,
             x,
             y,

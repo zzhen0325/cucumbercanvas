@@ -1,5 +1,5 @@
-import Fastify from "fastify";
 import websocket from "@fastify/websocket";
+import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 
@@ -107,7 +107,7 @@ async function createHarness(
   return {
     app,
     connectionManager,
-    wsUrl: origin.replace("http", "ws") + "/api/ws",
+    wsUrl: `${origin.replace("http", "ws")}/api/ws`,
   };
 }
 

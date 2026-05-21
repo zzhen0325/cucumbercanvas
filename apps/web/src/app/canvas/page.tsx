@@ -3,24 +3,30 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
-import type { ImageArtifact, StreamEvent, VideoArtifact } from "@cucumber/shared";
+import type {
+  ImageArtifact,
+  StreamEvent,
+  VideoArtifact,
+} from "@cucumber/shared";
 import { BrandKitSelector } from "../../components/brand-kit-selector";
 import { CanvasBottomBar } from "../../components/canvas-bottom-bar";
 import type { CanvasSelectedElement } from "../../components/canvas-editor";
 import { CanvasEditor } from "../../components/canvas-editor";
 import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
 import { CanvasFilesPanel } from "../../components/canvas-files-panel";
-import { TraceDetailPanel } from "../../components/canvas/trace-detail-panel";
 import type { CanvasImageItem } from "../../components/canvas-image-picker";
 import { CanvasLayersPanel } from "../../components/canvas-layers-panel";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
+import { TraceDetailPanel } from "../../components/canvas/trace-detail-panel";
 import { ChatSidebar } from "../../components/chat-sidebar";
 import { EditableProjectName } from "../../components/editable-project-name";
 import { LoadingScreen } from "../../components/loading-screen";
 import { useJobFallbackPolling } from "../../hooks/use-job-fallback-polling";
 import { useWebSocket } from "../../hooks/use-websocket";
+import { createAgentFlowContainerProjector } from "../../lib/agent-flow-container-projector";
 import { createAgentTraceProjector } from "../../lib/agent-trace-projector";
 import { useAuth } from "../../lib/auth-context";
+import { buildCanvasAgentContext } from "../../lib/canvas-context";
 import {
   insertImageOnCanvas,
   insertVideoOnCanvas,
@@ -48,6 +54,7 @@ function CanvasPageContent() {
       elements: Record<string, unknown>[];
       appState: Record<string, unknown>;
       files: Record<string, Record<string, unknown>>;
+      containers?: Record<string, unknown>;
     };
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,19 +76,21 @@ function CanvasPageContent() {
   const selectedTraceElement =
     selectedCanvasElements.find(
       (element) =>
-        element.customData &&
-        typeof element.customData.traceType === "string",
+        element.customData && typeof element.customData.traceType === "string",
     ) ?? null;
   const selectedTraceToolCallId =
     (selectedTraceElement?.customData?.toolCallId as string | undefined) ??
-    (selectedTraceElement?.customData?.traceDetail as
-      | { toolCallId?: string }
-      | undefined)?.toolCallId ??
+    (
+      selectedTraceElement?.customData?.traceDetail as
+        | { toolCallId?: string }
+        | undefined
+    )?.toolCallId ??
     null;
   const activeTraceToolCallId = selectedTraceToolCallId ?? linkedToolCallId;
 
   const excalidrawApiRef = useRef<any>(null);
   const [excalidrawApi, setExcalidrawApi] = useState<any>(null);
+  const agentFlowProjectorRef = useRef(createAgentFlowContainerProjector());
   const traceProjectorRef = useRef(createAgentTraceProjector());
 
   const signOutRef = useRef(signOut);
@@ -134,12 +143,21 @@ function CanvasPageContent() {
     });
   }, []);
 
-  const handleProjectTraceEvent = useCallback((event: StreamEvent) => {
-    if (!traceRecordingEnabled) return;
-    const api = excalidrawApiRef.current;
-    if (!api) return;
-    void traceProjectorRef.current.projectEvent(api, event);
-  }, [traceRecordingEnabled]);
+  const handleProjectTraceEvent = useCallback(
+    (event: StreamEvent) => {
+      if (!traceRecordingEnabled) return;
+      const api = excalidrawApiRef.current;
+      if (!api) return;
+      void agentFlowProjectorRef.current
+        .projectEvent(api, event)
+        .then((handled) => {
+          if (!handled) {
+            return traceProjectorRef.current.projectEvent(api, event);
+          }
+        });
+    },
+    [traceRecordingEnabled],
+  );
 
   const handleLinkToTrace = useCallback((toolCallId: string) => {
     setLinkedToolCallId(toolCallId);
@@ -150,6 +168,13 @@ function CanvasPageContent() {
       .getSceneElements()
       .filter((element: any) => !element.isDeleted);
     const targetElement =
+      sceneElements.find(
+        (element: any) =>
+          element.customData?.cucumberContainer?.kind === "agent_flow" &&
+          element.customData?.agentFlowData?.toolLinks?.some(
+            (tool: { toolCallId?: string }) => tool.toolCallId === toolCallId,
+          ),
+      ) ??
       sceneElements.find(
         (element: any) =>
           element.customData?.traceType === "tool-node" &&
@@ -174,17 +199,42 @@ function CanvasPageContent() {
     }
   }, []);
 
-  const handleJumpToChatTool = useCallback((toolCallId: string) => {
-    setLinkedToolCallId(toolCallId);
-    if (!chatOpen) setChatOpen(true);
-  }, [chatOpen]);
+  const handleJumpToChatTool = useCallback(
+    (toolCallId: string) => {
+      setLinkedToolCallId(toolCallId);
+      if (!chatOpen) setChatOpen(true);
+    },
+    [chatOpen],
+  );
 
   const handleClearTrace = useCallback(() => {
     const api = excalidrawApiRef.current;
     if (!api) return;
     setLinkedToolCallId(null);
+    void agentFlowProjectorRef.current.clearProjectedFlows(api);
     void traceProjectorRef.current.clearProjectedTraces(api);
   }, []);
+
+  const handleGetCanvasAgentContext = useCallback(() => {
+    const api = excalidrawApiRef.current;
+    if (!api || !canvasData) return null;
+
+    try {
+      return buildCanvasAgentContext({
+        elements: api.getSceneElements(),
+        appState: api.getAppState(),
+        files: api.getFiles(),
+        persistedFiles: canvasData.content.files,
+        selectedElements: selectedCanvasElements,
+      });
+    } catch (error) {
+      console.warn("[canvas-page] failed to build agent canvas context", {
+        canvasId: canvasData.id,
+        error,
+      });
+      return null;
+    }
+  }, [canvasData, selectedCanvasElements]);
 
   useEffect(() => {
     if (!selectedTraceToolCallId) return;
@@ -195,6 +245,10 @@ function CanvasPageContent() {
   useEffect(() => {
     const api = excalidrawApiRef.current;
     if (!api) return;
+    void agentFlowProjectorRef.current.highlightTool(
+      api,
+      activeTraceToolCallId,
+    );
     void traceProjectorRef.current.highlightRunForTool(
       api,
       activeTraceToolCallId,
@@ -218,13 +272,95 @@ function CanvasPageContent() {
       const files = (canvas.content as Record<string, unknown>).files as
         | Record<
             string,
-            { id: string; dataURL: string; mimeType: string; created: number }
+            {
+              id: string;
+              dataURL?: string;
+              storageUrl?: string;
+              mimeType: string;
+              created: number;
+            }
           >
         | undefined;
 
-      // Sync files (base64 dataURLs from backend-inserted images) into Excalidraw
+      // Sync files into Excalidraw.
+      // Backend canvas reads may contain either inline data URLs or storage URLs.
       if (files && Object.keys(files).length > 0) {
-        api.addFiles(Object.values(files));
+        const inlineFiles: Array<{
+          id: string;
+          dataURL: string;
+          mimeType: string;
+          created: number;
+        }> = [];
+        const storageFiles = Object.entries(files).filter(
+          ([, file]) =>
+            typeof file?.storageUrl === "string" &&
+            file.storageUrl.length > 0 &&
+            !file.dataURL,
+        );
+
+        for (const file of Object.values(files)) {
+          if (typeof file?.dataURL === "string" && file.dataURL.length > 0) {
+            inlineFiles.push({
+              id: file.id,
+              dataURL: file.dataURL,
+              mimeType: file.mimeType,
+              created: file.created,
+            });
+          }
+        }
+        if (inlineFiles.length > 0) {
+          api.addFiles(inlineFiles);
+        }
+
+        if (storageFiles.length > 0) {
+          const resolvedStorageFiles = await Promise.all(
+            storageFiles.map(async ([fileId, file]) => {
+              try {
+                const response = await fetch(file.storageUrl as string);
+                if (!response.ok) {
+                  console.warn(
+                    "[canvas-page] failed to resolve synced storage file",
+                    {
+                      canvasId: canvasData.id,
+                      fileId,
+                      status: response.status,
+                    },
+                  );
+                  return null;
+                }
+                const blob = await response.blob();
+                const dataURL = await new Promise<string>((resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.onload = () => resolve(reader.result as string);
+                  reader.onerror = () =>
+                    reject(new Error("Failed to convert synced file to data URL"));
+                  reader.readAsDataURL(blob);
+                });
+                return {
+                  id: file.id,
+                  dataURL,
+                  mimeType: file.mimeType ?? blob.type,
+                  created: file.created,
+                };
+              } catch (error) {
+                console.warn("[canvas-page] failed to fetch synced storage file", {
+                  canvasId: canvasData.id,
+                  fileId,
+                  error,
+                });
+                return null;
+              }
+            }),
+          );
+          const resolved = resolvedStorageFiles.filter(Boolean);
+          if (resolved.length > 0) {
+            api.addFiles(resolved);
+            console.log("[canvas-page] resolved synced storage files", {
+              canvasId: canvasData.id,
+              count: resolved.length,
+            });
+          }
+        }
       }
 
       api.updateScene({
@@ -312,6 +448,7 @@ function CanvasPageContent() {
             elements: c.content.elements ?? [],
             appState: c.content.appState ?? {},
             files: (c.content as any).files ?? {},
+            containers: (c.content as any).containers ?? {},
           },
         });
         setPageLoading(false);
@@ -442,6 +579,7 @@ function CanvasPageContent() {
         currentBrandKitId={brandKitId}
         ws={ws}
         selectedCanvasElements={selectedCanvasElements}
+        getCanvasAgentContext={handleGetCanvasAgentContext}
         linkedToolCallId={linkedToolCallId}
         onLinkToTrace={handleLinkToTrace}
       />

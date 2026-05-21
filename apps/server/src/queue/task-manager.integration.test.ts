@@ -9,9 +9,9 @@ import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import {
-  createTaskManager,
   type EnqueueTaskInput,
   type TaskManager,
+  createTaskManager,
 } from "./task-manager.js";
 
 const INITDB_BIN = "/usr/lib/postgresql/15/bin/initdb";
@@ -42,16 +42,7 @@ describe.sequential("createTaskManager (real Postgres)", () => {
     );
     await runCommand(
       PG_CTL_BIN,
-      [
-        "-D",
-        databaseDir,
-        "-l",
-        logFile,
-        "-o",
-        `-F -p ${port}`,
-        "-w",
-        "start",
-      ],
+      ["-D", databaseDir, "-l", logFile, "-o", `-F -p ${port}`, "-w", "start"],
       postgresUser,
     );
 
@@ -292,13 +283,13 @@ async function seedJob(pool: pg.Pool): Promise<SeededJob> {
   const jobId = randomUUID();
   const queueName = "generation";
 
-  await pool.query(`insert into public.workspaces (id) values ($1::uuid)`, [
+  await pool.query("insert into public.workspaces (id) values ($1::uuid)", [
     workspaceId,
   ]);
-  await pool.query(`insert into public.canvases (id) values ($1::uuid)`, [
+  await pool.query("insert into public.canvases (id) values ($1::uuid)", [
     canvasId,
   ]);
-  await pool.query(`insert into public.chat_sessions (id) values ($1::uuid)`, [
+  await pool.query("insert into public.chat_sessions (id) values ($1::uuid)", [
     sessionId,
   ]);
   await pool.query(

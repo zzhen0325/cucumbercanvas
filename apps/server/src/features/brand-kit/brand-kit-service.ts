@@ -1,9 +1,9 @@
 import type {
+  BrandKitAsset,
   BrandKitAssetCreateRequest,
   BrandKitAssetUpdateRequest,
   BrandKitCreateRequest,
   BrandKitDetail,
-  BrandKitAsset,
   BrandKitSummary,
   BrandKitUpdateRequest,
   Json,
@@ -86,10 +86,7 @@ export type BrandKitService = {
     fileBuffer: Buffer,
     mimeType: string,
   ): Promise<BrandKitAsset>;
-  duplicateKit(
-    user: AuthenticatedUser,
-    kitId: string,
-  ): Promise<BrandKitDetail>;
+  duplicateKit(user: AuthenticatedUser, kitId: string): Promise<BrandKitDetail>;
 };
 
 export function createBrandKitService(options: {
@@ -101,7 +98,9 @@ export function createBrandKitService(options: {
   ): Promise<BrandKitDetail> {
     const { data: kit, error: kitError } = await client
       .from("brand_kits")
-      .select("id, name, is_default, guidance_text, cover_url, created_at, updated_at")
+      .select(
+        "id, name, is_default, guidance_text, cover_url, created_at, updated_at",
+      )
       .eq("id", kitId)
       .maybeSingle();
 
@@ -225,20 +224,22 @@ export function createBrandKitService(options: {
         counts[asset.asset_type] += 1;
       }
 
-      return kits.map((kit): BrandKitSummary => ({
-        id: kit.id,
-        name: kit.name,
-        is_default: kit.is_default,
-        cover_url: kit.cover_url,
-        asset_counts: countsByKit.get(kit.id) ?? {
-          color: 0,
-          font: 0,
-          logo: 0,
-          image: 0,
-        },
-        created_at: kit.created_at,
-        updated_at: kit.updated_at,
-      }));
+      return kits.map(
+        (kit): BrandKitSummary => ({
+          id: kit.id,
+          name: kit.name,
+          is_default: kit.is_default,
+          cover_url: kit.cover_url,
+          asset_counts: countsByKit.get(kit.id) ?? {
+            color: 0,
+            font: 0,
+            logo: 0,
+            image: 0,
+          },
+          created_at: kit.created_at,
+          updated_at: kit.updated_at,
+        }),
+      );
     },
 
     async getKit(user, kitId) {
@@ -293,7 +294,8 @@ export function createBrandKitService(options: {
         name?: string;
       } = {};
       if (input.name !== undefined) payload.name = input.name.trim();
-      if (input.guidance_text !== undefined) payload.guidance_text = input.guidance_text;
+      if (input.guidance_text !== undefined)
+        payload.guidance_text = input.guidance_text;
       if (input.is_default !== undefined) payload.is_default = input.is_default;
 
       if (Object.keys(payload).length === 0) {
@@ -445,11 +447,14 @@ export function createBrandKitService(options: {
         sort_order?: number;
         text_content?: string | null;
       } = {};
-      if (input.display_name !== undefined) payload.display_name = input.display_name;
-      if (input.text_content !== undefined) payload.text_content = input.text_content;
+      if (input.display_name !== undefined)
+        payload.display_name = input.display_name;
+      if (input.text_content !== undefined)
+        payload.text_content = input.text_content;
       if (input.role !== undefined) payload.role = input.role;
       if (input.sort_order !== undefined) payload.sort_order = input.sort_order;
-      if (input.metadata !== undefined) payload.metadata = input.metadata as Json;
+      if (input.metadata !== undefined)
+        payload.metadata = input.metadata as Json;
 
       if (Object.keys(payload).length === 0) {
         // Nothing to update, just fetch and return current state
@@ -676,7 +681,9 @@ export function createBrandKitService(options: {
       // Copy non-file assets (colors, fonts) directly
       const { data: assets } = await client
         .from("brand_kit_assets")
-        .select("asset_type, display_name, role, sort_order, text_content, file_url, metadata")
+        .select(
+          "asset_type, display_name, role, sort_order, text_content, file_url, metadata",
+        )
         .eq("kit_id", kitId)
         .order("sort_order", { ascending: true });
 

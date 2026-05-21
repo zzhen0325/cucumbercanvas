@@ -138,7 +138,9 @@ async function ensureRunFrame(
   const existing = runs.get(runId);
   if (existing) return existing;
 
-  const { convertToExcalidrawElements } = await import("@excalidraw/excalidraw");
+  const { convertToExcalidrawElements } = await import(
+    "@excalidraw/excalidraw"
+  );
   const { x, y } = getNextRunOrigin(api);
   const groupId = `trace-run-${generateId()}`;
   const frameRectId = `trace-frame-${runId}`;
@@ -212,10 +214,13 @@ async function upsertToolNode(
   const existing = tools.get(event.toolCallId);
 
   if (!existing) {
-    const { convertToExcalidrawElements } = await import("@excalidraw/excalidraw");
+    const { convertToExcalidrawElements } = await import(
+      "@excalidraw/excalidraw"
+    );
     const index = run.nodeOrder.length;
     const nodeX = run.originX + FRAME_PADDING_X;
-    const nodeY = run.originY + FRAME_PADDING_TOP + index * (NODE_HEIGHT + NODE_GAP);
+    const nodeY =
+      run.originY + FRAME_PADDING_TOP + index * (NODE_HEIGHT + NODE_GAP);
     const rectId = `trace-node-${event.toolCallId}`;
     const textId = `trace-text-${event.toolCallId}`;
     const nodeSkeletons: any[] = [
@@ -226,8 +231,12 @@ async function upsertToolNode(
         y: nodeY,
         width: NODE_WIDTH,
         height: NODE_HEIGHT,
-        strokeColor: getNodeStrokeColor(event.type === "tool.completed" ? "completed" : "running"),
-        backgroundColor: getNodeBackgroundColor(event.type === "tool.completed" ? "completed" : "running"),
+        strokeColor: getNodeStrokeColor(
+          event.type === "tool.completed" ? "completed" : "running",
+        ),
+        backgroundColor: getNodeBackgroundColor(
+          event.type === "tool.completed" ? "completed" : "running",
+        ),
         fillStyle: "solid",
         strokeWidth: 1,
         strokeStyle: "solid",
@@ -240,7 +249,8 @@ async function upsertToolNode(
           runId: event.runId,
           toolCallId: event.toolCallId,
           toolName: event.toolName,
-          traceStatus: event.type === "tool.completed" ? "completed" : "running",
+          traceStatus:
+            event.type === "tool.completed" ? "completed" : "running",
           traceDetail:
             event.type === "tool.completed"
               ? buildTraceDetail({
@@ -399,7 +409,9 @@ async function upsertToolNode(
         text: buildTraceToolNodeText({
           toolName: event.toolName,
           status: "completed",
-          ...(event.outputSummary ? { outputSummary: event.outputSummary } : {}),
+          ...(event.outputSummary
+            ? { outputSummary: event.outputSummary }
+            : {}),
           ...(event.artifacts ? { artifacts: event.artifacts } : {}),
         }),
         customData: {
@@ -465,7 +477,9 @@ async function upsertArtifactNode(
     artifact: primaryArtifact,
   });
 
-  const { convertToExcalidrawElements } = await import("@excalidraw/excalidraw");
+  const { convertToExcalidrawElements } = await import(
+    "@excalidraw/excalidraw"
+  );
   const createdElements: any[] = [];
   const artifactConnectorId = `trace-artifact-link-${event.toolCallId}`;
 
@@ -484,11 +498,17 @@ async function upsertArtifactNode(
       tool.artifactPreviewId = preview.id;
       tool.artifactKind = "image";
     } catch (error) {
-      console.warn("[agent-trace] failed to create image artifact preview:", error);
+      console.warn(
+        "[agent-trace] failed to create image artifact preview:",
+        error,
+      );
     }
   } else if (primaryArtifact?.type === "video") {
     const videoPreviewId = `trace-artifact-video-${event.toolCallId}`;
-    const { width, height } = getArtifactPreviewSize(primaryArtifact.width, primaryArtifact.height);
+    const { width, height } = getArtifactPreviewSize(
+      primaryArtifact.width,
+      primaryArtifact.height,
+    );
     const videoPreviewElements = convertToExcalidrawElements([
       {
         id: videoPreviewId,
@@ -580,7 +600,8 @@ async function upsertArtifactNode(
   }
   createdElements.push(
     ...labelElements.filter(
-      (element: any) => !String(element.id).startsWith("trace-artifact-fallback-"),
+      (element: any) =>
+        !String(element.id).startsWith("trace-artifact-fallback-"),
     ),
   );
 
@@ -604,7 +625,11 @@ async function updateRunTitle(
     if (element.id === run.frameRectId) {
       return bumpElement(element, {
         strokeColor:
-          status === "failed" ? "#DC2626" : status === "canceled" ? "#B45309" : "#22C55E",
+          status === "failed"
+            ? "#DC2626"
+            : status === "canceled"
+              ? "#B45309"
+              : "#22C55E",
         customData: {
           ...element.customData,
           traceStatus: status,
@@ -654,11 +679,13 @@ function clearProjectedTraces(
   runs.clear();
   tools.clear();
 
-  const nextElements = api.getSceneElements().map((element: any) =>
-    isTraceElement(element)
-      ? bumpElement(element, { isDeleted: true })
-      : element,
-  );
+  const nextElements = api
+    .getSceneElements()
+    .map((element: any) =>
+      isTraceElement(element)
+        ? bumpElement(element, { isDeleted: true })
+        : element,
+    );
 
   api.updateScene({
     elements: nextElements as any[],
@@ -676,9 +703,11 @@ function clearArtifactElements(api: ExcalidrawApiLike, tool: ToolTraceState) {
   );
   if (ids.size === 0) return;
 
-  const nextElements = api.getSceneElements().map((element: any) =>
-    ids.has(element.id) ? bumpElement(element, { isDeleted: true }) : element,
-  );
+  const nextElements = api
+    .getSceneElements()
+    .map((element: any) =>
+      ids.has(element.id) ? bumpElement(element, { isDeleted: true }) : element,
+    );
 
   api.updateScene({
     elements: nextElements as any[],
@@ -702,14 +731,13 @@ function highlightRunForTool(
       | string
       | undefined;
 
-    const opacity =
-      !activeRunId
-        ? 100
-        : elementRunId === activeRunId
-          ? elementToolCallId === toolCallId
-            ? 100
-            : 80
-          : 28;
+    const opacity = !activeRunId
+      ? 100
+      : elementRunId === activeRunId
+        ? elementToolCallId === toolCallId
+          ? 100
+          : 80
+        : 28;
 
     if (element.opacity === opacity) return element;
     return bumpElement(element, { opacity });
@@ -722,19 +750,31 @@ function highlightRunForTool(
 }
 
 function getNextRunOrigin(api: ExcalidrawApiLike): { x: number; y: number } {
-  const elements = api.getSceneElements().filter((element: any) => !element.isDeleted);
-  const traceFrames = elements.filter((element: any) => isRunFrameElement(element));
+  const elements = api
+    .getSceneElements()
+    .filter((element: any) => !element.isDeleted);
+  const traceFrames = elements.filter((element: any) =>
+    isRunFrameElement(element),
+  );
   if (traceFrames.length > 0) {
     const firstX = traceFrames[0]?.x ?? 0;
-    const maxBottom = Math.max(...traceFrames.map((element: any) => element.y + element.height));
+    const maxBottom = Math.max(
+      ...traceFrames.map((element: any) => element.y + element.height),
+    );
     return { x: firstX, y: maxBottom + RUN_GAP };
   }
 
   const center = getViewportCenter(api.getAppState());
-  const contentElements = elements.filter((element: any) => !isTraceElement(element));
+  const contentElements = elements.filter(
+    (element: any) => !isTraceElement(element),
+  );
   const rightEdge =
     contentElements.length > 0
-      ? Math.max(...contentElements.map((element: any) => (element.x ?? 0) + (element.width ?? 0)))
+      ? Math.max(
+          ...contentElements.map(
+            (element: any) => (element.x ?? 0) + (element.width ?? 0),
+          ),
+        )
       : center.x + 160;
 
   return {
@@ -766,10 +806,12 @@ function resolveRunIdForTool(
     if (run.nodeOrder.includes(toolCallId)) return run.runId;
   }
 
-  const sceneMatch = api.getSceneElements().find(
-    (element: any) =>
-      !element.isDeleted && element.customData?.toolCallId === toolCallId,
-  );
+  const sceneMatch = api
+    .getSceneElements()
+    .find(
+      (element: any) =>
+        !element.isDeleted && element.customData?.toolCallId === toolCallId,
+    );
   return (sceneMatch?.customData?.runId as string | undefined) ?? null;
 }
 
@@ -811,10 +853,7 @@ export function buildTraceToolNodeText({
   outputSummary?: string;
   artifacts?: ToolArtifact[];
 }): string {
-  const lines = [
-    toolName,
-    `Status: ${status}`,
-  ];
+  const lines = [toolName, `Status: ${status}`];
 
   const inputPreview = summarizeRecord(input);
   if (inputPreview) {
@@ -824,7 +863,9 @@ export function buildTraceToolNodeText({
   if (status === "completed") {
     lines.push(`Output: ${truncate(outputSummary ?? "completed", 120)}`);
     if (artifacts && artifacts.length > 0) {
-      lines.push(`Artifacts: ${artifacts.map((artifact) => artifact.type).join(", ")}`);
+      lines.push(
+        `Artifacts: ${artifacts.map((artifact) => artifact.type).join(", ")}`,
+      );
     }
   }
 
@@ -843,7 +884,9 @@ export function buildArtifactNodeText(artifacts: ToolArtifact[]): string {
   return lines.join("\n");
 }
 
-function summarizeRecord(value: Record<string, unknown> | undefined): string | null {
+function summarizeRecord(
+  value: Record<string, unknown> | undefined,
+): string | null {
   if (!value) return null;
   const entries = Object.entries(value)
     .filter(([, item]) => item !== undefined && item !== null)
@@ -856,7 +899,8 @@ function summarizeRecord(value: Record<string, unknown> | undefined): string | n
 
 function formatValue(value: unknown): string {
   if (typeof value === "string") return truncate(value, 36);
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "number" || typeof value === "boolean")
+    return String(value);
   if (Array.isArray(value)) return `${value.length} items`;
   if (typeof value === "object") return "object";
   return "unknown";
@@ -975,8 +1019,11 @@ async function createArtifactImagePreview(
     },
   ]);
 
-  const { width, height } = getArtifactPreviewSize(artifact.width, artifact.height);
-  const element = createExcalidrawImageElement({
+  const { width, height } = getArtifactPreviewSize(
+    artifact.width,
+    artifact.height,
+  );
+  const element = (await createExcalidrawImageElement({
     fileId,
     x: x + Math.round((ARTIFACT_PREVIEW_BOX - width) / 2),
     y: y + Math.round((ARTIFACT_PREVIEW_BOX - height) / 2),
@@ -985,7 +1032,7 @@ async function createArtifactImagePreview(
     title: artifact.title ?? "Artifact preview",
     source: "generated",
     storageUrl: artifact.url,
-  }) as any;
+  })) as any;
   element.id = `trace-artifact-image-${generateId()}`;
   element.groupIds = [];
   element.customData = {
@@ -1000,7 +1047,8 @@ async function createArtifactImagePreview(
 
 function getArtifactPreviewSize(width: number, height: number) {
   const bounded = scaleToFit(width, height, ARTIFACT_PREVIEW_BOX);
-  return bounded.width > ARTIFACT_PREVIEW_BOX || bounded.height > ARTIFACT_PREVIEW_BOX
+  return bounded.width > ARTIFACT_PREVIEW_BOX ||
+    bounded.height > ARTIFACT_PREVIEW_BOX
     ? {
         width: ARTIFACT_PREVIEW_BOX,
         height: ARTIFACT_PREVIEW_BOX,

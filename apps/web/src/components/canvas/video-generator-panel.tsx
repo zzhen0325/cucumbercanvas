@@ -114,10 +114,9 @@ export function VideoGeneratorPanel({
   const screenY = (elementBounds.y + elementBounds.height + scrollY) * zoom + 8;
 
   const currentModel = models.find((m) => m.id === model);
-  const availableDurations =
-    currentModel?.limits?.allowedDurations?.length
-      ? currentModel.limits.allowedDurations
-      : DURATIONS;
+  const availableDurations = currentModel?.limits?.allowedDurations?.length
+    ? currentModel.limits.allowedDurations
+    : DURATIONS;
   const supportsLastFrame = (currentModel?.limits?.maxInputImages ?? 1) > 1;
 
   useEffect(() => {

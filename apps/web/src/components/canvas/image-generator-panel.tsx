@@ -4,19 +4,19 @@ import { ImageUp, Lock } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import type { ImageModelInfo } from "../../lib/server-api";
-import { fetchImageModels, generateImageDirect } from "../../lib/server-api";
 import { useGenerationErrorHandler } from "../../hooks/use-generation-error-handler";
-import {
-  updateImageGeneratorElement,
-  resizeImageGeneratorElement,
-  type ImageGeneratorData,
-} from "../../lib/canvas-image-generator";
 import {
   createExcalidrawImageElement,
   fetchAsDataURL,
   fitMediaIntoPlacement,
 } from "../../lib/canvas-elements";
+import {
+  type ImageGeneratorData,
+  resizeImageGeneratorElement,
+  updateImageGeneratorElement,
+} from "../../lib/canvas-image-generator";
+import type { ImageModelInfo } from "../../lib/server-api";
+import { fetchImageModels, generateImageDirect } from "../../lib/server-api";
 
 type ImageGeneratorPanelProps = {
   elementId: string;
@@ -60,7 +60,9 @@ export function ImageGeneratorPanel({
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showRatioDropdown, setShowRatioDropdown] = useState(false);
   const [showQualityDropdown, setShowQualityDropdown] = useState(false);
-  const [refImages, setRefImages] = useState<Array<{ id: string; dataUrl: string; file: File }>>([]);
+  const [refImages, setRefImages] = useState<
+    Array<{ id: string; dataUrl: string; file: File }>
+  >([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const refInputRef = useRef<HTMLInputElement>(null);
@@ -80,7 +82,9 @@ export function ImageGeneratorPanel({
       .catch((err) => {
         console.warn("[image-gen] Failed to fetch models:", err);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Close dropdowns when clicking outside the panel
@@ -114,8 +118,7 @@ export function ImageGeneratorPanel({
   // Calculate panel screen position from canvas coordinates
   const { scrollX, scrollY, zoom } = canvasScrollZoom;
   const screenX = (elementBounds.x + scrollX) * zoom;
-  const screenY =
-    (elementBounds.y + elementBounds.height + scrollY) * zoom + 8;
+  const screenY = (elementBounds.y + elementBounds.height + scrollY) * zoom + 8;
 
   const currentModel = models.find((m) => m.id === model);
 
@@ -191,23 +194,86 @@ export function ImageGeneratorPanel({
         },
       ]);
 
-      const imageElement = createExcalidrawImageElement({
+      const imageElement = await createExcalidrawImageElement({
         fileId,
         ...fitMediaIntoPlacement(result.width, result.height, elementBounds),
         title: prompt.trim().slice(0, 60),
       });
 
+      // #region debug-point E:image-generator-replace
+      fetch("http://127.0.0.1:7777/event", {
+        method: "POST",
+        body: JSON.stringify({
+          sessionId: "canvas-image-hit-test",
+          runId: "post-fix",
+          hypothesisId: "E",
+          location: "image-generator-panel.tsx:before-replace",
+          msg: "[DEBUG] replacing generator placeholder with image",
+          data: {
+            placeholderId: elementId,
+            fileId,
+            result: {
+              width: result.width,
+              height: result.height,
+              mimeType: result.mimeType,
+            },
+            imageElement: {
+              id: imageElement.id,
+              width: imageElement.width,
+              height: imageElement.height,
+              status: imageElement.status,
+              scale: imageElement.scale,
+              crop: imageElement.crop,
+              keys: Object.keys(imageElement).sort(),
+            },
+          },
+          ts: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
+
       // Replace: delete placeholder, add image
-      const elements = excalidrawApi
-        .getSceneElements()
-        .map((el: any) => {
-          if (el.id === elementId) return { ...el, isDeleted: true };
-          return el;
-        });
+      const elements = excalidrawApi.getSceneElements().map((el: any) => {
+        if (el.id === elementId) return { ...el, isDeleted: true };
+        return el;
+      });
       excalidrawApi.updateScene({
         elements: [...elements, imageElement],
         captureUpdate: "IMMEDIATELY",
       });
+
+      // #region debug-point E:image-generator-replace-after
+      queueMicrotask(() => {
+        const inserted = excalidrawApi
+          .getSceneElements()
+          .find((sceneElement: any) => sceneElement.id === imageElement.id);
+        fetch("http://127.0.0.1:7777/event", {
+          method: "POST",
+          body: JSON.stringify({
+            sessionId: "canvas-image-hit-test",
+            runId: "post-fix",
+            hypothesisId: "E",
+            location: "image-generator-panel.tsx:after-replace",
+            msg: "[DEBUG] image-generator scene snapshot after replace",
+            data: inserted
+              ? {
+                  id: inserted.id,
+                  type: inserted.type,
+                  fileId: inserted.fileId,
+                  status: inserted.status,
+                  scale: inserted.scale,
+                  crop: inserted.crop,
+                  keys: Object.keys(inserted).sort(),
+                }
+              : {
+                  missingInsertedElement: true,
+                  insertedId: imageElement.id,
+                },
+            ts: Date.now(),
+          }),
+        }).catch(() => {});
+      });
+      // #endregion
 
       onClose();
     } catch (err) {
@@ -354,7 +420,11 @@ export function ImageGeneratorPanel({
                 reader.onload = () => {
                   setRefImages((prev) => [
                     ...prev,
-                    { id: generateId(), dataUrl: reader.result as string, file },
+                    {
+                      id: generateId(),
+                      dataUrl: reader.result as string,
+                      file,
+                    },
                   ]);
                 };
                 reader.readAsDataURL(file);
@@ -366,7 +436,9 @@ export function ImageGeneratorPanel({
             type="button"
             onClick={() => refInputRef.current?.click()}
             className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-muted ${
-              refImages.length > 0 ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+              refImages.length > 0
+                ? "text-foreground"
+                : "text-muted-foreground hover:text-foreground"
             }`}
             title="Add reference image"
           >
@@ -384,7 +456,11 @@ export function ImageGeneratorPanel({
                   />
                   <button
                     type="button"
-                    onClick={() => setRefImages((prev) => prev.filter((r) => r.id !== img.id))}
+                    onClick={() =>
+                      setRefImages((prev) =>
+                        prev.filter((r) => r.id !== img.id),
+                      )
+                    }
                     className="absolute -top-1 -right-1 hidden group-hover:flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary text-primary-foreground text-[8px]"
                   >
                     x

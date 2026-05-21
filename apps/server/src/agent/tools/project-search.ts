@@ -75,7 +75,10 @@ export function createProjectSearchTool(
 ) {
   return tool(
     async (input, runtime: ToolRuntime) => {
-      return await runProjectSearch(await resolveBackend(backend, runtime), input);
+      return await runProjectSearch(
+        await resolveBackend(backend, runtime),
+        input,
+      );
     },
     {
       name: "project_search",
@@ -91,9 +94,11 @@ function resolveBackend(
   runtime: ToolRuntime,
 ): Promise<BackendProtocol> {
   if (typeof backend === "function") {
-    return Promise.resolve(backend({
-      state: runtime.state,
-    })).then((resolved) => resolved as BackendProtocol);
+    return Promise.resolve(
+      backend({
+        state: runtime.state,
+      }),
+    ).then((resolved) => resolved as BackendProtocol);
   }
 
   return Promise.resolve(backend);

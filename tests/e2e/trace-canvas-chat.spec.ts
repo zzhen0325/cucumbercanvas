@@ -30,10 +30,14 @@ test.describe("trace canvas chat harness", () => {
     await expect(page.getByTestId("inline-video-preview")).toBeVisible();
 
     await page.getByTestId("select-canvas-video").click();
-    await expect(page.getByTestId("selected-element-summary")).toHaveText("video");
+    await expect(page.getByTestId("selected-element-summary")).toHaveText(
+      "video",
+    );
 
     await page.getByTestId("select-canvas-image").click();
-    await expect(page.getByTestId("selected-element-summary")).toHaveText("image");
+    await expect(page.getByTestId("selected-element-summary")).toHaveText(
+      "image",
+    );
   });
 
   test("links trace detail, chat tool blocks, and run highlighting", async ({
@@ -82,13 +86,17 @@ test.describe("trace canvas chat harness", () => {
     await expect(page.getByTestId("trace-detail-jump-chat")).toBeVisible();
 
     await page.getByTestId("trace-detail-jump-chat").click();
-    await expect(page.getByTestId("linked-tool-call-id")).toHaveText("tool-call-1");
+    await expect(page.getByTestId("linked-tool-call-id")).toHaveText(
+      "tool-call-1",
+    );
     await expect(
       page.getByTestId("chat-tool-block-tool-call-1"),
     ).toHaveAttribute("data-linked", "true");
 
     await page.getByTestId("tool-block-link-tool-call-3").click();
-    await expect(page.getByTestId("linked-tool-call-id")).toHaveText("tool-call-3");
+    await expect(page.getByTestId("linked-tool-call-id")).toHaveText(
+      "tool-call-3",
+    );
     await expect(page.getByTestId("selected-trace-tool-call-id")).toHaveText(
       "tool-call-3",
     );

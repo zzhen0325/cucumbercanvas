@@ -1,5 +1,7 @@
 "use client";
 
+import type { AgentFlowContainerData } from "@cucumber/shared";
+
 import type { CanvasSelectedElement } from "../canvas-editor";
 
 type TraceDetailPanelProps = {
@@ -21,9 +23,9 @@ type TraceDetail = {
 
 function isTraceElement(element: CanvasSelectedElement | null): boolean {
   return Boolean(
-    element &&
-      element.customData &&
-      typeof element.customData.traceType === "string",
+    element?.customData &&
+      (typeof element.customData.traceType === "string" ||
+        element.customData.cucumberContainer),
   );
 }
 
@@ -41,7 +43,10 @@ function formatJson(value: unknown): string {
   }
 }
 
-function getPreviewUrl(element: CanvasSelectedElement, detail: TraceDetail | null) {
+function getPreviewUrl(
+  element: CanvasSelectedElement,
+  detail: TraceDetail | null,
+) {
   if (element.dataUrl || element.storageUrl || element.link) {
     return {
       kind:
@@ -55,7 +60,8 @@ function getPreviewUrl(element: CanvasSelectedElement, detail: TraceDetail | nul
   if (artifact && typeof artifact.url === "string") {
     return {
       kind:
-        artifact.type === "video" || String(artifact.mimeType ?? "").startsWith("video/")
+        artifact.type === "video" ||
+        String(artifact.mimeType ?? "").startsWith("video/")
           ? "video"
           : "image",
       url: artifact.url,
@@ -70,6 +76,93 @@ export function TraceDetailPanel({
 }: TraceDetailPanelProps) {
   if (!selectedElement || !isTraceElement(selectedElement)) return null;
 
+  const agentFlowData = selectedElement.customData?.agentFlowData as
+    | AgentFlowContainerData
+    | undefined;
+  if (agentFlowData) {
+    const highlightedToolCallId =
+      typeof selectedElement.customData?.highlightToolCallId === "string"
+        ? selectedElement.customData.highlightToolCallId
+        : null;
+    const highlightedTool = highlightedToolCallId
+      ? agentFlowData.toolLinks.find(
+          (tool) => tool.toolCallId === highlightedToolCallId,
+        )
+      : null;
+
+    return (
+      <div
+        data-testid="trace-detail-panel"
+        className="absolute right-4 bottom-4 z-20 w-90 rounded-2xl border border-border bg-card/95 p-4 shadow-card backdrop-blur-lg"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-foreground">
+              Agent Flow
+            </p>
+            <p className="mt-1 truncate text-xs text-muted-foreground">
+              {agentFlowData.planId} · {agentFlowData.steps.length} steps
+            </p>
+          </div>
+          <span className="rounded-full bg-muted px-2 py-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+            container
+          </span>
+        </div>
+
+        <div className="mt-4 space-y-2">
+          {agentFlowData.steps.map((step) => (
+            <div
+              key={step.stepId}
+              className="rounded-xl border border-border bg-muted/40 p-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="truncate text-xs font-medium text-foreground">
+                  {step.title}
+                </p>
+                <span className="shrink-0 text-[11px] text-muted-foreground">
+                  {step.status}
+                </span>
+              </div>
+              {step.agentName ? (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Agent: {step.agentName}
+                </p>
+              ) : null}
+            </div>
+          ))}
+        </div>
+
+        {highlightedTool ? (
+          <div className="mt-3 flex items-center justify-between rounded-xl border border-border bg-muted/40 px-3 py-2">
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-foreground">Linked Tool</p>
+              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                {highlightedTool.toolName} · {highlightedTool.status}
+              </p>
+            </div>
+            <button
+              data-testid="trace-detail-jump-chat"
+              type="button"
+              onClick={() => onJumpToChat?.(highlightedTool.toolCallId)}
+              className="shrink-0 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+            >
+              跳转到 Chat
+            </button>
+          </div>
+        ) : null}
+
+        {agentFlowData.artifacts.length ? (
+          <p className="mt-3 text-xs text-muted-foreground">
+            Artifacts:{" "}
+            {agentFlowData.artifacts
+              .map((artifact) => artifact.type)
+              .join(", ")}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
   const detail = getTraceDetail(selectedElement);
   if (!detail) return null;
 
@@ -83,7 +176,7 @@ export function TraceDetailPanel({
       ? detail.toolName
         ? `${detail.toolName} artifact`
         : "Trace artifact"
-      : detail.toolName ?? selectedElement.title ?? "Trace detail";
+      : (detail.toolName ?? selectedElement.title ?? "Trace detail");
 
   return (
     <div
@@ -178,7 +271,9 @@ export function TraceDetailPanel({
                 key={`${artifact.type ?? "artifact"}-${index}`}
                 className="rounded-xl border border-border bg-muted/40 p-2 text-xs text-foreground"
               >
-                <p className="font-medium">{String(artifact.type ?? "artifact")}</p>
+                <p className="font-medium">
+                  {String(artifact.type ?? "artifact")}
+                </p>
                 {artifact.title ? (
                   <p className="mt-1 text-muted-foreground">
                     {String(artifact.title)}

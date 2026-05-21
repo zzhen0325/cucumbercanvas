@@ -43,7 +43,9 @@ function killChildTree(child, signal) {
     child.kill(signal);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.warn(`[dev-launcher] failed to send ${signal} to ${child.name}: ${message}`);
+    console.warn(
+      `[dev-launcher] failed to send ${signal} to ${child.name}: ${message}`,
+    );
   }
 }
 

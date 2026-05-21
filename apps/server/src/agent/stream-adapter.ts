@@ -9,8 +9,19 @@ import {
   ToolMessage as ToolMessageClass,
 } from "@langchain/core/messages";
 
-import { imageArtifactSchema, videoArtifactSchema } from "@cucumber/shared";
-import type { StreamEvent, ToolArtifact } from "@cucumber/shared";
+import {
+  agentFlowContainerDataSchema,
+  agentTaskPlanSchema,
+  imageArtifactSchema,
+  videoArtifactSchema,
+} from "@cucumber/shared";
+import type {
+  AgentFlowContainerData,
+  AgentTaskPlan,
+  AgentTaskStep,
+  StreamEvent,
+  ToolArtifact,
+} from "@cucumber/shared";
 
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 
@@ -52,6 +63,18 @@ export async function* adaptDeepAgentStream(
   const seenStartedToolCalls = new Set<string>();
   /** Tracks active sub-agent parent runs so we can detect nested inner tools. */
   const activeSubAgentRuns = new Set<string>();
+  const toolFlowMeta = new Map<
+    string,
+    {
+      planId?: string;
+      stepId?: string;
+      subAgentName?: string;
+      parentToolCallId?: string;
+    }
+  >();
+  let activePlan: AgentTaskPlan | null = null;
+  let activeFlowData: AgentFlowContainerData | null = null;
+  let activeContainerId: string | null = null;
 
   yield {
     conversationId: options.conversationId,
@@ -202,10 +225,38 @@ export async function* adaptDeepAgentStream(
           rawInput && typeof rawInput === "object" && !Array.isArray(rawInput)
             ? (rawInput as Record<string, unknown>)
             : undefined;
+        const parentToolCallId = Array.from(activeSubAgentRuns)[0];
+        const flowMeta = extractFlowMeta(toolInput, {
+          ...(activePlan ? { planId: activePlan.planId } : {}),
+          ...(parentToolCallId ? { parentToolCallId } : {}),
+          ...(SUB_AGENT_PARENT_TOOLS.has(toolName)
+            ? { subAgentName: toolName }
+            : {}),
+        });
+        toolFlowMeta.set(toolCallId, flowMeta);
 
         // Track sub-agent parent tools so we can detect nested inner calls.
         if (SUB_AGENT_PARENT_TOOLS.has(toolName)) {
           activeSubAgentRuns.add(toolCallId);
+        }
+
+        if (flowMeta.stepId && activePlan) {
+          const step = updatePlanStepStatus(activePlan, flowMeta.stepId, {
+            status: "running",
+            ...(flowMeta.subAgentName
+              ? { agentName: flowMeta.subAgentName }
+              : {}),
+          });
+          if (step) {
+            activeFlowData = syncFlowSteps(activeFlowData, activePlan);
+            yield {
+              type: "task.step.updated",
+              runId: options.runId,
+              planId: activePlan.planId,
+              step,
+              timestamp: now(),
+            };
+          }
         }
 
         yield {
@@ -214,8 +265,39 @@ export async function* adaptDeepAgentStream(
           toolCallId,
           toolName,
           ...(toolInput ? { input: toolInput } : {}),
+          ...flowMeta,
           type: "tool.started",
         };
+        if (
+          activeFlowData &&
+          activeContainerId &&
+          toolName !== "publish_task_plan"
+        ) {
+          activeFlowData = agentFlowContainerDataSchema.parse({
+            ...activeFlowData,
+            toolLinks: [
+              ...activeFlowData.toolLinks.filter(
+                (link) => link.toolCallId !== toolCallId,
+              ),
+              {
+                toolCallId,
+                toolName,
+                status: "running",
+                ...(flowMeta.stepId ? { stepId: flowMeta.stepId } : {}),
+                ...(flowMeta.subAgentName
+                  ? { subAgentName: flowMeta.subAgentName }
+                  : {}),
+              },
+            ],
+          });
+          yield {
+            type: "agent.flow.container.updated",
+            runId: options.runId,
+            containerId: activeContainerId,
+            data: activeFlowData,
+            timestamp: now(),
+          };
+        }
         continue;
       }
 
@@ -229,13 +311,21 @@ export async function* adaptDeepAgentStream(
         seenCompletedToolCalls.add(toolCallId);
 
         const output = evt.data?.output;
+        const rawOutputRecord = outputToRecord(output);
+        const previousFlowMeta = toolFlowMeta.get(toolCallId) ?? {};
+        const flowMeta = extractFlowMeta(rawOutputRecord, previousFlowMeta);
 
         // When an inner tool runs inside an active sub-agent parent,
         // suppress its artifacts because the parent will re-emit them.
         const isNestedInSubAgent =
           INNER_SUB_AGENT_TOOLS.has(toolName) && activeSubAgentRuns.size > 0;
-        const extractedArtifacts = isNestedInSubAgent ? undefined : extractArtifacts(output);
-        const extractedOutput = extractOutput(output, (extractedArtifacts?.length ?? 0) > 0);
+        const extractedArtifacts = isNestedInSubAgent
+          ? undefined
+          : extractArtifacts(output);
+        const extractedOutput = extractOutput(
+          output,
+          (extractedArtifacts?.length ?? 0) > 0,
+        );
         yield {
           output: extractedOutput,
           outputSummary: summarizeOutput(output),
@@ -244,8 +334,95 @@ export async function* adaptDeepAgentStream(
           timestamp: now(),
           toolCallId,
           toolName,
+          ...flowMeta,
           type: "tool.completed",
         };
+
+        if (toolName === "publish_task_plan") {
+          const plan = extractPublishedTaskPlan(output);
+          if (plan) {
+            activePlan = plan;
+            activeContainerId = `agent-flow-${plan.planId}`;
+            activeFlowData = agentFlowContainerDataSchema.parse({
+              planId: plan.planId,
+              runId: options.runId,
+              steps: plan.steps,
+              toolLinks: [],
+              artifacts: [],
+            });
+
+            yield {
+              type: "task.plan.created",
+              runId: options.runId,
+              plan,
+              timestamp: now(),
+            };
+            yield {
+              type: "agent.flow.container.created",
+              runId: options.runId,
+              container: {
+                containerId: activeContainerId,
+                kind: "agent_flow",
+                version: 0,
+                hostElementId: `${activeContainerId}-host`,
+                bounds: { x: 0, y: 0, width: 760, height: 420 },
+              },
+              data: activeFlowData,
+              timestamp: now(),
+            };
+          }
+        } else if (activeFlowData && activeContainerId) {
+          activeFlowData = agentFlowContainerDataSchema.parse({
+            ...activeFlowData,
+            toolLinks: [
+              ...activeFlowData.toolLinks.filter(
+                (link) => link.toolCallId !== toolCallId,
+              ),
+              {
+                toolCallId,
+                toolName,
+                status: "completed",
+                ...(flowMeta.stepId ? { stepId: flowMeta.stepId } : {}),
+                ...(flowMeta.subAgentName
+                  ? { subAgentName: flowMeta.subAgentName }
+                  : {}),
+                ...(summarizeOutput(output)
+                  ? { outputSummary: summarizeOutput(output) }
+                  : {}),
+              },
+            ],
+            artifacts: [
+              ...activeFlowData.artifacts,
+              ...(extractedArtifacts ?? []),
+            ],
+          });
+          yield {
+            type: "agent.flow.container.updated",
+            runId: options.runId,
+            containerId: activeContainerId,
+            data: activeFlowData,
+            timestamp: now(),
+          };
+        }
+
+        if (flowMeta.stepId && activePlan) {
+          const step = updatePlanStepStatus(activePlan, flowMeta.stepId, {
+            status: "completed",
+            ...(flowMeta.subAgentName
+              ? { agentName: flowMeta.subAgentName }
+              : {}),
+          });
+          if (step) {
+            activeFlowData = syncFlowSteps(activeFlowData, activePlan);
+            yield {
+              type: "task.step.updated",
+              runId: options.runId,
+              planId: activePlan.planId,
+              step,
+              timestamp: now(),
+            };
+          }
+        }
 
         // Clean up sub-agent parent tracking after its tool.completed is emitted.
         if (SUB_AGENT_PARENT_TOOLS.has(toolName)) {
@@ -259,7 +436,6 @@ export async function* adaptDeepAgentStream(
             timestamp: now(),
           } satisfies StreamEvent;
         }
-        continue;
       }
     }
   } catch (error) {
@@ -301,6 +477,103 @@ function canceledEvent(runId: string, now: () => string): StreamEvent {
   };
 }
 
+function extractFlowMeta(
+  record: Record<string, unknown> | undefined,
+  defaults: {
+    planId?: string;
+    stepId?: string;
+    subAgentName?: string;
+    parentToolCallId?: string;
+  } = {},
+): {
+  planId?: string;
+  stepId?: string;
+  subAgentName?: string;
+  parentToolCallId?: string;
+} {
+  const planId =
+    readString(record?.planId) ??
+    readString(record?.plan_id) ??
+    defaults.planId;
+  const stepId =
+    readString(record?.planStepId) ??
+    readString(record?.stepId) ??
+    readString(record?.plan_step_id) ??
+    readString(record?.step_id) ??
+    defaults.stepId;
+  const subAgentName =
+    readString(record?.subAgentName) ??
+    readString(record?.sub_agent_name) ??
+    defaults.subAgentName;
+  const parentToolCallId =
+    readString(record?.parentToolCallId) ??
+    readString(record?.parent_tool_call_id) ??
+    defaults.parentToolCallId;
+
+  return {
+    ...(planId ? { planId } : {}),
+    ...(stepId ? { stepId } : {}),
+    ...(subAgentName ? { subAgentName } : {}),
+    ...(parentToolCallId ? { parentToolCallId } : {}),
+  };
+}
+
+function extractPublishedTaskPlan(output: unknown): AgentTaskPlan | null {
+  const record = outputToRecord(output);
+  const maybePlan =
+    record?.kind === "task_plan" && record.plan
+      ? record.plan
+      : record?.plan && typeof record.plan === "object"
+        ? record.plan
+        : record;
+  const parsed = agentTaskPlanSchema.safeParse(maybePlan);
+  return parsed.success ? parsed.data : null;
+}
+
+function outputToRecord(output: unknown): Record<string, unknown> | undefined {
+  let text = "";
+  if (ToolMessageClass.isInstance(output)) {
+    text = extractChunkText(output);
+  } else if (typeof output === "string") {
+    text = output;
+  } else if (output && typeof output === "object") {
+    return unwrapCommandOutput(output as Record<string, unknown>);
+  }
+
+  const parsed = tryParseJson(text);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return undefined;
+  }
+  return unwrapCommandOutput(parsed as Record<string, unknown>);
+}
+
+function updatePlanStepStatus(
+  plan: AgentTaskPlan,
+  stepId: string,
+  patch: Pick<AgentTaskStep, "status"> &
+    Partial<Pick<AgentTaskStep, "agentName">>,
+): AgentTaskStep | null {
+  const index = plan.steps.findIndex((step) => step.stepId === stepId);
+  if (index < 0) return null;
+  const nextStep = {
+    ...plan.steps[index],
+    ...patch,
+  } as AgentTaskStep;
+  plan.steps[index] = nextStep;
+  return nextStep;
+}
+
+function syncFlowSteps(
+  data: AgentFlowContainerData | null,
+  plan: AgentTaskPlan,
+): AgentFlowContainerData | null {
+  if (!data) return null;
+  return agentFlowContainerDataSchema.parse({
+    ...data,
+    steps: plan.steps,
+  });
+}
+
 /**
  * LangChain sub-agent tools return a Command object whose real payload
  * lives inside update.messages[0].kwargs.content (a JSON string).
@@ -316,7 +589,8 @@ function unwrapCommandOutput(
     const content = messages[0]?.kwargs?.content ?? messages[0]?.content;
     if (typeof content !== "string") return record;
     const inner = JSON.parse(content);
-    if (inner && typeof inner === "object") return inner as Record<string, unknown>;
+    if (inner && typeof inner === "object")
+      return inner as Record<string, unknown>;
   } catch {
     // fall through
   }

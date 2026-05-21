@@ -2,6 +2,10 @@ import { z } from "zod";
 
 import { toolArtifactSchema } from "./artifacts.js";
 import {
+  agentFlowContainerDataSchema,
+  agentTaskPlanSchema,
+  agentTaskStepSchema,
+  canvasContainerRefSchema,
   conversationIdSchema,
   messageIdSchema,
   runIdSchema,
@@ -11,8 +15,18 @@ import {
 } from "./contracts.js";
 import { cucumberErrorSchema } from "./errors.js";
 
-export { imageArtifactSchema, videoArtifactSchema, placementSchema, toolArtifactSchema } from "./artifacts.js";
-export type { ImageArtifact, VideoArtifact, Placement, ToolArtifact } from "./artifacts.js";
+export {
+  imageArtifactSchema,
+  videoArtifactSchema,
+  placementSchema,
+  toolArtifactSchema,
+} from "./artifacts.js";
+export type {
+  ImageArtifact,
+  VideoArtifact,
+  Placement,
+  ToolArtifact,
+} from "./artifacts.js";
 
 export const runStartedEventSchema = z.object({
   type: z.literal("run.started"),
@@ -36,6 +50,10 @@ export const toolStartedEventSchema = z.object({
   toolCallId: toolCallIdSchema,
   toolName: z.string().min(1),
   input: z.record(z.unknown()).optional(),
+  planId: z.string().min(1).optional(),
+  stepId: z.string().min(1).optional(),
+  subAgentName: z.string().min(1).optional(),
+  parentToolCallId: z.string().min(1).optional(),
   timestamp: timestampSchema,
 });
 
@@ -47,6 +65,10 @@ export const toolCompletedEventSchema = z.object({
   output: z.record(z.unknown()).optional(),
   outputSummary: z.string().optional(),
   artifacts: z.array(toolArtifactSchema).optional(),
+  planId: z.string().min(1).optional(),
+  stepId: z.string().min(1).optional(),
+  subAgentName: z.string().min(1).optional(),
+  parentToolCallId: z.string().min(1).optional(),
   timestamp: timestampSchema,
 });
 
@@ -83,10 +105,45 @@ export const canvasSyncEventSchema = z.object({
   timestamp: timestampSchema,
 });
 
+export const taskPlanCreatedEventSchema = z.object({
+  type: z.literal("task.plan.created"),
+  runId: runIdSchema,
+  plan: agentTaskPlanSchema,
+  timestamp: timestampSchema,
+});
+
+export const taskStepUpdatedEventSchema = z.object({
+  type: z.literal("task.step.updated"),
+  runId: runIdSchema,
+  planId: z.string().min(1),
+  step: agentTaskStepSchema,
+  timestamp: timestampSchema,
+});
+
+export const agentFlowContainerCreatedEventSchema = z.object({
+  type: z.literal("agent.flow.container.created"),
+  runId: runIdSchema,
+  container: canvasContainerRefSchema,
+  data: agentFlowContainerDataSchema,
+  timestamp: timestampSchema,
+});
+
+export const agentFlowContainerUpdatedEventSchema = z.object({
+  type: z.literal("agent.flow.container.updated"),
+  runId: runIdSchema,
+  containerId: z.string().min(1),
+  data: agentFlowContainerDataSchema,
+  timestamp: timestampSchema,
+});
+
 export const streamEventSchema = z.discriminatedUnion("type", [
   runStartedEventSchema,
   messageDeltaEventSchema,
   thinkingDeltaEventSchema,
+  taskPlanCreatedEventSchema,
+  taskStepUpdatedEventSchema,
+  agentFlowContainerCreatedEventSchema,
+  agentFlowContainerUpdatedEventSchema,
   toolStartedEventSchema,
   toolCompletedEventSchema,
   runCanceledEventSchema,

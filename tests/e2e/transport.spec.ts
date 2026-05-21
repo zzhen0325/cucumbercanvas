@@ -1,9 +1,13 @@
 import { createServer } from "node:http";
-import type { IncomingMessage, Server as HttpServer, ServerResponse } from "node:http";
+import type {
+  Server as HttpServer,
+  IncomingMessage,
+  ServerResponse,
+} from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { expect, test } from "@playwright/test";
-import { WebSocketServer, type WebSocket } from "ws";
+import { type WebSocket, WebSocketServer } from "ws";
 
 const API_PORT = 4011;
 const WEB_PORT = 3100;
@@ -12,115 +16,116 @@ const SSE_PATH = "/api/canvases/canvas-1/stream";
 const WS_PATH = "/api/ws";
 const TOKEN = "token";
 
-test.describe.serial("browser transport black-box", () => {
-  let harness: TransportTestServer;
+test.describe
+  .serial("browser transport black-box", () => {
+    let harness: TransportTestServer;
 
-  test.beforeAll(async () => {
-    harness = new TransportTestServer(API_PORT);
-    await harness.start();
+    test.beforeAll(async () => {
+      harness = new TransportTestServer(API_PORT);
+      await harness.start();
+    });
+
+    test.afterAll(async () => {
+      await harness.stop();
+    });
+
+    test.beforeEach(async () => {
+      await harness.reset();
+    });
+
+    test("replays SSE after disconnect and keeps the stream alive with heartbeats", async ({
+      page,
+    }) => {
+      await page.goto(TEST_PAGE_URL);
+      await page.getByTestId("start-sse").click();
+
+      await harness.waitForSseConnectionCount(1);
+      await expect(page.getByTestId("sse-open-count")).toHaveText("1");
+
+      harness.publish({
+        payload: { text: "first" },
+        type: "message.delta",
+      });
+      await expect(page.getByTestId("sse-events")).toContainText(
+        "1:message.delta",
+      );
+
+      await harness.waitForHeartbeatCount(1);
+      expect(harness.heartbeatCount).toBeGreaterThanOrEqual(1);
+
+      await harness.closeSseConnections();
+      harness.publish({
+        payload: { text: "second" },
+        type: "message.delta",
+      });
+
+      await expect(page.getByTestId("sse-reconnect-count")).toHaveText("1", {
+        timeout: 10_000,
+      });
+      await expect(page.getByTestId("sse-events")).toContainText(
+        "2:message.delta",
+        { timeout: 10_000 },
+      );
+      await expect(page.getByTestId("sse-error-count")).toHaveText("0");
+      expect(harness.lastEventIds.at(-1)).toBe(1);
+    });
+
+    test("reconnects WebSocket clients and returns rpc.response payloads", async ({
+      page,
+    }) => {
+      await page.goto(TEST_PAGE_URL);
+      await harness.waitForWsConnectionCount(1);
+      await harness.waitForActiveWsClient();
+      await expect(page.getByTestId("ws-connected")).toHaveText("true", {
+        timeout: 10_000,
+      });
+
+      const firstResponsePromise = harness.waitForRpcResponse("rpc-1");
+      await harness.sendRpcRequest({
+        id: "rpc-1",
+        method: "browser.echo",
+        params: { value: "hello" },
+      });
+
+      const firstResponse = await firstResponsePromise;
+      expect(firstResponse).toEqual({
+        id: "rpc-1",
+        result: {
+          echoed: "hello",
+          seenByBrowser: true,
+        },
+        type: "rpc.response",
+      });
+      await expect(page.getByTestId("ws-calls")).toContainText("hello");
+
+      await harness.closeWsConnections();
+      await harness.waitForWsConnectionCount(2);
+      await harness.waitForActiveWsClient();
+      await expect(page.getByTestId("ws-connected")).toHaveText("true", {
+        timeout: 10_000,
+      });
+
+      const secondResponsePromise = harness.waitForRpcResponse("rpc-2");
+      await harness.sendRpcRequest({
+        id: "rpc-2",
+        method: "browser.echo",
+        params: { value: "after-reconnect" },
+      });
+
+      const secondResponse = await secondResponsePromise;
+      expect(secondResponse).toEqual({
+        id: "rpc-2",
+        result: {
+          echoed: "after-reconnect",
+          seenByBrowser: true,
+        },
+        type: "rpc.response",
+      });
+      await expect(page.getByTestId("ws-calls")).toContainText(
+        "after-reconnect",
+      );
+    });
   });
-
-  test.afterAll(async () => {
-    await harness.stop();
-  });
-
-  test.beforeEach(async () => {
-    await harness.reset();
-  });
-
-  test("replays SSE after disconnect and keeps the stream alive with heartbeats", async ({
-    page,
-  }) => {
-    await page.goto(TEST_PAGE_URL);
-    await page.getByTestId("start-sse").click();
-
-    await harness.waitForSseConnectionCount(1);
-    await expect(page.getByTestId("sse-open-count")).toHaveText("1");
-
-    harness.publish({
-      payload: { text: "first" },
-      type: "message.delta",
-    });
-    await expect(page.getByTestId("sse-events")).toContainText(
-      "1:message.delta",
-    );
-
-    await harness.waitForHeartbeatCount(1);
-    expect(harness.heartbeatCount).toBeGreaterThanOrEqual(1);
-
-    await harness.closeSseConnections();
-    harness.publish({
-      payload: { text: "second" },
-      type: "message.delta",
-    });
-
-    await expect(page.getByTestId("sse-reconnect-count")).toHaveText("1", {
-      timeout: 10_000,
-    });
-    await expect(page.getByTestId("sse-events")).toContainText(
-      "2:message.delta",
-      { timeout: 10_000 },
-    );
-    await expect(page.getByTestId("sse-error-count")).toHaveText("0");
-    expect(harness.lastEventIds.at(-1)).toBe(1);
-  });
-
-  test("reconnects WebSocket clients and returns rpc.response payloads", async ({
-    page,
-  }) => {
-    await page.goto(TEST_PAGE_URL);
-    await harness.waitForWsConnectionCount(1);
-    await harness.waitForActiveWsClient();
-    await expect(page.getByTestId("ws-connected")).toHaveText("true", {
-      timeout: 10_000,
-    });
-
-    const firstResponsePromise = harness.waitForRpcResponse("rpc-1");
-    await harness.sendRpcRequest({
-      id: "rpc-1",
-      method: "browser.echo",
-      params: { value: "hello" },
-    });
-
-    const firstResponse = await firstResponsePromise;
-    expect(firstResponse).toEqual({
-      id: "rpc-1",
-      result: {
-        echoed: "hello",
-        seenByBrowser: true,
-      },
-      type: "rpc.response",
-    });
-    await expect(page.getByTestId("ws-calls")).toContainText("hello");
-
-    await harness.closeWsConnections();
-    await harness.waitForWsConnectionCount(2);
-    await harness.waitForActiveWsClient();
-    await expect(page.getByTestId("ws-connected")).toHaveText("true", {
-      timeout: 10_000,
-    });
-
-    const secondResponsePromise = harness.waitForRpcResponse("rpc-2");
-    await harness.sendRpcRequest({
-      id: "rpc-2",
-      method: "browser.echo",
-      params: { value: "after-reconnect" },
-    });
-
-    const secondResponse = await secondResponsePromise;
-    expect(secondResponse).toEqual({
-      id: "rpc-2",
-      result: {
-        echoed: "after-reconnect",
-        seenByBrowser: true,
-      },
-      type: "rpc.response",
-    });
-    await expect(page.getByTestId("ws-calls")).toContainText(
-      "after-reconnect",
-    );
-  });
-});
 
 type RpcRequest = {
   id: string;
@@ -190,7 +195,10 @@ class TransportTestServer {
 
     this.webSocketServer = new WebSocketServer({ noServer: true });
     this.webSocketServer.on("connection", (socket, request) => {
-      const url = new URL(request.url ?? WS_PATH, `http://127.0.0.1:${this.port}`);
+      const url = new URL(
+        request.url ?? WS_PATH,
+        `http://127.0.0.1:${this.port}`,
+      );
       const connectionId =
         url.searchParams.get("connectionId") ?? `connection-${Date.now()}`;
 
@@ -217,16 +225,24 @@ class TransportTestServer {
     });
 
     this.server.on("upgrade", (request, socket, head) => {
-      const url = new URL(request.url ?? WS_PATH, `http://127.0.0.1:${this.port}`);
+      const url = new URL(
+        request.url ?? WS_PATH,
+        `http://127.0.0.1:${this.port}`,
+      );
       if (url.pathname !== WS_PATH || url.searchParams.get("token") !== TOKEN) {
         socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
         socket.destroy();
         return;
       }
 
-      this.webSocketServer?.handleUpgrade(request, socket, head, (websocket) => {
-        this.webSocketServer?.emit("connection", websocket, request);
-      });
+      this.webSocketServer?.handleUpgrade(
+        request,
+        socket,
+        head,
+        (websocket) => {
+          this.webSocketServer?.emit("connection", websocket, request);
+        },
+      );
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -342,7 +358,10 @@ class TransportTestServer {
       );
       if (socket) {
         await delay(250);
-        if (socket.readyState === 1 && [...this.wsClients.values()].includes(socket)) {
+        if (
+          socket.readyState === 1 &&
+          [...this.wsClients.values()].includes(socket)
+        ) {
           return socket;
         }
       }
@@ -387,9 +406,16 @@ class TransportTestServer {
       return;
     }
 
-    const url = new URL(request.url ?? SSE_PATH, `http://127.0.0.1:${this.port}`);
-    const headerLastEventId = parseLastEventId(request.headers["last-event-id"]);
-    const queryLastEventId = parseLastEventId(url.searchParams.get("lastEventId"));
+    const url = new URL(
+      request.url ?? SSE_PATH,
+      `http://127.0.0.1:${this.port}`,
+    );
+    const headerLastEventId = parseLastEventId(
+      request.headers["last-event-id"],
+    );
+    const queryLastEventId = parseLastEventId(
+      url.searchParams.get("lastEventId"),
+    );
     const lastEventId = headerLastEventId ?? queryLastEventId ?? 0;
     this.lastEventIds.push(lastEventId);
 
@@ -402,7 +428,9 @@ class TransportTestServer {
     });
     response.write("retry: 1000\n\n");
 
-    for (const entry of this.entries.filter((candidate) => candidate.seq > lastEventId)) {
+    for (const entry of this.entries.filter(
+      (candidate) => candidate.seq > lastEventId,
+    )) {
       this.writeSseEntry(response, entry);
     }
 
@@ -450,7 +478,8 @@ class TransportTestServer {
 
 function buildCorsHeaders() {
   return {
-    "access-control-allow-headers": "Authorization, Last-Event-ID, Accept, Content-Type",
+    "access-control-allow-headers":
+      "Authorization, Last-Event-ID, Accept, Content-Type",
     "access-control-allow-methods": "GET, OPTIONS",
     "access-control-allow-origin": "http://127.0.0.1:3100",
   };

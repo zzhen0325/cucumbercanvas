@@ -1,15 +1,24 @@
 import type { BackendFactory, BackendProtocol } from "deepagents";
 
-import type { ConnectionManager } from "../ws/connection-manager.js";
-import type { PersistImageFn, SubmitImageJobFn } from "../agent/tools/image-generate.js";
+import type {
+  PersistImageFn,
+  SubmitImageJobFn,
+} from "../agent/tools/image-generate.js";
 import type { SubmitVideoJobFn } from "../agent/tools/video-generate.js";
+import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createGenerateImageMcpTool } from "./tools/generate-image.js";
 import { createGenerateVideoMcpTool } from "./tools/generate-video.js";
 import { createInspectCanvasMcpTool } from "./tools/inspect-canvas.js";
 import { createManipulateCanvasMcpTool } from "./tools/manipulate-canvas.js";
 import { createPersistSandboxFileMcpTool } from "./tools/persist-sandbox-file.js";
 import { createProjectSearchMcpTool } from "./tools/project-search.js";
-import type { CucumberMcpTool, McpListedTool, McpToolCallResult, McpToolContext } from "./types.js";
+import { createPublishTaskPlanMcpTool } from "./tools/publish-task-plan.js";
+import type {
+  CucumberMcpTool,
+  McpListedTool,
+  McpToolCallResult,
+  McpToolContext,
+} from "./types.js";
 
 export type CreateCucumberMcpServerDeps = {
   createUserClient: (accessToken: string) => any;
@@ -37,6 +46,7 @@ export function createCucumberMcpServer(
   deps: CreateCucumberMcpServerDeps,
 ): CucumberMcpServer {
   return createInMemoryMcpServer([
+    createPublishTaskPlanMcpTool(),
     createProjectSearchMcpTool(backend),
     createInspectCanvasMcpTool(deps),
     createManipulateCanvasMcpTool(deps),

@@ -190,12 +190,16 @@ describe("canvas-element-writer image generation groups", () => {
     expect(rectangles).toHaveLength(3);
 
     // demand container
-    const demandContainer = rectangles.find((el) => el.strokeColor === "#1E293B");
+    const demandContainer = rectangles.find(
+      (el) => el.strokeColor === "#1E293B",
+    );
     expect(demandContainer).toBeTruthy();
     expect(demandContainer?.backgroundColor).toBe("#0F172A");
 
     // prompt container
-    const promptContainer = rectangles.find((el) => el.strokeColor === "#0D9488");
+    const promptContainer = rectangles.find(
+      (el) => el.strokeColor === "#0D9488",
+    );
     expect(promptContainer).toBeTruthy();
     expect(promptContainer?.backgroundColor).toBe("#042F2E");
 
@@ -204,4 +208,3 @@ describe("canvas-element-writer image generation groups", () => {
     expect(promptText).toBeTruthy();
   });
 });
-

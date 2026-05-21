@@ -56,7 +56,6 @@ const DEEPSEEK_MODELS: ModelInfo[] = [
     name: "DeepSeek V4 Flash",
     provider: "deepseek",
   },
-  
 ];
 
 export async function registerModelRoutes(

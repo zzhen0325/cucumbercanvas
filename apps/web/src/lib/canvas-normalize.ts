@@ -137,6 +137,58 @@ function recenterBoundTextElements(elements: CanvasElement[]): boolean {
   return changed;
 }
 
+function removeStaleGeneratorPlaceholders(elements: CanvasElement[]): boolean {
+  const activeImageGroupIds = new Set<string>();
+  for (const el of elements) {
+    if (el.isDeleted || el.type !== "image") continue;
+    const groupIds = Array.isArray(el.groupIds) ? (el.groupIds as string[]) : [];
+    for (const groupId of groupIds) {
+      if (groupId) activeImageGroupIds.add(groupId);
+    }
+  }
+
+  if (activeImageGroupIds.size === 0) {
+    return false;
+  }
+
+  let changed = false;
+  const staleGeneratorIds = new Set<string>();
+
+  for (const el of elements) {
+    if (el.isDeleted) continue;
+    const customData = el.customData as { type?: string } | undefined;
+    if (customData?.type !== "image-generator") continue;
+    const groupIds = Array.isArray(el.groupIds) ? (el.groupIds as string[]) : [];
+    const hasReplacementImage = groupIds.some((groupId) =>
+      activeImageGroupIds.has(groupId),
+    );
+    if (!hasReplacementImage) continue;
+
+    el.isDeleted = true;
+    el.updated = Date.now();
+    staleGeneratorIds.add(el.id as string);
+    changed = true;
+  }
+
+  if (staleGeneratorIds.size === 0) {
+    return changed;
+  }
+
+  for (const el of elements) {
+    if (el.isDeleted) continue;
+    if (
+      typeof el.containerId === "string" &&
+      staleGeneratorIds.has(el.containerId)
+    ) {
+      el.isDeleted = true;
+      el.updated = Date.now();
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
 export function normalizeCanvasElements(elements: CanvasElement[]): {
   elements: CanvasElement[];
   changed: boolean;
@@ -145,6 +197,15 @@ export function normalizeCanvasElements(elements: CanvasElement[]): {
 
   for (const el of elements) {
     if (el.isDeleted) continue;
+
+    if (typeof el.backgroundColor !== "string") {
+      el.backgroundColor = "transparent";
+      changed = true;
+    }
+    if (!Array.isArray(el.groupIds)) {
+      el.groupIds = [];
+      changed = true;
+    }
 
     // Keep canvas output production-styled even when content was created by
     // older agents, pasted from Excalidraw defaults, or imported from JSON.
@@ -187,6 +248,7 @@ export function normalizeCanvasElements(elements: CanvasElement[]): {
   }
 
   if (validateBindings(elements)) changed = true;
+  if (removeStaleGeneratorPlaceholders(elements)) changed = true;
   if (recenterBoundTextElements(elements)) changed = true;
   return { elements, changed };
 }

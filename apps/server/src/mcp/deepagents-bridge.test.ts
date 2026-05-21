@@ -22,6 +22,7 @@ describe("createCucumberMcpServer", () => {
     });
 
     expect(server.listTools().map((toolDef) => toolDef.name)).toEqual([
+      "publish_task_plan",
       "project_search",
       "inspect_canvas",
       "manipulate_canvas",

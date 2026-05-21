@@ -1,4 +1,8 @@
-import type { ContentBlock, RunCreateRequest, ToolBlock } from "@cucumber/shared";
+import type {
+  ContentBlock,
+  RunCreateRequest,
+  ToolBlock,
+} from "@cucumber/shared";
 
 import type { ChatService } from "../features/chat/chat-service.js";
 import type { AuthenticatedUser } from "../supabase/user.js";
@@ -65,6 +69,12 @@ export class RunEventPump {
             toolName: event.toolName,
             status: "running",
             ...(event.input ? { input: event.input } : {}),
+            ...(event.planId ? { planId: event.planId } : {}),
+            ...(event.stepId ? { stepId: event.stepId } : {}),
+            ...(event.subAgentName ? { subAgentName: event.subAgentName } : {}),
+            ...(event.parentToolCallId
+              ? { parentToolCallId: event.parentToolCallId }
+              : {}),
           });
           continue;
         }
@@ -84,6 +94,14 @@ export class RunEventPump {
                 ? { outputSummary: event.outputSummary }
                 : {}),
               ...(event.artifacts ? { artifacts: event.artifacts } : {}),
+              ...(event.planId ? { planId: event.planId } : {}),
+              ...(event.stepId ? { stepId: event.stepId } : {}),
+              ...(event.subAgentName
+                ? { subAgentName: event.subAgentName }
+                : {}),
+              ...(event.parentToolCallId
+                ? { parentToolCallId: event.parentToolCallId }
+                : {}),
             };
           }
         }
@@ -112,7 +130,9 @@ export class RunEventPump {
         error: {
           code: "run_failed",
           message:
-            error instanceof Error ? error.message : "Stream failed unexpectedly",
+            error instanceof Error
+              ? error.message
+              : "Stream failed unexpectedly",
         },
         timestamp: new Date().toISOString(),
       });

@@ -23,7 +23,9 @@ export function registerAllProviders(env: ServerEnv): void {
     accessKeyId: env.seedreamAccessKeyId,
     secretAccessKey: env.seedreamSecretAccessKey,
     reqKey: env.seedreamReqKey ?? "jimeng_seedream46_cvtob",
-    ...(env.seedreamVideoReqKey ? { videoReqKey: env.seedreamVideoReqKey } : {}),
+    ...(env.seedreamVideoReqKey
+      ? { videoReqKey: env.seedreamVideoReqKey }
+      : {}),
     host: env.seedreamHost ?? "visual.volcengineapi.com",
     region: env.seedreamRegion ?? "cn-north-1",
     service: env.seedreamService ?? "cv",

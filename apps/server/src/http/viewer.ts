@@ -71,9 +71,7 @@ export async function registerViewerRoutes(
 
       const viewer = await options.viewerService.ensureViewer(user);
 
-      return reply
-        .code(200)
-        .send(viewerResponseSchema.parse(viewer));
+      return reply.code(200).send(viewerResponseSchema.parse(viewer));
     } catch (error) {
       return sendApplicationError(
         error,

@@ -32,6 +32,24 @@ Scope:
 - Inject `<selected_canvas_context>` into the runtime prompt builder.
 - Replace the chat input's selection counter with context chips/rows.
 
+### Phase 1.5: Viewport-Aware Canvas Agent Context
+
+Ship `canvasAgentContext` alongside the existing selected refs so the agent can
+resolve user intent against the current working area instead of the whole
+infinite canvas.
+
+Scope:
+
+- Add a structured `canvasAgentContext` to `RunCreateRequest`.
+- Capture viewport geometry (`x`, `y`, `zoom`, visible width/height) at send time.
+- Reuse selected refs as `selectedCards`.
+- Compute `nearbyCards` from the current viewport or selected-card neighborhood.
+- Include a compact `canvasSummary` that prioritizes selected and nearby cards.
+- Include first-pass `cardRelations` for arrows, bound text, groups, and Cucumber
+  canvas containers.
+- Inject the context as `<canvas_agent_context format="json">` while keeping
+  `<selected_canvas_context>` for compatibility.
+
 Files:
 
 - `packages/shared/src/contracts.ts`
@@ -82,13 +100,37 @@ Scope:
 - Project tool lifecycle events onto the canvas as trace nodes.
 - Group each run into a dedicated lane/frame.
 - Keep nodes collapsed by default and support explicit cleanup/toggling.
+- For planned runs, prefer the dedicated Cucumber `agent_flow` canvas container
+  over ordinary rectangle/text trace-node composition.
 
 Files:
 
 - `apps/web/src/lib/agent-trace-projector.ts`
+- `apps/web/src/lib/agent-flow-container-projector.ts`
+- `apps/web/src/components/canvas/agent-flow-container-renderer.tsx`
 - `apps/web/src/components/canvas/canvas-trace-lane.tsx`
 - `apps/web/src/components/chat-sidebar.tsx`
 - `packages/shared/src/events.ts`
+
+## Agent Flow Container Contract
+
+Agent Flow is a Cucumber-owned application-layer canvas container. The
+Excalidraw scene stores one selectable/movable/resizable embeddable host
+element with `customData.cucumberContainer.kind = "agent_flow"`. Cucumber code
+renders the internal plan graph through `renderEmbeddable`; Excalidraw does not
+need a new native element type.
+
+Runtime behavior:
+
+- `publish_task_plan` emits a typed `AgentTaskPlan` instead of relying on
+  natural-language parsing.
+- `stream-adapter.ts` converts that tool output into `task.plan.created` and
+  `agent.flow.container.created` SSE events.
+- Tool lifecycle events may carry `planId`, `stepId`, `subAgentName`, and
+  `parentToolCallId`; the web projector uses those fields to attach execution
+  state to the matching container step.
+- The legacy trace projector remains as the fallback for runs without an Agent
+  Flow container.
 
 ## Phase 1 Contract
 

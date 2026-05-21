@@ -336,13 +336,20 @@
 /* ── Canvas Excalidraw UI overrides ── */
 
 .cucumber-canvas-shell {
+  --canvas-dot-grid-base: oklch(0.96 0.004 240);
+  --canvas-dot-grid-dot: oklch(0.58 0.02 240 / 0.16);
   background: radial-gradient(
-      circle at 16px 16px,
-      oklch(0.64 0.03 240 / 0.12) 1px,
+      circle at 14px 14px,
+      var(--canvas-dot-grid-dot) 1.2px,
       transparent 1px
     ),
-    var(--color-background);
-  background-size: 24px 24px;
+    var(--canvas-dot-grid-base);
+  background-size: 22px 22px;
+}
+
+.dark .cucumber-canvas-shell {
+  --canvas-dot-grid-base: oklch(0.115 0.016 240);
+  --canvas-dot-grid-dot: oklch(0.72 0.015 240 / 0.12);
 }
 
 /* Hide left menu button — replaced by CanvasLogoMenu */
@@ -560,4 +567,3 @@
 .flowith-glow {
   box-shadow: 0 0 40px oklch(0.74 0.16 195 / 0.12);
 }
-

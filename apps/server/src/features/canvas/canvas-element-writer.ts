@@ -854,7 +854,10 @@ export async function createImageGenerationGroup(
       bgLower.includes("oklch(0.2");
   }
 
-  const group = buildImageGenerationGroupElements(elements, { ...opts, isDark });
+  const group = buildImageGenerationGroupElements(elements, {
+    ...opts,
+    isDark,
+  });
 
   await writeCanvasContent(client, opts.canvasId, {
     ...content,

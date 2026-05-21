@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { type SupabaseClient, createClient } from "@supabase/supabase-js";
 import type { FastifyRequest } from "fastify";
 import { importJWK, jwtVerify } from "jose";
 
@@ -65,7 +65,9 @@ function setCachedAuth(token: string, user: AuthenticatedUser): void {
 // --- Authenticator factory ---
 
 // Parse JWK JSON string into a CryptoKey at startup (async init)
-let jwtPublicKeyPromise: Promise<Awaited<ReturnType<typeof importJWK>> | Uint8Array> | null = null;
+let jwtPublicKeyPromise: Promise<
+  Awaited<ReturnType<typeof importJWK>> | Uint8Array
+> | null = null;
 
 function initJwtKey(
   env: Pick<ServerEnv, "supabaseJwtSecret">,
@@ -183,12 +185,16 @@ export function createUserSupabaseClientFactory(
       accessToken === DEV_ACCESS_TOKEN &&
       env.supabaseServiceRoleKey
     ) {
-      return createClient<Database>(env.supabaseUrl, env.supabaseServiceRoleKey, {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
+      return createClient<Database>(
+        env.supabaseUrl,
+        env.supabaseServiceRoleKey,
+        {
+          auth: {
+            autoRefreshToken: false,
+            persistSession: false,
+          },
         },
-      });
+      );
     }
 
     return createClient<Database>(env.supabaseUrl, env.supabaseAnonKey, {

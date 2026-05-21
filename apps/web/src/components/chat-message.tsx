@@ -142,10 +142,7 @@ const UserMessage = React.memo(function UserMessage({
                 <ImagePill
                   key={idx}
                   src={(block as { url: string }).url}
-                  name={
-                    (block as { name?: string }).name ??
-                    `image-${idx + 1}`
-                  }
+                  name={(block as { name?: string }).name ?? `image-${idx + 1}`}
                 />
               ))}
             </span>
@@ -171,9 +168,7 @@ const UserMessage = React.memo(function UserMessage({
             <ImagePill
               key={idx}
               src={(block as { url: string }).url}
-              name={
-                (block as { name?: string }).name ?? `image-${idx + 1}`
-              }
+              name={(block as { name?: string }).name ?? `image-${idx + 1}`}
             />
           ))}
         </div>
@@ -200,7 +195,7 @@ const AssistantMessage = React.memo(function AssistantMessage({
   // Find the last text block index for streaming cursor placement
   const lastTextIdx = useMemo(() => {
     for (let i = contentBlocks.length - 1; i >= 0; i--) {
-      if (contentBlocks[i]!.type === "text") return i;
+      if (contentBlocks[i]?.type === "text") return i;
     }
     return -1;
   }, [contentBlocks]);
@@ -249,9 +244,7 @@ const AssistantMessage = React.memo(function AssistantMessage({
             <ThinkingBlockView
               key={`thinking-${idx}`}
               thinking={block.thinking}
-              isStreaming={
-                isStreaming && idx === contentBlocks.length - 1
-              }
+              isStreaming={isStreaming && idx === contentBlocks.length - 1}
             />
           );
         }

@@ -3,6 +3,8 @@ import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 
 import type {
+  AgentTaskPlan,
+  CanvasAgentContext,
   CanvasContextRef,
   ImageAttachment,
   ImageGenerationPreference,
@@ -66,6 +68,9 @@ export function buildUserMessage(
   mentions: MessageMention[] = [],
   videoGenerationPreference?: VideoGenerationPreference,
   canvasSummary?: string | null,
+  executionMode: RunCreateRequest["executionMode"] = "direct",
+  acceptedPlan?: AgentTaskPlan,
+  canvasAgentContext?: CanvasAgentContext,
 ): { text: string } {
   const xmlBlocks: string[] = [];
 
@@ -77,10 +82,12 @@ export function buildUserMessage(
   const inputImagesXml = buildInputImagesXml(attachments);
   if (inputImagesXml) xmlBlocks.push(inputImagesXml);
 
-  const selectedCanvasContextXml = buildSelectedCanvasContextXml(
-    canvasContextRefs,
-  );
+  const selectedCanvasContextXml =
+    buildSelectedCanvasContextXml(canvasContextRefs);
   if (selectedCanvasContextXml) xmlBlocks.push(selectedCanvasContextXml);
+
+  const canvasAgentContextXml = buildCanvasAgentContextXml(canvasAgentContext);
+  if (canvasAgentContextXml) xmlBlocks.push(canvasAgentContextXml);
 
   const imageGenerationPreferenceXml = buildImageGenerationPreferenceXml(
     imageGenerationPreference,
@@ -96,6 +103,23 @@ export function buildUserMessage(
 
   const mentionXmlBlocks = buildMentionXmlBlocks(mentions);
   xmlBlocks.push(...mentionXmlBlocks);
+
+  const acceptedPlanXml = buildAcceptedTaskPlanXml(acceptedPlan);
+  if (acceptedPlanXml) xmlBlocks.push(acceptedPlanXml);
+
+  if (executionMode === "plan_preview") {
+    xmlBlocks.push(
+      "<agent_execution_mode>plan_preview: publish a typed task plan with publish_task_plan, then stop. Do not call generation or canvas mutation tools in this run.</agent_execution_mode>",
+    );
+  } else if (executionMode === "execute_plan") {
+    xmlBlocks.push(
+      "<agent_execution_mode>execute_plan: execute the accepted task plan. When a business tool supports it, include the matching planStepId or stepId so the UI can attach tool progress to the Agent Flow container.</agent_execution_mode>",
+    );
+  } else {
+    xmlBlocks.push(
+      "<agent_execution_mode>direct: for multi-step canvas or generation work, first call publish_task_plan so the user can see the Agent Flow container.</agent_execution_mode>",
+    );
+  }
 
   if (!xmlBlocks.length) return { text: prompt };
   return { text: `${prompt}\n\n${xmlBlocks.join("\n\n")}` };
@@ -173,6 +197,49 @@ function buildSelectedCanvasContextXml(
     .join("\n  ");
 
   return `<selected_canvas_context count="${refs.length}">\n  ${body}\n</selected_canvas_context>`;
+}
+
+function buildCanvasAgentContextXml(
+  context?: CanvasAgentContext,
+): string | null {
+  if (!context) return null;
+
+  const json = JSON.stringify(sanitizeCanvasAgentContext(context), null, 2);
+  return `<canvas_agent_context format="json">\n${escapeXmlText(json)}\n</canvas_agent_context>`;
+}
+
+function sanitizeCanvasAgentContext(context: CanvasAgentContext) {
+  return {
+    viewport: context.viewport,
+    selectedCards: context.selectedCards.map(sanitizeCanvasCard),
+    nearbyCards: context.nearbyCards.map(sanitizeCanvasCard),
+    canvasSummary: context.canvasSummary,
+    cardRelations: context.cardRelations,
+  };
+}
+
+function sanitizeCanvasCard(ref: CanvasContextRef): CanvasContextRef {
+  if (ref.kind === "image") {
+    return {
+      kind: "image",
+      elementId: ref.elementId,
+      x: ref.x,
+      y: ref.y,
+      width: ref.width,
+      height: ref.height,
+      ...(ref.assetId ? { assetId: ref.assetId } : {}),
+      ...(ref.storageUrl ? { storageUrl: ref.storageUrl } : {}),
+      ...(ref.mimeType ? { mimeType: ref.mimeType } : {}),
+      ...(ref.title ? { title: ref.title } : {}),
+    };
+  }
+  if (ref.kind === "text" && ref.text.length > 1200) {
+    return { ...ref, text: `${ref.text.slice(0, 1197)}...` };
+  }
+  if (ref.kind === "shape" && ref.text && ref.text.length > 1200) {
+    return { ...ref, text: `${ref.text.slice(0, 1197)}...` };
+  }
+  return ref;
 }
 
 function buildImageGenerationPreferenceXml(
@@ -281,6 +348,24 @@ function buildMentionXmlBlocks(mentions: MessageMention[]): string[] {
   }
 
   return xmlBlocks;
+}
+
+function buildAcceptedTaskPlanXml(plan?: AgentTaskPlan): string | null {
+  if (!plan) return null;
+
+  const steps = plan.steps
+    .map((step, index) => {
+      const agentAttr = step.agentName
+        ? ` agent_name="${escapeXmlAttribute(step.agentName)}"`
+        : "";
+      const targetAttr = step.target
+        ? ` target_kind="${escapeXmlAttribute(step.target.kind)}"`
+        : "";
+      return `<step index="${index + 1}" step_id="${escapeXmlAttribute(step.stepId)}" status="${step.status}"${agentAttr}${targetAttr}>\n<title>${escapeXmlText(step.title)}</title>${step.description ? `\n<description>${escapeXmlText(step.description)}</description>` : ""}\n</step>`;
+    })
+    .join("\n  ");
+
+  return `<accepted_task_plan plan_id="${escapeXmlAttribute(plan.planId)}" title="${escapeXmlAttribute(plan.title)}">\n  ${steps}\n</accepted_task_plan>`;
 }
 
 function escapeXmlAttribute(value: string): string {
@@ -1261,6 +1346,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               run.mentions,
               run.videoGenerationPreference,
               canvasSummary,
+              run.executionMode ?? "direct",
+              run.acceptedPlan,
+              run.canvasAgentContext,
             );
 
             // Build assetId → data URI map for tool-level resolution
@@ -1281,6 +1369,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               run.mentions,
               run.videoGenerationPreference,
               canvasSummary,
+              run.executionMode ?? "direct",
+              run.acceptedPlan,
+              run.canvasAgentContext,
             );
             userMessage = new HumanMessage(enrichedPrompt);
           }
@@ -1295,9 +1386,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               run.canvasId ||
               run.accessToken ||
               run.userId ||
+              run.runId ||
               Object.keys(attachmentDataMap).length > 0
                 ? {
                     configurable: {
+                      run_id: run.runId,
                       ...(run.threadId ? { thread_id: run.threadId } : {}),
                       ...(run.canvasId ? { canvas_id: run.canvasId } : {}),
                       ...(run.accessToken

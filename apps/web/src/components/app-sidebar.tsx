@@ -116,7 +116,6 @@ function MobileBottomBar() {
   return (
     <nav
       className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-border bg-card/95 backdrop-blur-sm pb-[env(safe-area-inset-bottom)] md:hidden"
-      role="navigation"
       aria-label="Main navigation"
     >
       {TOP_NAV_ITEMS.map((item) => {
@@ -212,21 +211,14 @@ export function AppSidebar() {
 
         {/* Top nav items */}
         {TOP_NAV_ITEMS.map((item) => (
-          <NavButton
-            key={item.href}
-            item={item}
-            active={isActive(item.href)}
-          />
+          <NavButton key={item.href} item={item} active={isActive(item.href)} />
         ))}
 
         {/* Spacer pushes bottom section down */}
         <div className="flex-1" />
 
         {/* Settings / Profile */}
-        <NavButton
-          item={SETTINGS_ITEM}
-          active={isActive(SETTINGS_ITEM.href)}
-        />
+        <NavButton item={SETTINGS_ITEM} active={isActive(SETTINGS_ITEM.href)} />
 
         {/* Sign out */}
         <button
@@ -245,7 +237,10 @@ export function AppSidebar() {
             whileTap={{ scale: 0.9 }}
             transition={{ type: "spring", stiffness: 400, damping: 17 }}
           >
-            <path d="M3 4.5A2.5 2.5 0 0 1 5.5 2h5A2.5 2.5 0 0 1 13 4.5v1a.5.5 0 0 1-1 0v-1A1.5 1.5 0 0 0 10.5 3h-5A1.5 1.5 0 0 0 4 4.5v11A1.5 1.5 0 0 0 5.5 17h5a1.5 1.5 0 0 0 1.5-1.5v-1a.5.5 0 0 1 1 0v1A2.5 2.5 0 0 1 10.5 18h-5A2.5 2.5 0 0 1 3 15.5zm12.354-1.354a.5.5 0 0 0-.708.708L16.793 6H7.5a.5.5 0 0 0 0 1h9.293l-2.147 2.146a.5.5 0 0 0 .708.708l3-3a.5.5 0 0 0 0-.708z" transform="translate(0, 4)" />
+            <path
+              d="M3 4.5A2.5 2.5 0 0 1 5.5 2h5A2.5 2.5 0 0 1 13 4.5v1a.5.5 0 0 1-1 0v-1A1.5 1.5 0 0 0 10.5 3h-5A1.5 1.5 0 0 0 4 4.5v11A1.5 1.5 0 0 0 5.5 17h5a1.5 1.5 0 0 0 1.5-1.5v-1a.5.5 0 0 1 1 0v1A2.5 2.5 0 0 1 10.5 18h-5A2.5 2.5 0 0 1 3 15.5zm12.354-1.354a.5.5 0 0 0-.708.708L16.793 6H7.5a.5.5 0 0 0 0 1h9.293l-2.147 2.146a.5.5 0 0 0 .708.708l3-3a.5.5 0 0 0 0-.708z"
+              transform="translate(0, 4)"
+            />
           </motion.svg>
         </button>
       </aside>

@@ -14,18 +14,17 @@ export type WebSocketHandle = {
   registerRPC: (method: string, handler: RPCHandler) => () => void;
 };
 
-export function useWebSocket(
-  getToken: () => string | null,
-): WebSocketHandle {
+export function useWebSocket(getToken: () => string | null): WebSocketHandle {
   const wsRef = useRef<WebSocket | null>(null);
   const connectionIdRef = useRef(
     (() => {
       if (typeof sessionStorage !== "undefined") {
         const stored = sessionStorage.getItem("ws_connection_id");
         if (stored) return stored;
-        const id = typeof crypto !== "undefined" && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const id =
+          typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
         sessionStorage.setItem("ws_connection_id", id);
         return id;
       }
@@ -57,9 +56,7 @@ export function useWebSocket(
     }
 
     const serverBase = getServerBaseUrl();
-    const wsUrl =
-      serverBase.replace(/^http/, "ws") +
-      `/api/ws?token=${encodeURIComponent(token)}&connectionId=${encodeURIComponent(connectionIdRef.current)}`;
+    const wsUrl = `${serverBase.replace(/^http/, "ws")}/api/ws?token=${encodeURIComponent(token)}&connectionId=${encodeURIComponent(connectionIdRef.current)}`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
@@ -95,10 +92,7 @@ export function useWebSocket(
       }
 
       if (!disposed.current) {
-        const delay = Math.min(
-          30_000,
-          1000 * Math.pow(2, reconnectAttempt.current),
-        );
+        const delay = Math.min(30_000, 1000 * 2 ** reconnectAttempt.current);
         reconnectAttempt.current += 1;
         reconnectTimer.current = setTimeout(connect, delay);
       }
@@ -127,9 +121,7 @@ export function useWebSocket(
     try {
       const result = await handler(req.params);
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(
-          JSON.stringify({ type: "rpc.response", id: req.id, result }),
-        );
+        ws.send(JSON.stringify({ type: "rpc.response", id: req.id, result }));
       }
     } catch (error) {
       if (ws.readyState === WebSocket.OPEN) {
@@ -156,15 +148,12 @@ export function useWebSocket(
     };
   }, [connect]);
 
-  const registerRPC = useCallback(
-    (method: string, handler: RPCHandler) => {
-      rpcHandlers.current.set(method, handler);
-      return () => {
-        rpcHandlers.current.delete(method);
-      };
-    },
-    [],
-  );
+  const registerRPC = useCallback((method: string, handler: RPCHandler) => {
+    rpcHandlers.current.set(method, handler);
+    return () => {
+      rpcHandlers.current.delete(method);
+    };
+  }, []);
 
   return { connected, registerRPC };
 }

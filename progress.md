@@ -22,11 +22,20 @@ Status:
 - Extended Phase 4 again with visual artifact previews and click-to-expand trace details: image artifacts now render as Excalidraw image previews, video artifacts render as inline embeddables, and selecting a trace node or preview opens a detail panel with input/output/artifact context.
 - Added trace-to-chat linking: selecting a canvas trace node now opens the chat sidebar and scrolls to the matching tool block, while clicking a tool block can jump back to the corresponding trace node on the canvas.
 - Refined trace navigation further: the detail panel now exposes an explicit jump-to-chat action, and the canvas applies a weak same-run highlight so related trace nodes remain legible while the active tool stays primary.
+- Added the first Agent Flow container slice: `publish_task_plan` now emits typed task-plan and agent-flow container stream events, tool lifecycle events can carry plan/step/sub-agent correlation, and the canvas renders planned agent work inside a dedicated `agent_flow` embeddable container instead of stitching together ordinary trace shapes.
+- Added the reusable canvas container registry/renderer path so future Cucumber-owned container types can be registered without forking Excalidraw.
 - Canvas shell styling is now scoped under the canvas editor and gives Excalidraw panels a cleaner product-surface treatment.
 - Loaded, synced, pasted/imported, and converted video elements are normalized to sans-serif text, solid fill, solid connector strokes, and `roughness: 0`.
 - Excalidraw current-item defaults now prefer solid fill/strokes, sharp arrows, sans-serif text, and a theme-aware canvas background.
 - Focused web tests cover the normalization path for legacy Virgil/hachure/dashed content.
 - Seedance 3.0 Pro is now available as a Volcengine video model (`bytedance/seedance-3.0-pro`) with 5s/10s frame mapping, first-frame image-to-video support, provider logs, and model-limit metadata for UI/tool selection.
+
+Current session:
+
+- Added `canvasAgentContext` as a structured run context for viewport-aware agent work.
+- The web app now builds the context at send time from the live Excalidraw scene: viewport, selected cards, nearby cards, canvas summary, and first-pass card relations.
+- The server now forwards and injects `<canvas_agent_context format="json">` while preserving the existing `<selected_canvas_context>` block.
+- Inline image data is stripped from the injected structured context to avoid prompt bloat; visual image input still flows through attachments.
 
 Previous session:
 
@@ -96,3 +105,26 @@ Previous session:
 - Passed: `pnpm exec biome check apps/server/src/generation/providers/seedream-prompt.ts apps/server/src/generation/providers/seedream-prompt.test.ts apps/server/src/generation/providers/seedream.ts apps/server/src/agent/tools/image-generate.ts apps/server/src/features/jobs/executors/image-generation.ts apps/server/src/features/canvas/canvas-element-writer.ts apps/server/src/features/canvas/canvas-element-writer.test.ts apps/server/src/agent/runtime.ts apps/server/src/agent/tools/video-generate.ts feature_list.json`.
 - Passed: `pnpm --filter @cucumber/server build`.
 - Failed: full `pnpm lint` still reports existing repository-wide Biome issues outside this change, including `apps/server/src/agent/backends/dev.ts`, `apps/server/src/agent/persistence/supabase-checkpointer.ts`, `apps/server/src/agent/deep-agent.ts`, `apps/server/src/agent/tools/brand-kit.ts`, and `vercel.json`.
+- Passed: `pnpm --filter @cucumber/shared build`.
+- Passed: `pnpm --filter @cucumber/shared test -- contracts.test.ts`.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/agent/stream-adapter.test.ts src/agent/runtime.test.ts src/mcp/deepagents-bridge.test.ts`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/agent-flow-container-renderer.test.tsx test/agent-trace-projector.test.ts`.
+- Passed: `pnpm --filter @cucumber/shared typecheck`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm --filter @cucumber/web typecheck` (Next still warns about workspace-root inference because `/Users/bytedance/package-lock.json` exists outside this repo).
+- Passed: `pnpm lint`.
+- Passed: `pnpm --filter @cucumber/server build`.
+- Passed: `pnpm --filter @cucumber/web build` (same Next workspace-root warning; build completed).
+- Passed: local web smoke on `http://localhost:3001/test/trace-canvas-chat` with `HEAD 200`; port 3000 was already occupied, so the dev server was started on 3001 and then stopped.
+- Note: `pnpm --filter @cucumber/server test -- src/agent/stream-adapter.test.ts src/agent/runtime.test.ts` still invokes the package's broader Vitest suite and hits existing environment-dependent integration failures (`real-image-generation-chain.integration.test.ts` missing Supabase/Volcengine env and `task-manager.integration.test.ts` missing host `initdb`); the targeted `pnpm --filter @cucumber/server exec vitest run ...` command above passes.
+- Passed: `pnpm --filter @cucumber/shared build` after adding `canvasAgentContext` to shared contracts.
+- Passed: `pnpm --filter @cucumber/shared typecheck`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm --filter @cucumber/web typecheck` (Next still warns about workspace-root inference because `/Users/bytedance/package-lock.json` exists outside this repo).
+- Passed: `pnpm --filter @cucumber/shared exec vitest run src/contracts.test.ts`.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/agent/runtime.test.ts`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-context.test.ts`.
+- Passed: `pnpm exec biome check packages/shared/src/contracts.ts packages/shared/src/contracts.test.ts apps/web/src/lib/canvas-context.ts apps/web/src/app/canvas/page.tsx apps/web/src/components/chat-sidebar.tsx apps/web/test/canvas-context.test.ts apps/server/src/agent/runtime.ts apps/server/src/agent/runtime.test.ts apps/server/src/http/runs.ts apps/server/src/agent/prompts/cucumber-main.ts docs/tech/canvas-agent-context-refactor.md feature_list.json progress.md`.
+- Passed: `pnpm lint`.
+- Passed: `pnpm --filter @cucumber/server build`.
+- Passed: `pnpm --filter @cucumber/web build` (same Next workspace-root warning and metadataBase warning; build completed).

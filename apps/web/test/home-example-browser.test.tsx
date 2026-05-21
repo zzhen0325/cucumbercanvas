@@ -20,18 +20,14 @@ describe("HomeExampleBrowser", () => {
       />,
     );
 
-    expect(
-      screen.queryByText("Campaign key visual"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Campaign key visual")).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Seedream Image" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Seedream Image" }),
+    );
 
-    expect(
-      await screen.findByText("Campaign key visual"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("Product poster"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Campaign key visual")).toBeInTheDocument();
+    expect(screen.getByText("Product poster")).toBeInTheDocument();
   });
 
   it("auto-selects the first example when a category chip is clicked", async () => {
@@ -44,7 +40,9 @@ describe("HomeExampleBrowser", () => {
       />,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Seedream Image" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Seedream Image" }),
+    );
 
     expect(onExampleSelect).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -53,7 +51,9 @@ describe("HomeExampleBrowser", () => {
         title: "Campaign key visual",
         prompt:
           "Generate a clean campaign key visual for a modern cucumber-flavored sparkling water brand. Use fresh green accents, natural light, realistic product photography, and leave room for a headline.",
-        previewImages: expect.arrayContaining([expect.stringContaining("og-image.png")]),
+        previewImages: expect.arrayContaining([
+          expect.stringContaining("og-image.png"),
+        ]),
       }),
     );
   });
@@ -68,7 +68,9 @@ describe("HomeExampleBrowser", () => {
       />,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Seedream Image" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Seedream Image" }),
+    );
     await userEvent.click(
       await screen.findByRole("button", {
         name: /Product poster/i,
@@ -82,7 +84,9 @@ describe("HomeExampleBrowser", () => {
         title: "Product poster",
         prompt:
           "Create a premium product poster for a minimalist skincare bottle on a wet stone surface. Soft daylight, crisp shadows, high-end editorial style.",
-        previewImages: expect.arrayContaining([expect.stringContaining("og-image.png")]),
+        previewImages: expect.arrayContaining([
+          expect.stringContaining("og-image.png"),
+        ]),
         inputMentions: [
           { type: "tool", name: "Seedream 4.6", imgSrc: "/favicon.svg" },
         ],

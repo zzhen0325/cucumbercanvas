@@ -1,7 +1,4 @@
-import type {
-  ToolRuntime,
-  ToolSchemaBase,
-} from "@langchain/core/tools";
+import type { ToolRuntime, ToolSchemaBase } from "@langchain/core/tools";
 
 export type McpToolTextContent = {
   type: "text";

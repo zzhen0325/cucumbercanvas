@@ -23,7 +23,6 @@ const ZOOM_STEP = 1.1;
 
 /* ── Types ── */
 interface CanvasBottomBarProps {
-  // biome-ignore lint/suspicious/noExplicitAny: Excalidraw API has no public type definition
   excalidrawApi: any | null;
   layersOpen: boolean;
   onToggleLayers: () => void;
@@ -232,7 +231,6 @@ const btnClass =
 const activeBtnClass = "bg-foreground/6 text-foreground";
 
 /* ── Element helpers for Search ── */
-// biome-ignore lint/suspicious/noExplicitAny: Excalidraw element has no public type
 type ExcalidrawEl = any;
 const TYPE_ICONS: Record<string, string> = {
   text: "T",
@@ -302,7 +300,11 @@ export function CanvasBottomBar({
     setZoom(state.zoom.value);
     const initBg = state.viewBackgroundColor ?? "#FFFFFF";
     setBgColor(initBg);
-    setHexInput(initBg.replace(/^#/, "").toUpperCase());
+    setHexInput(
+      initBg === "transparent"
+        ? "FFFFFF"
+        : initBg.replace(/^#/, "").toUpperCase(),
+    );
 
     const unsubscribe = excalidrawApi.onChange(() => {
       const s = excalidrawApi.getAppState();
@@ -447,8 +449,8 @@ export function CanvasBottomBar({
           onClick={onToggleTraceRecording}
           aria-label={
             traceRecordingEnabled
-              ? "Disable trace recording"
-              : "Enable trace recording"
+              ? "Hide Agent Flow recording"
+              : "Show Agent Flow recording"
           }
         >
           <TraceIcon className="h-4 w-4" />
@@ -457,7 +459,7 @@ export function CanvasBottomBar({
           type="button"
           className={btnClass}
           onClick={onClearTrace}
-          aria-label="Clear trace nodes"
+          aria-label="Clear Agent Flow containers"
         >
           <TrashIcon className="h-4 w-4" />
         </button>
