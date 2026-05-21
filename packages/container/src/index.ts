@@ -40,3 +40,37 @@ export type {
   PortCompatibilityRule,
 } from './dataflow/types.js';
 export { isPortCompatible, PORT_COMPATIBILITY } from './dataflow/types.js';
+
+export { AgentOrchestrator } from './collaboration/agent-orchestrator.js';
+export type { AgentOrchestratorEvents } from './collaboration/agent-orchestrator.js';
+export { AgentCollabSession } from './collaboration/agent-collab-session.js';
+export type { AgentCollabSessionEvents } from './collaboration/agent-collab-session.js';
+export type {
+  AgentCollabMessage,
+  AgentCollabMessageType,
+  AgentCollabSessionState,
+  AgentStatus,
+  ConflictRecord,
+  ContainerLock,
+  OperationEntry,
+  OrchestratorConfig,
+} from './collaboration/types.js';
+
+export { TemplateRegistry } from './templates/template-registry.js';
+export type { TemplateRegistryEvents } from './templates/template-registry.js';
+export { PRESET_TEMPLATES } from './templates/presets.js';
+export type {
+  ContainerTemplate,
+  ContainerTemplateNode,
+  ContainerTemplateEdge,
+  ContainerTemplatePort,
+  ContainerTemplateBinding,
+  ContainerTemplateShader,
+  TemplateInstance,
+} from './templates/types.js';
+export { IncrementalRenderer } from './performance/incremental-renderer.js';
+export type { DirtyMarkingEvents } from './performance/incremental-renderer.js';
+export { AgentThrottler } from './performance/agent-throttler.js';
+export type { AgentThrottlerEvents, ThrottlerConfig } from './performance/agent-throttler.js';
+export { DataFlowBatchExecutor } from './performance/dataflow-batch-executor.js';
+export type { BatchExecutorEvents, BatchExecutorConfig } from './performance/dataflow-batch-executor.js';
