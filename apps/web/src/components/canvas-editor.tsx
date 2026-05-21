@@ -42,11 +42,17 @@ export type CanvasSelectedElement = {
   y: number;
   width: number;
   height: number;
+  shapeType?: string;
   text?: string;
   fileId?: string;
   dataUrl?: string;
   /** Supabase storage public URL -- prefer over dataUrl for message attachments */
   storageUrl?: string;
+  link?: string;
+  mimeType?: string;
+  title?: string;
+  durationSeconds?: number;
+  customData?: Record<string, unknown>;
 };
 
 type CanvasEditorProps = {
@@ -380,11 +386,17 @@ export function CanvasEditor({
                 if (el.type === "text" && el.text) {
                   base.text = el.text;
                 }
+                if (el.customData && typeof el.customData === "object") {
+                  base.customData = el.customData as Record<string, unknown>;
+                }
                 if (el.type === "image" && el.fileId) {
                   base.fileId = el.fileId;
                   const file = selFiles[el.fileId];
                   if (file?.dataURL) {
                     base.dataUrl = file.dataURL;
+                  }
+                  if (typeof file?.mimeType === "string") {
+                    base.mimeType = file.mimeType;
                   }
                   // Prefer storage URL over base64 dataUrl for message attachments.
                   // Sources: 1) element customData (model-generated images)
@@ -394,6 +406,32 @@ export function CanvasEditor({
                     initialFilesRef.current[el.fileId]?.storageUrl;
                   if (typeof sUrl === "string" && sUrl) {
                     base.storageUrl = sUrl;
+                  }
+                }
+                if (
+                  el.type === "embeddable" &&
+                  typeof el.link === "string" &&
+                  isVideoUrl(el.link)
+                ) {
+                  base.link = el.link;
+                  if (typeof el.customData?.mimeType === "string") {
+                    base.mimeType = el.customData.mimeType;
+                  }
+                  if (typeof el.customData?.title === "string") {
+                    base.title = el.customData.title;
+                  }
+                  if (typeof el.customData?.durationSeconds === "number") {
+                    base.durationSeconds = el.customData.durationSeconds;
+                  }
+                }
+                if (
+                  el.type !== "text" &&
+                  el.type !== "image" &&
+                  el.type !== "embeddable"
+                ) {
+                  base.shapeType = el.type;
+                  if (typeof el.customData?.title === "string") {
+                    base.title = el.customData.title;
                   }
                 }
                 return base;

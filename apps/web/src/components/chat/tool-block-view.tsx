@@ -137,8 +137,12 @@ function findSidebarRect(el: HTMLElement | null): DOMRect | null {
 
 export const ToolBlockView = React.memo(function ToolBlockView({
   block,
+  isLinked,
+  onLinkToTrace,
 }: {
   block: ToolBlock;
+  isLinked: boolean | undefined;
+  onLinkToTrace: ((toolCallId: string) => void) | undefined;
 }) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelRight, setPanelRight] = useState(416);
@@ -189,27 +193,46 @@ export const ToolBlockView = React.memo(function ToolBlockView({
   }, []);
 
   const handleClosePanel = useCallback(() => setPanelOpen(false), []);
+  const handleLinkToTrace = useCallback(() => {
+    onLinkToTrace?.(block.toolCallId);
+  }, [block.toolCallId, onLinkToTrace]);
 
   return (
-    <div ref={containerRef} className="space-y-1.5">
+    <div
+      ref={containerRef}
+      id={`chat-tool-block-${block.toolCallId}`}
+      data-testid={`chat-tool-block-${block.toolCallId}`}
+      data-linked={isLinked ? "true" : "false"}
+      className={`space-y-1.5 rounded-xl transition-colors ${isLinked ? "bg-primary/5 ring-1 ring-primary/30 px-2 py-2 -mx-2" : ""}`}
+    >
       {/* Layer 1: Status line */}
-      <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-        {block.status === "running" ? (
-          <div className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-muted-foreground/30 border-t-muted-foreground" />
-        ) : (
-          <svg
-            className="h-3.5 w-3.5 text-muted-foreground"
-            viewBox="0 0 16 16"
-            fill="currentColor"
-          >
-            <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z" />
-          </svg>
-        )}
-        <span className="font-medium text-muted-foreground truncate">
-          {isMediaTool && modelName
-            ? formatModelDisplayName(modelName)
-            : config.label}
-        </span>
+      <div className="flex items-center justify-between gap-2 text-[12px] text-muted-foreground">
+        <div className="flex min-w-0 items-center gap-1.5">
+          {block.status === "running" ? (
+            <div className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-muted-foreground/30 border-t-muted-foreground" />
+          ) : (
+            <svg
+              className="h-3.5 w-3.5 text-muted-foreground"
+              viewBox="0 0 16 16"
+              fill="currentColor"
+            >
+              <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z" />
+            </svg>
+          )}
+          <span className="font-medium text-muted-foreground truncate">
+            {isMediaTool && modelName
+              ? formatModelDisplayName(modelName)
+              : config.label}
+          </span>
+        </div>
+        <button
+          data-testid={`tool-block-link-${block.toolCallId}`}
+          type="button"
+          onClick={handleLinkToTrace}
+          className={`shrink-0 text-[11px] transition-colors ${isLinked ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+        >
+          定位到画布
+        </button>
       </div>
 
       {/* Layer 2a: Media generation shimmer placeholder */}
@@ -265,20 +288,22 @@ export const ToolBlockView = React.memo(function ToolBlockView({
           </div>
 
           {hasDetails && (
-            <button
-              type="button"
-              onClick={handleOpenPanel}
-              className="mt-2 flex items-center gap-0.5 text-[12px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            >
-              <svg
-                className="h-3 w-3"
-                viewBox="0 0 16 16"
-                fill="currentColor"
+            <div className="mt-2 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleOpenPanel}
+                className="flex items-center gap-0.5 text-[12px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               >
-                <path d="M9.78 11.78a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 0 1 0-1.06l3.5-3.5a.75.75 0 0 1 1.06 1.06L6.56 8l3.22 3.22a.75.75 0 0 1 0 1.06Z" />
-              </svg>
-              查看详情
-            </button>
+                <svg
+                  className="h-3 w-3"
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                >
+                  <path d="M9.78 11.78a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 0 1 0-1.06l3.5-3.5a.75.75 0 0 1 1.06 1.06L6.56 8l3.22 3.22a.75.75 0 0 1 0 1.06Z" />
+                </svg>
+                查看详情
+              </button>
+            </div>
           )}
         </div>
       ) : null}

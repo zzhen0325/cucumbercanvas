@@ -11,7 +11,6 @@ import type {
   MessageMention,
   StreamEvent,
   VideoArtifact,
-  VideoGenerationPreference,
 } from "@cucumber/shared";
 import type { WebSocketHandle } from "../hooks/use-websocket";
 import { useAgentModel } from "../hooks/use-agent-model";
@@ -34,6 +33,7 @@ import {
   fetchWorkspaceSkills,
   saveMessage,
 } from "../lib/server-api";
+import { buildCanvasContextRefs } from "../lib/canvas-context";
 import type { CanvasSelectedElement } from "./canvas-editor";
 import {
   type BrandKitMentionItem,
@@ -60,6 +60,7 @@ type ChatSidebarProps = {
   onCanvasSync?: () => void;
   /** Called for every stream event — used by job fallback polling to detect timed-out jobs */
   onStreamEvent?: (event: StreamEvent) => void;
+  onProjectTraceEvent?: (event: StreamEvent) => void;
   initialPrompt?: string | undefined;
   initialSessionId?: string | undefined;
   onSessionChange?: (sessionId: string) => void;
@@ -67,6 +68,8 @@ type ChatSidebarProps = {
   currentBrandKitId?: string | null;
   selectedCanvasElements?: CanvasSelectedElement[];
   ws: WebSocketHandle;
+  linkedToolCallId?: string | null;
+  onLinkToTrace?: (toolCallId: string) => void;
 };
 
 export function ChatSidebar({
@@ -78,6 +81,7 @@ export function ChatSidebar({
   onVideoGenerated,
   onCanvasSync,
   onStreamEvent,
+  onProjectTraceEvent,
   initialPrompt,
   initialSessionId,
   onSessionChange,
@@ -85,6 +89,8 @@ export function ChatSidebar({
   currentBrandKitId,
   selectedCanvasElements,
   ws,
+  linkedToolCallId,
+  onLinkToTrace,
 }: ChatSidebarProps) {
   const breakpoint = useBreakpoint();
   const isOverlay = breakpoint !== "desktop";
@@ -259,6 +265,18 @@ export function ChatSidebar({
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
+  useEffect(() => {
+    if (!linkedToolCallId || !open) return;
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(
+        `chat-tool-block-${linkedToolCallId}`,
+      );
+      if (!target) return;
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [linkedToolCallId, open, messages]);
+
   // ── Fetch image models for @mention picker ──
   useEffect(() => {
     let cancelled = false;
@@ -386,6 +404,7 @@ export function ChatSidebar({
           currentAttachments = [...currentAttachments, ...selectionAttachments];
         }
       }
+      const currentCanvasContextRefs = buildCanvasContextRefs(selectedEls);
       const currentImageGenerationPreference =
         imageGenerationPreferenceOverride ??
         activeImageGenerationPreferenceRef.current;
@@ -485,6 +504,9 @@ export function ChatSidebar({
             ...(currentAttachments.length > 0
               ? { attachments: currentAttachments }
               : {}),
+            ...(currentCanvasContextRefs.length > 0
+              ? { canvasContextRefs: currentCanvasContextRefs }
+              : {}),
             ...(currentMentions.length > 0
               ? { mentions: currentMentions }
               : {}),
@@ -534,6 +556,7 @@ export function ChatSidebar({
 
             applyStreamEvent(event, assistantId, currentSessionId);
             onStreamEvent?.(event);
+            onProjectTraceEvent?.(event);
 
             const backendInserted =
               event.type === "tool.completed" &&
@@ -603,6 +626,7 @@ export function ChatSidebar({
       onVideoGenerated,
       onCanvasSync,
       onStreamEvent,
+      onProjectTraceEvent,
       readyAttachments,
       clearAttachments,
       autoTitleSession,
@@ -835,6 +859,8 @@ export function ChatSidebar({
                 key={msg.id}
                 role={msg.role}
                 contentBlocks={msg.contentBlocks}
+                linkedToolCallId={linkedToolCallId ?? null}
+                onLinkToTrace={onLinkToTrace}
                 isStreaming={
                   streaming &&
                   msg.role === "assistant" &&

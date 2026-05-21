@@ -33,6 +33,50 @@ export const imageAttachmentSchema = z.object({
   name: z.string().min(1).optional(),
 });
 
+const canvasContextBaseSchema = z.object({
+  elementId: z.string().min(1),
+  x: z.number(),
+  y: z.number(),
+  width: z.number(),
+  height: z.number(),
+});
+
+export const canvasTextContextRefSchema = canvasContextBaseSchema.extend({
+  kind: z.literal("text"),
+  text: z.string().min(1),
+});
+
+export const canvasImageContextRefSchema = canvasContextBaseSchema.extend({
+  kind: z.literal("image"),
+  assetId: z.string().min(1).optional(),
+  storageUrl: z.string().url().optional(),
+  dataUrl: z.string().min(1).optional(),
+  mimeType: z.string().min(1).optional(),
+  title: z.string().min(1).optional(),
+});
+
+export const canvasVideoContextRefSchema = canvasContextBaseSchema.extend({
+  kind: z.literal("video"),
+  url: z.string().url(),
+  mimeType: z.string().min(1).optional(),
+  title: z.string().min(1).optional(),
+  durationSeconds: z.number().nonnegative().optional(),
+});
+
+export const canvasShapeContextRefSchema = canvasContextBaseSchema.extend({
+  kind: z.literal("shape"),
+  shapeType: z.string().min(1),
+  label: z.string().min(1).optional(),
+  text: z.string().min(1).optional(),
+});
+
+export const canvasContextRefSchema = z.discriminatedUnion("kind", [
+  canvasTextContextRefSchema,
+  canvasImageContextRefSchema,
+  canvasVideoContextRefSchema,
+  canvasShapeContextRefSchema,
+]);
+
 export const imageModelMentionSchema = z.object({
   mentionType: z.literal("image-model"),
   id: z.string().min(1),
@@ -77,6 +121,7 @@ export const runCreateRequestSchema = z.object({
   prompt: z.string(),
   canvasId: canvasIdSchema.optional(),
   attachments: z.array(imageAttachmentSchema).optional(),
+  canvasContextRefs: z.array(canvasContextRefSchema).optional(),
   imageGenerationPreference: imageGenerationPreferenceSchema.optional(),
   videoGenerationPreference: videoGenerationPreferenceSchema.optional(),
   mentions: z.array(messageMentionSchema).optional(),
@@ -282,6 +327,7 @@ export type ImageBlock = z.infer<typeof imageBlockSchema>;
 export type MessageMention = z.infer<typeof messageMentionSchema>;
 export type MentionBlock = z.infer<typeof mentionBlockSchema>;
 export type ImageAttachment = z.infer<typeof imageAttachmentSchema>;
+export type CanvasContextRef = z.infer<typeof canvasContextRefSchema>;
 export type ImageGenerationPreference = z.infer<
   typeof imageGenerationPreferenceSchema
 >;

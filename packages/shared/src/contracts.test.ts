@@ -67,6 +67,61 @@ describe("@cucumber/shared contracts", () => {
     expect(result.attachments![0].assetId).toBe("asset-123");
   });
 
+  it("accepts optional canvas context refs in run creation", () => {
+    const result = runCreateRequestSchema.parse({
+      sessionId: "session-1",
+      conversationId: "conv-1",
+      prompt: "根据我选中的内容继续扩写",
+      canvasContextRefs: [
+        {
+          kind: "text",
+          elementId: "text-1",
+          text: "主标题：Fresh Market",
+          x: 120,
+          y: 80,
+          width: 320,
+          height: 64,
+        },
+        {
+          kind: "image",
+          elementId: "image-1",
+          assetId: "asset-123",
+          storageUrl: "https://example.com/ref.png",
+          mimeType: "image/png",
+          x: 480,
+          y: 80,
+          width: 640,
+          height: 360,
+        },
+        {
+          kind: "video",
+          elementId: "video-1",
+          url: "https://example.com/ref.mp4",
+          mimeType: "video/mp4",
+          durationSeconds: 5,
+          x: 80,
+          y: 320,
+          width: 640,
+          height: 360,
+        },
+      ],
+    });
+
+    expect(result.canvasContextRefs).toHaveLength(3);
+    expect(result.canvasContextRefs?.[0]).toMatchObject({
+      kind: "text",
+      text: "主标题：Fresh Market",
+    });
+    expect(result.canvasContextRefs?.[1]).toMatchObject({
+      kind: "image",
+      assetId: "asset-123",
+    });
+    expect(result.canvasContextRefs?.[2]).toMatchObject({
+      kind: "video",
+      durationSeconds: 5,
+    });
+  });
+
   it("accepts optional image generation preference in run creation", () => {
     const result = runCreateRequestSchema.parse({
       sessionId: "session-1",

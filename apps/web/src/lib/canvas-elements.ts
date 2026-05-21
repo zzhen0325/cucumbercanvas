@@ -42,6 +42,39 @@ export function scaleToFit(
 }
 
 /**
+ * Fit media into a target canvas box while preserving the original aspect ratio.
+ * Keeps the media centered within the target box so agent-provided placement
+ * still controls the overall location without stretching the content.
+ */
+export function fitMediaIntoPlacement(
+  mediaWidth: number,
+  mediaHeight: number,
+  placement: { x: number; y: number; width: number; height: number },
+): { x: number; y: number; width: number; height: number } {
+  const fitted = scaleToFit(mediaWidth, mediaHeight, Math.max(placement.width, placement.height));
+  const placementRatio = placement.width / placement.height;
+  const mediaRatio = mediaWidth / mediaHeight;
+
+  let width = fitted.width;
+  let height = fitted.height;
+
+  if (mediaRatio > placementRatio) {
+    width = placement.width;
+    height = Math.round(placement.width / mediaRatio);
+  } else {
+    height = placement.height;
+    width = Math.round(placement.height * mediaRatio);
+  }
+
+  return {
+    x: Math.round(placement.x + (placement.width - width) / 2),
+    y: Math.round(placement.y + (placement.height - height) / 2),
+    width,
+    height,
+  };
+}
+
+/**
  * Compute the center of the current Excalidraw viewport.
  */
 export function getViewportCenter(appState: {
@@ -169,11 +202,16 @@ export async function insertImageOnCanvas(
   let height: number;
 
   if (artifact.placement) {
-    // Agent-controlled placement
-    x = artifact.placement.x;
-    y = artifact.placement.y;
-    width = artifact.placement.width;
-    height = artifact.placement.height;
+    // Preserve agent-provided placement while fitting the real image aspect ratio into the box.
+    const fitted = fitMediaIntoPlacement(
+      artifact.width,
+      artifact.height,
+      artifact.placement,
+    );
+    x = fitted.x;
+    y = fitted.y;
+    width = fitted.width;
+    height = fitted.height;
   } else {
     // Smart auto-placement: viewport center if empty, next to elements if not
     const scaled = scaleToFit(artifact.width, artifact.height, 600);

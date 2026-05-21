@@ -11,7 +11,7 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "pnpm --filter @cucumber/web exec next dev -p 3100",
+    command: "pnpm --dir apps/web exec next dev --turbopack -p 3100",
     env: {
       NEXT_PUBLIC_CUCUMBER_SERVER_BASE_URL: "http://127.0.0.1:4011",
       NEXT_PUBLIC_CUCUMBER_SUPABASE_ANON_KEY: "test-anon-key",

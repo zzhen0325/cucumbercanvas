@@ -5,14 +5,17 @@ import { createPortal } from "react-dom";
 import {
   ArrowUpRight,
   Circle,
+  Download,
   Hand,
   ImageUp,
+  MessageSquareText,
   Minus,
   MousePointer2,
   Pencil,
   Sparkles,
   Square,
   Type,
+  Trash2,
   Video,
 } from "lucide-react";
 
@@ -31,7 +34,6 @@ import {
 import { isVideoUrl } from "../lib/canvas-elements";
 import { ImageGeneratorPanel } from "./canvas/image-generator-panel";
 import { VideoGeneratorPanel } from "./canvas/video-generator-panel";
-import { VideoPlayerPanel } from "./canvas/video-player-panel";
 
 type ToolType =
   | "hand"
@@ -86,6 +88,17 @@ type CanvasToolMenuProps = {
   accessToken: string;
   excalidrawApi: any;
   leftPanelOpen?: boolean;
+};
+
+type SelectedElementToolbarState = {
+  id: string;
+  kind: "image" | "video" | "text" | "shape";
+  label: string;
+  screenX: number;
+  screenY: number;
+  screenW: number;
+  downloadUrl?: string;
+  downloadFileName?: string;
 };
 
 /** Memoized shimmer overlay for a single generating element */
@@ -169,18 +182,6 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
     height: number;
   } | null>(null);
 
-  // Video player state (for completed video elements)
-  const [activeVideoPlayerId, setActiveVideoPlayerId] = useState<string | null>(null);
-  const [videoPlayerData, setVideoPlayerData] = useState<{
-    videoUrl: string;
-    mimeType: string;
-    durationSeconds?: number;
-    title?: string;
-  } | null>(null);
-  const [videoPlayerBounds, setVideoPlayerBounds] = useState<{
-    x: number; y: number; width: number; height: number;
-  } | null>(null);
-
   const [canvasScrollZoom, setCanvasScrollZoom] = useState({
     scrollX: 0,
     scrollY: 0,
@@ -198,14 +199,14 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
       model?: string;
     }>
   >([]);
+  const [selectedToolbar, setSelectedToolbar] =
+    useState<SelectedElementToolbarState | null>(null);
 
   // Keep activeGeneratorId / activeVideoGenId accessible inside onChange without causing re-subscription
   const activeGeneratorIdRef = useRef(activeGeneratorId);
   activeGeneratorIdRef.current = activeGeneratorId;
   const activeVideoGenIdRef = useRef(activeVideoGenId);
   activeVideoGenIdRef.current = activeVideoGenId;
-  const activeVideoPlayerIdRef = useRef(activeVideoPlayerId);
-  activeVideoPlayerIdRef.current = activeVideoPlayerId;
 
   // Track previous generating element IDs to avoid re-renders when nothing changed
   const prevGeneratingKeyRef = useRef("");
@@ -218,9 +219,6 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
     setActiveVideoGenId(null);
     setVideoGenData(null);
     setVideoGenBounds(null);
-    setActiveVideoPlayerId(null);
-    setVideoPlayerData(null);
-    setVideoPlayerBounds(null);
   }, []);
 
   // Subscribe to Excalidraw changes.
@@ -255,6 +253,14 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
 
         if (selectedElements.length === 1) {
           const sel = selectedElements[0];
+          const toolbarState = resolveToolbarState({
+            element: sel,
+            files: excalidrawApi.getFiles?.() ?? {},
+            scrollX,
+            scrollY,
+            zoom,
+          });
+          setSelectedToolbar(toolbarState);
 
           if (isImageGeneratorElement(sel)) {
             // Only update if the selected generator changed
@@ -263,7 +269,6 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
               setActiveGeneratorId(sel.id as string);
               setGeneratorData(data);
               if (currentVideoId) { setActiveVideoGenId(null); setVideoGenData(null); setVideoGenBounds(null); }
-              if (activeVideoPlayerIdRef.current) { setActiveVideoPlayerId(null); setVideoPlayerData(null); setVideoPlayerBounds(null); }
             }
             // Always update bounds (element may have been moved/resized)
             setGeneratorBounds({
@@ -276,7 +281,6 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
               setActiveVideoGenId(sel.id as string);
               setVideoGenData(data);
               if (currentId) { setActiveGeneratorId(null); setGeneratorData(null); setGeneratorBounds(null); }
-              if (activeVideoPlayerIdRef.current) { setActiveVideoPlayerId(null); setVideoPlayerData(null); setVideoPlayerBounds(null); }
             }
             setVideoGenBounds({
               x: sel.x as number, y: sel.y as number,
@@ -286,35 +290,18 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
             sel.type === "embeddable" &&
             (isVideoUrl(sel.link as string) || sel.customData?.isVideo === true)
           ) {
-            if (activeVideoPlayerIdRef.current !== sel.id) {
-              const videoLink = sel.link as string;
-              setActiveVideoPlayerId(sel.id as string);
-              setVideoPlayerData({
-                videoUrl: videoLink,
-                mimeType: (sel.customData?.mimeType as string) ?? "video/mp4",
-                ...(sel.customData?.durationSeconds != null
-                  ? { durationSeconds: sel.customData.durationSeconds as number }
-                  : {}),
-                ...(sel.customData?.title != null
-                  ? { title: sel.customData.title as string }
-                  : {}),
-              });
-              if (currentId) { setActiveGeneratorId(null); setGeneratorData(null); setGeneratorBounds(null); }
-              if (currentVideoId) { setActiveVideoGenId(null); setVideoGenData(null); setVideoGenBounds(null); }
-            }
-            setVideoPlayerBounds({
-              x: sel.x as number, y: sel.y as number,
-              width: sel.width as number, height: sel.height as number,
-            });
+            if (currentId) { setActiveGeneratorId(null); setGeneratorData(null); setGeneratorBounds(null); }
+            if (currentVideoId) { setActiveVideoGenId(null); setVideoGenData(null); setVideoGenBounds(null); }
           } else {
-            // Neither generator nor video player -- close all if any was open
-            if (currentId || currentVideoId || activeVideoPlayerIdRef.current) {
+            // Neither generator nor inline video -- close active generator panels.
+            if (currentId || currentVideoId) {
               closeAllPanels();
             }
           }
         } else {
-          // Zero or multiple selected -- close all panels if any was open
-          if (currentId || currentVideoId || activeVideoPlayerIdRef.current) {
+          setSelectedToolbar(null);
+          // Zero or multiple selected -- close all panels if any was open.
+          if (currentId || currentVideoId) {
             closeAllPanels();
           }
         }
@@ -357,6 +344,47 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
     },
     [excalidrawApi],
   );
+
+  const handleFocusChat = useCallback(() => {
+    const input = document.querySelector<HTMLTextAreaElement>("[data-chat-input]");
+    input?.focus();
+  }, []);
+
+  const handleDeleteSelectedElement = useCallback(() => {
+    if (!selectedToolbar) return;
+    const nextElements = excalidrawApi
+      .getSceneElements()
+      .map((element: any) =>
+        element.id === selectedToolbar.id
+          ? { ...element, isDeleted: true, updated: Date.now() }
+          : element,
+      );
+    excalidrawApi.updateScene({
+      elements: nextElements,
+      appState: { selectedElementIds: {} },
+      captureUpdate: "IMMEDIATELY",
+    });
+    setSelectedToolbar(null);
+  }, [excalidrawApi, selectedToolbar]);
+
+  const handleDownloadSelected = useCallback(async () => {
+    if (!selectedToolbar?.downloadUrl) return;
+    const fallbackName =
+      selectedToolbar.downloadFileName ??
+      `${selectedToolbar.kind}-${selectedToolbar.id}`;
+    try {
+      const response = await fetch(selectedToolbar.downloadUrl);
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = fallbackName;
+      link.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      window.open(selectedToolbar.downloadUrl, "_blank", "noopener,noreferrer");
+    }
+  }, [selectedToolbar]);
 
   const handleCreateImageGenerator = useCallback(() => {
     if (!excalidrawApi) return;
@@ -415,19 +443,12 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
     setVideoGenBounds(null);
   }, []);
 
-  const handleCloseVideoPlayer = useCallback(() => {
-    setActiveVideoPlayerId(null);
-    setVideoPlayerData(null);
-    setVideoPlayerBounds(null);
-  }, []);
-
   return (
     <>
       <div
-        className="absolute bottom-5 z-30 flex items-center gap-0.5 rounded-xl p-1 bg-card/75 backdrop-blur-lg border border-border shadow-card transition-[left,transform] duration-200"
+        className="absolute top-1/2 z-30 flex -translate-y-1/2 flex-col items-center gap-0.5 rounded-2xl border border-border bg-card/85 p-1.5 shadow-card backdrop-blur-lg transition-[left] duration-200"
         style={{
-          left: leftPanelOpen ? "calc(140px + 50%)" : "50%",
-          transform: "translateX(-50%)",
+          left: leftPanelOpen ? 296 : 16,
         }}
       >
         {/* Standard Excalidraw tools */}
@@ -436,7 +457,7 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
             return (
               <div
                 key={`sep-${i}`}
-                className="mx-0.5 h-6 w-px bg-border"
+                className="my-0.5 h-px w-6 bg-border"
               />
             );
           }
@@ -454,19 +475,19 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
                 e.preventDefault();
                 handleToolChange(tool);
               }}
-              className={`flex items-center justify-center h-8 w-8 rounded-lg transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 outline-none ${
+              className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
                 isActive
-                  ? "bg-foreground/[0.08] text-foreground"
-                  : "text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground"
+                  ? "bg-foreground/8 text-foreground"
+                  : "text-foreground/60 hover:bg-foreground/4 hover:text-foreground"
               }`}
             >
-              <Icon className="size-[16px]" />
+              <Icon className="size-4" />
             </button>
           );
         })}
 
         {/* Separator before AI tools */}
-        <div className="mx-0.5 h-6 w-px bg-border" />
+        <div className="my-0.5 h-px w-6 bg-border" />
 
         {/* AI Image -- creates a placeholder on canvas */}
         <button
@@ -474,13 +495,13 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
           title="AI 生成图片"
           aria-label="AI 生成图片"
           onClick={handleCreateImageGenerator}
-          className={`flex items-center justify-center h-8 w-8 rounded-lg transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 outline-none ${
+          className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
             activeGeneratorId
-              ? "bg-foreground/[0.08] text-foreground"
-              : "text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground"
+              ? "bg-foreground/8 text-foreground"
+              : "text-foreground/60 hover:bg-foreground/4 hover:text-foreground"
           }`}
         >
-          <Sparkles className="size-[16px]" />
+          <Sparkles className="size-4" />
         </button>
 
         {/* AI Video -- creates a placeholder on canvas */}
@@ -489,13 +510,13 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
           title="AI 生成视频"
           aria-label="AI 生成视频"
           onClick={handleCreateVideoGenerator}
-          className={`flex items-center justify-center h-8 w-8 rounded-lg transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 outline-none ${
+          className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
             activeVideoGenId
-              ? "bg-foreground/[0.08] text-foreground"
-              : "text-foreground/60 hover:bg-foreground/[0.04] hover:text-foreground"
+              ? "bg-foreground/8 text-foreground"
+              : "text-foreground/60 hover:bg-foreground/4 hover:text-foreground"
           }`}
         >
-          <Video className="size-[16px]" />
+          <Video className="size-4" />
         </button>
       </div>
 
@@ -525,19 +546,16 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
         />
       )}
 
-      {/* Video Player Panel -- floats when a completed video element is selected */}
-      {activeVideoPlayerId && videoPlayerData && videoPlayerBounds && (
-        <VideoPlayerPanel
-          elementId={activeVideoPlayerId}
-          elementBounds={videoPlayerBounds}
-          videoUrl={videoPlayerData.videoUrl}
-          mimeType={videoPlayerData.mimeType}
-          {...(videoPlayerData.durationSeconds != null ? { durationSeconds: videoPlayerData.durationSeconds } : {})}
-          {...(videoPlayerData.title != null ? { title: videoPlayerData.title } : {})}
-          canvasScrollZoom={canvasScrollZoom}
-          onClose={handleCloseVideoPlayer}
-        />
-      )}
+      {selectedToolbar &&
+        createPortal(
+          <SelectedElementToolbar
+            state={selectedToolbar}
+            onAskAgent={handleFocusChat}
+            onDelete={handleDeleteSelectedElement}
+            onDownload={selectedToolbar.downloadUrl ? handleDownloadSelected : null}
+          />,
+          document.body,
+        )}
 
       {/* Shimmer overlays for generating elements */}
       {generatingElements.length > 0 &&
@@ -552,4 +570,153 @@ export function CanvasToolMenu({ accessToken, excalidrawApi, leftPanelOpen }: Ca
 
     </>
   );
+}
+
+const SelectedElementToolbar = memo(function SelectedElementToolbar({
+  state,
+  onAskAgent,
+  onDelete,
+  onDownload,
+}: {
+  state: SelectedElementToolbarState;
+  onAskAgent: () => void;
+  onDelete: () => void;
+  onDownload: (() => void) | null;
+}) {
+  const [viewportWidth, setViewportWidth] = useState(1440);
+
+  useEffect(() => {
+    setViewportWidth(window.innerWidth);
+  }, []);
+
+  const top = Math.max(12, state.screenY - 48);
+  const left = Math.max(
+    12,
+    Math.min(
+      state.screenX + state.screenW / 2,
+      viewportWidth - 12,
+    ),
+  );
+
+  return (
+    <div
+      className="fixed z-110 -translate-x-1/2"
+      style={{ left, top }}
+      onPointerDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+    >
+      <div className="flex items-center gap-1 rounded-full border border-border bg-card/95 px-2 py-1 shadow-card backdrop-blur-lg">
+        <span className="max-w-45 truncate px-2 text-[11px] font-medium text-muted-foreground">
+          {state.label}
+        </span>
+        <button
+          type="button"
+          onClick={onAskAgent}
+          className="flex h-8 items-center gap-1 rounded-full px-3 text-xs text-foreground transition-colors hover:bg-muted"
+        >
+          <MessageSquareText className="h-3.5 w-3.5" />
+          问 Agent
+        </button>
+        {onDownload && (
+          <button
+            type="button"
+            onClick={onDownload}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            title="下载素材"
+            aria-label="下载素材"
+          >
+            <Download className="h-3.5 w-3.5" />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onDelete}
+          className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+          title="删除元素"
+          aria-label="删除元素"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+});
+
+function resolveToolbarState({
+  element,
+  files,
+  scrollX,
+  scrollY,
+  zoom,
+}: {
+  element: any;
+  files: Record<string, any>;
+  scrollX: number;
+  scrollY: number;
+  zoom: number;
+}): SelectedElementToolbarState | null {
+  if (!element || element.isDeleted) return null;
+  if (isImageGeneratorElement(element) || isVideoGeneratorElement(element)) {
+    return null;
+  }
+
+  const screenX = ((element.x as number) + scrollX) * zoom;
+  const screenY = ((element.y as number) + scrollY) * zoom;
+  const screenW = (element.width as number) * zoom;
+
+  if (element.type === "image" && element.fileId) {
+    const file = files[element.fileId];
+    const downloadUrl =
+      element.customData?.storageUrl ??
+      file?.dataURL;
+    return {
+      id: element.id as string,
+      kind: "image",
+      label: (element.customData?.title as string) ?? "图片容器",
+      screenX,
+      screenY,
+      screenW,
+      ...(typeof downloadUrl === "string" ? { downloadUrl } : {}),
+      downloadFileName: "canvas-image.png",
+    };
+  }
+
+  if (
+    element.type === "embeddable" &&
+    (isVideoUrl(element.link as string) || element.customData?.isVideo === true)
+  ) {
+    return {
+      id: element.id as string,
+      kind: "video",
+      label: (element.customData?.title as string) ?? "视频容器",
+      screenX,
+      screenY,
+      screenW,
+      ...(typeof element.link === "string" ? { downloadUrl: element.link } : {}),
+      downloadFileName: "canvas-video.mp4",
+    };
+  }
+
+  if (element.type === "text") {
+    return {
+      id: element.id as string,
+      kind: "text",
+      label:
+        typeof element.text === "string" && element.text.trim().length > 0
+          ? element.text.trim()
+          : "文本容器",
+      screenX,
+      screenY,
+      screenW,
+    };
+  }
+
+  return {
+    id: element.id as string,
+    kind: "shape",
+    label: `${String(element.type)} 容器`,
+    screenX,
+    screenY,
+    screenW,
+  };
 }

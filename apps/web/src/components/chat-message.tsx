@@ -24,6 +24,8 @@ type ChatMessageProps = {
   role: "user" | "assistant";
   contentBlocks: ContentBlock[];
   isStreaming?: boolean;
+  linkedToolCallId?: string | null;
+  onLinkToTrace: ((toolCallId: string) => void) | undefined;
 };
 
 /**
@@ -42,6 +44,8 @@ export const ChatMessage = React.memo(
     role,
     contentBlocks,
     isStreaming,
+    linkedToolCallId,
+    onLinkToTrace,
   }: ChatMessageProps) {
     const isUser = role === "user";
 
@@ -53,6 +57,8 @@ export const ChatMessage = React.memo(
       <AssistantMessage
         contentBlocks={contentBlocks}
         isStreaming={isStreaming ?? false}
+        linkedToolCallId={linkedToolCallId ?? null}
+        onLinkToTrace={onLinkToTrace}
       />
     );
   },
@@ -62,7 +68,9 @@ export const ChatMessage = React.memo(
     return (
       prev.role === next.role &&
       prev.contentBlocks === next.contentBlocks &&
-      prev.isStreaming === next.isStreaming
+      prev.isStreaming === next.isStreaming &&
+      prev.linkedToolCallId === next.linkedToolCallId &&
+      prev.onLinkToTrace === next.onLinkToTrace
     );
   },
 );
@@ -181,9 +189,13 @@ const UserMessage = React.memo(function UserMessage({
 const AssistantMessage = React.memo(function AssistantMessage({
   contentBlocks,
   isStreaming,
+  linkedToolCallId,
+  onLinkToTrace,
 }: {
   contentBlocks: ContentBlock[];
   isStreaming: boolean;
+  linkedToolCallId: string | null;
+  onLinkToTrace: ((toolCallId: string) => void) | undefined;
 }) {
   // Find the last text block index for streaming cursor placement
   const lastTextIdx = useMemo(() => {
@@ -257,7 +269,12 @@ const AssistantMessage = React.memo(function AssistantMessage({
 
         if (block.type === "tool") {
           return (
-            <ToolBlockView key={block.toolCallId} block={block} />
+            <ToolBlockView
+              key={block.toolCallId}
+              block={block}
+              isLinked={linkedToolCallId === block.toolCallId}
+              onLinkToTrace={onLinkToTrace}
+            />
           );
         }
 

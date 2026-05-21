@@ -111,6 +111,9 @@ export async function registerRunRoutes(
           ...(payload.attachments !== undefined
             ? { attachments: payload.attachments }
             : {}),
+          ...(payload.canvasContextRefs !== undefined
+            ? { canvasContextRefs: payload.canvasContextRefs }
+            : {}),
           ...(payload.imageGenerationPreference !== undefined
             ? {
                 imageGenerationPreference: payload.imageGenerationPreference,

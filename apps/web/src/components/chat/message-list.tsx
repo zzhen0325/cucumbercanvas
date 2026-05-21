@@ -77,6 +77,8 @@ export const MessageList = React.memo(function MessageList({
                   role={msg.role}
                   contentBlocks={msg.contentBlocks}
                   isStreaming={isStreamingMessage}
+                  linkedToolCallId={null}
+                  onLinkToTrace={undefined}
                 />
               </MessageErrorBoundary>
             );

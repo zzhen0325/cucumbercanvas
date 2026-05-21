@@ -15,6 +15,7 @@ import {
 import {
   createExcalidrawImageElement,
   fetchAsDataURL,
+  fitMediaIntoPlacement,
 } from "../../lib/canvas-elements";
 
 type ImageGeneratorPanelProps = {
@@ -192,10 +193,7 @@ export function ImageGeneratorPanel({
 
       const imageElement = createExcalidrawImageElement({
         fileId,
-        x: elementBounds.x,
-        y: elementBounds.y,
-        width: elementBounds.width,
-        height: elementBounds.height,
+        ...fitMediaIntoPlacement(result.width, result.height, elementBounds),
         title: prompt.trim().slice(0, 60),
       });
 

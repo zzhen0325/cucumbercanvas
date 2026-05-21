@@ -3,13 +3,14 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
-import type { ImageArtifact, VideoArtifact } from "@cucumber/shared";
+import type { ImageArtifact, StreamEvent, VideoArtifact } from "@cucumber/shared";
 import { BrandKitSelector } from "../../components/brand-kit-selector";
 import { CanvasBottomBar } from "../../components/canvas-bottom-bar";
 import type { CanvasSelectedElement } from "../../components/canvas-editor";
 import { CanvasEditor } from "../../components/canvas-editor";
 import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
 import { CanvasFilesPanel } from "../../components/canvas-files-panel";
+import { TraceDetailPanel } from "../../components/canvas/trace-detail-panel";
 import type { CanvasImageItem } from "../../components/canvas-image-picker";
 import { CanvasLayersPanel } from "../../components/canvas-layers-panel";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
@@ -18,6 +19,7 @@ import { EditableProjectName } from "../../components/editable-project-name";
 import { LoadingScreen } from "../../components/loading-screen";
 import { useJobFallbackPolling } from "../../hooks/use-job-fallback-polling";
 import { useWebSocket } from "../../hooks/use-websocket";
+import { createAgentTraceProjector } from "../../lib/agent-trace-projector";
 import { useAuth } from "../../lib/auth-context";
 import {
   insertImageOnCanvas,
@@ -57,14 +59,30 @@ function CanvasPageContent() {
   });
   const [layersOpen, setLayersOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
+  const [traceRecordingEnabled, setTraceRecordingEnabled] = useState(true);
   const [brandKitId, setBrandKitId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("Untitled");
   const [selectedCanvasElements, setSelectedCanvasElements] = useState<
     CanvasSelectedElement[]
   >([]);
+  const [linkedToolCallId, setLinkedToolCallId] = useState<string | null>(null);
+  const selectedTraceElement =
+    selectedCanvasElements.find(
+      (element) =>
+        element.customData &&
+        typeof element.customData.traceType === "string",
+    ) ?? null;
+  const selectedTraceToolCallId =
+    (selectedTraceElement?.customData?.toolCallId as string | undefined) ??
+    (selectedTraceElement?.customData?.traceDetail as
+      | { toolCallId?: string }
+      | undefined)?.toolCallId ??
+    null;
+  const activeTraceToolCallId = selectedTraceToolCallId ?? linkedToolCallId;
 
   const excalidrawApiRef = useRef<any>(null);
   const [excalidrawApi, setExcalidrawApi] = useState<any>(null);
+  const traceProjectorRef = useRef(createAgentTraceProjector());
 
   const signOutRef = useRef(signOut);
   signOutRef.current = signOut;
@@ -84,6 +102,9 @@ function CanvasPageContent() {
   }, []);
   const handleCloseLayers = useCallback(() => setLayersOpen(false), []);
   const handleCloseFiles = useCallback(() => setFilesOpen(false), []);
+  const handleToggleTraceRecording = useCallback(() => {
+    setTraceRecordingEnabled((value) => !value);
+  }, []);
 
   const accessToken = session?.access_token;
   const accessTokenRef = useRef(accessToken);
@@ -112,6 +133,73 @@ function CanvasPageContent() {
       console.warn("Failed to insert video on canvas:", err);
     });
   }, []);
+
+  const handleProjectTraceEvent = useCallback((event: StreamEvent) => {
+    if (!traceRecordingEnabled) return;
+    const api = excalidrawApiRef.current;
+    if (!api) return;
+    void traceProjectorRef.current.projectEvent(api, event);
+  }, [traceRecordingEnabled]);
+
+  const handleLinkToTrace = useCallback((toolCallId: string) => {
+    setLinkedToolCallId(toolCallId);
+    const api = excalidrawApiRef.current;
+    if (!api) return;
+
+    const sceneElements = api
+      .getSceneElements()
+      .filter((element: any) => !element.isDeleted);
+    const targetElement =
+      sceneElements.find(
+        (element: any) =>
+          element.customData?.traceType === "tool-node" &&
+          element.customData?.toolCallId === toolCallId,
+      ) ??
+      sceneElements.find(
+        (element: any) => element.customData?.toolCallId === toolCallId,
+      );
+
+    if (!targetElement) return;
+
+    api.updateScene({
+      appState: { selectedElementIds: { [targetElement.id]: true } },
+    });
+
+    if (typeof api.scrollToContent === "function") {
+      try {
+        api.scrollToContent([targetElement]);
+      } catch {
+        api.scrollToContent();
+      }
+    }
+  }, []);
+
+  const handleJumpToChatTool = useCallback((toolCallId: string) => {
+    setLinkedToolCallId(toolCallId);
+    if (!chatOpen) setChatOpen(true);
+  }, [chatOpen]);
+
+  const handleClearTrace = useCallback(() => {
+    const api = excalidrawApiRef.current;
+    if (!api) return;
+    setLinkedToolCallId(null);
+    void traceProjectorRef.current.clearProjectedTraces(api);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedTraceToolCallId) return;
+    setLinkedToolCallId(selectedTraceToolCallId);
+    if (!chatOpen) setChatOpen(true);
+  }, [selectedTraceToolCallId, chatOpen]);
+
+  useEffect(() => {
+    const api = excalidrawApiRef.current;
+    if (!api) return;
+    void traceProjectorRef.current.highlightRunForTool(
+      api,
+      activeTraceToolCallId,
+    );
+  }, [activeTraceToolCallId]);
 
   // Must be defined BEFORE useJobFallbackPolling which references it
   const handleCanvasSync = useCallback(async () => {
@@ -318,6 +406,9 @@ function CanvasPageContent() {
           filesOpen={filesOpen}
           onToggleFiles={handleToggleFiles}
           leftPanelOpen={layersOpen || filesOpen}
+          traceRecordingEnabled={traceRecordingEnabled}
+          onToggleTraceRecording={handleToggleTraceRecording}
+          onClearTrace={handleClearTrace}
         />
         <CanvasLayersPanel
           excalidrawApi={excalidrawApi}
@@ -329,6 +420,10 @@ function CanvasPageContent() {
           open={filesOpen}
           onClose={handleCloseFiles}
         />
+        <TraceDetailPanel
+          selectedElement={selectedTraceElement}
+          onJumpToChat={handleJumpToChatTool}
+        />
       </div>
       <ChatSidebar
         accessToken={accessToken}
@@ -339,6 +434,7 @@ function CanvasPageContent() {
         onVideoGenerated={handleVideoGenerated}
         onCanvasSync={handleCanvasSync}
         onStreamEvent={checkForTimedOutJobs}
+        onProjectTraceEvent={handleProjectTraceEvent}
         initialPrompt={initialPrompt}
         initialSessionId={initialSessionId}
         onSessionChange={handleSessionChange}
@@ -346,6 +442,8 @@ function CanvasPageContent() {
         currentBrandKitId={brandKitId}
         ws={ws}
         selectedCanvasElements={selectedCanvasElements}
+        linkedToolCallId={linkedToolCallId}
+        onLinkToTrace={handleLinkToTrace}
       />
     </div>
   );

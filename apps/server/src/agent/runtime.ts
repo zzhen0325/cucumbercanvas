@@ -3,6 +3,7 @@ import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 
 import type {
+  CanvasContextRef,
   ImageAttachment,
   ImageGenerationPreference,
   MessageMention,
@@ -60,6 +61,7 @@ import {
 export function buildUserMessage(
   prompt: string,
   attachments: ImageAttachment[],
+  canvasContextRefs: CanvasContextRef[] = [],
   imageGenerationPreference?: ImageGenerationPreference,
   mentions: MessageMention[] = [],
   videoGenerationPreference?: VideoGenerationPreference,
@@ -74,6 +76,11 @@ export function buildUserMessage(
 
   const inputImagesXml = buildInputImagesXml(attachments);
   if (inputImagesXml) xmlBlocks.push(inputImagesXml);
+
+  const selectedCanvasContextXml = buildSelectedCanvasContextXml(
+    canvasContextRefs,
+  );
+  if (selectedCanvasContextXml) xmlBlocks.push(selectedCanvasContextXml);
 
   const imageGenerationPreferenceXml = buildImageGenerationPreferenceXml(
     imageGenerationPreference,
@@ -107,6 +114,65 @@ function buildInputImagesXml(attachments: ImageAttachment[]): string | null {
     .join("\n  ");
 
   return `<input_images count="${attachments.length}">\n  ${imageXml}\n</input_images>`;
+}
+
+function buildSelectedCanvasContextXml(
+  refs: CanvasContextRef[],
+): string | null {
+  if (refs.length === 0) return null;
+
+  const body = refs
+    .map((ref, index) => {
+      const baseAttrs =
+        ` index="${index + 1}"` +
+        ` element_id="${escapeXmlAttribute(ref.elementId)}"` +
+        ` x="${ref.x}" y="${ref.y}" width="${ref.width}" height="${ref.height}"`;
+
+      switch (ref.kind) {
+        case "text":
+          return `<text${baseAttrs}>\n${escapeXmlText(ref.text)}\n</text>`;
+        case "image": {
+          const assetIdAttr = ref.assetId
+            ? ` asset_id="${escapeXmlAttribute(ref.assetId)}"`
+            : "";
+          const mimeTypeAttr = ref.mimeType
+            ? ` mime_type="${escapeXmlAttribute(ref.mimeType)}"`
+            : "";
+          const titleAttr = ref.title
+            ? ` title="${escapeXmlAttribute(ref.title)}"`
+            : "";
+          const storageUrlAttr = ref.storageUrl
+            ? ` storage_url="${escapeXmlAttribute(ref.storageUrl)}"`
+            : "";
+          return `<image${baseAttrs}${assetIdAttr}${mimeTypeAttr}${titleAttr}${storageUrlAttr} />`;
+        }
+        case "video": {
+          const mimeTypeAttr = ref.mimeType
+            ? ` mime_type="${escapeXmlAttribute(ref.mimeType)}"`
+            : "";
+          const titleAttr = ref.title
+            ? ` title="${escapeXmlAttribute(ref.title)}"`
+            : "";
+          const durationAttr =
+            typeof ref.durationSeconds === "number"
+              ? ` duration_seconds="${ref.durationSeconds}"`
+              : "";
+          return `<video${baseAttrs} url="${escapeXmlAttribute(ref.url)}"${mimeTypeAttr}${titleAttr}${durationAttr} />`;
+        }
+        case "shape": {
+          const labelAttr = ref.label
+            ? ` label="${escapeXmlAttribute(ref.label)}"`
+            : "";
+          if (ref.text) {
+            return `<shape${baseAttrs} shape_type="${escapeXmlAttribute(ref.shapeType)}"${labelAttr}>\n${escapeXmlText(ref.text)}\n</shape>`;
+          }
+          return `<shape${baseAttrs} shape_type="${escapeXmlAttribute(ref.shapeType)}"${labelAttr} />`;
+        }
+      }
+    })
+    .join("\n  ");
+
+  return `<selected_canvas_context count="${refs.length}">\n  ${body}\n</selected_canvas_context>`;
 }
 
 function buildImageGenerationPreferenceXml(
@@ -223,6 +289,10 @@ function escapeXmlAttribute(value: string): string {
     .replaceAll('"', "&quot;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
+}
+
+function escapeXmlText(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;");
 }
 
 /**
@@ -1186,6 +1256,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             const { text: enrichedPrompt } = buildUserMessage(
               run.prompt,
               attachments,
+              run.canvasContextRefs,
               run.imageGenerationPreference,
               run.mentions,
               run.videoGenerationPreference,
@@ -1205,6 +1276,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             const { text: enrichedPrompt } = buildUserMessage(
               run.prompt,
               [],
+              run.canvasContextRefs,
               run.imageGenerationPreference,
               run.mentions,
               run.videoGenerationPreference,

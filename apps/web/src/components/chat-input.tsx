@@ -4,6 +4,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 
 import type { MessageMention } from "@cucumber/shared";
 import type { ImageAttachmentState } from "../hooks/use-image-attachments";
+import { summarizeCanvasSelection } from "../lib/canvas-context";
 import type { CanvasSelectedElement } from "./canvas-editor";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
 import { useVideoModelPreference } from "../hooks/use-video-model-preference";
@@ -172,18 +173,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
 
   const hasContent = value.trim().length > 0 || (attachments && attachments.length > 0);
 
-  // Memoize canvas selection summary -- selectedCanvasElements changes on every
-  // canvas interaction, but the counts only change when the selection actually differs
-  const selectionSummary = useMemo(() => {
-    const imageCount = selectedCanvasElements?.filter((el) => el.type === "image").length ?? 0;
-    const totalCount = selectedCanvasElements?.length ?? 0;
-    return {
-      selectionImageCount: imageCount,
-      selectionShapeCount: totalCount - imageCount,
-      hasSelection: totalCount > 0,
-    };
-  }, [selectedCanvasElements]);
-  const { selectionImageCount, selectionShapeCount, hasSelection } = selectionSummary;
+  const selectionItems = useMemo(
+    () => summarizeCanvasSelection(selectedCanvasElements ?? []),
+    [selectedCanvasElements],
+  );
+  const hasSelection = selectionItems.length > 0;
 
   return (
     <div className="px-2 pb-2">
@@ -193,31 +187,18 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
         onDragOver={handleDragOver}
       >
         {hasSelection && (
-          <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground bg-muted/50 rounded-lg">
-            <div className="flex items-center gap-1.5 min-w-0">
-              {selectionImageCount > 0 && (
-                <span className="flex items-center gap-1">
-                  <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
-                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                    <circle cx="8.5" cy="8.5" r="1.5" />
-                    <path d="m21 15-5-5L5 21" />
-                  </svg>
-                  {selectionImageCount} {selectionImageCount === 1 ? "image" : "images"}
-                </span>
-              )}
-              {selectionImageCount > 0 && selectionShapeCount > 0 && (
-                <span className="text-muted-foreground/40">&middot;</span>
-              )}
-              {selectionShapeCount > 0 && (
-                <span className="flex items-center gap-1">
-                  <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
-                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                  </svg>
-                  {selectionShapeCount} {selectionShapeCount === 1 ? "shape" : "shapes"}
-                </span>
-              )}
-              <span className="text-[10px] text-muted-foreground/60">selected on canvas</span>
-            </div>
+          <div className="flex flex-wrap items-center gap-1.5 rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70">
+              Canvas Context
+            </span>
+            {selectionItems.map((item) => (
+              <span
+                key={item.id}
+                className="inline-flex max-w-[220px] items-center rounded-md border border-border bg-card px-2 py-1 text-[11px] text-foreground"
+              >
+                <span className="truncate">{item.label}</span>
+              </span>
+            ))}
           </div>
         )}
         {attachments && onRemoveAttachment && (
