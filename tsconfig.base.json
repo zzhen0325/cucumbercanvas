@@ -3,10 +3,9 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM"],
     "strict": true,
     "declaration": true,
-    "declarationMap": true,
     "sourceMap": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
@@ -15,6 +14,11 @@
     "skipLibCheck": true,
     "isolatedModules": true,
     "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true
+    "paths": {
+      "@cucumber/pen-types": ["./packages/pen-types/src/index.ts"],
+      "@cucumber/engine": ["./packages/engine/src/index.ts"],
+      "@cucumber/container": ["./packages/container/src/index.ts"],
+      "@cucumber/renderer": ["./packages/renderer/src/index.ts"]
+    }
   }
 }
