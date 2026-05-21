@@ -19,6 +19,7 @@
       "@cucumber/engine": ["./packages/engine/src/index.ts"],
       "@cucumber/container": ["./packages/container/src/index.ts"],
       "@cucumber/renderer": ["./packages/renderer/src/index.ts"],
+      "@cucumber/canvas-core": ["./packages/canvas-core/src/index.ts"],
       "@cucumber/ui": ["./packages/ui/src/index.ts"]
     }
   }

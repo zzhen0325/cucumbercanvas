@@ -1,5 +1,6 @@
 "use client";
 
+import { createCanvasNodeId } from "@cucumber/canvas-core";
 import {
   Copy,
   FolderOpen,
@@ -7,14 +8,14 @@ import {
   ImagePlus,
   Maximize2,
   Plus,
-  Redo2,
   Trash2,
-  Undo2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 
+import type { CanvasApi } from "@/components/canvas/canvas-surface";
 import { CucumberLogo } from "@/components/icons/cucumber-logo";
+import { useToast } from "@/components/toast";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,53 +25,33 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  createExcalidrawImageElement,
-  getViewportCenter,
-  scaleToFit,
-} from "@/lib/canvas-elements";
-import { deleteProject } from "@/lib/server-api";
-import { useToast } from "@/components/toast";
 import { useCreateProject } from "@/hooks/use-create-project";
+import { deleteProject } from "@/lib/server-api";
 
 interface CanvasLogoMenuProps {
   accessToken: string;
   projectId: string;
   canvasId: string;
-  // biome-ignore lint/suspicious/noExplicitAny: Excalidraw API has no public type definition
-  excalidrawApi: any | null;
-}
-
-function dispatchKeyToExcalidraw(
-  key: string,
-  opts: { metaKey?: boolean; shiftKey?: boolean } = {},
-) {
-  const el = document.querySelector(".excalidraw-container");
-  if (!el) return;
-  el.dispatchEvent(
-    new KeyboardEvent("keydown", {
-      key,
-      code: `Key${key.toUpperCase()}`,
-      metaKey: opts.metaKey ?? false,
-      ctrlKey: opts.metaKey ?? false,
-      shiftKey: opts.shiftKey ?? false,
-      bubbles: true,
-      cancelable: true,
-    }),
-  );
+  canvasApi: CanvasApi | null;
 }
 
 function generateFileId(): string {
-  return (
-    Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
-  ).slice(0, 20);
+  return createCanvasNodeId("asset");
+}
+
+function scaleToFit(width: number, height: number, maxSize: number) {
+  if (width <= maxSize && height <= maxSize) return { width, height };
+  const scale = maxSize / Math.max(width, height);
+  return {
+    width: Math.round(width * scale),
+    height: Math.round(height * scale),
+  };
 }
 
 export function CanvasLogoMenu({
   accessToken,
   projectId,
-  canvasId,
-  excalidrawApi,
+  canvasApi,
 }: CanvasLogoMenuProps) {
   const router = useRouter();
   const { error: toastError } = useToast();
@@ -79,31 +60,38 @@ export function CanvasLogoMenu({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const handleDuplicateElements = useCallback(() => {
-    if (!excalidrawApi) return;
-    const appState = excalidrawApi.getAppState();
-    const selectedIds: Record<string, boolean> =
-      appState.selectedElementIds ?? {};
-    const allElements = excalidrawApi.getSceneElements();
-    const selected = allElements.filter(
-      (el: any) => selectedIds[el.id] && !el.isDeleted,
+    if (!canvasApi) return;
+    const selectedIds = canvasApi.getAppState().selectedElementIds ?? {};
+    const doc = canvasApi.getDocument();
+    const selected = Object.values(doc.nodes).filter(
+      (node) => selectedIds[node.id],
     );
-
     if (!selected.length) return;
 
-    const OFFSET = 10;
-    const newSelectedIds: Record<string, boolean> = {};
-    const clones = selected.map((el: any) => {
-      const newId = generateFileId();
-      newSelectedIds[newId] = true;
-      return { ...el, id: newId, x: el.x + OFFSET, y: el.y + OFFSET };
+    const cloneIds: string[] = [];
+    for (const node of selected) {
+      const cloneId = createCanvasNodeId(node.type);
+      cloneIds.push(cloneId);
+      canvasApi.insertNode(
+        {
+          ...node,
+          id: cloneId,
+          bounds: {
+            ...node.bounds,
+            x: node.bounds.x + 10,
+            y: node.bounds.y + 10,
+          },
+          title: node.title ? `${node.title} copy` : node.title,
+          ...(node.type === "container" ? { childrenOrder: [] } : {}),
+        },
+        node.parentId,
+      );
+    }
+    canvasApi.setSelection(cloneIds);
+    console.info("[canvas-menu] duplicated canvas nodes", {
+      count: cloneIds.length,
     });
-
-    excalidrawApi.updateScene({
-      elements: [...allElements, ...clones],
-      appState: { selectedElementIds: newSelectedIds },
-      captureUpdate: "IMMEDIATELY",
-    });
-  }, [excalidrawApi]);
+  }, [canvasApi]);
 
   const handleDeleteProject = useCallback(async () => {
     if (!confirmingDelete) {
@@ -122,53 +110,35 @@ export function CanvasLogoMenu({
   }, [accessToken, projectId, router, confirmingDelete, toastError]);
 
   const handleFileImport = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file || !excalidrawApi) return;
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file || !canvasApi) return;
 
       const reader = new FileReader();
       reader.onload = () => {
         const dataURL = reader.result as string;
         const img = new Image();
         img.onload = () => {
-          const fileId = generateFileId();
-
-          excalidrawApi.addFiles([
-            {
-              id: fileId,
-              dataURL,
-              mimeType: file.type || "image/png",
-              created: Date.now(),
-            },
-          ]);
-
           const scaled = scaleToFit(img.width, img.height, 600);
-          const center = getViewportCenter(excalidrawApi.getAppState());
-          const x = center.x - scaled.width / 2;
-          const y = center.y - scaled.height / 2;
-
-          const element = createExcalidrawImageElement({
-            fileId,
-            x,
-            y,
+          canvasApi.insertImageArtifact({
+            assetId: generateFileId(),
+            url: dataURL,
+            mimeType: file.type || "image/png",
             width: scaled.width,
             height: scaled.height,
             title: file.name,
           });
-
-          excalidrawApi.updateScene({
-            elements: [...excalidrawApi.getSceneElements(), element],
-            captureUpdate: "IMMEDIATELY",
+          console.info("[canvas-menu] imported image into canvas", {
+            name: file.name,
+            mimeType: file.type,
           });
         };
         img.src = dataURL;
       };
       reader.readAsDataURL(file);
-
-      // Reset input so the same file can be selected again
-      e.target.value = "";
+      event.target.value = "";
     },
-    [excalidrawApi],
+    [canvasApi],
   );
 
   return (
@@ -186,7 +156,6 @@ export function CanvasLogoMenu({
         </DropdownMenuTrigger>
 
         <DropdownMenuContent align="start" sideOffset={6} className="w-56">
-          {/* Group 1 — Navigation */}
           <DropdownMenuGroup>
             <DropdownMenuItem onClick={() => router.push("/home")}>
               <Home className="size-4" />
@@ -200,7 +169,6 @@ export function CanvasLogoMenu({
 
           <DropdownMenuSeparator />
 
-          {/* Group 2 — Project actions */}
           <DropdownMenuGroup>
             <DropdownMenuItem onClick={() => createNewProject()}>
               <Plus className="size-4" />
@@ -217,7 +185,6 @@ export function CanvasLogoMenu({
 
           <DropdownMenuSeparator />
 
-          {/* Group 3 — Canvas import */}
           <DropdownMenuGroup>
             <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
               <ImagePlus className="size-4" />
@@ -227,27 +194,7 @@ export function CanvasLogoMenu({
 
           <DropdownMenuSeparator />
 
-          {/* Group 4 — Edit operations */}
           <DropdownMenuGroup>
-            <DropdownMenuItem
-              onClick={() => dispatchKeyToExcalidraw("z", { metaKey: true })}
-            >
-              <Undo2 className="size-4" />
-              撤销
-              <DropdownMenuShortcut>⌘Z</DropdownMenuShortcut>
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() =>
-                dispatchKeyToExcalidraw("z", {
-                  metaKey: true,
-                  shiftKey: true,
-                })
-              }
-            >
-              <Redo2 className="size-4" />
-              重做
-              <DropdownMenuShortcut>⇧⌘Z</DropdownMenuShortcut>
-            </DropdownMenuItem>
             <DropdownMenuItem onClick={handleDuplicateElements}>
               <Copy className="size-4" />
               复制对象
@@ -257,9 +204,8 @@ export function CanvasLogoMenu({
 
           <DropdownMenuSeparator />
 
-          {/* Group 5 — View controls */}
           <DropdownMenuGroup>
-            <DropdownMenuItem onClick={() => excalidrawApi?.scrollToContent()}>
+            <DropdownMenuItem onClick={() => canvasApi?.scrollToContent()}>
               <Maximize2 className="size-4" />
               显示画布所有元素
             </DropdownMenuItem>

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-19T22:32:18+08:00",
+  "updatedAt": "2026-05-22T00:54:00+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -93,6 +93,22 @@
       "owner": "quality-engineering",
       "summary": "Add an e2e smoke test for create project, send prompt, receive generated canvas artifact, and persist state.",
       "artifacts": []
+    },
+    {
+      "id": "CORE-005",
+      "name": "Cucumber Canvas runtime",
+      "status": "active",
+      "priority": "P0",
+      "owner": "product-engineering",
+      "summary": "New Cucumber canvas document model, container editing, context resolution, Agent binding surface, artifact insertion, and backend inspection support without Excalidraw data migration.",
+      "artifacts": [
+        "packages/canvas-core",
+        "apps/web/src/components/canvas/canvas-surface.tsx",
+        "apps/web/src/components/canvas-editor.tsx",
+        "apps/web/src/app/canvas/page.tsx",
+        "apps/server/src/agent/tools/inspect-canvas.ts",
+        "packages/shared/src/contracts.ts"
+      ]
     }
   ]
 }

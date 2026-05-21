@@ -50,6 +50,28 @@ import { useToast } from "./toast";
 import { ErrorBoundary } from "./error-boundary";
 import { SessionSelector } from "./session-selector";
 
+// #region debug-point C:run-lifecycle
+const postChatSidebarDebugEvent = (
+  hypothesisId: string,
+  msg: string,
+  data: Record<string, unknown>,
+) => {
+  fetch("http://127.0.0.1:7777/event", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      sessionId: "agent-followup-chat",
+      runId: "post-fix",
+      hypothesisId,
+      location: "apps/web/src/components/chat-sidebar.tsx",
+      msg: `[DEBUG] ${msg}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).catch(() => undefined);
+};
+// #endregion
+
 type ChatSidebarProps = {
   accessToken: string;
   canvasId: string;
@@ -505,6 +527,13 @@ export function ChatSidebar({
           { accessToken: accessTokenRef.current },
         );
 
+        // #region debug-point B:run-accepted
+        postChatSidebarDebugEvent("B", "Run accepted by server", {
+          canvasId,
+          sessionId: currentSessionId,
+          runId: run.runId,
+        });
+        // #endregion
         perf.tAccepted = performance.now();
         console.log(
           `[perf] send → accepted: ${(perf.tAccepted - perf.t0Send).toFixed(0)}ms`,
@@ -517,11 +546,46 @@ export function ChatSidebar({
           },
           onEvent: (event) => {
             if (event.runId !== run.runId) {
+              // #region debug-point A:stale-terminal
+              if (
+                event.type === "run.completed" ||
+                event.type === "run.failed" ||
+                event.type === "run.canceled"
+              ) {
+                postChatSidebarDebugEvent(
+                  "A",
+                  "Received terminal event for a different run",
+                  {
+                    canvasId,
+                    expectedRunId: run.runId,
+                    incomingRunId: event.runId,
+                    incomingType: event.type,
+                  },
+                );
+              }
+              // #endregion
+            }
+            if (event.runId !== run.runId) {
               return;
             }
             if (abortRef.current) {
               return;
             }
+
+            // #region debug-point B:matching-event
+            if (
+              event.type === "message.delta" ||
+              event.type === "run.completed" ||
+              event.type === "run.failed" ||
+              event.type === "run.canceled"
+            ) {
+              postChatSidebarDebugEvent("B", "Received event for active run", {
+                canvasId,
+                runId: run.runId,
+                eventType: event.type,
+              });
+            }
+            // #endregion
 
             if (!perf.gotFirstToken && event.type === "message.delta") {
               perf.tFirstToken = performance.now();
@@ -570,6 +634,11 @@ export function ChatSidebar({
               }
             }
           },
+          shouldStop: (event) =>
+            event.runId === run.runId &&
+            (event.type === "run.completed" ||
+              event.type === "run.failed" ||
+              event.type === "run.canceled"),
         });
 
         clearAttachments();
@@ -591,6 +660,13 @@ export function ChatSidebar({
           }),
         );
       } finally {
+        // #region debug-point C:run-finished
+        postChatSidebarDebugEvent("C", "Send flow leaving streaming state", {
+          canvasId,
+          sessionId: currentSessionId,
+          assistantId,
+        });
+        // #endregion
         setStreaming(false);
       }
     },

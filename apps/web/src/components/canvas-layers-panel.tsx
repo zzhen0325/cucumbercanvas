@@ -1,21 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, memo } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 
-/* -- Types -- */
-// biome-ignore lint/suspicious/noExplicitAny: Excalidraw element has no public type
-type ExcalidrawEl = any;
+import type {
+  CanvasApi,
+  CanvasFileRecord,
+  CanvasSceneElement,
+} from "./canvas/canvas-surface";
 
 export type CanvasLayersPanelProps = {
-  // biome-ignore lint/suspicious/noExplicitAny: Excalidraw API has no public type definition
-  excalidrawApi: any;
+  canvasApi: CanvasApi | null;
   open: boolean;
   onClose: () => void;
 };
 
 /* -- Throttle utility -- */
 /** Simple trailing-edge throttle. Ensures fn fires at most once per `ms`. */
-function throttle<T extends (...args: any[]) => void>(fn: T, ms: number): T & { cancel: () => void } {
+function throttle<T extends (...args: any[]) => void>(
+  fn: T,
+  ms: number,
+): T & { cancel: () => void } {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let lastArgs: Parameters<T> | null = null;
   const throttled = ((...args: Parameters<T>) => {
@@ -28,7 +32,10 @@ function throttle<T extends (...args: any[]) => void>(fn: T, ms: number): T & { 
     }, ms);
   }) as T & { cancel: () => void };
   throttled.cancel = () => {
-    if (timer) { clearTimeout(timer); timer = null; }
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
     lastArgs = null;
   };
   return throttled;
@@ -37,37 +44,64 @@ function throttle<T extends (...args: any[]) => void>(fn: T, ms: number): T & { 
 /* -- Icon helpers -- */
 const LockIcon = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 16 16" fill="none" className={className}>
-    <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
-    <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    <rect
+      x="3.5"
+      y="7"
+      width="9"
+      height="6.5"
+      rx="1.5"
+      stroke="currentColor"
+      strokeWidth="1.3"
+    />
+    <path
+      d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+    />
   </svg>
 );
 
 const EyeIcon = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 16 16" fill="none" className={className}>
-    <path d="M1.5 8s2.5-4 6.5-4 6.5 4 6.5 4-2.5 4-6.5 4S1.5 8 1.5 8Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+    <path
+      d="M1.5 8s2.5-4 6.5-4 6.5 4 6.5 4-2.5 4-6.5 4S1.5 8 1.5 8Z"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinejoin="round"
+    />
     <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3" />
   </svg>
 );
 
 const CloseIcon = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 16 16" fill="none" className={className}>
-    <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    <path
+      d="M4.5 4.5l7 7M11.5 4.5l-7 7"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+    />
   </svg>
 );
 
 /* -- Element helpers -- */
-function elLabel(el: ExcalidrawEl): string {
+function elLabel(el: CanvasSceneElement): string {
   if (el.customData?.type === "image-generator") {
-    return el.customData?.title?.slice(0, 20) || "Image Generator";
+    return typeof el.customData.title === "string"
+      ? el.customData.title.slice(0, 20)
+      : "Image Generator";
   }
   if (el.type === "text") return (el.text as string)?.slice(0, 20) || "Text";
   if (el.type === "image") {
-    return el.customData?.title?.slice(0, 20) || "Image";
+    return typeof el.customData?.title === "string"
+      ? el.customData.title.slice(0, 20)
+      : "Image";
   }
   return el.type.charAt(0).toUpperCase() + el.type.slice(1);
 }
 
-function elThumbnailIcon(el: ExcalidrawEl): string {
+function elThumbnailIcon(el: CanvasSceneElement): string {
   if (el.customData?.type === "image-generator") return "\u2728";
   if (el.type === "text") return "T";
   if (el.type === "image") return "";
@@ -84,8 +118,8 @@ function LayerThumbnail({
   el,
   files,
 }: {
-  el: ExcalidrawEl;
-  files: Record<string, any>;
+  el: CanvasSceneElement;
+  files: Record<string, CanvasFileRecord>;
 }) {
   const icon = elThumbnailIcon(el);
 
@@ -120,21 +154,21 @@ const LayerRow = memo(function LayerRow({
   selected,
   onSelect,
 }: {
-  el: ExcalidrawEl;
-  files: Record<string, any>;
+  el: CanvasSceneElement;
+  files: Record<string, CanvasFileRecord>;
   selected: boolean;
   onSelect: (id: string) => void;
 }) {
   const handleClick = useCallback(() => onSelect(el.id), [onSelect, el.id]);
 
   return (
-    <div style={{ contentVisibility: "auto", containIntrinsicSize: "auto 44px" }}>
+    <div
+      style={{ contentVisibility: "auto", containIntrinsicSize: "auto 44px" }}
+    >
       <button
         type="button"
         className={`group/layer flex h-11 w-full items-center gap-2.5 rounded-lg px-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
-          selected
-            ? "bg-muted"
-            : "hover:bg-muted"
+          selected ? "bg-muted" : "hover:bg-muted"
         }`}
         onClick={handleClick}
       >
@@ -169,41 +203,41 @@ const LayerRow = memo(function LayerRow({
    Main component
    ================================================================ */
 export function CanvasLayersPanel({
-  excalidrawApi,
+  canvasApi,
   open,
   onClose,
 }: CanvasLayersPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const [elements, setElements] = useState<ExcalidrawEl[]>([]);
-  const [files, setFiles] = useState<Record<string, any>>({});
+  const [elements, setElements] = useState<CanvasSceneElement[]>([]);
+  const [files, setFiles] = useState<Record<string, CanvasFileRecord>>({});
   const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
 
   /* -- Refresh elements on open + subscribe to changes -- */
   const refreshElements = useCallback(() => {
-    if (!excalidrawApi) return;
-    const all = excalidrawApi.getSceneElements() as ExcalidrawEl[];
-    setElements(all.filter((el: ExcalidrawEl) => !el.isDeleted).reverse());
-    setFiles(excalidrawApi.getFiles() ?? {});
-    const state = excalidrawApi.getAppState();
+    if (!canvasApi) return;
+    const all = canvasApi.getSceneElements();
+    setElements(all.filter((el) => !el.isDeleted).reverse());
+    setFiles(canvasApi.getFiles() ?? {});
+    const state = canvasApi.getAppState();
     setSelectedIds(state.selectedElementIds ?? {});
-  }, [excalidrawApi]);
+  }, [canvasApi]);
 
   // Throttle refresh to avoid hammering React state on every drag frame.
   // 100ms gives smooth UI without excessive re-renders during drawing.
   useEffect(() => {
-    if (!open || !excalidrawApi) return;
+    if (!open || !canvasApi) return;
     // Initial refresh is immediate
     refreshElements();
 
     const throttledRefresh = throttle(refreshElements, 100);
-    const unsubscribe = excalidrawApi.onChange(() => {
+    const unsubscribe = canvasApi.onChange(() => {
       throttledRefresh();
     });
     return () => {
       throttledRefresh.cancel();
       if (typeof unsubscribe === "function") unsubscribe();
     };
-  }, [open, excalidrawApi, refreshElements]);
+  }, [open, canvasApi, refreshElements]);
 
   /* -- Escape to close -- */
   useEffect(() => {
@@ -221,11 +255,9 @@ export function CanvasLayersPanel({
   /* -- Select element on canvas -- */
   const selectElement = useCallback(
     (id: string) => {
-      excalidrawApi?.updateScene({
-        appState: { selectedElementIds: { [id]: true } },
-      });
+      canvasApi?.setSelection([id]);
     },
-    [excalidrawApi],
+    [canvasApi],
   );
 
   if (!open) return null;
@@ -254,13 +286,16 @@ export function CanvasLayersPanel({
       <div className="h-px bg-border" />
 
       {/* Layer list -- uses content-visibility for large canvas performance */}
-      <div className="flex-1 overflow-y-auto px-1 py-1" style={{ contain: "layout style" }}>
+      <div
+        className="flex-1 overflow-y-auto px-1 py-1"
+        style={{ contain: "layout style" }}
+      >
         {elements.length === 0 ? (
           <p className="px-2 py-8 text-center text-xs text-muted-foreground">
             画布为空
           </p>
         ) : (
-          elements.map((el: ExcalidrawEl) => (
+          elements.map((el) => (
             <LayerRow
               key={el.id}
               el={el}

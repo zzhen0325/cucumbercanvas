@@ -1,26 +1,34 @@
 "use client";
 
-import { useSearchParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
-import type { ImageArtifact, VideoArtifact } from "@cucumber/shared";
-import type { CanvasImageItem } from "../../components/canvas-image-picker";
-import type { CanvasSelectedElement } from "../../components/canvas-editor";
-import { LoadingScreen } from "../../components/loading-screen";
-import { useAuth } from "../../lib/auth-context";
-import { useWebSocket } from "../../hooks/use-websocket";
-import { useJobFallbackPolling } from "../../hooks/use-job-fallback-polling";
-import { CanvasEditor } from "../../components/canvas-editor";
-import { ChatSidebar } from "../../components/chat-sidebar";
-import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
-import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
-import { EditableProjectName } from "../../components/editable-project-name";
-import { insertImageOnCanvas, insertVideoOnCanvas } from "../../lib/canvas-elements";
-import { fetchCanvas, fetchProject, ApiAuthError } from "../../lib/server-api";
+import type {
+  CanvasContent,
+  ImageArtifact,
+  VideoArtifact,
+} from "@cucumber/shared";
 import { BrandKitSelector } from "../../components/brand-kit-selector";
 import { CanvasBottomBar } from "../../components/canvas-bottom-bar";
+import type { CanvasSelectedElement } from "../../components/canvas-editor";
+import { CanvasEditor } from "../../components/canvas-editor";
+import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
 import { CanvasFilesPanel } from "../../components/canvas-files-panel";
+import type { CanvasImageItem } from "../../components/canvas-image-picker";
 import { CanvasLayersPanel } from "../../components/canvas-layers-panel";
+import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
+import type {
+  CanvasApi,
+  CanvasFileRecord,
+  CanvasSceneElement,
+} from "../../components/canvas/canvas-surface";
+import { ChatSidebar } from "../../components/chat-sidebar";
+import { EditableProjectName } from "../../components/editable-project-name";
+import { LoadingScreen } from "../../components/loading-screen";
+import { useJobFallbackPolling } from "../../hooks/use-job-fallback-polling";
+import { useWebSocket } from "../../hooks/use-websocket";
+import { useAuth } from "../../lib/auth-context";
+import { ApiAuthError, fetchCanvas, fetchProject } from "../../lib/server-api";
 
 function CanvasPageContent() {
   const searchParams = useSearchParams();
@@ -28,7 +36,9 @@ function CanvasPageContent() {
   const initialSessionId = searchParams.get("session") ?? undefined;
   // Capture prompt once — router.replace will strip it from URL, but the
   // value must survive for the auto-send effect in ChatSidebar.
-  const [initialPrompt] = useState(() => searchParams.get("prompt") ?? undefined);
+  const [initialPrompt] = useState(
+    () => searchParams.get("prompt") ?? undefined,
+  );
   const { user, session, loading: authLoading, signOut } = useAuth();
   const router = useRouter();
 
@@ -36,11 +46,7 @@ function CanvasPageContent() {
     id: string;
     name: string;
     projectId: string;
-    content: {
-      elements: Record<string, unknown>[];
-      appState: Record<string, unknown>;
-      files: Record<string, Record<string, unknown>>;
-    };
+    content: CanvasContent;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
@@ -53,10 +59,12 @@ function CanvasPageContent() {
   const [filesOpen, setFilesOpen] = useState(false);
   const [brandKitId, setBrandKitId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("Untitled");
-  const [selectedCanvasElements, setSelectedCanvasElements] = useState<CanvasSelectedElement[]>([]);
+  const [selectedCanvasElements, setSelectedCanvasElements] = useState<
+    CanvasSelectedElement[]
+  >([]);
 
-  const excalidrawApiRef = useRef<any>(null);
-  const [excalidrawApi, setExcalidrawApi] = useState<any>(null);
+  const canvasApiRef = useRef<CanvasApi | null>(null);
+  const [canvasApi, setCanvasApi] = useState<CanvasApi | null>(null);
 
   const signOutRef = useRef(signOut);
   signOutRef.current = signOut;
@@ -66,8 +74,14 @@ function CanvasPageContent() {
   // Stable callbacks for panel toggles to prevent re-renders of child components
   const handleOpenChat = useCallback(() => setChatOpen(true), []);
   const handleToggleChat = useCallback(() => setChatOpen((v) => !v), []);
-  const handleToggleLayers = useCallback(() => { setLayersOpen((v) => !v); setFilesOpen(false); }, []);
-  const handleToggleFiles = useCallback(() => { setFilesOpen((v) => !v); setLayersOpen(false); }, []);
+  const handleToggleLayers = useCallback(() => {
+    setLayersOpen((v) => !v);
+    setFilesOpen(false);
+  }, []);
+  const handleToggleFiles = useCallback(() => {
+    setFilesOpen((v) => !v);
+    setLayersOpen(false);
+  }, []);
   const handleCloseLayers = useCallback(() => setLayersOpen(false), []);
   const handleCloseFiles = useCallback(() => setFilesOpen(false), []);
 
@@ -78,44 +92,43 @@ function CanvasPageContent() {
   const getToken = useCallback(() => accessTokenRef.current ?? null, []);
   const ws = useWebSocket(getToken);
 
-  const handleApiReady = useCallback((api: any) => {
-    excalidrawApiRef.current = api;
-    setExcalidrawApi(api);
+  const handleApiReady = useCallback((api: CanvasApi) => {
+    canvasApiRef.current = api;
+    setCanvasApi(api);
   }, []);
 
   const handleImageGenerated = useCallback((artifact: ImageArtifact) => {
-    const api = excalidrawApiRef.current;
+    const api = canvasApiRef.current;
     if (!api) return;
-    insertImageOnCanvas(api, artifact).catch((err) => {
-      console.warn("Failed to insert image on canvas:", err);
-    });
+    if (typeof api.insertImageArtifact === "function") {
+      api.insertImageArtifact(artifact);
+      return;
+    }
+    console.warn("Canvas API cannot insert image artifacts.");
   }, []);
 
   const handleVideoGenerated = useCallback((artifact: VideoArtifact) => {
-    const api = excalidrawApiRef.current;
+    const api = canvasApiRef.current;
     if (!api) return;
-    insertVideoOnCanvas(api, artifact).catch((err) => {
-      console.warn("Failed to insert video on canvas:", err);
-    });
+    if (typeof api.insertVideoArtifact === "function") {
+      api.insertVideoArtifact(artifact);
+      return;
+    }
+    console.warn("Canvas API cannot insert video artifacts.");
   }, []);
 
   // Must be defined BEFORE useJobFallbackPolling which references it
   const handleCanvasSync = useCallback(async () => {
-    const api = excalidrawApiRef.current;
+    const api = canvasApiRef.current;
     const token = accessTokenRef.current;
     if (!api || !token || !canvasData) return;
     try {
       const { canvas } = await fetchCanvas(token, canvasData.id);
-      const elements = canvas.content.elements ?? [];
-      const files = (canvas.content as Record<string, unknown>).files as
-        Record<string, { id: string; dataURL: string; mimeType: string; created: number }> | undefined;
-
-      // Sync files (base64 dataURLs from backend-inserted images) into Excalidraw
-      if (files && Object.keys(files).length > 0) {
-        api.addFiles(Object.values(files));
+      if (typeof api.setDocument === "function") {
+        api.setDocument(canvas.content);
+        return;
       }
-
-      api.updateScene({ elements, captureUpdate: "IMMEDIATELY" });
+      console.warn("Canvas API cannot sync document content.");
     } catch (err) {
       console.warn("Failed to sync canvas:", err);
     }
@@ -127,10 +140,13 @@ function CanvasPageContent() {
   // This hook detects completion and triggers a canvas re-fetch.
   const { checkForTimedOutJobs } = useJobFallbackPolling({
     accessTokenRef,
-    onJobSucceeded: useCallback((_jobId: string, _jobType: string) => {
-      // Element was inserted by backend — just refresh the canvas
-      handleCanvasSync();
-    }, [handleCanvasSync]),
+    onJobSucceeded: useCallback(
+      (_jobId: string, _jobType: string) => {
+        // Element was inserted by backend — just refresh the canvas
+        handleCanvasSync();
+      },
+      [handleCanvasSync],
+    ),
   });
 
   const handleSessionChange = useCallback(
@@ -143,21 +159,23 @@ function CanvasPageContent() {
   );
 
   const handleRequestCanvasImages = useCallback((): CanvasImageItem[] => {
-    const api = excalidrawApiRef.current;
+    const api = canvasApiRef.current;
     if (!api) return [];
-    const elements: any[] = api.getSceneElements() ?? [];
-    const files: Record<string, any> = api.getFiles() ?? {};
+    const elements = api.getSceneElements() ?? [];
+    const files: Record<string, CanvasFileRecord> = api.getFiles() ?? {};
     let idx = 0;
     return elements
-      .filter((el: any) => el.type === "image" && !el.isDeleted && el.fileId)
-      .map((el: any) => {
+      .filter(
+        (el): el is CanvasSceneElement & { fileId: string } =>
+          el.type === "image" && !el.isDeleted && Boolean(el.fileId),
+      )
+      .map((el) => {
         idx++;
         const file = files[el.fileId];
         const dataURL = file?.dataURL ?? "";
+        const titleCandidate = el.customData?.title ?? el.customData?.label;
         const title =
-          el.customData?.title ||
-          el.customData?.label ||
-          `Image ${idx}`;
+          typeof titleCandidate === "string" ? titleCandidate : `Image ${idx}`;
         return {
           kind: "canvas-image",
           id: el.id,
@@ -192,11 +210,7 @@ function CanvasPageContent() {
           id: c.id,
           name: c.name,
           projectId: c.projectId,
-          content: {
-            elements: c.content.elements ?? [],
-            appState: c.content.appState ?? {},
-            files: (c.content as any).files ?? {},
-          },
+          content: c.content,
         });
         setPageLoading(false);
         // Fetch project to get brand_kit_id and name
@@ -205,7 +219,9 @@ function CanvasPageContent() {
             setBrandKitId(projectData.project.brand_kit_id);
             setProjectName(projectData.project.name ?? "Untitled");
           })
-          .catch((err) => console.warn("Failed to fetch project for brand kit:", err));
+          .catch((err) =>
+            console.warn("Failed to fetch project for brand kit:", err),
+          );
       })
       .catch((err) => {
         if (err instanceof ApiAuthError) {
@@ -251,7 +267,7 @@ function CanvasPageContent() {
           accessToken={accessToken}
           projectId={canvasData.projectId}
           canvasId={canvasData.id}
-          excalidrawApi={excalidrawApi}
+          canvasApi={canvasApi}
         />
         <EditableProjectName
           accessToken={accessToken}
@@ -277,12 +293,9 @@ function CanvasPageContent() {
           leftPanelOpen={layersOpen || filesOpen}
           onSelectionChange={setSelectedCanvasElements}
         />
-        <CanvasEmptyHint
-          excalidrawApi={excalidrawApi}
-          onOpenChat={handleOpenChat}
-        />
+        <CanvasEmptyHint canvasApi={canvasApi} onOpenChat={handleOpenChat} />
         <CanvasBottomBar
-          excalidrawApi={excalidrawApi}
+          canvasApi={canvasApi}
           layersOpen={layersOpen}
           onToggleLayers={handleToggleLayers}
           filesOpen={filesOpen}
@@ -290,12 +303,12 @@ function CanvasPageContent() {
           leftPanelOpen={layersOpen || filesOpen}
         />
         <CanvasLayersPanel
-          excalidrawApi={excalidrawApi}
+          canvasApi={canvasApi}
           open={layersOpen}
           onClose={handleCloseLayers}
         />
         <CanvasFilesPanel
-          excalidrawApi={excalidrawApi}
+          canvasApi={canvasApi}
           open={filesOpen}
           onClose={handleCloseFiles}
         />

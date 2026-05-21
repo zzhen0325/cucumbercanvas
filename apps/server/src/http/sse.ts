@@ -15,6 +15,7 @@ export async function registerSseRoutes(
     auth: RequestAuthenticator;
     createUserClient: (accessToken: string) => any;
     eventBuffer: CanvasEventBuffer;
+    webOrigin: string;
   },
 ) {
   app.get("/api/canvases/:canvasId/stream", async (request, reply) => {
@@ -52,6 +53,7 @@ export async function registerSseRoutes(
     reply.hijack();
     const response = reply.raw;
     response.writeHead(200, {
+      "access-control-allow-origin": options.webOrigin,
       "content-type": "text/event-stream; charset=utf-8",
       "cache-control": "no-cache, no-transform",
       connection: "keep-alive",

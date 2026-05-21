@@ -16,6 +16,7 @@ type StartStreamOptions = {
   onEvent: (event: StreamEvent, meta: { id: number }) => void;
   onOpen?: () => void;
   onReconnect?: () => void;
+  shouldStop?: (event: StreamEvent) => boolean;
 };
 
 type ParsedSseChunk = {
@@ -29,6 +30,28 @@ const TERMINAL_EVENT_TYPES = new Set<StreamEvent["type"]>([
   "run.failed",
   "run.canceled",
 ]);
+
+// #region debug-point A:sse-lifecycle
+const postSseDebugEvent = (
+  hypothesisId: string,
+  msg: string,
+  data: Record<string, unknown>,
+) => {
+  fetch("http://127.0.0.1:7777/event", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      sessionId: "agent-followup-chat",
+      runId: "post-fix",
+      hypothesisId,
+      location: "apps/web/src/hooks/use-sse-stream.ts",
+      msg: `[DEBUG] ${msg}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).catch(() => undefined);
+};
+// #endregion
 
 export function useSseStream(accessToken: string) {
   const activeHandleRef = useRef<StreamHandle | null>(null);
@@ -49,6 +72,7 @@ export function useSseStream(accessToken: string) {
       let currentController: AbortController | null = null;
       let currentReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
       let lastEventId = 0;
+      let receivedEventCount = 0;
       let terminalSeen = false;
       let resolveDone!: () => void;
       const done = new Promise<void>((resolve) => {
@@ -70,6 +94,14 @@ export function useSseStream(accessToken: string) {
         if (disposed) {
           return;
         }
+        // #region debug-point A:sse-stop
+        postSseDebugEvent("A", "SSE handle stopped", {
+          canvasId: options.canvasId,
+          lastEventId,
+          receivedEventCount,
+          terminalSeen,
+        });
+        // #endregion
         disposed = true;
         cleanup();
         resolveDone();
@@ -93,6 +125,13 @@ export function useSseStream(accessToken: string) {
           return;
         }
 
+        // #region debug-point A:sse-connect
+        postSseDebugEvent("A", "Opening SSE connection", {
+          attempt,
+          canvasId: options.canvasId,
+          lastEventId,
+        });
+        // #endregion
         currentController = new AbortController();
         const headers: Record<string, string> = {
           Accept: "text/event-stream",
@@ -125,6 +164,14 @@ export function useSseStream(accessToken: string) {
             options.onReconnect?.();
           }
 
+          // #region debug-point A:sse-open
+          postSseDebugEvent("A", "SSE connection opened", {
+            attempt,
+            canvasId: options.canvasId,
+            lastEventId,
+          });
+          // #endregion
+
           currentReader = response.body.getReader();
           const decoder = new TextDecoder();
           let buffer = "";
@@ -146,8 +193,25 @@ export function useSseStream(accessToken: string) {
                   lastEventId = parsed.id;
                 }
                 const event = JSON.parse(parsed.data) as StreamEvent;
+                receivedEventCount += 1;
+                if (receivedEventCount <= 3 || TERMINAL_EVENT_TYPES.has(event.type)) {
+                  // #region debug-point A:sse-event
+                  postSseDebugEvent("A", "SSE stream event received", {
+                    seq: parsed.id ?? null,
+                    eventType: event.type,
+                    eventRunId: event.runId,
+                    attempt,
+                    canvasId: options.canvasId,
+                    receivedEventCount,
+                    terminalEvent: TERMINAL_EVENT_TYPES.has(event.type),
+                  });
+                  // #endregion
+                }
                 options.onEvent(event, { id: lastEventId });
-                if (TERMINAL_EVENT_TYPES.has(event.type)) {
+                const shouldStop = options.shouldStop
+                  ? options.shouldStop(event)
+                  : TERMINAL_EVENT_TYPES.has(event.type);
+                if (shouldStop) {
                   terminalSeen = true;
                   stop();
                   return;

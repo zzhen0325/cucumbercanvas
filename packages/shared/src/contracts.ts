@@ -129,11 +129,22 @@ export const projectSummarySchema = z.object({
   updatedAt: timestampSchema,
 });
 
-export const canvasContentSchema = z.object({
-  elements: z.array(z.record(z.unknown())).default([]),
-  appState: z.record(z.unknown()).default({}),
-  files: z.record(z.record(z.unknown())).default({}),
-});
+export const canvasContentSchema = z
+  .object({
+    // Legacy Excalidraw fields stay optional so existing API callers continue
+    // to compile while the new Cucumber document format takes over.
+    elements: z.array(z.record(z.unknown())).default([]),
+    appState: z.record(z.unknown()).default({}),
+    files: z.record(z.record(z.unknown())).default({}),
+    schemaVersion: z.string().optional(),
+    nodes: z.record(z.unknown()).optional(),
+    rootNodeIds: z.array(z.string()).optional(),
+    assets: z.record(z.unknown()).optional(),
+    viewport: z.record(z.unknown()).optional(),
+    selection: z.array(z.string()).optional(),
+    updatedAt: z.string().optional(),
+  })
+  .passthrough();
 
 export const canvasDetailSchema = z.object({
   id: canvasIdSchema,
@@ -291,7 +302,9 @@ export type VideoGenerationPreference = z.infer<
 export type ContentBlock = z.infer<typeof contentBlockSchema>;
 export type ChatSessionSummary = z.infer<typeof chatSessionSummarySchema>;
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
-export type ChatMessageCreateRequest = z.infer<typeof chatMessageCreateRequestSchema>;
+export type ChatMessageCreateRequest = z.infer<
+  typeof chatMessageCreateRequestSchema
+>;
 export type ChatToolActivity = z.infer<typeof chatToolActivitySchema>;
 export type ProfileUpdateRequest = z.infer<typeof profileUpdateRequestSchema>;
 export type WorkspaceSettings = z.infer<typeof workspaceSettingsSchema>;

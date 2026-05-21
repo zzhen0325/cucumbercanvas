@@ -333,41 +333,6 @@
   font-weight: 600;
 }
 
-/* ── Excalidraw UI overrides (aligned with Jaaz) ── */
-
-/* Hide left menu button — replaced by CanvasLogoMenu */
-.excalidraw .App-menu_top__left {
-  display: none !important;
-}
-
-/* Hide top-right buttons (Library, Share, Export) */
-.excalidraw .layer-ui__wrapper__top-right {
-  display: none !important;
-}
-
-/* Hide native top toolbar — replaced by CanvasToolMenu */
-.excalidraw .FixedSideContainer.FixedSideContainer_side_top.App-top-bar {
-  display: none !important;
-}
-
-/* Hide bottom menu bar */
-.excalidraw .layer-ui__wrapper__footer.App-menu.App-menu_bottom {
-  display: none !important;
-}
-.excalidraw .App-bottom-bar {
-  display: none !important;
-}
-
-/* Hide shapes sidebar panel */
-.excalidraw .shapes-section {
-  display: none !important;
-}
-
-/* Hide keyboard shortcut labels on tools */
-.excalidraw .ToolIcon__keybinding {
-  display: none !important;
-}
-
 /* Image generator shimmer animation */
 @keyframes shimmer-scan {
   0% {
@@ -485,4 +450,3 @@
 /* Dark mode overrides for hero glow blobs */
 .dark .landing-hero-glow-1 { opacity: 0.15 !important; }
 .dark .landing-hero-glow-2 { opacity: 0.12 !important; }
-

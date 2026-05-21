@@ -2,40 +2,40 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import type { CanvasApi, CanvasSceneElement } from "./canvas/canvas-surface";
+
 type CanvasEmptyHintProps = {
-  excalidrawApi: any;
+  canvasApi: CanvasApi | null;
   onOpenChat: () => void;
 };
 
 /**
- * Floating overlay hint shown when the Excalidraw canvas has no visible
- * elements. Pressing the `C` key opens the chat sidebar and focuses the
- * chat input textarea.
+ * Floating overlay hint shown when the canvas has no visible elements.
  */
 export function CanvasEmptyHint({
-  excalidrawApi,
+  canvasApi,
   onOpenChat,
 }: CanvasEmptyHintProps) {
   const [hasElements, setHasElements] = useState(false);
   const onOpenChatRef = useRef(onOpenChat);
   onOpenChatRef.current = onOpenChat;
 
-  // Poll the Excalidraw API every 500ms to determine if the canvas contains
-  // any non-deleted elements.
+  // Poll the canvas API until the surface exposes a lightweight empty-state event.
   useEffect(() => {
     function check() {
-      if (!excalidrawApi) {
+      if (!canvasApi) {
         setHasElements(false);
         return;
       }
-      const elements: any[] = excalidrawApi.getSceneElements?.() ?? [];
-      setHasElements(elements.some((el: any) => !el.isDeleted));
+      const elements: CanvasSceneElement[] =
+        canvasApi.getSceneElements?.() ?? [];
+      setHasElements(elements.some((el) => !el.isDeleted));
     }
 
     check();
     const id = setInterval(check, 500);
     return () => clearInterval(id);
-  }, [excalidrawApi]);
+  }, [canvasApi]);
 
   // Global keydown listener for the `C` shortcut.
   useEffect(() => {
@@ -64,9 +64,7 @@ export function CanvasEmptyHint({
             // Sidebar might animate open; retry once more.
             setTimeout(() => {
               document
-                .querySelector<HTMLTextAreaElement>(
-                  "textarea[data-chat-input]",
-                )
+                .querySelector<HTMLTextAreaElement>("textarea[data-chat-input]")
                 ?.focus();
             }, 100);
           }

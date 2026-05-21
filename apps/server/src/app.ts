@@ -246,6 +246,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     auth,
     createUserClient,
     eventBuffer,
+    webOrigin: env.webOrigin,
   });
   void registerViewerRoutes(app, {
     auth,

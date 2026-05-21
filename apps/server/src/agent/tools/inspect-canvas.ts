@@ -1,19 +1,29 @@
+import {
+  type CanvasNode,
+  type CucumberCanvasDocument,
+  isContainerNode,
+  isCucumberCanvasDocument,
+  resolveContext,
+} from "@cucumber/canvas-core";
 import { tool } from "langchain";
 import { z } from "zod";
+
+import type { UserSupabaseClient } from "../../supabase/user.js";
 
 const inspectCanvasSchema = z.object({
   detail_level: z
     .enum(["summary", "full"])
     .default("summary")
-    .describe("Level of detail: summary (id, type, position, size) or full (all properties)"),
-  element_id: z
-    .string()
-    .optional()
-    .describe("Query a specific element by ID"),
+    .describe(
+      "Level of detail: summary (id, type, position, size) or full (all properties)",
+    ),
+  element_id: z.string().optional().describe("Query a specific element by ID"),
   filter_type: z
     .array(z.string())
     .optional()
-    .describe("Filter by element type(s), e.g. ['text', 'image', 'video', 'rectangle']. Use 'video' to match video elements (stored internally as image elements with isVideo metadata)."),
+    .describe(
+      "Filter by element type(s), e.g. ['text', 'image', 'video', 'rectangle']. Use 'video' to match video elements (stored internally as image elements with isVideo metadata).",
+    ),
   filter_region: z
     .object({
       min_x: z.number(),
@@ -26,6 +36,12 @@ const inspectCanvasSchema = z.object({
 });
 
 type CanvasElement = Record<string, unknown>;
+type ToolRuntimeConfig = {
+  configurable?: {
+    access_token?: unknown;
+    canvas_id?: unknown;
+  };
+};
 
 const DEFAULT_STROKE_COLOR = "#1e1e1e";
 const DEFAULT_BACKGROUND_COLOR = "transparent";
@@ -42,7 +58,7 @@ function summarizeElement(el: CanvasElement) {
   };
 
   if (el.type === "text" && typeof el.text === "string") {
-    base.text = el.text.length > 50 ? el.text.slice(0, 47) + "..." : el.text;
+    base.text = el.text.length > 50 ? `${el.text.slice(0, 47)}...` : el.text;
     base.fontSize = el.fontSize;
   }
 
@@ -53,7 +69,8 @@ function summarizeElement(el: CanvasElement) {
       base.type = "video";
       if (customData.videoUrl) base.videoUrl = customData.videoUrl;
       if (customData.mimeType) base.mimeType = customData.mimeType;
-      if (customData.durationSeconds !== undefined) base.durationSeconds = customData.durationSeconds;
+      if (customData.durationSeconds !== undefined)
+        base.durationSeconds = customData.durationSeconds;
     } else {
       if (customData?.title) {
         base.title = customData.title;
@@ -69,7 +86,8 @@ function summarizeElement(el: CanvasElement) {
       if (customData.title) base.title = customData.title;
       if (customData.prompt) base.prompt = customData.prompt;
       if (customData.mimeType) base.mimeType = customData.mimeType;
-      if (customData.durationSeconds !== undefined) base.durationSeconds = customData.durationSeconds;
+      if (customData.durationSeconds !== undefined)
+        base.durationSeconds = customData.durationSeconds;
     }
   }
 
@@ -90,9 +108,70 @@ function summarizeElement(el: CanvasElement) {
   return base;
 }
 
+function summarizeCanvasNode(node: CanvasNode) {
+  const base: Record<string, unknown> = {
+    id: node.id,
+    type: node.type,
+    parentId: node.parentId,
+    title: node.title,
+    x: node.bounds.x,
+    y: node.bounds.y,
+    width: node.bounds.width,
+    height: node.bounds.height,
+  };
+  if (node.type === "text")
+    base.text =
+      node.text.length > 50 ? `${node.text.slice(0, 47)}...` : node.text;
+  if (node.type === "image") base.assetId = node.assetId;
+  if (node.type === "videoEmbed") base.mimeType = node.mimeType;
+  if (node.type === "container") {
+    base.role = node.role;
+    base.agent = node.agentBinding
+      ? {
+          id: node.agentBinding.agentId,
+          name: node.agentBinding.name,
+          status: node.agentBinding.status,
+        }
+      : null;
+  }
+  return base;
+}
+
+function summarizeCucumberDocument(doc: CucumberCanvasDocument) {
+  const nodes = Object.values(doc.nodes);
+  const containers = nodes.filter(isContainerNode);
+  return {
+    schemaVersion: doc.schemaVersion,
+    nodeCount: nodes.length,
+    containerCount: containers.length,
+    viewport: doc.viewport,
+    containers: containers.map((container) => ({
+      id: container.id,
+      title: container.title,
+      parentId: container.parentId,
+      role: container.role,
+      bounds: container.bounds,
+      agentBinding: container.agentBinding
+        ? {
+            agentId: container.agentBinding.agentId,
+            name: container.agentBinding.name,
+            status: container.agentBinding.status,
+            permissions: container.agentBinding.permissions,
+          }
+        : null,
+      effectiveContext: resolveContext(doc, container.id),
+      childCount: container.childrenOrder.length,
+    })),
+    nodes: nodes.map(summarizeCanvasNode),
+  };
+}
+
 function computeBoundingBox(elements: CanvasElement[]) {
   if (elements.length === 0) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
   for (const el of elements) {
     const x = Number(el.x) || 0;
     const y = Number(el.y) || 0;
@@ -131,12 +210,15 @@ export function buildCanvasSummaryForContext(
   for (const s of toShow) {
     const parts = [`${s.type}#${s.id}`];
     parts.push(`@(${Math.round(s.x as number)},${Math.round(s.y as number)})`);
-    parts.push(`${Math.round(s.width as number)}x${Math.round(s.height as number)}`);
+    parts.push(
+      `${Math.round(s.width as number)}x${Math.round(s.height as number)}`,
+    );
     if (s.text) parts.push(`"${s.text}"`);
     if (s.title) parts.push(`title="${s.title}"`);
     if (s.type === "video") {
       if (s.durationSeconds) parts.push(`${s.durationSeconds}s`);
-      if (s.prompt) parts.push(`prompt="${(s.prompt as string).slice(0, 120)}"`);
+      if (s.prompt)
+        parts.push(`prompt="${(s.prompt as string).slice(0, 120)}"`);
     }
     if (s.strokeColor) parts.push(`stroke=${s.strokeColor}`);
     if (s.backgroundColor) parts.push(`fill=${s.backgroundColor}`);
@@ -150,12 +232,20 @@ export function buildCanvasSummaryForContext(
 }
 
 export function createInspectCanvasTool(deps: {
-  createUserClient: (accessToken: string) => any;
+  createUserClient: (accessToken: string) => UserSupabaseClient;
 }) {
   return tool(
     async (input, config) => {
-      const canvasId = (config as any)?.configurable?.canvas_id;
-      const accessToken = (config as any)?.configurable?.access_token;
+      const configurable = (config as ToolRuntimeConfig | undefined)
+        ?.configurable;
+      const canvasId =
+        typeof configurable?.canvas_id === "string"
+          ? configurable.canvas_id
+          : null;
+      const accessToken =
+        typeof configurable?.access_token === "string"
+          ? configurable.access_token
+          : null;
 
       if (!canvasId || !accessToken) {
         return JSON.stringify({
@@ -184,9 +274,55 @@ export function createInspectCanvasTool(deps: {
         appState?: Record<string, unknown>;
       };
 
-      const elements = (content.elements ?? []).filter(
-        (el) => !el.isDeleted,
-      );
+      if (isCucumberCanvasDocument(data.content)) {
+        const cucumberDoc: CucumberCanvasDocument = data.content;
+        const nodes = Object.values(cucumberDoc.nodes) as CanvasNode[];
+        if (input.element_id) {
+          const found = cucumberDoc.nodes[input.element_id];
+          if (!found) {
+            return JSON.stringify({
+              error: "node_not_found",
+              message: `Node ${input.element_id} not found on canvas.`,
+            });
+          }
+          return JSON.stringify(
+            input.detail_level === "full" ? found : summarizeCanvasNode(found),
+          );
+        }
+
+        let filteredNodes = nodes;
+        if (input.filter_type && input.filter_type.length > 0) {
+          const filterTypes = input.filter_type;
+          filteredNodes = filteredNodes.filter((node) =>
+            filterTypes.includes(node.type),
+          );
+        }
+        if (input.filter_region) {
+          const r = input.filter_region;
+          filteredNodes = filteredNodes.filter((node) => {
+            const { x, y, width, height } = node.bounds;
+            return !(
+              x + width < r.min_x ||
+              x > r.max_x ||
+              y + height < r.min_y ||
+              y > r.max_y
+            );
+          });
+        }
+
+        return JSON.stringify({
+          canvasId,
+          ...summarizeCucumberDocument({
+            ...cucumberDoc,
+            nodes: Object.fromEntries(
+              filteredNodes.map((node) => [node.id, node]),
+            ),
+          }),
+          matchedCount: filteredNodes.length,
+        });
+      }
+
+      const elements = (content.elements ?? []).filter((el) => !el.isDeleted);
 
       if (input.element_id) {
         const found = elements.find((el) => el.id === input.element_id);
@@ -205,13 +341,17 @@ export function createInspectCanvasTool(deps: {
       let filtered = elements;
 
       if (input.filter_type && input.filter_type.length > 0) {
+        const filterTypes = input.filter_type;
         filtered = filtered.filter((el) => {
           // Resolve logical type: image/embeddable elements with customData.isVideo are treated as "video"
-          const customData = el.customData as Record<string, unknown> | undefined;
+          const customData = el.customData as
+            | Record<string, unknown>
+            | undefined;
           const isVideoElement =
-            (el.type === "image" || el.type === "embeddable") && customData?.isVideo === true;
+            (el.type === "image" || el.type === "embeddable") &&
+            customData?.isVideo === true;
           const logicalType = isVideoElement ? "video" : (el.type as string);
-          return input.filter_type!.includes(logicalType);
+          return filterTypes.includes(logicalType);
         });
       }
 
@@ -223,7 +363,12 @@ export function createInspectCanvasTool(deps: {
           const ew = Number(el.width) || 0;
           const eh = Number(el.height) || 0;
           // Element overlaps region if it's not completely outside
-          return !(ex + ew < r.min_x || ex > r.max_x || ey + eh < r.min_y || ey > r.max_y);
+          return !(
+            ex + ew < r.min_x ||
+            ex > r.max_x ||
+            ey + eh < r.min_y ||
+            ey > r.max_y
+          );
         });
       }
 
@@ -238,8 +383,7 @@ export function createInspectCanvasTool(deps: {
         matchedCount: filtered.length,
         boundingBox: computeBoundingBox(filtered),
         viewport: {
-          backgroundColor:
-            (content.appState as any)?.viewBackgroundColor ?? "#ffffff",
+          backgroundColor: content.appState?.viewBackgroundColor ?? "#ffffff",
         },
         elements: summaryElements,
       });
