@@ -1,5 +1,5 @@
 import { TypedEventEmitter } from '@cucumber/engine';
-import type { ContainerNode, ContainerBounds, ContainerRole, ContextSlots } from './types.js';
+import type { ContainerNode, ContainerBounds, ContainerRole, ContextSlots, AgentBinding, InheritPolicy } from './types.js';
 import { resolveContext } from './context-resolver.js';
 
 let containerIdCounter = 0;
@@ -12,6 +12,10 @@ export interface ContainerManagerEvents {
   'container:remove': (id: string) => void;
   'container:update': (node: ContainerNode) => void;
   'container:move': (id: string, newParentId: string | null) => void;
+  'agent:bound': (containerId: string, binding: AgentBinding) => void;
+  'agent:unbound': (containerId: string, agentId: string) => void;
+  'agent:status': (containerId: string, agentId: string, status: AgentBinding['status']) => void;
+  'context:change': (containerId: string, slots: ContextSlots) => void;
 }
 
 export interface CreateContainerOptions {
@@ -137,6 +141,85 @@ export class ContainerManager extends TypedEventEmitter<ContainerManagerEvents> 
       cur = cur.parentId ? this.containers.get(cur.parentId) : undefined;
     }
     return path;
+  }
+
+  bindAgent(containerId: string, binding: AgentBinding): boolean {
+    const container = this.containers.get(containerId);
+    if (!container) return false;
+
+    const updated: ContainerNode = {
+      ...container,
+      agentBinding: {
+        ...binding,
+        assignedAt: binding.assignedAt ?? Date.now(),
+      },
+    };
+    this.containers.set(containerId, updated);
+    this.emit('agent:bound', containerId, updated.agentBinding!);
+    this.emit('container:update', updated);
+    return true;
+  }
+
+  unbindAgent(containerId: string): boolean {
+    const container = this.containers.get(containerId);
+    if (!container || !container.agentBinding?.agentId) return false;
+
+    const agentId = container.agentBinding.agentId;
+    const updated: ContainerNode = { ...container, agentBinding: undefined };
+    this.containers.set(containerId, updated);
+    this.emit('agent:unbound', containerId, agentId);
+    this.emit('container:update', updated);
+    return true;
+  }
+
+  updateAgentStatus(containerId: string, status: AgentBinding['status']): boolean {
+    const container = this.containers.get(containerId);
+    if (!container || !container.agentBinding) return false;
+
+    const updated: ContainerNode = {
+      ...container,
+      agentBinding: { ...container.agentBinding, status },
+    };
+    this.containers.set(containerId, updated);
+    this.emit('agent:status', containerId, container.agentBinding.agentId!, status);
+    this.emit('container:update', updated);
+    return true;
+  }
+
+  updateContextSlots(containerId: string, slots: Partial<ContextSlots>): boolean {
+    const container = this.containers.get(containerId);
+    if (!container) return false;
+
+    const mergedSlots: ContextSlots = {
+      style: { ...(container.contextSlots.style ?? {}), ...(slots.style ?? {}) },
+      tokens: { ...(container.contextSlots.tokens ?? {}), ...(slots.tokens ?? {}) },
+      rules: slots.rules !== undefined ? slots.rules : container.contextSlots.rules,
+      constraints: { ...(container.contextSlots.constraints ?? {}), ...(slots.constraints ?? {}) },
+    };
+
+    const updated: ContainerNode = { ...container, contextSlots: mergedSlots };
+    this.containers.set(containerId, updated);
+    this.invalidateContextCache(containerId);
+    this.emit('context:change', containerId, mergedSlots);
+    this.emit('container:update', updated);
+    return true;
+  }
+
+  setInheritPolicy(containerId: string, policy: InheritPolicy): boolean {
+    const container = this.containers.get(containerId);
+    if (!container) return false;
+
+    const updated: ContainerNode = { ...container, inheritPolicy: policy };
+    this.containers.set(containerId, updated);
+    this.invalidateContextCache(containerId);
+    this.emit('container:update', updated);
+    return true;
+  }
+
+  getContainersByAgent(agentId: string): ContainerNode[] {
+    return [...this.containers.values()].filter(
+      c => c.agentBinding?.agentId === agentId
+    );
   }
 
   loadContainers(containers: ContainerNode[]): void {

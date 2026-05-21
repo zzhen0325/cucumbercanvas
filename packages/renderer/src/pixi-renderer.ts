@@ -1,6 +1,6 @@
 import type { Application, Container, Graphics, Text } from 'pixi.js';
 import type { DesignEngine } from '@cucumber/engine';
-import type { ContainerManager, ContainerNode, ContainerBounds } from '@cucumber/container';
+import type { ContainerManager, ContainerNode, ContainerBounds, AgentBinding } from '@cucumber/container';
 import type { ViewportState } from '@cucumber/pen-types';
 import type { RenderNode, RendererOptions, ShadowModeOptions } from './types.js';
 import { containerNodeToRenderNode } from './types.js';
@@ -12,6 +12,8 @@ export class PixiRenderer {
   private containerDisplayObjects = new Map<string, Container>();
   private shadowMode = false;
   private disposed = false;
+  private animationTime = 0;
+  private tickerCallback: (() => void) | null = null;
 
   constructor(engine: DesignEngine, containerManager: ContainerManager) {
     this.engine = engine;
@@ -37,6 +39,12 @@ export class PixiRenderer {
     this.containerManager.on('container:add', (node) => this.addContainerVisual(node));
     this.containerManager.on('container:remove', (id) => this.removeContainerVisual(id));
     this.containerManager.on('container:update', (node) => this.updateContainerVisual(node));
+
+    this.tickerCallback = () => {
+      this.animationTime += 0.016;
+      this.updateGlowAnimations();
+    };
+    this.app.ticker.add(this.tickerCallback as any);
 
     this.render();
   }
@@ -100,7 +108,12 @@ export class PixiRenderer {
     const container = new PixiContainer();
     container.label = node.id;
 
+    const glowGraphics = new Graphics();
+    glowGraphics.label = 'glow';
+    container.addChild(glowGraphics);
+
     const bg = new Graphics();
+    bg.label = 'bg';
     this.drawContainerRect(bg, node.bounds, node.style);
     container.addChild(bg);
 
@@ -118,6 +131,11 @@ export class PixiRenderer {
       container.addChild(label);
     }
 
+    if (node.agentBinding?.agentId) {
+      this.drawAgentBadge(container, node);
+      this.drawAgentGlow(glowGraphics, node.bounds, node.agentBinding);
+    }
+
     container.position.set(0, 0);
     this.app.stage.addChild(container);
     this.containerDisplayObjects.set(node.id, container);
@@ -132,7 +150,9 @@ export class PixiRenderer {
 
     const { Graphics, Text } = await import('pixi.js');
 
-    const bg = container.children[0] as Graphics;
+    const glow = container.children.find(c => c.label === 'glow') as Graphics | undefined;
+    const bg = container.children.find(c => c.label === 'bg') as Graphics | undefined;
+
     if (bg) {
       bg.clear();
       this.drawContainerRect(bg, node.bounds, node.style);
@@ -142,6 +162,21 @@ export class PixiRenderer {
     if (labelChild && node.style?.label) {
       labelChild.text = node.style.label;
       labelChild.position.set(node.bounds.x + 8, node.bounds.y + 6);
+    }
+
+    if (glow) {
+      glow.clear();
+      if (node.agentBinding?.agentId) {
+        this.drawAgentGlow(glow, node.bounds, node.agentBinding);
+      }
+    }
+
+    const existingBadge = container.children.find(c => c.label === 'agent-badge');
+    if (existingBadge) {
+      existingBadge.destroy({ children: true });
+    }
+    if (node.agentBinding?.agentId) {
+      this.drawAgentBadge(container, node);
     }
   }
 
@@ -169,6 +204,94 @@ export class PixiRenderer {
     g.fill({ color: stroke, alpha: 0.15 });
   }
 
+  private drawAgentGlow(g: any, bounds: ContainerBounds, binding: AgentBinding): void {
+    const color = binding.color ?? '#4ECDC4';
+    const isRunning = binding.status === 'running' || binding.status === 'thinking';
+    const alpha = isRunning ? 0.4 + Math.sin(this.animationTime * 3) * 0.2 : 0.25;
+
+    g.roundRect(bounds.x - 3, bounds.y - 3, bounds.width + 6, bounds.height + 6, 10);
+    g.stroke({ color, width: 3, alpha });
+
+    if (isRunning) {
+      g.roundRect(bounds.x - 6, bounds.y - 6, bounds.width + 12, bounds.height + 12, 12);
+      g.stroke({ color, width: 1.5, alpha: alpha * 0.5 });
+    }
+  }
+
+  private async drawAgentBadge(container: any, node: ContainerNode): Promise<void> {
+    const { Container: PixiContainer, Graphics, Text } = await import('pixi.js');
+    const binding = node.agentBinding!;
+    const bounds = node.bounds;
+
+    const badge = new PixiContainer();
+    badge.label = 'agent-badge';
+
+    const badgeWidth = 80;
+    const badgeHeight = 20;
+    const badgeX = bounds.x + bounds.width - badgeWidth - 8;
+    const badgeY = bounds.y + 4;
+
+    const bg = new Graphics();
+    bg.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 10);
+    bg.fill({ color: binding.color ?? '#4ECDC4', alpha: 0.9 });
+    badge.addChild(bg);
+
+    const statusDot = new Graphics();
+    const dotX = badgeX + 8;
+    const dotY = badgeY + badgeHeight / 2;
+    statusDot.circle(dotX, dotY, 3);
+    statusDot.label = 'status-dot';
+
+    const dotColor = this.getStatusColor(binding.status);
+    statusDot.fill({ color: dotColor, alpha: 1 });
+    badge.addChild(statusDot);
+
+    if (binding.name) {
+      const nameText = new Text({
+        text: binding.name,
+        style: {
+          fontSize: 10,
+          fill: '#ffffff',
+          fontFamily: 'Inter, sans-serif',
+          fontWeight: 'bold',
+        },
+      });
+      nameText.position.set(badgeX + 16, badgeY + 3);
+      badge.addChild(nameText);
+    }
+
+    container.addChild(badge);
+  }
+
+  private getStatusColor(status?: AgentBinding['status']): string {
+    switch (status) {
+      case 'running': return '#00ff88';
+      case 'thinking': return '#ffdd00';
+      case 'blocked': return '#ff4444';
+      case 'done': return '#888888';
+      case 'idle':
+      default: return '#ffffff';
+    }
+  }
+
+  private updateGlowAnimations(): void {
+    const containers = this.containerManager.getAllContainers();
+    for (const node of containers) {
+      if (!node.agentBinding?.agentId) continue;
+      const isRunning = node.agentBinding.status === 'running' || node.agentBinding.status === 'thinking';
+      if (!isRunning) continue;
+
+      const displayObj = this.containerDisplayObjects.get(node.id);
+      if (!displayObj) continue;
+
+      const glow = displayObj.children.find(c => c.label === 'glow') as any;
+      if (glow) {
+        glow.clear();
+        this.drawAgentGlow(glow, node.bounds, node.agentBinding);
+      }
+    }
+  }
+
   private syncViewport(state: ViewportState): void {
     if (!this.app) return;
     this.app.stage.position.set(state.panX, state.panY);
@@ -182,6 +305,9 @@ export class PixiRenderer {
 
   destroy(): void {
     this.disposed = true;
+    if (this.tickerCallback && this.app) {
+      this.app.ticker.remove(this.tickerCallback as any);
+    }
     for (const [, container] of this.containerDisplayObjects) {
       container.destroy({ children: true });
     }
