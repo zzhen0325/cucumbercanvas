@@ -1,6 +1,6 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-22 16:28 CST
+Last updated: 2026-05-22 21:15 CST
 
 ## Current Session
 
@@ -31,17 +31,22 @@ Status:
 - Added the first P2 import slice: system clipboard parsing for SVG/Figma-like payloads, normalization into `CucumberCanvasDocument` nodes/assets inside `@cucumber/canvas-core`, centered placement on the current viewport, warning toasts, and history-tracked insertion.
 - Upgraded the P2 import slice with stronger provenance metadata (`importSessionId`, source/origin fields, degradation hints, warning counts), richer Figma HTML fallback grouping, aggregated compatibility warnings, and a page-level import summary that surfaces warning counts instead of only a single toast.
 - Added focused coverage for import metadata persistence in `canvas-core` and for the web clipboard-import hook behavior around paste interception and clipboard API fallback.
+- Started the first P2.2 high-fidelity Figma clipboard pass: `@cucumber/canvas-core` now has a native-first fig-kiwi parser path that extracts base64 clipboard buffers, decodes the binary payload, maps common Figma frame/text/shape/vector/image nodes into `CanvasNode`, and only falls back to the previous HTML/SVG path when native decode is unavailable or invalid.
+- Added parser support files and dependency wiring for native Figma clipboard decode inside `packages/canvas-core`, plus focused tests that cover clipboard extraction and invalid-native-payload fallback behavior.
+- Continued P2.2 with a second batch focused on `SYMBOL / INSTANCE` fidelity: native import now collects symbol trees, merges inherited master props into instances, and replays direct override / derived data onto inlined instance children before mapping them into editable `CanvasNode` output.
+- Added focused `canvas-core` coverage for symbol prop merging and instance override replay so the new instance path is verified without requiring full clipboard binary fixtures.
 
 ## Next Targets
 
 1. Add deterministic browser/e2e smoke coverage for create container, bind Agent, insert generated content, refresh restore, and basic tool interactions.
 2. Add an Agent-output smoke scenario that verifies a visual prompt creates durable, containerized canvas results instead of leaving the canvas as an unstructured artifact dump.
 3. Design the selected-result Agent overlay and quick-action contract for image upscale, outpaint, local edit, and variant generation.
-4. Expand the import bridge beyond the current SVG/Figma-like clipboard slice to cover higher-fidelity Figma clipboard decoding and local SVG parity for transforms, auto-layout, and component semantics.
-5. Continue P1 canvas parity with richer path/icon editing, reference guides, advanced snapping, shape-specific handles, and more complete property controls.
-6. Build the next P2 layers on top of the new import provenance metadata: reusable components/ref, variables/design tokens, and design-as-code export.
-7. Replace the current DOM runtime internals with a dedicated editor adapter if needed, keeping `CanvasApi` stable.
-8. Decide whether `@excalidraw/excalidraw` can be removed after dependent panels and legacy helpers no longer import it.
+4. Continue P2.2 by deepening native Figma clipboard decode for nested instance overrides, richer auto-layout preservation, and stronger image/style parity on top of the new native-first parser path.
+5. Add deterministic browser/e2e coverage for system paste from SVG/Figma clipboard content, including the compatibility summary and fallback path.
+6. Continue P1 canvas parity with richer path/icon editing, reference guides, advanced snapping, shape-specific handles, and more complete property controls.
+7. Build the next P2 layers on top of the new import provenance metadata: reusable components/ref, variables/design tokens, and design-as-code export.
+8. Replace the current DOM runtime internals with a dedicated editor adapter if needed, keeping `CanvasApi` stable.
+9. Decide whether `@excalidraw/excalidraw` can be removed after dependent panels and legacy helpers no longer import it.
 
 ## Handoff Notes
 
@@ -56,6 +61,7 @@ Status:
 - Passed: `pnpm --filter @cucumber/canvas-core test`.
 - Passed: `pnpm --filter @cucumber/web typecheck`.
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/use-canvas-clipboard-import.test.tsx`.
+- Passed: `pnpm install --no-frozen-lockfile` after adding native Figma clipboard parser dependencies to `packages/canvas-core`.
 - Passed: targeted diagnostics for `apps/web/src/components/canvas/canvas-surface.tsx`, `apps/web/src/components/canvas-layers-panel.tsx`, `apps/web/src/components/canvas-logo-menu.tsx`, `apps/web/src/components/canvas-editor.tsx`, and new canvas import helper files.
 - Passed: targeted `pnpm exec biome check --write` for touched P1 canvas-core and web canvas files.
 - Passed: Playwright smoke opened `http://localhost:3000/canvas`; unauthenticated flow redirected to `/login` with no browser console/page errors.

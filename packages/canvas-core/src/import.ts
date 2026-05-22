@@ -1,4 +1,5 @@
 import { cloneCanvasDocument, createCanvasNodeId } from "./document.js";
+import { parseFigmaClipboardNative } from "./figma-native.js";
 import type {
   CanvasAsset,
   CanvasBounds,
@@ -125,6 +126,22 @@ export function parseClipboardImport(
   payload: ClipboardImportPayload,
 ): CanvasImportResult | null {
   if (payload.html && isLikelyFigmaClipboardHtml(payload.html)) {
+    try {
+      const nativeResult = parseFigmaClipboardNative(payload.html);
+      if (nativeResult) {
+        return {
+          source: "figma",
+          sourceLabel: "Figma",
+          importSessionId: createImportSessionId(),
+          rootNodeIds: nativeResult.rootNodeIds,
+          nodes: nativeResult.nodes,
+          assets: nativeResult.assets,
+          warnings: nativeResult.warnings,
+        };
+      }
+    } catch {
+      // Fall through to the existing HTML/SVG fallback path when native decode fails.
+    }
     const figmaResult = parseFigmaClipboardHtml(payload.html);
     if (figmaResult) return figmaResult;
   }

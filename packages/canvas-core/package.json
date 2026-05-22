@@ -13,7 +13,13 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
+  "dependencies": {
+    "fzstd": "^0.1.1",
+    "kiwi-schema": "^0.5.0",
+    "uzip": "^0.20201231.0"
+  },
   "devDependencies": {
+    "@types/uzip": "^0.20201231.2",
     "typescript": "^5.7.3",
     "vitest": "^3.0.7"
   }

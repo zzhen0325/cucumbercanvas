@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
+import type { FigmaTreeNode } from "../figma-native-types.js";
 
 import {
+  applyInstanceOverrides,
   type CanvasNode,
   type ContainerNode,
   applyCanvasOperation,
   buildAgentContext,
+  extractFigmaClipboardData,
+  mergeSymbolProps,
   parseClipboardImport,
   createCanvasNodeId,
   createEmptyCanvasDocument,
@@ -454,4 +458,121 @@ describe("cucumber canvas core", () => {
       });
     },
   );
+
+  it("extracts figma clipboard meta and buffer from comment blocks", () => {
+    const metaBase64 = Buffer.from(JSON.stringify({ source: "figma", nodeCount: 2 })).toString(
+      "base64",
+    );
+    const bufferBase64 = Buffer.from(Uint8Array.from([1, 2, 3, 4])).toString("base64");
+    const html = `<!--(figmeta)-->${metaBase64}<!--(figmeta)--><!--(figma)-->${bufferBase64}<!--(figma)-->`;
+
+    const extracted = extractFigmaClipboardData(html);
+
+    expect(extracted?.meta).toEqual({ source: "figma", nodeCount: 2 });
+    expect(Array.from(new Uint8Array(extracted?.buffer ?? new ArrayBuffer(0)))).toEqual([
+      1, 2, 3, 4,
+    ]);
+  });
+
+  parserCapableIt("falls back to styled html figma parsing when native clipboard decode is invalid", () => {
+    const html = `
+      <div data-metadata="invalid" data-buffer="invalid" style="position:absolute;left:12px;top:16px;width:120px;height:56px;background-color:#ffffff">
+        Native fallback
+      </div>
+    `;
+
+    const result = parseClipboardImport({ html });
+
+    expect(result?.source).toBe("figma");
+    expect(result?.rootNodeIds.length).toBeGreaterThan(0);
+    expect(result?.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "partial_fidelity" }),
+      ]),
+    );
+  });
+
+  it("merges missing symbol props into an instance node", () => {
+    const merged = mergeSymbolProps(
+      {
+        type: "INSTANCE",
+        name: "Button Instance",
+        guid: { sessionID: 1, localID: 10 },
+        fillPaints: undefined,
+        strokePaints: undefined,
+      },
+      {
+        type: "SYMBOL",
+        name: "Button Master",
+        guid: { sessionID: 1, localID: 20 },
+        stackMode: "HORIZONTAL",
+        stackSpacing: 12,
+        fillPaints: [{ type: "SOLID", color: { r: 1, g: 0, b: 0, a: 1 } }],
+        strokePaints: [{ type: "SOLID", color: { r: 0, g: 0, b: 0, a: 1 } }],
+      },
+    );
+
+    expect(merged.stackMode).toBe("HORIZONTAL");
+    expect(merged.stackSpacing).toBe(12);
+    expect(merged.fillPaints?.[0]?.type).toBe("SOLID");
+    expect(merged.strokePaints?.[0]?.type).toBe("SOLID");
+  });
+
+  it("applies instance overrides and derived data to symbol children", () => {
+    const symbolNode: FigmaTreeNode = {
+      figma: {
+        type: "SYMBOL",
+        name: "Card",
+        guid: { sessionID: 1, localID: 100 },
+        size: { x: 200, y: 80 },
+        transform: { m00: 1, m01: 0, m02: 10, m10: 0, m11: 1, m12: 20 },
+      },
+      children: [
+        {
+          figma: {
+            type: "TEXT",
+            name: "Title",
+            guid: { sessionID: 1, localID: 101 },
+            size: { x: 160, y: 24 },
+            transform: { m00: 1, m01: 0, m02: 20, m10: 0, m11: 1, m12: 30 },
+            fontSize: 16,
+            textData: { characters: "Master Title" },
+          },
+          children: [],
+        },
+      ],
+    };
+
+    const children = applyInstanceOverrides(
+      symbolNode,
+      [
+        {
+          guidPath: { guids: [{ sessionID: 1, localID: 101 }] },
+          fontSize: 22,
+          textData: { characters: "Instance Title" },
+        },
+      ],
+      [
+        {
+          guidPath: { guids: [{ sessionID: 1, localID: 101 }] },
+          size: { x: 180, y: 28 },
+          transform: { m00: 1, m01: 0, m02: 24, m10: 0, m11: 1, m12: 36 },
+        },
+      ],
+      { x: 240, y: 100 },
+    );
+
+    expect(children).toHaveLength(1);
+    expect(children[0]?.figma.fontSize).toBe(22);
+    expect(children[0]?.figma.textData?.characters).toBe("Instance Title");
+    expect(children[0]?.figma.size).toEqual({ x: 180, y: 28 });
+    expect(children[0]?.figma.transform).toEqual({
+      m00: 1,
+      m01: 0,
+      m02: 24,
+      m10: 0,
+      m11: 1,
+      m12: 36,
+    });
+  });
 });

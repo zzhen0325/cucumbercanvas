@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-22T16:28:00+08:00",
+  "updatedAt": "2026-05-22T21:15:00+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -100,12 +100,14 @@
       "status": "active",
       "priority": "P0",
       "owner": "product-engineering",
-      "summary": "Canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing now includes tree-style layer management and modular shortcuts/clipboard flows, and the enhanced P2 import slice preserves warning-rich SVG/Figma-like provenance metadata while inserting clipboard content as editable canvas nodes.",
+      "summary": "Canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing now includes tree-style layer management and modular shortcuts/clipboard flows, and the P2 import path now combines warning-rich SVG/Figma fallback metadata with a native-first Figma clipboard binary decode path that also replays first-batch SYMBOL / INSTANCE overrides into higher-fidelity canvas nodes.",
       "artifacts": [
         "packages/canvas-core",
         "packages/canvas-core/src/clipboard.ts",
         "packages/canvas-core/src/geometry.ts",
         "packages/canvas-core/src/history.ts",
+        "packages/canvas-core/src/figma-native.ts",
+        "packages/canvas-core/src/figma-native-types.ts",
         "packages/canvas-core/src/import.ts",
         "packages/canvas-core/src/__tests__/canvas-core.test.ts",
         "apps/web/src/components/canvas/canvas-surface.tsx",

@@ -66,6 +66,10 @@ The current import-fidelity pass deliberately strengthens provenance metadata an
 
 When import fidelity is partial, the product should preserve the editable geometry that can be represented in `CucumberCanvasDocument`, and surface explicit degradation hints for dropped layout, effects, or component semantics. Do not silently coerce unsupported Figma or SVG features into unrelated node types without recording a warning.
 
+The next import-fidelity wave uses a native-first Figma clipboard strategy: when the browser clipboard HTML contains Figma's embedded binary payload, `@cucumber/canvas-core` should decode the fig-kiwi buffer before falling back to styled HTML or embedded SVG parsing. Native decode is responsible for preserving higher-fidelity geometry, text, vector, image, and frame structure inside the existing `CanvasNode` model, while fallback parsing remains the safety net for unsupported or malformed clipboard payloads.
+
+Within that native-first path, `SYMBOL` and `INSTANCE` nodes should be treated as an import-time fidelity concern first, not as a new runtime document type. The current wave is allowed to inline master symbol content into imported instance trees and replay override/derived data so visual results stay editable in the existing schema, while still surfacing explicit warnings that reusable component semantics are not yet preserved as first-class runtime references.
+
 ## Backend Architecture
 
 The backend is split into route, service, agent, generation, and worker layers:
