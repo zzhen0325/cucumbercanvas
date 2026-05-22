@@ -2,6 +2,7 @@ import { generateImage } from "../../../generation/image-generation.js";
 import { resolveImageProviderName } from "../../../generation/providers/registry.js";
 import type { GeneratedImage } from "../../../generation/types.js";
 import {
+  insertImageElement,
   markImageGenerationGroupFailed,
   replaceImageGenerationPlaceholder,
 } from "../../canvas/canvas-element-writer.js";
@@ -181,6 +182,17 @@ registerExecutor(
         });
         elementId = replaceResult.elementId;
         lap("canvas_placeholder_replaced");
+      } else if (jobRow.canvas_id) {
+        const insertResult = await insertImageElement(admin, {
+          canvasId: jobRow.canvas_id as string,
+          objectPath,
+          width: generated.width,
+          height: generated.height,
+          mimeType: generated.mimeType ?? "image/png",
+          title: payload.title ?? payload.prompt.slice(0, 80),
+        });
+        elementId = insertResult.elementId;
+        lap("canvas_image_inserted");
       }
 
       lap("total");

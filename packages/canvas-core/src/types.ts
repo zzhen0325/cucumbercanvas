@@ -5,6 +5,8 @@ export type CanvasNodeType =
   | "image"
   | "text"
   | "rect"
+  | "line"
+  | "arrow"
   | "videoEmbed"
   | "group";
 
@@ -105,6 +107,16 @@ export interface RectNode extends CanvasNodeBase {
   radius?: number;
 }
 
+export type ConnectorAnchor = "tl" | "tr" | "bl" | "br";
+
+export interface ConnectorNode extends CanvasNodeBase {
+  type: "line" | "arrow";
+  stroke?: string;
+  strokeWidth?: number;
+  startAnchor?: ConnectorAnchor;
+  endAnchor?: ConnectorAnchor;
+}
+
 export interface VideoEmbedNode extends CanvasNodeBase {
   type: "videoEmbed";
   src: string;
@@ -123,6 +135,7 @@ export type CanvasNode =
   | ImageNode
   | TextNode
   | RectNode
+  | ConnectorNode
   | VideoEmbedNode
   | GroupNode;
 

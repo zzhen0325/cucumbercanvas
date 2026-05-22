@@ -1,6 +1,19 @@
 import { tool } from "langchain";
 import { z } from "zod";
 import {
+  type CanvasBounds,
+  type CanvasNode as CucumberCanvasNode,
+  type ContainerNode,
+  type CucumberCanvasDocument,
+  CanvasOperationError,
+  applyCanvasOperation,
+  assertAgentCanWrite,
+  cloneCanvasDocument,
+  createCanvasNodeId,
+  isContainerNode,
+  isCucumberCanvasDocument,
+} from "@cucumber/canvas-core";
+import {
   CanvasElement,
   HandlerResult,
   generateId,
@@ -51,6 +64,12 @@ const operationSchema = z.object({
 
   // Common: target element ID (move, resize, delete, update_style, reorder)
   element_id: z.string().optional().describe("ID of element to operate on"),
+  container_id: z
+    .string()
+    .optional()
+    .describe(
+      "Optional target container ID for new Cucumber canvas operations. Useful when multiple agent-bound containers exist.",
+    ),
 
   // Position / size
   x: z.number().optional().describe("X coordinate"),
@@ -702,6 +721,741 @@ function applyDistribute(
   };
 }
 
+type ToolRuntimeConfig = {
+  configurable?: {
+    access_token?: unknown;
+    agent_id?: unknown;
+    canvas_id?: unknown;
+    user_id?: unknown;
+  };
+};
+
+function getConfiguredAgentId(
+  config: ToolRuntimeConfig | undefined,
+): string | undefined {
+  const configurable = config?.configurable;
+  if (typeof configurable?.agent_id === "string") {
+    return configurable.agent_id;
+  }
+  if (typeof configurable?.user_id === "string") {
+    return configurable.user_id;
+  }
+  return undefined;
+}
+
+function inferWritableContainerId(
+  doc: CucumberCanvasDocument,
+  op: Operation,
+): string | null {
+  const referencedIds = [
+    op.container_id,
+    op.element_id,
+    ...(op.element_ids ?? []),
+    op.start_element_id,
+    op.end_element_id,
+  ].filter((value): value is string => typeof value === "string" && value.length > 0);
+
+  for (const id of referencedIds) {
+    const node = doc.nodes[id];
+    if (!node) continue;
+    if (node.type === "container") {
+      return node.id;
+    }
+    if (node.parentId) {
+      return node.parentId;
+    }
+  }
+
+  const boundWritableContainers = Object.values(doc.nodes).filter(
+    (node): node is ContainerNode =>
+      isContainerNode(node) &&
+      Boolean(node.agentBinding?.permissions?.includes("write")),
+  );
+  if (boundWritableContainers.length === 1) {
+    return boundWritableContainers[0]!.id;
+  }
+
+  const openContainers = Object.values(doc.nodes).filter(
+    (node): node is ContainerNode =>
+      isContainerNode(node) &&
+      node.permissions?.isolationLevel === "open",
+  );
+  if (openContainers.length === 1) {
+    return openContainers[0]!.id;
+  }
+
+  return null;
+}
+
+function ensureContainer(
+  doc: CucumberCanvasDocument,
+  containerId: string | null,
+): ContainerNode {
+  if (!containerId) {
+    throw new CanvasOperationError(
+      "permission_denied",
+      "No writable container could be resolved for this operation. Bind the agent to a container or pass container_id explicitly.",
+    );
+  }
+  const container = doc.nodes[containerId];
+  if (!isContainerNode(container)) {
+    throw new CanvasOperationError(
+      "container_not_found",
+      `Container ${containerId} does not exist.`,
+    );
+  }
+  return container;
+}
+
+function defaultNodeBounds(
+  doc: CucumberCanvasDocument,
+  type: CucumberCanvasNode["type"],
+  containerId: string | null,
+  op: Operation,
+): CanvasBounds {
+  const container = containerId ? ensureContainer(doc, containerId) : null;
+  const baseX = op.x ?? (container ? container.bounds.x + 24 : 120);
+  const baseY = op.y ?? (container ? container.bounds.y + 32 : 120);
+
+  switch (type) {
+    case "text": {
+      const fontSize = op.fontSize ?? 28;
+      const lines = (op.text ?? "").split("\n").filter(Boolean);
+      const measuredWidth =
+        lines.length > 0
+          ? Math.max(...lines.map((line) => measureTextWidth(line, fontSize)))
+          : 120;
+      return {
+        x: baseX,
+        y: baseY,
+        width: Math.max(op.width ?? 0, Math.ceil(measuredWidth + fontSize)),
+        height: Math.max(
+          op.height ?? 0,
+          Math.ceil(Math.max(lines.length, 1) * fontSize * 1.4 + fontSize),
+        ),
+      };
+    }
+    case "image":
+      return {
+        x: baseX,
+        y: baseY,
+        width: Math.max(op.width ?? 0, 320),
+        height: Math.max(op.height ?? 0, 220),
+      };
+    case "videoEmbed":
+      return {
+        x: baseX,
+        y: baseY,
+        width: Math.max(op.width ?? 0, 360),
+        height: Math.max(op.height ?? 0, 220),
+      };
+    default:
+      return {
+        x: baseX,
+        y: baseY,
+        width: Math.max(op.width ?? 0, 160),
+        height: Math.max(op.height ?? 0, 96),
+      };
+  }
+}
+
+function applyCucumberUpdate(
+  doc: CucumberCanvasDocument,
+  nodeId: string,
+  updates: Partial<CucumberCanvasNode>,
+  agentId: string | undefined,
+  containerId?: string | null,
+): CucumberCanvasDocument {
+  return applyCanvasOperation(doc, {
+    type: "updateNode",
+    nodeId,
+    updates,
+    ...(agentId ? { agentId } : {}),
+    ...(containerId !== undefined ? { containerId } : {}),
+  });
+}
+
+function applyCucumberDelete(
+  doc: CucumberCanvasDocument,
+  nodeId: string,
+  agentId: string | undefined,
+  containerId?: string | null,
+): CucumberCanvasDocument {
+  return applyCanvasOperation(doc, {
+    type: "deleteNode",
+    nodeId,
+    ...(agentId ? { agentId } : {}),
+    ...(containerId !== undefined ? { containerId } : {}),
+  });
+}
+
+function applyCucumberInsert(
+  doc: CucumberCanvasDocument,
+  node: CucumberCanvasNode,
+  agentId: string | undefined,
+  containerId?: string | null,
+): CucumberCanvasDocument {
+  return applyCanvasOperation(doc, {
+    type: "insertNode",
+    node,
+    ...(agentId ? { agentId } : {}),
+    ...(containerId !== undefined ? { containerId } : {}),
+  });
+}
+
+function reorderCucumberNode(
+  doc: CucumberCanvasDocument,
+  nodeId: string,
+  position: "front" | "back",
+  agentId: string | undefined,
+): CucumberCanvasDocument {
+  const node = doc.nodes[nodeId];
+  if (!node) {
+    throw new CanvasOperationError(
+      "node_not_found",
+      `Node ${nodeId} does not exist.`,
+    );
+  }
+
+  assertAgentCanWrite(doc, agentId, node.parentId, node);
+
+  const next = cloneCanvasDocument(doc);
+  const current = next.nodes[nodeId];
+  if (!current) return next;
+  const parentNode =
+    current.parentId !== null ? next.nodes[current.parentId] : undefined;
+
+  const order =
+    current.parentId === null
+      ? next.rootNodeIds
+      : parentNode && "childrenOrder" in parentNode
+        ? (
+            parentNode as ContainerNode | {
+              childrenOrder: string[];
+            }
+          ).childrenOrder
+        : null;
+
+  if (!order) return next;
+
+  const filtered = order.filter((id) => id !== nodeId);
+  if (position === "front") {
+    filtered.push(nodeId);
+  } else {
+    filtered.unshift(nodeId);
+  }
+
+  if (current.parentId === null) {
+    next.rootNodeIds = filtered;
+  } else {
+    (
+      next.nodes[current.parentId] as ContainerNode | { childrenOrder: string[] }
+    ).childrenOrder = filtered;
+  }
+  next.updatedAt = new Date().toISOString();
+  return next;
+}
+
+function manipulateCucumberCanvas(args: {
+  doc: CucumberCanvasDocument;
+  operations: Operation[];
+  agentId?: string;
+}): {
+  createdIds: Record<string, string>;
+  descriptions: string[];
+  errors: string[];
+  nextDoc: CucumberCanvasDocument;
+} {
+  let nextDoc = args.doc;
+  const descriptions: string[] = [];
+  const errors: string[] = [];
+  const createdIds: Record<string, string> = {};
+
+  for (let i = 0; i < args.operations.length; i++) {
+    const op = args.operations[i]!;
+    try {
+      const inferredContainerId = inferWritableContainerId(nextDoc, op);
+
+      switch (op.action) {
+        case "move": {
+          if (!op.element_id) {
+            throw new CanvasOperationError(
+              "invalid_operation",
+              "move requires element_id",
+            );
+          }
+          const node = nextDoc.nodes[op.element_id];
+          if (!node) {
+            errors.push(`[skip] node ${op.element_id} not found`);
+            continue;
+          }
+          nextDoc = applyCucumberUpdate(
+            nextDoc,
+            node.id,
+            {
+              bounds: {
+                ...node.bounds,
+                x: op.x ?? node.bounds.x,
+                y: op.y ?? node.bounds.y,
+              },
+            } as Partial<CucumberCanvasNode>,
+            args.agentId,
+            inferredContainerId ?? node.parentId,
+          );
+          descriptions.push(
+            `moved ${node.type} ${node.id} to (${op.x ?? node.bounds.x}, ${op.y ?? node.bounds.y})`,
+          );
+          break;
+        }
+        case "resize": {
+          if (!op.element_id) {
+            throw new CanvasOperationError(
+              "invalid_operation",
+              "resize requires element_id",
+            );
+          }
+          const node = nextDoc.nodes[op.element_id];
+          if (!node) {
+            errors.push(`[skip] node ${op.element_id} not found`);
+            continue;
+          }
+          nextDoc = applyCucumberUpdate(
+            nextDoc,
+            node.id,
+            {
+              bounds: {
+                ...node.bounds,
+                width: op.width ?? node.bounds.width,
+                height: op.height ?? node.bounds.height,
+              },
+            } as Partial<CucumberCanvasNode>,
+            args.agentId,
+            inferredContainerId ?? node.parentId,
+          );
+          descriptions.push(
+            `resized ${node.type} ${node.id} to ${op.width ?? node.bounds.width}x${op.height ?? node.bounds.height}`,
+          );
+          break;
+        }
+        case "delete": {
+          if (!op.element_id) {
+            throw new CanvasOperationError(
+              "invalid_operation",
+              "delete requires element_id",
+            );
+          }
+          const node = nextDoc.nodes[op.element_id];
+          if (!node) {
+            errors.push(`[skip] node ${op.element_id} not found`);
+            continue;
+          }
+          nextDoc = applyCucumberDelete(
+            nextDoc,
+            node.id,
+            args.agentId,
+            inferredContainerId ?? node.parentId,
+          );
+          descriptions.push(`deleted ${node.type} ${node.id}`);
+          break;
+        }
+        case "update_style": {
+          if (!op.element_id) {
+            throw new CanvasOperationError(
+              "invalid_operation",
+              "update_style requires element_id",
+            );
+          }
+          const node = nextDoc.nodes[op.element_id];
+          if (!node) {
+            errors.push(`[skip] node ${op.element_id} not found`);
+            continue;
+          }
+
+          let updates: Partial<CucumberCanvasNode> | null = null;
+          if (node.type === "rect") {
+            updates = {
+              ...(op.backgroundColor !== undefined
+                ? { fill: coerceColor(op.backgroundColor, "#d3f256") }
+                : {}),
+              ...(op.strokeColor !== undefined
+                ? { stroke: coerceColor(op.strokeColor, "#111827") }
+                : {}),
+              ...(op.strokeWidth !== undefined
+                ? { strokeWidth: op.strokeWidth }
+                : {}),
+            } as Partial<CucumberCanvasNode>;
+          } else if (node.type === "container") {
+            updates = {
+              style: {
+                ...node.style,
+                ...(op.backgroundColor !== undefined
+                  ? { fill: coerceColor(op.backgroundColor, "#ffffff") }
+                  : {}),
+                ...(op.strokeColor !== undefined
+                  ? { stroke: coerceColor(op.strokeColor, "#6c5ce7") }
+                  : {}),
+                ...(op.opacity !== undefined ? { opacity: op.opacity / 100 } : {}),
+              },
+            } as Partial<CucumberCanvasNode>;
+          } else if (node.type === "text") {
+            updates = {
+              ...(op.strokeColor !== undefined
+                ? { color: coerceColor(op.strokeColor, "#111827") }
+                : {}),
+              ...(op.fontSize !== undefined ? { fontSize: op.fontSize } : {}),
+            } as Partial<CucumberCanvasNode>;
+          }
+
+          if (!updates || Object.keys(updates).length === 0) {
+            errors.push(
+              `[skip] update_style is not supported for node ${node.id} (${node.type})`,
+            );
+            continue;
+          }
+
+          nextDoc = applyCucumberUpdate(
+            nextDoc,
+            node.id,
+            updates,
+            args.agentId,
+            inferredContainerId ?? node.parentId,
+          );
+          descriptions.push(`updated ${node.type} ${node.id} style`);
+          break;
+        }
+        case "add_text": {
+          if (!op.text) {
+            throw new CanvasOperationError(
+              "invalid_operation",
+              "add_text requires text",
+            );
+          }
+          const container = ensureContainer(nextDoc, inferredContainerId);
+          const nodeId = createCanvasNodeId("text");
+          const node: CucumberCanvasNode = {
+            id: nodeId,
+            type: "text",
+            parentId: container.id,
+            title:
+              op.text.length > 32 ? `${op.text.slice(0, 29)}...` : op.text,
+            bounds: defaultNodeBounds(nextDoc, "text", container.id, op),
+            text: op.text,
+            fontSize: op.fontSize ?? 28,
+            color: coerceColor(op.strokeColor, "#111827"),
+          };
+          nextDoc = applyCucumberInsert(
+            nextDoc,
+            node,
+            args.agentId,
+            container.id,
+          );
+          descriptions.push(
+            `added text '${node.title}' in container ${container.id} [id=${nodeId}]`,
+          );
+          createdIds[`op_${i}`] = nodeId;
+          break;
+        }
+        case "add_shape": {
+          if (op.shape !== "rectangle") {
+            errors.push(
+              `[skip] add_shape only supports rectangle on the new Cucumber canvas runtime`,
+            );
+            continue;
+          }
+          const container = ensureContainer(nextDoc, inferredContainerId);
+          const nodeId = createCanvasNodeId("rect");
+          const title =
+            op.label?.text ??
+            (op.text?.trim() || `Rectangle ${Object.keys(createdIds).length + 1}`);
+          const node: CucumberCanvasNode = {
+            id: nodeId,
+            type: "rect",
+            parentId: container.id,
+            title,
+            bounds: defaultNodeBounds(nextDoc, "rect", container.id, op),
+            fill: coerceColor(op.backgroundColor, "#d3f256"),
+            stroke: coerceColor(op.strokeColor, "#111827"),
+            strokeWidth: op.strokeWidth ?? 1,
+            radius: 12,
+          };
+          nextDoc = applyCucumberInsert(
+            nextDoc,
+            node,
+            args.agentId,
+            container.id,
+          );
+          descriptions.push(
+            `added rectangle '${title}' in container ${container.id} [id=${nodeId}]`,
+          );
+          createdIds[`op_${i}`] = nodeId;
+          break;
+        }
+        case "update_text": {
+          if (!op.element_id || !op.text) {
+            throw new CanvasOperationError(
+              "invalid_operation",
+              "update_text requires element_id and text",
+            );
+          }
+          const node = nextDoc.nodes[op.element_id];
+          if (!node) {
+            errors.push(`[skip] node ${op.element_id} not found`);
+            continue;
+          }
+          if (node.type === "text") {
+            const fontSize = op.fontSize ?? node.fontSize;
+            const lines = op.text.split("\n");
+            const measuredWidth = Math.max(
+              ...lines.map((line) => measureTextWidth(line, fontSize)),
+              1,
+            );
+            nextDoc = applyCucumberUpdate(
+              nextDoc,
+              node.id,
+              {
+                text: op.text,
+                title:
+                  op.text.length > 32
+                    ? `${op.text.slice(0, 29)}...`
+                    : op.text,
+                fontSize,
+                bounds: {
+                  ...node.bounds,
+                  width: Math.max(node.bounds.width, Math.ceil(measuredWidth + fontSize)),
+                  height: Math.max(
+                    node.bounds.height,
+                    Math.ceil(lines.length * fontSize * 1.4 + fontSize),
+                  ),
+                },
+              } as Partial<CucumberCanvasNode>,
+              args.agentId,
+              inferredContainerId ?? node.parentId,
+            );
+            descriptions.push(`updated text on ${node.id}`);
+            break;
+          }
+
+          nextDoc = applyCucumberUpdate(
+            nextDoc,
+            node.id,
+            {
+              title: op.text.length > 64 ? `${op.text.slice(0, 61)}...` : op.text,
+            } as Partial<CucumberCanvasNode>,
+            args.agentId,
+            inferredContainerId ?? node.parentId,
+          );
+          descriptions.push(`updated title on ${node.id}`);
+          break;
+        }
+        case "align": {
+          const targets = (op.element_ids ?? [])
+            .map((id) => nextDoc.nodes[id])
+            .filter((node): node is CucumberCanvasNode => Boolean(node));
+          if (targets.length < 2) {
+            errors.push(
+              `[skip] need >= 2 valid nodes to align, found ${targets.length}`,
+            );
+            continue;
+          }
+
+          const updates = new Map<string, CanvasBounds>();
+          switch (op.alignment) {
+            case "left": {
+              const minX = Math.min(...targets.map((node) => node.bounds.x));
+              for (const node of targets) {
+                updates.set(node.id, { ...node.bounds, x: minX });
+              }
+              break;
+            }
+            case "right": {
+              const maxRight = Math.max(
+                ...targets.map((node) => node.bounds.x + node.bounds.width),
+              );
+              for (const node of targets) {
+                updates.set(node.id, {
+                  ...node.bounds,
+                  x: maxRight - node.bounds.width,
+                });
+              }
+              break;
+            }
+            case "center": {
+              const averageCenter =
+                targets.reduce(
+                  (sum, node) => sum + node.bounds.x + node.bounds.width / 2,
+                  0,
+                ) / targets.length;
+              for (const node of targets) {
+                updates.set(node.id, {
+                  ...node.bounds,
+                  x: averageCenter - node.bounds.width / 2,
+                });
+              }
+              break;
+            }
+            case "top": {
+              const minY = Math.min(...targets.map((node) => node.bounds.y));
+              for (const node of targets) {
+                updates.set(node.id, { ...node.bounds, y: minY });
+              }
+              break;
+            }
+            case "bottom": {
+              const maxBottom = Math.max(
+                ...targets.map((node) => node.bounds.y + node.bounds.height),
+              );
+              for (const node of targets) {
+                updates.set(node.id, {
+                  ...node.bounds,
+                  y: maxBottom - node.bounds.height,
+                });
+              }
+              break;
+            }
+            case "middle": {
+              const averageMiddle =
+                targets.reduce(
+                  (sum, node) => sum + node.bounds.y + node.bounds.height / 2,
+                  0,
+                ) / targets.length;
+              for (const node of targets) {
+                updates.set(node.id, {
+                  ...node.bounds,
+                  y: averageMiddle - node.bounds.height / 2,
+                });
+              }
+              break;
+            }
+            default: {
+              errors.push(`[skip] unsupported alignment ${op.alignment}`);
+              continue;
+            }
+          }
+
+          for (const node of targets) {
+            const nextBounds = updates.get(node.id);
+            if (!nextBounds) continue;
+            nextDoc = applyCucumberUpdate(
+              nextDoc,
+              node.id,
+              { bounds: nextBounds } as Partial<CucumberCanvasNode>,
+              args.agentId,
+              node.parentId,
+            );
+          }
+          descriptions.push(`aligned ${targets.length} nodes ${op.alignment}`);
+          break;
+        }
+        case "distribute": {
+          const targets = (op.element_ids ?? [])
+            .map((id) => nextDoc.nodes[id])
+            .filter((node): node is CucumberCanvasNode => Boolean(node));
+          if (targets.length < 3) {
+            errors.push(
+              `[skip] need >= 3 valid nodes to distribute, found ${targets.length}`,
+            );
+            continue;
+          }
+
+          if (op.direction === "horizontal") {
+            const sorted = [...targets].sort(
+              (left, right) => left.bounds.x - right.bounds.x,
+            );
+            const first = sorted[0]!;
+            const last = sorted[sorted.length - 1]!;
+            const totalSpan =
+              last.bounds.x + last.bounds.width - first.bounds.x;
+            const totalWidth = sorted.reduce(
+              (sum, node) => sum + node.bounds.width,
+              0,
+            );
+            const gap = (totalSpan - totalWidth) / (sorted.length - 1);
+            let cursor = first.bounds.x;
+            for (const node of sorted) {
+              nextDoc = applyCucumberUpdate(
+                nextDoc,
+                node.id,
+                {
+                  bounds: { ...node.bounds, x: cursor },
+                } as Partial<CucumberCanvasNode>,
+                args.agentId,
+                node.parentId,
+              );
+              cursor += node.bounds.width + gap;
+            }
+          } else {
+            const sorted = [...targets].sort(
+              (top, bottom) => top.bounds.y - bottom.bounds.y,
+            );
+            const first = sorted[0]!;
+            const last = sorted[sorted.length - 1]!;
+            const totalSpan =
+              last.bounds.y + last.bounds.height - first.bounds.y;
+            const totalHeight = sorted.reduce(
+              (sum, node) => sum + node.bounds.height,
+              0,
+            );
+            const gap = (totalSpan - totalHeight) / (sorted.length - 1);
+            let cursor = first.bounds.y;
+            for (const node of sorted) {
+              nextDoc = applyCucumberUpdate(
+                nextDoc,
+                node.id,
+                {
+                  bounds: { ...node.bounds, y: cursor },
+                } as Partial<CucumberCanvasNode>,
+                args.agentId,
+                node.parentId,
+              );
+              cursor += node.bounds.height + gap;
+            }
+          }
+          descriptions.push(
+            `distributed ${targets.length} nodes ${op.direction}ly`,
+          );
+          break;
+        }
+        case "reorder": {
+          if (!op.element_id || !op.position) {
+            throw new CanvasOperationError(
+              "invalid_operation",
+              "reorder requires element_id and position",
+            );
+          }
+          nextDoc = reorderCucumberNode(
+            nextDoc,
+            op.element_id,
+            op.position,
+            args.agentId,
+          );
+          descriptions.push(`reordered ${op.element_id} to ${op.position}`);
+          break;
+        }
+        case "add_line": {
+          errors.push(
+            "[skip] add_line is not yet supported on the new Cucumber canvas runtime",
+          );
+          break;
+        }
+        default: {
+          errors.push(`[skip] unsupported action ${op.action}`);
+          break;
+        }
+      }
+    } catch (error) {
+      if (error instanceof CanvasOperationError) {
+        errors.push(`[error] ${op.action}: ${error.message}`);
+        continue;
+      }
+      const message =
+        error instanceof Error ? error.message : "Unknown canvas error";
+      errors.push(`[error] ${op.action}: ${message}`);
+    }
+  }
+
+  return { createdIds, descriptions, errors, nextDoc };
+}
+
 // ---------------------------------------------------------------------------
 // Dispatcher
 // ---------------------------------------------------------------------------
@@ -732,10 +1486,16 @@ export function createManipulateCanvasTool(deps: {
 }) {
   return tool(
     async (input, config) => {
-      const canvasId = (config as any)?.configurable?.canvas_id;
-      const accessToken = (config as any)?.configurable?.access_token;
+      const runtimeConfig = config as ToolRuntimeConfig | undefined;
+      const canvasId = runtimeConfig?.configurable?.canvas_id;
+      const accessToken = runtimeConfig?.configurable?.access_token;
 
-      if (!canvasId || !accessToken) {
+      if (
+        typeof canvasId !== "string" ||
+        typeof accessToken !== "string" ||
+        !canvasId ||
+        !accessToken
+      ) {
         return JSON.stringify({
           error: "no_canvas_context",
           message:
@@ -762,6 +1522,42 @@ export function createManipulateCanvasTool(deps: {
         elements?: CanvasElement[];
         appState?: Record<string, unknown>;
       };
+
+      if (isCucumberCanvasDocument(data.content)) {
+        const agentId = getConfiguredAgentId(runtimeConfig);
+        const { createdIds, descriptions, errors, nextDoc } =
+          manipulateCucumberCanvas({
+            doc: data.content,
+            operations: input.operations,
+            ...(agentId ? { agentId } : {}),
+          });
+
+        const { error: writeError } = await client
+          .from("canvases")
+          .update({ content: nextDoc })
+          .eq("id", canvasId);
+
+        if (writeError) {
+          return JSON.stringify({
+            error: "write_failed",
+            message: `Failed to save canvas: ${writeError.message}`,
+          });
+        }
+
+        const result: Record<string, unknown> = {
+          success: true,
+          applied: descriptions.length,
+          summary: descriptions.join("; "),
+        };
+        if (Object.keys(createdIds).length > 0) {
+          result.createdIds = createdIds;
+        }
+        if (errors.length > 0) {
+          result.errors = errors;
+        }
+        return JSON.stringify(result);
+      }
+
       const elements: CanvasElement[] = content.elements ?? [];
 
       // --- Apply operations ----------------------------------------------------

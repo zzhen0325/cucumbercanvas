@@ -1,10 +1,10 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-22 00:54 CST
+Last updated: 2026-05-22 02:10 CST
 
 ## Current Session
 
-Goal: replace the Excalidraw-facing canvas implementation with the first Cucumber Canvas runtime slice focused on containers and Agent/container linkage.
+Goal: extend the first Cucumber Canvas runtime slice with the first batch of native editing tools and close the new-canvas Agent write path.
 
 Status:
 
@@ -14,13 +14,16 @@ Status:
 - Containers can be created, selected, dragged, resized, renamed, assigned context rules, and bound to an Agent from the inspector.
 - Image/video artifacts now insert through the new canvas API and land in the selected container when one is selected.
 - `inspect_canvas` can summarize new Cucumber canvas documents, including container tree, effective context, Agent binding, filtering, and node lookup.
+- `manipulate_canvas` now writes `CanvasOperation` updates against new canvas documents with permission and bounds enforcement, instead of mutating only legacy Excalidraw-style `elements`.
+- Agent-generated image/video results now insert into the new canvas document model from both runtime and background job paths.
+- `CanvasSurface` now includes the first native tool batch: hand/pan mode, in-canvas image upload, image resize with visible bounds overlay, and lightweight line/arrow nodes rendered directly from the new document model.
 - Current rendering is a React DOM runtime behind the public `CanvasApi`; the lower-level editor adapter can be swapped behind this boundary without changing product callers.
 
 ## Next Targets
 
-1. Wire `manipulate_canvas` to emit `CanvasOperation` against bound containers with permission and bounds enforcement.
-2. Replace the current DOM runtime internals with a dedicated editor adapter if needed, keeping `CanvasApi` stable.
-3. Add deterministic browser/e2e smoke coverage for create container, bind Agent, insert generated content, refresh restore.
+1. Add deterministic browser/e2e smoke coverage for create container, bind Agent, insert generated content, refresh restore, and basic tool interactions.
+2. Expand native shape parity on the new runtime: line editing polish, arrow handles, ellipse/diamond, and selection box / multi-select affordances.
+3. Replace the current DOM runtime internals with a dedicated editor adapter if needed, keeping `CanvasApi` stable.
 4. Decide whether `@excalidraw/excalidraw` can be removed after dependent panels and legacy helpers no longer import it.
 
 ## Handoff Notes
@@ -34,8 +37,7 @@ Status:
 
 - Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
 - Passed: `pnpm --filter @cucumber/canvas-core test`.
-- Passed: `pnpm --filter @cucumber/shared typecheck`.
-- Passed: `pnpm --filter @cucumber/web typecheck`.
-- Passed: targeted `pnpm exec biome check` for changed canvas-core, web canvas, server inspect-canvas, shared contracts, and web API files.
-- Passed: local smoke `curl -I http://localhost:3001/canvas?id=smoke-test` returned `HTTP/1.1 200 OK`.
+- Passed: targeted diagnostics for `apps/web/src/components/canvas/canvas-surface.tsx` and `packages/canvas-core/src/types.ts`.
+- Passed: targeted server tests for `manipulate-canvas` and `canvas-element-writer`, plus new canvas-core bounds regression coverage.
 - Failed: `pnpm --filter @cucumber/server typecheck` is still blocked by pre-existing `apps/server/src/http/sse.test.ts` missing the required `webOrigin` option for `registerSseRoutes`.
+- Failed: `pnpm --filter @cucumber/web typecheck` is still blocked by pre-existing React/JSX type incompatibilities across shared UI components such as `canvas-bottom-bar.tsx`, `canvas-editor.tsx`, `chat-sidebar.tsx`, and `toast.tsx`.

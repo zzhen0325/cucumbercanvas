@@ -1,5 +1,11 @@
 // apps/server/src/features/canvas/canvas-element-writer.ts
 
+import {
+  type CucumberCanvasDocument,
+  applyCanvasOperation,
+  createCanvasNodeId,
+  isCucumberCanvasDocument,
+} from "@cucumber/canvas-core";
 import type { CanvasContent, Json } from "@cucumber/shared";
 
 // ---------------------------------------------------------------------------
@@ -613,6 +619,71 @@ function buildVideoElement(
   };
 }
 
+function inferCucumberInsertContainerId(
+  doc: CucumberCanvasDocument,
+): string | null {
+  const boundWritableContainers = Object.values(doc.nodes).filter(
+    (node) =>
+      node.type === "container" &&
+      Boolean(node.agentBinding?.permissions?.includes("write")),
+  );
+  if (boundWritableContainers.length === 1) {
+    return boundWritableContainers[0]!.id;
+  }
+
+  const openContainers = Object.values(doc.nodes).filter(
+    (node) =>
+      node.type === "container" && node.permissions?.isolationLevel === "open",
+  );
+  if (openContainers.length === 1) {
+    return openContainers[0]!.id;
+  }
+
+  return null;
+}
+
+function resolveCucumberPlacement(
+  doc: CucumberCanvasDocument,
+  width: number,
+  height: number,
+  explicitPlacement?: Placement,
+): { containerId: string | null; placement: Placement } {
+  if (explicitPlacement) {
+    return {
+      containerId: inferCucumberInsertContainerId(doc),
+      placement: explicitPlacement,
+    };
+  }
+
+  const containerId = inferCucumberInsertContainerId(doc);
+  if (containerId) {
+    const container = doc.nodes[containerId];
+    if (container?.type === "container") {
+      return {
+        containerId,
+        placement: {
+          x: container.bounds.x + 24,
+          y: container.bounds.y + 32,
+          width,
+          height,
+        },
+      };
+    }
+  }
+
+  const nodeBoxes = Object.values(doc.nodes).map((node) => ({
+    x: node.bounds.x,
+    y: node.bounds.y,
+    width: node.bounds.width,
+    height: node.bounds.height,
+    isDeleted: false,
+  }));
+  return {
+    containerId: null,
+    placement: calculateAutoPlacement(nodeBoxes, width, height, IMAGE_MAX_SIZE),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Public API — Read-Modify-Write canvas content
 // ---------------------------------------------------------------------------
@@ -1057,6 +1128,56 @@ export async function insertImageElement(
     elements: [],
     appState: {},
   };
+
+  if (isCucumberCanvasDocument(content)) {
+    const sizedPlacement = explicitPlacement
+      ? explicitPlacement
+      : scaleToFit(opts.width, opts.height, IMAGE_MAX_SIZE);
+    const { containerId, placement } = resolveCucumberPlacement(
+      content,
+      sizedPlacement.width,
+      sizedPlacement.height,
+      explicitPlacement,
+    );
+    const assetId = createCanvasNodeId("asset");
+    const nodeId = createCanvasNodeId("image");
+    const nextWithAsset: CucumberCanvasDocument = {
+      ...content,
+      assets: {
+        ...content.assets,
+        [assetId]: {
+          id: assetId,
+          url: dataURL,
+          mimeType: opts.mimeType,
+          name: opts.title,
+          width: opts.width,
+          height: opts.height,
+          source: "generated",
+        },
+      },
+    };
+    const nextDoc = applyCanvasOperation(nextWithAsset, {
+      type: "insertNode",
+      node: {
+        id: nodeId,
+        type: "image",
+        parentId: containerId,
+        bounds: placement,
+        title: opts.title ?? "Generated image",
+        assetId,
+        src: dataURL,
+        meta: { source: "generated" },
+      },
+      ...(containerId ? { containerId } : {}),
+    });
+
+    await writeCanvasContent(client, opts.canvasId, nextDoc as unknown as CanvasContent);
+    console.log(
+      `[canvas-element-writer] cucumber image inserted canvasId=${opts.canvasId} elementId=${nodeId} containerId=${containerId ?? "root"}`,
+    );
+    return { elementId: nodeId };
+  }
+
   const elements: CanvasElement[] = (content.elements as CanvasElement[]) ?? [];
   const files =
     (
@@ -1128,6 +1249,41 @@ export async function insertVideoElement(
     elements: [],
     appState: {},
   };
+
+  if (isCucumberCanvasDocument(content)) {
+    const sizedPlacement = explicitPlacement
+      ? explicitPlacement
+      : scaleToFit(opts.width, opts.height, VIDEO_MAX_SIZE);
+    const { containerId, placement } = resolveCucumberPlacement(
+      content,
+      sizedPlacement.width,
+      sizedPlacement.height,
+      explicitPlacement,
+    );
+    const nodeId = createCanvasNodeId("video");
+    const nextDoc = applyCanvasOperation(content, {
+      type: "insertNode",
+      node: {
+        id: nodeId,
+        type: "videoEmbed",
+        parentId: containerId,
+        bounds: placement,
+        title: opts.title ?? "Generated video",
+        src: opts.signedUrl,
+        mimeType: opts.mimeType,
+        durationSeconds: opts.durationSeconds,
+        meta: { source: "generated" },
+      },
+      ...(containerId ? { containerId } : {}),
+    });
+
+    await writeCanvasContent(client, opts.canvasId, nextDoc as unknown as CanvasContent);
+    console.log(
+      `[canvas-element-writer] cucumber video inserted canvasId=${opts.canvasId} elementId=${nodeId} containerId=${containerId ?? "root"}`,
+    );
+    return { elementId: nodeId };
+  }
+
   const elements: CanvasElement[] = (content.elements as CanvasElement[]) ?? [];
 
   // 2. Placement

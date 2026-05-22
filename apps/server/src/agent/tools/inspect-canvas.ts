@@ -192,8 +192,55 @@ function computeBoundingBox(elements: CanvasElement[]) {
  * Returns null if canvas is empty (no visible elements).
  */
 export function buildCanvasSummaryForContext(
-  elements: Array<Record<string, unknown>>,
+  content: unknown,
 ): string | null {
+  if (isCucumberCanvasDocument(content)) {
+    const nodes = Object.values(content.nodes);
+    if (nodes.length === 0) return null;
+
+    const bbox = computeBoundingBox(
+      nodes.map((node) => ({
+        x: node.bounds.x,
+        y: node.bounds.y,
+        width: node.bounds.width,
+        height: node.bounds.height,
+      })),
+    );
+    const summaries = nodes.map((node) => summarizeCanvasNode(node));
+    const lines: string[] = [
+      `Canvas: ${nodes.length} nodes, bounds (${Math.round(bbox.minX)},${Math.round(bbox.minY)})→(${Math.round(bbox.maxX)},${Math.round(bbox.maxY)})`,
+    ];
+
+    const toShow = summaries.slice(0, 30);
+    for (const s of toShow) {
+      const parts = [`${s.type}#${s.id}`];
+      parts.push(`@(${Math.round(s.x as number)},${Math.round(s.y as number)})`);
+      parts.push(
+        `${Math.round(s.width as number)}x${Math.round(s.height as number)}`,
+      );
+      if (s.title) parts.push(`title="${s.title}"`);
+      if (s.text) parts.push(`"${s.text}"`);
+      if (s.agent && typeof s.agent === "object") {
+        const agent = s.agent as {
+          id?: string;
+          name?: string;
+          status?: string;
+        };
+        parts.push(
+          `agent=${agent.name ?? agent.id ?? "unassigned"}:${agent.status ?? "idle"}`,
+        );
+      }
+      lines.push(`  ${parts.join(" ")}`);
+    }
+    if (summaries.length > 30) {
+      lines.push(`  ... and ${summaries.length - 30} more nodes`);
+    }
+    return lines.join("\n");
+  }
+
+  const elements =
+    (content as { elements?: Array<Record<string, unknown>> } | null | undefined)
+      ?.elements ?? [];
   const visible = elements.filter((el) => !el.isDeleted);
   if (visible.length === 0) return null;
 

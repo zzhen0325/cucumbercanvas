@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
+import { isCucumberCanvasDocument } from "@cucumber/canvas-core";
 
 import type {
   ImageAttachment,
@@ -486,63 +487,77 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             const writerClient = createClient(
               accessToken,
             ) as UserSupabaseClient;
-            const imagePlacement = resolveImagePlacement({
-              ...(input.placementX != null
-                ? { placementX: input.placementX }
-                : {}),
-              ...(input.placementY != null
-                ? { placementY: input.placementY }
-                : {}),
-              ...(input.placementWidth != null
-                ? { placementWidth: input.placementWidth }
-                : {}),
-              ...(input.placementHeight != null
-                ? { placementHeight: input.placementHeight }
-                : {}),
-              aspectRatio: input.aspectRatio,
-            });
-            const group = await createImageGenerationGroup(writerClient, {
-              canvasId,
-              userPrompt: run.prompt,
-              optimizedPrompt: input.prompt,
-              title: input.title,
-              model: input.model,
-              jobId: job.id,
-              runId,
-              sessionId,
-              aspectRatio: input.aspectRatio,
-              ...(imagePlacement ? { imagePlacement } : {}),
-            });
-            groupId = group.groupId;
-            placeholderId = group.placeholderId;
+            const { data: canvasRow } = await writerClient
+              .from("canvases")
+              .select("content")
+              .eq("id", canvasId)
+              .maybeSingle();
 
-            const payloadWithGroup = {
-              ...(job.payload ?? {}),
-              image_generation_group_id: groupId,
-              image_placeholder_id: placeholderId,
-            };
-            const { error: payloadUpdateError } = await writerClient
-              .from("background_jobs")
-              .update({ payload: payloadWithGroup })
-              .eq("id", job.id);
-            if (payloadUpdateError) {
-              throw new Error(
-                `Failed to attach image generation canvas group to job: ${payloadUpdateError.message}`,
-              );
+            if (isCucumberCanvasDocument(canvasRow?.content)) {
+              jobLap("canvas_generation_group_skipped", {
+                canvasId,
+                jobId: job.id,
+                reason: "cucumber_canvas_document",
+              });
+            } else {
+              const imagePlacement = resolveImagePlacement({
+                ...(input.placementX != null
+                  ? { placementX: input.placementX }
+                  : {}),
+                ...(input.placementY != null
+                  ? { placementY: input.placementY }
+                  : {}),
+                ...(input.placementWidth != null
+                  ? { placementWidth: input.placementWidth }
+                  : {}),
+                ...(input.placementHeight != null
+                  ? { placementHeight: input.placementHeight }
+                  : {}),
+                aspectRatio: input.aspectRatio,
+              });
+              const group = await createImageGenerationGroup(writerClient, {
+                canvasId,
+                userPrompt: run.prompt,
+                optimizedPrompt: input.prompt,
+                title: input.title,
+                model: input.model,
+                jobId: job.id,
+                runId,
+                sessionId,
+                aspectRatio: input.aspectRatio,
+                ...(imagePlacement ? { imagePlacement } : {}),
+              });
+              groupId = group.groupId;
+              placeholderId = group.placeholderId;
+
+              const payloadWithGroup = {
+                ...(job.payload ?? {}),
+                image_generation_group_id: groupId,
+                image_placeholder_id: placeholderId,
+              };
+              const { error: payloadUpdateError } = await writerClient
+                .from("background_jobs")
+                .update({ payload: payloadWithGroup })
+                .eq("id", job.id);
+              if (payloadUpdateError) {
+                throw new Error(
+                  `Failed to attach image generation canvas group to job: ${payloadUpdateError.message}`,
+                );
+              }
+
+              options.eventBuffer?.publish(canvasId, {
+                type: "canvas.sync" as const,
+                runId,
+                timestamp: new Date().toISOString(),
+              });
+              jobLap("canvas_generation_group_created", {
+                jobId: job.id,
+                canvasId,
+                groupId,
+                placeholderId,
+                model: input.model,
+              });
             }
-
-            options.eventBuffer?.publish(canvasId, {
-              type: "canvas.sync" as const,
-              runId,
-              timestamp: new Date().toISOString(),
-            });
-            jobLap("canvas_generation_group_created", {
-              jobId: job.id,
-              canvasId,
-              groupId,
-              placeholderId,
-              model: input.model,
-            });
           }
 
           // Poll until terminal state
@@ -1106,14 +1121,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 .select("content")
                 .eq("id", run.canvasId)
                 .single();
-              const canvasContent = canvasData?.content as
-                | { elements?: Array<Record<string, unknown>> }
-                | null
-                | undefined;
-              if (canvasContent?.elements) {
-                canvasSummary = buildCanvasSummaryForContext(
-                  canvasContent.elements,
-                );
+              if (canvasData?.content) {
+                canvasSummary = buildCanvasSummaryForContext(canvasData.content);
               }
             } catch {
               // Non-critical — agent can still call inspect_canvas manually

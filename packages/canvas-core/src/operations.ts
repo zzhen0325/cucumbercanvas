@@ -30,18 +30,19 @@ export function applyCanvasOperation(
           `Node ${operation.nodeId} does not exist.`,
         );
       }
-      assertAgentCanWrite(
-        next,
-        operation.agentId,
-        operation.containerId ?? existing.parentId,
-        existing,
-      );
-      next.nodes[operation.nodeId] = {
+      const candidate = {
         ...existing,
         ...operation.updates,
         id: existing.id,
         type: existing.type,
       } as CanvasNode;
+      assertAgentCanWrite(
+        next,
+        operation.agentId,
+        operation.containerId ?? candidate.parentId,
+        candidate,
+      );
+      next.nodes[operation.nodeId] = candidate;
       break;
     }
     case "deleteNode": {

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-22T00:54:00+08:00",
+  "updatedAt": "2026-05-22T02:10:00+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -100,12 +100,14 @@
       "status": "active",
       "priority": "P0",
       "owner": "product-engineering",
-      "summary": "New Cucumber canvas document model, container editing, context resolution, Agent binding surface, artifact insertion, and backend inspection support without Excalidraw data migration.",
+      "summary": "New Cucumber canvas document model, container editing, Agent-bound CanvasOperation writes, artifact insertion, backend inspection support, and the first native tool batch including hand mode, in-canvas image upload, image resize bounds, and lightweight line/arrow nodes.",
       "artifacts": [
         "packages/canvas-core",
         "apps/web/src/components/canvas/canvas-surface.tsx",
         "apps/web/src/components/canvas-editor.tsx",
         "apps/web/src/app/canvas/page.tsx",
+        "apps/server/src/agent/tools/manipulate-canvas.ts",
+        "apps/server/src/features/canvas/canvas-element-writer.ts",
         "apps/server/src/agent/tools/inspect-canvas.ts",
         "packages/shared/src/contracts.ts"
       ]

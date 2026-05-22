@@ -83,6 +83,38 @@ describe("cucumber canvas core", () => {
     ).toThrow("cannot write outside container");
   });
 
+  it("rejects moving an existing node outside the bound container", () => {
+    let doc = createEmptyCanvasDocument();
+    const container = makeContainer("container");
+    doc = applyCanvasOperation(doc, { type: "insertNode", node: container });
+
+    const node: CanvasNode = {
+      id: createCanvasNodeId("rect"),
+      type: "rect",
+      parentId: "container",
+      bounds: { x: 40, y: 40, width: 120, height: 80 },
+      fill: "#fff",
+    };
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node,
+      containerId: "container",
+      agentId: "agent-1",
+    });
+
+    expect(() =>
+      applyCanvasOperation(doc, {
+        type: "updateNode",
+        nodeId: node.id,
+        containerId: "container",
+        agentId: "agent-1",
+        updates: {
+          bounds: { x: 520, y: 60, width: 120, height: 80 },
+        } as Partial<CanvasNode>,
+      }),
+    ).toThrow("cannot write outside container");
+  });
+
   it("builds agent context for a bound container", () => {
     let doc = createEmptyCanvasDocument();
     const container = makeContainer("container");

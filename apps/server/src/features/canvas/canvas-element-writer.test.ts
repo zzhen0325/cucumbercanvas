@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
+import {
+  type ContainerNode,
+  applyCanvasOperation,
+  createEmptyCanvasDocument,
+} from "@cucumber/canvas-core";
 
 import {
   buildImageGenerationGroupElements,
+  insertImageElement,
   markImageGenerationGroupFailed,
   replaceImageGenerationPlaceholder,
 } from "./canvas-element-writer.js";
@@ -10,7 +16,7 @@ type CanvasContentForTest = {
   elements: Record<string, unknown>[];
   appState: Record<string, unknown>;
   files?: Record<string, Record<string, unknown>>;
-};
+} | ReturnType<typeof createEmptyCanvasDocument>;
 
 function createClient(content: CanvasContentForTest) {
   const state = { content };
@@ -116,7 +122,11 @@ describe("canvas-element-writer image generation groups", () => {
       sessionId: "session_2",
     });
 
-    const elements = client.state.content.elements;
+    const legacyContent = client.state.content as {
+      elements: Record<string, unknown>[];
+      files?: Record<string, Record<string, unknown>>;
+    };
+    const elements = legacyContent.elements;
     const image = elements.find((el) => el.id === result.elementId);
     const placeholder = elements.find((el) => el.id === group.placeholderId);
     const arrows = elements.filter((el) => el.type === "arrow");
@@ -124,7 +134,7 @@ describe("canvas-element-writer image generation groups", () => {
     expect(image?.type).toBe("image");
     expect(image?.groupIds).toContain(group.groupId);
     expect(placeholder?.isDeleted).toBe(true);
-    expect(Object.keys(client.state.content.files ?? {})).toHaveLength(1);
+    expect(Object.keys(legacyContent.files ?? {})).toHaveLength(1);
     expect(
       arrows.some(
         (el) =>
@@ -157,10 +167,13 @@ describe("canvas-element-writer image generation groups", () => {
       errorMessage: "Provider rejected the prompt because it was empty.",
     });
 
-    const placeholder = client.state.content.elements.find(
+    const legacyContent = client.state.content as {
+      elements: Record<string, unknown>[];
+    };
+    const placeholder = legacyContent.elements.find(
       (el) => el.id === group.placeholderId,
     );
-    const message = client.state.content.elements.find(
+    const message = legacyContent.elements.find(
       (el) => el.containerId === group.placeholderId,
     );
 
@@ -169,5 +182,49 @@ describe("canvas-element-writer image generation groups", () => {
     );
     expect(String(message?.text)).toContain("Provider rejected the prompt");
     expect(String(message?.text)).not.toMatch(/null|undefined/);
+  });
+
+  it("inserts generated images into the new Cucumber canvas document", async () => {
+    const container: ContainerNode = {
+      id: "container_1",
+      type: "container",
+      parentId: null,
+      title: "Agent Host",
+      bounds: { x: 0, y: 0, width: 420, height: 280 },
+      role: ["visual", "task", "context"],
+      childrenOrder: [],
+      contextSlots: {},
+      inheritPolicy: "merge",
+      agentBinding: {
+        agentId: "designer-agent",
+        permissions: ["read", "write"],
+      },
+      permissions: { canRead: [], canWrite: [], isolationLevel: "open" },
+    };
+    let doc = createEmptyCanvasDocument();
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: container,
+    });
+    const client = createClient(doc);
+
+    const result = await insertImageElement(client, {
+      canvasId: "canvas_1",
+      objectPath: "workspace/generated/job_4.png",
+      width: 1024,
+      height: 768,
+      mimeType: "image/png",
+      title: "Generated hero image",
+    });
+
+    const nextDoc = client.state.content as ReturnType<
+      typeof createEmptyCanvasDocument
+    >;
+    expect(nextDoc.nodes[result.elementId]).toMatchObject({
+      type: "image",
+      parentId: "container_1",
+      title: "Generated hero image",
+    });
+    expect(Object.keys(nextDoc.assets)).toHaveLength(1);
   });
 });

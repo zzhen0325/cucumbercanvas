@@ -5,25 +5,30 @@ import {
   type CanvasAsset,
   type CanvasBounds,
   type CanvasNode,
+  type ConnectorAnchor,
+  type ConnectorNode,
   type ContainerNode,
   type ContextSlots,
   type CucumberCanvasDocument,
   applyCanvasOperation,
   createCanvasNodeId,
-  createEmptyCanvasDocument,
   normalizeCanvasDocument,
   resolveContext,
 } from "@cucumber/canvas-core";
 import {
   Box,
+  Hand,
   Frame,
+  ImagePlus,
   Lock,
   MousePointer2,
+  Minus,
   Plus,
   Sparkles,
   Trash2,
   Type,
   Unlock,
+  ArrowRight,
 } from "lucide-react";
 import {
   forwardRef,
@@ -143,9 +148,25 @@ type DragState =
       startX: number;
       startY: number;
       origin: CanvasBounds;
+      preserveAspectRatio?: boolean;
+    }
+  | {
+      kind: "drawConnector";
+      nodeId: string;
+      startPoint: { x: number; y: number };
+      connectorType: "line" | "arrow";
     };
 
 const GRID_SIZE = 24;
+const IMAGE_IMPORT_MAX_SIZE = 600;
+type CanvasTool =
+  | "select"
+  | "hand"
+  | "container"
+  | "rect"
+  | "text"
+  | "line"
+  | "arrow";
 
 export const CanvasSurface = memo(
   forwardRef<CanvasApi, CanvasSurfaceProps>(function CanvasSurface(
@@ -158,19 +179,14 @@ export const CanvasSurface = memo(
     const docRef = useRef(doc);
     const listenersRef = useRef(new Set<CanvasChangeListener>());
     const stageRef = useRef<HTMLDivElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const dragRef = useRef<DragState | null>(null);
-    const [activeTool, setActiveTool] = useState<
-      "select" | "container" | "rect" | "text"
-    >("select");
+    const [activeTool, setActiveTool] = useState<CanvasTool>("select");
 
     docRef.current = doc;
 
     const selectedId = doc.selection?.[0] ?? null;
     const selectedNode = selectedId ? doc.nodes[selectedId] : undefined;
-
-    const sceneElements = useMemo(() => toSceneElements(doc), [doc]);
-    const appState = useMemo(() => toAppState(doc), [doc]);
-    const files = useMemo(() => toFiles(doc), [doc]);
 
     const commitDocument = useCallback(
       (next: CucumberCanvasDocument) => {
@@ -239,6 +255,137 @@ export const CanvasSurface = memo(
         selectNode(id);
         console.info("[canvas-runtime] container.created", { containerId: id });
         return container;
+      },
+      [applyOperation, selectNode],
+    );
+
+    const insertImageNode = useCallback(
+      (
+        artifact: {
+          assetId?: string;
+          jobId?: string;
+          url: string;
+          mimeType: string;
+          width?: number;
+          height?: number;
+          title?: string;
+        },
+        source: CanvasAsset["source"],
+      ) => {
+        const id = createCanvasNodeId("image");
+        const assetId =
+          artifact.assetId ?? artifact.jobId ?? createCanvasNodeId("asset");
+        const targetContainerId = firstSelectedContainerId(docRef.current);
+        const bounds = defaultBounds(
+          docRef.current,
+          "image",
+          targetContainerId,
+        );
+        const asset: CanvasAsset = {
+          id: assetId,
+          url: artifact.url,
+          mimeType: artifact.mimeType,
+          name: artifact.title,
+          width: artifact.width,
+          height: artifact.height,
+          source,
+        };
+        const node: CanvasNode = {
+          id,
+          type: "image",
+          parentId: targetContainerId,
+          bounds: {
+            ...bounds,
+            width: artifact.width ?? bounds.width,
+            height: artifact.height ?? bounds.height,
+          },
+          title: artifact.title ?? "Generated image",
+          assetId,
+          src: artifact.url,
+          meta: { source },
+        };
+        const next = applyCanvasOperation(
+          {
+            ...docRef.current,
+            assets: { ...docRef.current.assets, [asset.id]: asset },
+          },
+          { type: "insertNode", node, containerId: targetContainerId },
+        );
+        commitDocument(next);
+        selectNode(id);
+      },
+      [commitDocument, selectNode],
+    );
+
+    const triggerImageImport = useCallback(() => {
+      fileInputRef.current?.click();
+    }, []);
+
+    const handleImageImport = useCallback(
+      async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+        if (!file) return;
+        try {
+          const imported = await readImageFile(file);
+          const scaled = scaleToFitDimensions(
+            imported.width,
+            imported.height,
+            IMAGE_IMPORT_MAX_SIZE,
+          );
+          insertImageNode(
+            {
+              assetId: createCanvasNodeId("asset"),
+              url: imported.dataUrl,
+              mimeType: file.type || "image/png",
+              width: scaled.width,
+              height: scaled.height,
+              title: file.name,
+            },
+            "upload",
+          );
+          console.info("[canvas-runtime] image.imported", {
+            name: file.name,
+            mimeType: file.type,
+          });
+        } catch (error) {
+          console.warn("[canvas-runtime] image.import.failed", {
+            name: file.name,
+            error,
+          });
+        }
+      },
+      [insertImageNode],
+    );
+
+    const beginConnectorDraw = useCallback(
+      (
+        connectorType: "line" | "arrow",
+        point: { x: number; y: number },
+        event: React.PointerEvent<HTMLDivElement>,
+      ) => {
+        const id = createCanvasNodeId(connectorType);
+        const parentId = firstSelectedContainerId(docRef.current);
+        const node: ConnectorNode = {
+          id,
+          type: connectorType,
+          parentId,
+          title: connectorType === "arrow" ? "Arrow" : "Line",
+          bounds: { x: point.x, y: point.y, width: 2, height: 2 },
+          stroke: "#111827",
+          strokeWidth: 3,
+          startAnchor: "tl",
+          endAnchor: "br",
+        };
+        applyOperation({ type: "insertNode", node, containerId: parentId });
+        selectNode(id);
+        dragRef.current = {
+          kind: "drawConnector",
+          nodeId: id,
+          startPoint: point,
+          connectorType,
+        };
+        event.currentTarget.setPointerCapture(event.pointerId);
       },
       [applyOperation, selectNode],
     );
@@ -316,49 +463,7 @@ export const CanvasSurface = memo(
             viewport: { ...docRef.current.viewport, x: 0, y: 0, zoom: 1 },
           });
         },
-        insertImageArtifact: (artifact) => {
-          const id = createCanvasNodeId("image");
-          const assetId =
-            artifact.assetId ?? artifact.jobId ?? createCanvasNodeId("asset");
-          const targetContainerId = firstSelectedContainerId(docRef.current);
-          const bounds = defaultBounds(
-            docRef.current,
-            "image",
-            targetContainerId,
-          );
-          const asset: CanvasAsset = {
-            id: assetId,
-            url: artifact.url,
-            mimeType: artifact.mimeType,
-            name: artifact.title,
-            width: artifact.width,
-            height: artifact.height,
-            source: "generated",
-          };
-          const node: CanvasNode = {
-            id,
-            type: "image",
-            parentId: targetContainerId,
-            bounds: {
-              ...bounds,
-              width: artifact.width ?? bounds.width,
-              height: artifact.height ?? bounds.height,
-            },
-            title: artifact.title ?? "Generated image",
-            assetId,
-            src: artifact.url,
-            meta: { source: "generated" },
-          };
-          const next = applyCanvasOperation(
-            {
-              ...docRef.current,
-              assets: { ...docRef.current.assets, [asset.id]: asset },
-            },
-            { type: "insertNode", node, containerId: targetContainerId },
-          );
-          commitDocument(next);
-          selectNode(id);
-        },
+        insertImageArtifact: (artifact) => insertImageNode(artifact, "generated"),
         insertVideoArtifact: (artifact) => {
           const id = createCanvasNodeId("video");
           const assetId =
@@ -387,7 +492,7 @@ export const CanvasSurface = memo(
           selectNode(id);
         },
       }),
-      [applyOperation, commitDocument, createContainer, selectNode],
+      [applyOperation, commitDocument, createContainer, insertImageNode, selectNode],
     );
 
     useImperativeHandle(ref, () => api, [api]);
@@ -454,16 +559,16 @@ export const CanvasSurface = memo(
         if (event.button !== 0) return;
         const target = event.target as HTMLElement;
         if (target.closest("[data-canvas-node-id]")) return;
+        const point = screenToCanvasPoint(event, docRef.current, stageRef.current);
         if (activeTool === "container") {
-          const point = screenToCanvasPoint(
-            event,
-            docRef.current,
-            stageRef.current,
-          );
           createContainer({
             bounds: { x: point.x, y: point.y, width: 360, height: 240 },
           });
           setActiveTool("select");
+          return;
+        }
+        if (activeTool === "line" || activeTool === "arrow") {
+          beginConnectorDraw(activeTool, point, event);
           return;
         }
         selectNode(null);
@@ -476,15 +581,13 @@ export const CanvasSurface = memo(
         };
         event.currentTarget.setPointerCapture(event.pointerId);
       },
-      [activeTool, createContainer, selectNode],
+      [activeTool, beginConnectorDraw, createContainer, selectNode],
     );
 
     const handlePointerMove = useCallback(
       (event: React.PointerEvent<HTMLDivElement>) => {
         const drag = dragRef.current;
         if (!drag) return;
-        const dx = (event.clientX - drag.startX) / docRef.current.viewport.zoom;
-        const dy = (event.clientY - drag.startY) / docRef.current.viewport.zoom;
         if (drag.kind === "pan") {
           commitDocument({
             ...docRef.current,
@@ -496,16 +599,27 @@ export const CanvasSurface = memo(
           });
           return;
         }
+        if (drag.kind === "drawConnector") {
+          const point = screenToCanvasPoint(event, docRef.current, stageRef.current);
+          updateNode(
+            drag.nodeId,
+            createConnectorGeometry(drag.startPoint, point, drag.connectorType),
+          );
+          return;
+        }
+        const dx = (event.clientX - drag.startX) / docRef.current.viewport.zoom;
+        const dy = (event.clientY - drag.startY) / docRef.current.viewport.zoom;
         const node = docRef.current.nodes[drag.nodeId];
         if (!node) return;
         const nextBounds =
           drag.kind === "move"
             ? { ...node.bounds, x: drag.origin.x + dx, y: drag.origin.y + dy }
-            : {
-                ...node.bounds,
-                width: Math.max(80, drag.origin.width + dx),
-                height: Math.max(56, drag.origin.height + dy),
-              };
+            : calculateResizeBounds(
+                drag.origin,
+                dx,
+                dy,
+                drag.preserveAspectRatio ?? false,
+              );
         updateNode(drag.nodeId, { bounds: nextBounds } as Partial<CanvasNode>);
       },
       [commitDocument, updateNode],
@@ -513,12 +627,23 @@ export const CanvasSurface = memo(
 
     const handlePointerUp = useCallback(
       (event: React.PointerEvent<HTMLDivElement>) => {
+        if (dragRef.current?.kind === "drawConnector") {
+          const node = docRef.current.nodes[dragRef.current.nodeId];
+          if (
+            node &&
+            node.bounds.width <= 6 &&
+            node.bounds.height <= 6
+          ) {
+            applyOperation({ type: "deleteNode", nodeId: node.id });
+            selectNode(null);
+          }
+        }
         dragRef.current = null;
         if (event.currentTarget.hasPointerCapture(event.pointerId)) {
           event.currentTarget.releasePointerCapture(event.pointerId);
         }
       },
-      [],
+      [applyOperation, selectNode],
     );
 
     const handleWheel = useCallback(
@@ -540,7 +665,13 @@ export const CanvasSurface = memo(
     return (
       <div
         ref={stageRef}
-        className="relative h-full w-full overflow-hidden text-foreground"
+        className={`relative h-full w-full overflow-hidden text-foreground ${
+          activeTool === "hand"
+            ? "cursor-grab"
+            : activeTool === "line" || activeTool === "arrow"
+              ? "cursor-crosshair"
+              : "cursor-default"
+        }`}
         style={{ backgroundColor: doc.viewport.backgroundColor }}
         onPointerDown={handleStagePointerDown}
         onPointerMove={handlePointerMove}
@@ -560,6 +691,7 @@ export const CanvasSurface = memo(
           activeTool={activeTool}
           onToolChange={setActiveTool}
           onCreateContainer={() => createContainer()}
+          onImportImage={triggerImageImport}
           onInsertRect={insertRect}
           onInsertText={insertText}
           onDelete={deleteSelected}
@@ -574,13 +706,24 @@ export const CanvasSurface = memo(
           {Object.values(doc.nodes).map((node) => (
             <CanvasNodeView
               key={node.id}
-              doc={doc}
               node={node}
+              activeTool={activeTool}
               selectedId={selectedId}
               onSelect={selectNode}
               onDragStart={(nodeId, event) => {
                 const targetNode = docRef.current.nodes[nodeId];
                 if (!targetNode || targetNode.locked) return;
+                if (activeTool === "hand") {
+                  dragRef.current = {
+                    kind: "pan",
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    originX: docRef.current.viewport.x,
+                    originY: docRef.current.viewport.y,
+                  };
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  return;
+                }
                 dragRef.current = {
                   kind: "move",
                   nodeId,
@@ -599,6 +742,9 @@ export const CanvasSurface = memo(
                   startX: event.clientX,
                   startY: event.clientY,
                   origin: targetNode.bounds,
+                  preserveAspectRatio:
+                    targetNode.type === "image" ||
+                    targetNode.type === "videoEmbed",
                 };
                 event.currentTarget.setPointerCapture(event.pointerId);
               }}
@@ -618,7 +764,13 @@ export const CanvasSurface = memo(
             }
           />
         )}
-       
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleImageImport}
+        />
       </div>
     );
   }),
@@ -628,14 +780,16 @@ function CanvasChrome({
   activeTool,
   onToolChange,
   onCreateContainer,
+  onImportImage,
   onInsertRect,
   onInsertText,
   onDelete,
   hasSelection,
 }: {
-  activeTool: "select" | "container" | "rect" | "text";
-  onToolChange: (tool: "select" | "container" | "rect" | "text") => void;
+  activeTool: CanvasTool;
+  onToolChange: (tool: CanvasTool) => void;
   onCreateContainer: () => void;
+  onImportImage: () => void;
   onInsertRect: () => void;
   onInsertText: () => void;
   onDelete: () => void;
@@ -644,7 +798,10 @@ function CanvasChrome({
   const buttonClass =
     "flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground";
   return (
-    <div className="absolute left-1/2 top-4 z-20 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card/90 px-1.5 py-1.5 shadow-card backdrop-blur">
+    <div
+      className="absolute left-1/2 top-4 z-20 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card/90 px-1.5 py-1.5 shadow-card backdrop-blur"
+      onPointerDown={(event) => event.stopPropagation()}
+    >
       <button
         type="button"
         className={`${buttonClass} ${activeTool === "select" ? "bg-muted text-foreground" : ""}`}
@@ -652,6 +809,14 @@ function CanvasChrome({
         title="选择"
       >
         <MousePointer2 className="h-4 w-4" />
+      </button>
+      <button
+        type="button"
+        className={`${buttonClass} ${activeTool === "hand" ? "bg-muted text-foreground" : ""}`}
+        onClick={() => onToolChange("hand")}
+        title="抓手"
+      >
+        <Hand className="h-4 w-4" />
       </button>
       <button
         type="button"
@@ -673,6 +838,14 @@ function CanvasChrome({
       <button
         type="button"
         className={buttonClass}
+        onClick={onImportImage}
+        title="导入图片"
+      >
+        <ImagePlus className="h-4 w-4" />
+      </button>
+      <button
+        type="button"
+        className={buttonClass}
         onClick={onInsertRect}
         title="矩形"
       >
@@ -688,6 +861,22 @@ function CanvasChrome({
       </button>
       <button
         type="button"
+        className={`${buttonClass} ${activeTool === "line" ? "bg-muted text-foreground" : ""}`}
+        onClick={() => onToolChange("line")}
+        title="直线工具"
+      >
+        <Minus className="h-4 w-4" />
+      </button>
+      <button
+        type="button"
+        className={`${buttonClass} ${activeTool === "arrow" ? "bg-muted text-foreground" : ""}`}
+        onClick={() => onToolChange("arrow")}
+        title="箭头工具"
+      >
+        <ArrowRight className="h-4 w-4" />
+      </button>
+      <button
+        type="button"
         className={buttonClass}
         disabled={!hasSelection}
         onClick={onDelete}
@@ -700,16 +889,16 @@ function CanvasChrome({
 }
 
 function CanvasNodeView({
-  doc,
   node,
+  activeTool,
   selectedId,
   onSelect,
   onDragStart,
   onResizeStart,
   onUpdate,
 }: {
-  doc: CucumberCanvasDocument;
   node: CanvasNode;
+  activeTool: CanvasTool;
   selectedId: string | null;
   onSelect: (id: string) => void;
   onDragStart: (
@@ -737,6 +926,7 @@ function CanvasNodeView({
       style={style}
       onPointerDown={(event) => {
         event.stopPropagation();
+        if (activeTool === "hand") return;
         onSelect(node.id);
       }}
     >
@@ -800,27 +990,31 @@ function renderNodeContent(
       );
     case "image":
       return (
-        <img
-          alt={node.alt ?? node.title ?? "Canvas image"}
-          className={`h-full w-full rounded-lg object-cover shadow-subtle ${ring}`}
-          src={node.src}
-          draggable={false}
-        />
+        <div className="relative h-full w-full">
+          <img
+            alt={node.alt ?? node.title ?? "Canvas image"}
+            className="h-full w-full rounded-lg object-cover shadow-subtle"
+            src={node.src}
+            draggable={false}
+          />
+          {selected ? <SelectionOutline /> : null}
+        </div>
       );
     case "videoEmbed":
       return (
-        <div
-          className={`flex h-full w-full items-center justify-center overflow-hidden rounded-lg bg-black text-white shadow-subtle ${ring}`}
-        >
-          <video
-            className="h-full w-full object-cover"
-            src={node.src}
-            controls={false}
-            muted
-          />
-          <span className="absolute rounded-full bg-black/60 px-3 py-1 text-xs">
-            Video
-          </span>
+        <div className="relative h-full w-full">
+          <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-lg bg-black text-white shadow-subtle">
+            <video
+              className="h-full w-full object-cover"
+              src={node.src}
+              controls={false}
+              muted
+            />
+            <span className="absolute rounded-full bg-black/60 px-3 py-1 text-xs">
+              Video
+            </span>
+          </div>
+          {selected ? <SelectionOutline /> : null}
         </div>
       );
     case "text":
@@ -852,6 +1046,9 @@ function renderNodeContent(
           }}
         />
       );
+    case "line":
+    case "arrow":
+      return renderConnector(node, selected);
     case "group":
       return (
         <div
@@ -882,7 +1079,10 @@ function ContainerInspector({
   const agentInputId = `${container.id}-agent`;
 
   return (
-    <div className="absolute right-4 top-4 z-20 w-72 rounded-xl border border-border bg-card/95 p-3 shadow-card backdrop-blur">
+    <div
+      className="absolute right-4 top-4 z-20 w-72 rounded-xl border border-border bg-card/95 p-3 shadow-card backdrop-blur"
+      onPointerDown={(event) => event.stopPropagation()}
+    >
       <div className="mb-3 flex items-center justify-between">
         <span className="text-sm font-medium">容器属性</span>
         {container.locked ? (
@@ -1030,6 +1230,8 @@ function defaultBounds(
     return { x: baseX, y: baseY, width: 360, height: 240 };
   if (type === "text") return { x: baseX, y: baseY, width: 260, height: 80 };
   if (type === "image") return { x: baseX, y: baseY, width: 320, height: 220 };
+  if (type === "line" || type === "arrow")
+    return { x: baseX, y: baseY, width: 220, height: 120 };
   if (type === "videoEmbed")
     return { x: baseX, y: baseY, width: 360, height: 220 };
   return { x: baseX, y: baseY, width: 180, height: 120 };
@@ -1053,6 +1255,176 @@ function screenToCanvasPoint(
     x: (event.clientX - (rect?.left ?? 0) - doc.viewport.x) / doc.viewport.zoom,
     y: (event.clientY - (rect?.top ?? 0) - doc.viewport.y) / doc.viewport.zoom,
   };
+}
+
+function SelectionOutline() {
+  return (
+    <div className="pointer-events-none absolute inset-0 rounded-[inherit] border-2 border-primary/80 shadow-[0_0_0_2px_rgba(255,255,255,0.9)]" />
+  );
+}
+
+function renderConnector(node: ConnectorNode, selected: boolean) {
+  const safeWidth = Math.max(node.bounds.width, 2);
+  const safeHeight = Math.max(node.bounds.height, 2);
+  const start = anchorToPoint(node.startAnchor ?? "tl", safeWidth, safeHeight);
+  const end = anchorToPoint(node.endAnchor ?? "br", safeWidth, safeHeight);
+  const markerId = `connector-arrow-${node.id.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+
+  return (
+    <div className="relative h-full w-full overflow-visible">
+      <svg
+        className="h-full w-full overflow-visible"
+        viewBox={`0 0 ${safeWidth} ${safeHeight}`}
+      >
+        {node.type === "arrow" ? (
+          <defs>
+            <marker
+              id={markerId}
+              markerWidth="10"
+              markerHeight="10"
+              refX="8"
+              refY="3"
+              orient="auto"
+              markerUnits="strokeWidth"
+            >
+              <path d="M0,0 L0,6 L9,3 z" fill={node.stroke ?? "#111827"} />
+            </marker>
+          </defs>
+        ) : null}
+        <line
+          x1={start.x}
+          y1={start.y}
+          x2={end.x}
+          y2={end.y}
+          stroke={node.stroke ?? "#111827"}
+          strokeWidth={node.strokeWidth ?? 3}
+          strokeLinecap="round"
+          markerEnd={node.type === "arrow" ? `url(#${markerId})` : undefined}
+        />
+      </svg>
+      {selected ? <SelectionOutline /> : null}
+    </div>
+  );
+}
+
+function anchorToPoint(
+  anchor: ConnectorAnchor,
+  width: number,
+  height: number,
+): { x: number; y: number } {
+  switch (anchor) {
+    case "tr":
+      return { x: width, y: 0 };
+    case "bl":
+      return { x: 0, y: height };
+    case "br":
+      return { x: width, y: height };
+    default:
+      return { x: 0, y: 0 };
+  }
+}
+
+function createConnectorGeometry(
+  startPoint: { x: number; y: number },
+  endPoint: { x: number; y: number },
+  connectorType: "line" | "arrow",
+): Partial<ConnectorNode> {
+  const minX = Math.min(startPoint.x, endPoint.x);
+  const minY = Math.min(startPoint.y, endPoint.y);
+  const width = Math.max(Math.abs(endPoint.x - startPoint.x), 2);
+  const height = Math.max(Math.abs(endPoint.y - startPoint.y), 2);
+
+  return {
+    type: connectorType,
+    bounds: { x: minX, y: minY, width, height },
+    startAnchor: resolveConnectorAnchor(
+      startPoint.x - minX,
+      startPoint.y - minY,
+      width,
+      height,
+    ),
+    endAnchor: resolveConnectorAnchor(
+      endPoint.x - minX,
+      endPoint.y - minY,
+      width,
+      height,
+    ),
+  };
+}
+
+function resolveConnectorAnchor(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): ConnectorAnchor {
+  const horizontal = x <= width / 2 ? "l" : "r";
+  const vertical = y <= height / 2 ? "t" : "b";
+  return `${vertical}${horizontal}` as ConnectorAnchor;
+}
+
+function calculateResizeBounds(
+  origin: CanvasBounds,
+  dx: number,
+  dy: number,
+  preserveAspectRatio: boolean,
+): CanvasBounds {
+  const minWidth = 48;
+  const minHeight = 48;
+  if (!preserveAspectRatio) {
+    return {
+      ...origin,
+      width: Math.max(minWidth, origin.width + dx),
+      height: Math.max(minHeight, origin.height + dy),
+    };
+  }
+  const widthRatio = (origin.width + dx) / Math.max(origin.width, 1);
+  const heightRatio = (origin.height + dy) / Math.max(origin.height, 1);
+  const scale = Math.max(
+    Math.max(widthRatio, heightRatio),
+    minWidth / Math.max(origin.width, 1),
+    minHeight / Math.max(origin.height, 1),
+  );
+
+  return {
+    ...origin,
+    width: Math.max(minWidth, Math.round(origin.width * scale)),
+    height: Math.max(minHeight, Math.round(origin.height * scale)),
+  };
+}
+
+function scaleToFitDimensions(width: number, height: number, maxSize: number) {
+  if (width <= maxSize && height <= maxSize) return { width, height };
+  const scale = maxSize / Math.max(width, height);
+  return {
+    width: Math.round(width * scale),
+    height: Math.round(height * scale),
+  };
+}
+
+async function readImageFile(file: File): Promise<{
+  dataUrl: string;
+  width: number;
+  height: number;
+}> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error ?? new Error("读取图片失败"));
+    reader.readAsDataURL(file);
+  });
+
+  const dimensions = await new Promise<{ width: number; height: number }>(
+    (resolve, reject) => {
+      const image = new Image();
+      image.onload = () =>
+        resolve({ width: image.naturalWidth, height: image.naturalHeight });
+      image.onerror = () => reject(new Error("解析图片尺寸失败"));
+      image.src = dataUrl;
+    },
+  );
+
+  return { dataUrl, ...dimensions };
 }
 
 async function exportDocumentImage(
@@ -1098,6 +1470,16 @@ function renderDocumentSvg(
       }
       if (node.type === "image") {
         return `<image href="${escapeAttr(node.src)}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid slice" />`;
+      }
+      if (node.type === "line" || node.type === "arrow") {
+        const start = anchorToPoint(node.startAnchor ?? "tl", w, h);
+        const end = anchorToPoint(node.endAnchor ?? "br", w, h);
+        const markerId = `svg-marker-${escapeAttr(node.id)}`;
+        const defs =
+          node.type === "arrow"
+            ? `<defs><marker id="${markerId}" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="${escapeAttr(node.stroke ?? "#111827")}" /></marker></defs>`
+            : "";
+        return `${defs}<line x1="${x + start.x}" y1="${y + start.y}" x2="${x + end.x}" y2="${y + end.y}" stroke="${escapeAttr(node.stroke ?? "#111827")}" stroke-width="${node.strokeWidth ?? 3}" stroke-linecap="round"${node.type === "arrow" ? ` marker-end="url(#${markerId})"` : ""} />`;
       }
       const fill =
         node.type === "container"
