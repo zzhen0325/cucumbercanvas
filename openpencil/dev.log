@@ -1,0 +1,65 @@
+$ bun run apps/web/dev.ts
+
+  VITE v7.3.2  ready in 14718 ms
+
+  ➜  Local:   http://localhost:3000/
+  ➜  Network: use --host to expose
+6:48:39 PM [vite] (client) warning: Module "node:crypto" has been externalized for browser compatibility, imported by "/Users/bytedance/Desktop/seeseezz/openpencil/apps/web/src/services/ai/codegen-assets.ts". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+  Plugin: vite:resolve
+6:48:39 PM [vite] (client) warning: Module "node:crypto" has been externalized for browser compatibility, imported by "/Users/bytedance/Desktop/seeseezz/openpencil/apps/web/src/services/ai/codegen-assets.ts". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+  Plugin: vite:resolve
+11:26:43 AM [vite] vite.config.ts changed, restarting server...
+11:26:45 AM [vite] server restarted.
+11:26:49 AM [vite] (client) warning: Module "node:crypto" has been externalized for browser compatibility, imported by "/Users/bytedance/Desktop/seeseezz/openpencil/apps/web/src/services/ai/codegen-assets.ts". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+  Plugin: vite:resolve
+11:26:49 AM [vite] (client) warning: Module "node:crypto" has been externalized for browser compatibility, imported by "/Users/bytedance/Desktop/seeseezz/openpencil/apps/web/src/services/ai/codegen-assets.ts". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+  Plugin: vite:resolve
+47 | const __vite_ssr_export_default__ = () => {
+48 |   const port = parseInt(define_process_env_default.PORT || "3000", 10);
+49 |   writePortFile(port);
+50 |   const cleanup = () => {
+51 |     cleanupPortFile();
+52 |   define_process_default.on("SIGINT", cleanup);
+                                ^
+TypeError: define_process_default.on is not a function. (In 'define_process_default.on("SIGINT", cleanup)', 'define_process_default.on' is undefined)
+      at __vite_ssr_export_default__ (/Users/bytedance/Desktop/seeseezz/openpencil/apps/web/server/plugins/port-file.ts:52:28)
+      at initNitroPlugins (/Users/bytedance/Desktop/seeseezz/openpencil/node_modules/.bun/nitro-nightly@3.0.1-20260402-182549-a5a3389c+8448cae09988db60/node_modules/nitro-nightly/dist/runtime/internal/app.mjs:136:10)
+      at useNitroApp (/Users/bytedance/Desktop/seeseezz/openpencil/node_modules/.bun/nitro-nightly@3.0.1-20260402-182549-a5a3389c+8448cae09988db60/node_modules/nitro-nightly/dist/runtime/internal/app.mjs:34:19)
+      at anonymous (/Users/bytedance/Desktop/seeseezz/openpencil/node_modules/.bun/nitro-nightly@3.0.1-20260402-182549-a5a3389c+8448cae09988db60/node_modules/nitro-nightly/dist/runtime/internal/vite/dev-entry.mjs:17:55)
+      at async runInlinedModule (/Users/bytedance/Desktop/seeseezz/openpencil/node_modules/.bun/vite@7.3.2+993f309713c064aa/node_modules/vite/dist/node/module-runner.js:913:160)
+      at async directRequest (/Users/bytedance/Desktop/seeseezz/openpencil/node_modules/.bun/vite@7.3.2+993f309713c064aa/node_modules/vite/dist/node/module-runner.js:1146:80)
+      at async cachedRequest (/Users/bytedance/Desktop/seeseezz/openpencil/node_modules/.bun/vite@7.3.2+993f309713c064aa/node_modules/vite/dist/node/module-runner.js:1053:79)
+      at async import (/Users/bytedance/Desktop/seeseezz/openpencil/node_modules/.bun/vite@7.3.2+993f309713c064aa/node_modules/vite/dist/node/module-runner.js:1014:21)
+      at async reload (/Users/bytedance/Desktop/seeseezz/openpencil/node_modules/.bun/nitro-nightly@3.0.1-20260402-182549-a5a3389c+8448cae09988db60/node_modules/nitro-nightly/dist/runtime/internal/vite/dev-worker.mjs:58:38)
+
+11:27:33 AM [vite] vite.config.ts changed, restarting server...
+11:27:34 AM [vite] (client) Re-optimizing dependencies because vite config has changed
+11:27:34 AM [vite] server restarted.
+11:27:35 AM [vite] (client) warning: Module "node:crypto" has been externalized for browser compatibility, imported by "/Users/bytedance/Desktop/seeseezz/openpencil/apps/web/src/services/ai/codegen-assets.ts". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+  Plugin: vite:resolve
+11:27:35 AM [vite] (client) warning: Module "node:crypto" has been externalized for browser compatibility, imported by "/Users/bytedance/Desktop/seeseezz/openpencil/apps/web/src/services/ai/codegen-assets.ts". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+  Plugin: vite:resolve
+11:28:10 AM [vite] vite.config.ts changed, restarting server...
+11:28:11 AM [vite] server restarted.
+11:28:29 AM [vite] vite.config.ts changed, restarting server...
+11:28:29 AM [vite] (client) Re-optimizing dependencies because vite config has changed
+11:28:29 AM [vite] server restarted.
+11:28:30 AM [vite] (client) warning: Module "node:crypto" has been externalized for browser compatibility, imported by "/Users/bytedance/Desktop/seeseezz/openpencil/apps/web/src/services/ai/codegen-assets.ts". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+  Plugin: vite:resolve
+11:28:30 AM [vite] (client) warning: Module "node:crypto" has been externalized for browser compatibility, imported by "/Users/bytedance/Desktop/seeseezz/openpencil/apps/web/src/services/ai/codegen-assets.ts". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+  Plugin: vite:resolve
+11:35:06 AM [vite] vite.config.ts changed, restarting server...
+11:35:06 AM [vite] (client) Re-optimizing dependencies because vite config has changed
+11:35:06 AM [vite] server restarted.
+11:35:07 AM [vite] (client) warning: Module "node:crypto" has been externalized for browser compatibility, imported by "/Users/bytedance/Desktop/seeseezz/openpencil/apps/web/src/services/ai/codegen-assets.ts". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+  Plugin: vite:resolve
+11:35:07 AM [vite] (client) warning: Module "node:crypto" has been externalized for browser compatibility, imported by "/Users/bytedance/Desktop/seeseezz/openpencil/apps/web/src/services/ai/codegen-assets.ts". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+  Plugin: vite:resolve
+11:37:31 AM [vite] vite.config.ts changed, restarting server...
+11:37:32 AM [vite] (client) Re-optimizing dependencies because vite config has changed
+11:37:32 AM [vite] server restarted.
+11:37:34 AM [vite] (client) warning: Module "node:crypto" has been externalized for browser compatibility, imported by "/Users/bytedance/Desktop/seeseezz/openpencil/apps/web/src/services/ai/codegen-assets.ts". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+  Plugin: vite:resolve
+11:37:34 AM [vite] (client) warning: Module "node:crypto" has been externalized for browser compatibility, imported by "/Users/bytedance/Desktop/seeseezz/openpencil/apps/web/src/services/ai/codegen-assets.ts". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+  Plugin: vite:resolve
+error: script "dev" was terminated by signal SIGTERM (Polite quit request)
