@@ -11,7 +11,6 @@ import {
   cloneCanvasDocument,
   createCanvasNodeId,
   isContainerNode,
-  isCucumberCanvasDocument,
 } from "@cucumber/canvas-core";
 import {
   CanvasElement,
@@ -30,6 +29,7 @@ import {
   computeEdgePoint,
   computeFixedPoint,
 } from "./canvas-element-helpers.js";
+import type { LiveCanvasService } from "../../features/canvas/live-canvas-service.js";
 
 // Re-export for consumers that import measureTextWidth from this module
 // (e.g. the test suite). New code should import directly from canvas-element-helpers.
@@ -57,7 +57,7 @@ const operationSchema = z.object({
   action: z
     .enum([
       "move", "resize", "delete", "update_style",
-      "add_text", "add_shape", "add_line",
+      "add_container", "add_text", "add_shape", "add_line",
       "reorder", "align", "distribute", "update_text",
     ])
     .describe("The operation to perform"),
@@ -87,6 +87,7 @@ const operationSchema = z.object({
 
   // add_text / update_text
   text: z.string().optional().describe("Text content (add_text / update_text)"),
+  title: z.string().optional().describe("Container or node title"),
 
   // add_shape
   shape: z.enum(["rectangle", "ellipse", "diamond"]).optional().describe("Shape type (add_shape)"),
@@ -956,6 +957,30 @@ function reorderCucumberNode(
   return next;
 }
 
+function resolveCreatedIdRef(
+  value: string | undefined,
+  createdIds: Record<string, string>,
+): string | undefined {
+  if (!value) return value;
+  return createdIds[value] ?? value;
+}
+
+function resolveOperationRefs(
+  op: Operation,
+  createdIds: Record<string, string>,
+): Operation {
+  return {
+    ...op,
+    container_id: resolveCreatedIdRef(op.container_id, createdIds),
+    element_id: resolveCreatedIdRef(op.element_id, createdIds),
+    end_element_id: resolveCreatedIdRef(op.end_element_id, createdIds),
+    start_element_id: resolveCreatedIdRef(op.start_element_id, createdIds),
+    ...(op.element_ids
+      ? { element_ids: op.element_ids.map((id) => createdIds[id] ?? id) }
+      : {}),
+  };
+}
+
 function manipulateCucumberCanvas(args: {
   doc: CucumberCanvasDocument;
   operations: Operation[];
@@ -972,11 +997,50 @@ function manipulateCucumberCanvas(args: {
   const createdIds: Record<string, string> = {};
 
   for (let i = 0; i < args.operations.length; i++) {
-    const op = args.operations[i]!;
+    const op = resolveOperationRefs(args.operations[i]!, createdIds);
     try {
       const inferredContainerId = inferWritableContainerId(nextDoc, op);
 
       switch (op.action) {
+        case "add_container": {
+          const nodeId = createCanvasNodeId("container");
+          const bounds = defaultNodeBounds(nextDoc, "container", null, {
+            ...op,
+            width: op.width ?? 520,
+            height: op.height ?? 360,
+          });
+          const container: ContainerNode = {
+            id: nodeId,
+            type: "container",
+            parentId: null,
+            title: op.title ?? op.text ?? "Agent output",
+            bounds,
+            role: ["visual", "task", "context"],
+            childrenOrder: [],
+            contextSlots: {},
+            inheritPolicy: "merge",
+            permissions: {
+              canRead: [],
+              canWrite: [],
+              isolationLevel: "open",
+            },
+            style: {
+              fill: coerceColor(op.backgroundColor, "#ffffff"),
+              stroke: coerceColor(op.strokeColor, "#6c5ce7"),
+              opacity:
+                op.opacity !== undefined ? Math.max(0, Math.min(100, op.opacity)) / 100 : 1,
+            },
+          };
+          nextDoc = applyCanvasOperation(nextDoc, {
+            type: "insertNode",
+            node: container,
+          });
+          descriptions.push(
+            `added container '${container.title}' [id=${nodeId}]`,
+          );
+          createdIds[`op_${i}`] = nodeId;
+          break;
+        }
         case "move": {
           if (!op.element_id) {
             throw new CanvasOperationError(
@@ -1464,6 +1528,9 @@ const handlers: Record<
   Operation["action"],
   (elements: CanvasElement[], op: any) => HandlerResult
 > = {
+  add_container: () => ({
+    description: "[skip] add_container requires the Cucumber canvas runtime",
+  }),
   move: applyMove,
   resize: applyResize,
   delete: applyDelete,
@@ -1483,18 +1550,22 @@ const handlers: Record<
 
 export function createManipulateCanvasTool(deps: {
   createUserClient: (accessToken: string) => any;
+  liveCanvasService?: LiveCanvasService;
 }) {
   return tool(
     async (input, config) => {
       const runtimeConfig = config as ToolRuntimeConfig | undefined;
       const canvasId = runtimeConfig?.configurable?.canvas_id;
       const accessToken = runtimeConfig?.configurable?.access_token;
+      const userId = runtimeConfig?.configurable?.user_id;
 
       if (
         typeof canvasId !== "string" ||
         typeof accessToken !== "string" ||
+        typeof userId !== "string" ||
         !canvasId ||
-        !accessToken
+        !accessToken ||
+        !userId
       ) {
         return JSON.stringify({
           error: "no_canvas_context",
@@ -1503,46 +1574,32 @@ export function createManipulateCanvasTool(deps: {
         });
       }
 
-      // --- Read current canvas -------------------------------------------------
-      const client = deps.createUserClient(accessToken);
-      const { data, error } = await client
-        .from("canvases")
-        .select("content")
-        .eq("id", canvasId)
-        .single();
-
-      if (error || !data) {
+      if (!deps.liveCanvasService) {
         return JSON.stringify({
-          error: "canvas_not_found",
-          message: "Canvas not found or access denied.",
+          error: "live_canvas_unavailable",
+          message:
+            "Canvas tools require an open live editor. Open the canvas page and retry.",
         });
       }
 
-      const content = data.content as {
-        elements?: CanvasElement[];
-        appState?: Record<string, unknown>;
+      const user = {
+        accessToken,
+        email: "",
+        id: userId,
+        userMetadata: {},
       };
 
-      if (isCucumberCanvasDocument(data.content)) {
+      try {
+        const content = await deps.liveCanvasService.getDocument(user, canvasId);
         const agentId = getConfiguredAgentId(runtimeConfig);
         const { createdIds, descriptions, errors, nextDoc } =
           manipulateCucumberCanvas({
-            doc: data.content,
+            doc: content,
             operations: input.operations,
             ...(agentId ? { agentId } : {}),
           });
 
-        const { error: writeError } = await client
-          .from("canvases")
-          .update({ content: nextDoc })
-          .eq("id", canvasId);
-
-        if (writeError) {
-          return JSON.stringify({
-            error: "write_failed",
-            message: `Failed to save canvas: ${writeError.message}`,
-          });
-        }
+        await deps.liveCanvasService.setDocument(user, canvasId, nextDoc);
 
         const result: Record<string, unknown> = {
           success: true,
@@ -1555,70 +1612,31 @@ export function createManipulateCanvasTool(deps: {
         if (errors.length > 0) {
           result.errors = errors;
         }
+        console.info("[manipulate_canvas] live document updated", {
+          applied: descriptions.length,
+          canvasId,
+          errors: errors.length,
+          nodeCount: Object.keys(nextDoc.nodes).length,
+          userId,
+        });
         return JSON.stringify(result);
-      }
-
-      const elements: CanvasElement[] = content.elements ?? [];
-
-      // --- Apply operations ----------------------------------------------------
-      const descriptions: string[] = [];
-      const errors: string[] = [];
-      const createdIds: Record<string, string> = {};
-
-      for (let i = 0; i < input.operations.length; i++) {
-        const op = input.operations[i]!;
-        try {
-          const handler = handlers[op.action];
-          const result = handler(elements, op);
-          if (result.description.startsWith("[skip]")) {
-            errors.push(result.description);
-          } else {
-            descriptions.push(result.description);
-            if (result.createdId) {
-              createdIds[`op_${i}`] = result.createdId;
-            }
-          }
-        } catch (e) {
-          errors.push(`[error] ${op.action}: ${(e as Error).message}`);
-        }
-      }
-
-      // --- Post-processing: clean up orphan bindings ---------------------------
-      // Must run after all operations so cascaded deletes are visible.
-      validateBindings(elements);
-
-      // --- Write back ----------------------------------------------------------
-      const updatedContent = { ...content, elements };
-      const { error: writeError } = await client
-        .from("canvases")
-        .update({ content: updatedContent })
-        .eq("id", canvasId);
-
-      if (writeError) {
+      } catch (error) {
         return JSON.stringify({
-          error: "write_failed",
-          message: `Failed to save canvas: ${writeError.message}`,
+          error:
+            error instanceof Error && "code" in error
+              ? String((error as { code: unknown }).code)
+              : "manipulate_canvas_failed",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Failed to update the live canvas.",
         });
       }
-
-      // --- Build result --------------------------------------------------------
-      const result: Record<string, unknown> = {
-        success: true,
-        applied: descriptions.length,
-        summary: descriptions.join("; "),
-      };
-      if (Object.keys(createdIds).length > 0) {
-        result.createdIds = createdIds;
-      }
-      if (errors.length > 0) {
-        result.errors = errors;
-      }
-      return JSON.stringify(result);
     },
     {
       name: "manipulate_canvas",
       description:
-        "Manipulate elements on the canvas. Supports: move, resize, delete (cascades to bound text), update_style, update_text (modify text content of any element or its label), add_text, add_shape (with optional label for centered text), add_line (with optional element binding for auto-connected arrows), align, distribute, reorder. Use inspect_canvas first to understand the current layout. Returns created element IDs for subsequent binding.",
+        "Manipulate elements on the live Cucumber canvas. Supports: add_container, move, resize, delete, update_style, update_text, add_text, add_shape, add_line, align, distribute, reorder. Use inspect_canvas first to understand the current layout. Returns created element IDs for subsequent binding, and same-batch operations can reference earlier IDs with op_0, op_1, etc.",
       schema: manipulateCanvasSchema,
     },
   );

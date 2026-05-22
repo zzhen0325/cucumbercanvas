@@ -32,6 +32,10 @@ import {
   createCanvasService,
 } from "./features/canvas/canvas-service.js";
 import {
+  type LiveCanvasService,
+  createLiveCanvasService,
+} from "./features/canvas/live-canvas-service.js";
+import {
   type ChatService,
   createChatService,
 } from "./features/chat/chat-service.js";
@@ -65,6 +69,7 @@ import { registerHealthRoutes } from "./http/health.js";
 import { registerImageModelRoutes } from "./http/image-models.js";
 import { registerImageProxyRoute } from "./http/image-proxy.js";
 import { registerJobRoutes } from "./http/jobs.js";
+import { registerLiveCanvasRoutes } from "./http/live-canvases.js";
 import { registerModelRoutes } from "./http/models.js";
 import { registerProjectRoutes } from "./http/projects.js";
 import { registerRunRoutes } from "./http/runs.js";
@@ -98,6 +103,7 @@ export type BuildAppOptions = {
   connectionManager?: ConnectionManager;
   env?: Partial<ServerEnv>;
   jobService?: JobService;
+  liveCanvasService?: LiveCanvasService;
   uploadService?: UploadService;
   mockEventDelayMs?: number;
   projectService?: ProjectService;
@@ -170,6 +176,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   const connectionManager =
     options.connectionManager ?? new ConnectionManager();
+  const liveCanvasService =
+    options.liveCanvasService ??
+    createLiveCanvasService({ connectionManager, createUserClient });
   const eventBuffer = new CanvasEventBuffer();
   setInterval(() => eventBuffer.cleanup(), 5 * 60 * 1000);
   const agentRuns = createAgentRunService({
@@ -185,6 +194,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     env,
     eventBuffer,
     ...(jobService ? { jobService } : {}),
+    liveCanvasService,
     viewerService,
   });
   const runEventPump = new RunEventPump({
@@ -264,6 +274,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void registerCanvasRoutes(app, {
     auth,
     canvasService,
+  });
+  void registerLiveCanvasRoutes(app, {
+    auth,
+    liveCanvasService,
   });
   void registerSettingsRoutes(app, {
     auth,

@@ -49,6 +49,29 @@ export type CanvasImportWarningCode =
   | "component_metadata_dropped"
   | "effects_dropped";
 
+export type CanvasImportedLayoutMode = "horizontal" | "vertical";
+export type CanvasImportedLayoutAlign = "start" | "center" | "end" | "space_between" | "baseline";
+export type CanvasImportedSizingMode = "fixed" | "fit_content" | "fill_container";
+export type CanvasImportedPositioningMode = "auto" | "absolute";
+export type CanvasImportedPadding =
+  | number
+  | [number, number]
+  | [number, number, number, number];
+
+export interface CanvasImportedAutoLayoutMeta {
+  layout?: CanvasImportedLayoutMode;
+  gap?: number;
+  padding?: CanvasImportedPadding;
+  justifyContent?: CanvasImportedLayoutAlign;
+  alignItems?: CanvasImportedLayoutAlign;
+  widthMode?: CanvasImportedSizingMode;
+  heightMode?: CanvasImportedSizingMode;
+  alignSelf?: "auto" | "start" | "center" | "end" | "stretch" | "baseline";
+  positioning?: CanvasImportedPositioningMode;
+  grow?: number;
+  clipContent?: boolean;
+}
+
 export interface CanvasImportedNodeMeta extends Record<string, unknown> {
   source: CanvasImportSource;
   originNodeType?: string;
@@ -58,6 +81,7 @@ export interface CanvasImportedNodeMeta extends Record<string, unknown> {
   figmaNodeType?: string;
   degradationHints?: string[];
   warningCount?: number;
+  autoLayout?: CanvasImportedAutoLayoutMeta;
 }
 
 export interface AgentBinding {

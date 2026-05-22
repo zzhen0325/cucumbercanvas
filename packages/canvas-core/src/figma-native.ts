@@ -5,6 +5,7 @@ import * as UZIP from "uzip";
 import { createCanvasNodeId } from "./document.js";
 import type {
   CanvasAsset,
+  CanvasImportedAutoLayoutMeta,
   CanvasImportWarningCode,
   CanvasNode,
   CanvasImportedNodeMeta,
@@ -451,6 +452,7 @@ function convertFigmaTreeNode(
   parentId: string | null,
   decoded: FigmaDecodedFile,
   state: FigmaConvertState,
+  parentStackMode?: FigmaNodeChange["stackMode"],
 ): string | null {
   const node = treeNode.figma;
   if (node.visible === false || !node.type || node.type === "CANVAS" || node.type === "DOCUMENT") {
@@ -463,25 +465,25 @@ function convertFigmaTreeNode(
     case "GROUP":
     case "FRAME":
     case "SECTION":
-      return convertFigmaGroupLike(treeNode, parentId, decoded, state);
+      return convertFigmaGroupLike(treeNode, parentId, decoded, state, parentStackMode);
     case "INSTANCE":
-      return convertFigmaInstance(treeNode, parentId, decoded, state);
+      return convertFigmaInstance(treeNode, parentId, decoded, state, parentStackMode);
     case "SYMBOL":
-      return convertFigmaGroupLike(treeNode, parentId, decoded, state);
+      return convertFigmaGroupLike(treeNode, parentId, decoded, state, parentStackMode);
     case "RECTANGLE":
     case "ROUNDED_RECTANGLE":
-      return convertFigmaRectangle(node, parentId, decoded, state);
+      return convertFigmaRectangle(node, parentId, decoded, state, parentStackMode);
     case "ELLIPSE":
-      return convertFigmaEllipse(node, parentId, state);
+      return convertFigmaEllipse(node, parentId, state, parentStackMode);
     case "LINE":
-      return convertFigmaLine(node, parentId, state);
+      return convertFigmaLine(node, parentId, state, parentStackMode);
     case "TEXT":
-      return convertFigmaText(node, parentId, state);
+      return convertFigmaText(node, parentId, state, parentStackMode);
     case "VECTOR":
     case "BOOLEAN_OPERATION":
     case "STAR":
     case "REGULAR_POLYGON":
-      return convertFigmaVector(node, parentId, decoded, state);
+      return convertFigmaVector(node, parentId, decoded, state, parentStackMode);
     default:
       state.warnings.push({
         code: "unsupported_tag",
@@ -498,6 +500,7 @@ function convertFigmaGroupLike(
   parentId: string | null,
   decoded: FigmaDecodedFile,
   state: FigmaConvertState,
+  parentStackMode?: FigmaNodeChange["stackMode"],
 ): string | null {
   const figma = treeNode.figma;
   const bounds = getNodeBounds(figma);
@@ -519,13 +522,19 @@ function convertFigmaGroupLike(
       radius: figma.cornerRadius,
       locked: figma.locked,
       visible: figma.visible,
-      meta: createFigmaMeta(figma),
+      meta: createFigmaMeta(figma, { parentStackMode }),
     });
     childIds.push(backgroundId);
   }
 
   for (const child of treeNode.children) {
-    const childId = convertFigmaTreeNode(child, groupId, decoded, state);
+    const childId = convertFigmaTreeNode(
+      child,
+      groupId,
+      decoded,
+      state,
+      figma.stackMode,
+    );
     if (childId) {
       childIds.push(childId);
     }
@@ -544,7 +553,7 @@ function convertFigmaGroupLike(
     childrenOrder: childIds,
     locked: figma.locked,
     visible: figma.visible,
-    meta: createFigmaMeta(figma),
+    meta: createFigmaMeta(figma, { parentStackMode }),
   });
   return groupId;
 }
@@ -554,6 +563,7 @@ function convertFigmaInstance(
   parentId: string | null,
   decoded: FigmaDecodedFile,
   state: FigmaConvertState,
+  parentStackMode?: FigmaNodeChange["stackMode"],
 ): string | null {
   const figma = treeNode.figma;
   const componentGuid = figma.overriddenSymbolID ?? figma.symbolData?.symbolID;
@@ -584,10 +594,16 @@ function convertFigmaInstance(
         figma.size,
       ),
     };
-    return convertFigmaGroupLike(mergedTree, parentId, decoded, state);
+    return convertFigmaGroupLike(
+      mergedTree,
+      parentId,
+      decoded,
+      state,
+      parentStackMode,
+    );
   }
 
-  return convertFigmaGroupLike(treeNode, parentId, decoded, state);
+  return convertFigmaGroupLike(treeNode, parentId, decoded, state, parentStackMode);
 }
 
 function convertFigmaRectangle(
@@ -600,6 +616,7 @@ function convertFigmaRectangle(
     warnings: FigmaNativeWarning[];
     imageAssetCache: Map<string, { asset: CanvasAsset; url: string }>;
   },
+  parentStackMode?: FigmaNodeChange["stackMode"],
 ): string {
   const imagePaint = getVisibleImagePaint(figma.fillPaints);
   if (imagePaint) {
@@ -620,6 +637,7 @@ function convertFigmaRectangle(
         visible: figma.visible,
         meta: createFigmaMeta(figma, {
           degradationHints: ["partial_fidelity"],
+          parentStackMode,
         }),
       });
       return nodeId;
@@ -646,7 +664,7 @@ function convertFigmaRectangle(
     radius: figma.cornerRadius,
     locked: figma.locked,
     visible: figma.visible,
-    meta: createFigmaMeta(figma),
+    meta: createFigmaMeta(figma, { parentStackMode }),
   });
   return nodeId;
 }
@@ -657,6 +675,7 @@ function convertFigmaEllipse(
   state: {
     nodes: CanvasNode[];
   },
+  parentStackMode?: FigmaNodeChange["stackMode"],
 ): string {
   const nodeId = createCanvasNodeId("ellipse");
   state.nodes.push({
@@ -670,7 +689,7 @@ function convertFigmaEllipse(
     strokeWidth: figma.strokeWeight,
     locked: figma.locked,
     visible: figma.visible,
-    meta: createFigmaMeta(figma),
+    meta: createFigmaMeta(figma, { parentStackMode }),
   });
   return nodeId;
 }
@@ -681,6 +700,7 @@ function convertFigmaLine(
   state: {
     nodes: CanvasNode[];
   },
+  parentStackMode?: FigmaNodeChange["stackMode"],
 ): string {
   const nodeId = createCanvasNodeId("line");
   state.nodes.push({
@@ -693,7 +713,7 @@ function convertFigmaLine(
     strokeWidth: figma.strokeWeight,
     locked: figma.locked,
     visible: figma.visible,
-    meta: createFigmaMeta(figma),
+    meta: createFigmaMeta(figma, { parentStackMode }),
   });
   return nodeId;
 }
@@ -704,6 +724,7 @@ function convertFigmaText(
   state: {
     nodes: CanvasNode[];
   },
+  parentStackMode?: FigmaNodeChange["stackMode"],
 ): string {
   const nodeId = createCanvasNodeId("text");
   const text = figma.textData?.characters?.trim() || figma.name || "Text";
@@ -720,7 +741,7 @@ function convertFigmaText(
     bounds: getNodeBounds(figma),
     locked: figma.locked,
     visible: figma.visible,
-    meta: createFigmaMeta(figma),
+    meta: createFigmaMeta(figma, { parentStackMode }),
   });
   return nodeId;
 }
@@ -730,6 +751,7 @@ function convertFigmaVector(
   parentId: string | null,
   decoded: FigmaDecodedFile,
   state: FigmaConvertState,
+  parentStackMode?: FigmaNodeChange["stackMode"],
 ): string {
   const pathId = createCanvasNodeId("path");
   const path = decodeFigmaVectorPath(figma, decoded.blobs);
@@ -753,6 +775,7 @@ function convertFigmaVector(
       visible: figma.visible,
       meta: createFigmaMeta(figma, {
         degradationHints: ["partial_fidelity"],
+        parentStackMode,
       }),
     });
     return pathId;
@@ -770,7 +793,7 @@ function convertFigmaVector(
     strokeWidth: figma.strokeWeight,
     locked: figma.locked,
     visible: figma.visible,
-    meta: createFigmaMeta(figma),
+    meta: createFigmaMeta(figma, { parentStackMode }),
   });
   return pathId;
 }
@@ -784,6 +807,17 @@ export function mergeSymbolProps(
     "stackMode",
     "stackSpacing",
     "stackPadding",
+    "stackHorizontalPadding",
+    "stackVerticalPadding",
+    "stackPaddingRight",
+    "stackPaddingBottom",
+    "stackPrimarySizing",
+    "stackCounterSizing",
+    "stackPrimaryAlignItems",
+    "stackCounterAlignItems",
+    "stackChildPrimaryGrow",
+    "stackChildAlignSelf",
+    "stackPositioning",
     "fillPaints",
     "backgroundPaints",
     "strokePaints",
@@ -833,41 +867,228 @@ export function applyInstanceOverrides(
   }
 
   const flatSymbol = flattenTree(symbolNode);
-  const oneLevelDerived = safeDerived.filter(
-    (entry) => (entry.guidPath?.guids.length ?? 0) === 1,
-  );
-  const directSingleGuidMatches = oneLevelDerived.filter((entry) => {
-    const guid = entry.guidPath?.guids[0];
-    return guid ? flatSymbol.some((node) => isSameGuid(node.figma.guid, guid)) : false;
-  }).length;
-  const useIndexFallback =
-    directSingleGuidMatches === 0 &&
-    oneLevelDerived.length > 0 &&
-    oneLevelDerived.length === flatSymbol.length;
+  const oneLevelDerived = safeDerived.filter((entry) => (entry.guidPath?.guids.length ?? 0) === 1);
+  const firstGuids = oneLevelDerived[0]?.guidPath?.guids;
+  const sessionID = firstGuids?.[0]?.sessionID;
+  const firstLocalID = firstGuids?.[0]?.localID;
 
-  const indexedDerivedMap = new Map<string, FigmaDerivedSymbolDataEntry>();
-  const indexedOverrideMap = new Map<string, FigmaNodeChange>();
-  if (useIndexFallback) {
-    for (let index = 0; index < flatSymbol.length; index += 1) {
-      const node = flatSymbol[index];
-      if (!node) {
-        continue;
-      }
-      const guid = node.figma.guid ? guidToString(node.figma.guid) : null;
+  const nodeOverride = new Map<string, FigmaNodeChange>();
+  const nodeDerived = new Map<string, FigmaDerivedSymbolDataEntry>();
+  const pathToNodeGuid = new Map<string, string>();
+
+  const resolveToNode = (pathKey: string, nodeGuid: string) => {
+    const derivedEntry = derivedMap.get(pathKey);
+    if (derivedEntry) {
+      nodeDerived.set(nodeGuid, derivedEntry);
+    }
+    const overrideEntry = overrideMap.get(pathKey);
+    if (overrideEntry) {
+      nodeOverride.set(nodeGuid, overrideEntry);
+    }
+  };
+
+  const guidToNodeMap = new Map<string, string>();
+  for (const node of flatSymbol) {
+    if (node.figma.guid) {
+      const guid = guidToString(node.figma.guid);
+      guidToNodeMap.set(guid, guid);
+    }
+  }
+
+  let directMatches = 0;
+  for (const entry of oneLevelDerived) {
+    const guid = entry.guidPath?.guids?.[0];
+    if (guid && guidToNodeMap.has(guidToString(guid))) {
+      directMatches += 1;
+    }
+  }
+
+  if (directMatches > oneLevelDerived.length * 0.5 || oneLevelDerived.length === 0) {
+    for (const entry of oneLevelDerived) {
+      const guid = entry.guidPath?.guids?.[0];
       if (!guid) {
         continue;
       }
-      const derivedEntry = oneLevelDerived[index];
-      if (derivedEntry) {
-        indexedDerivedMap.set(guid, derivedEntry);
+      const pathKey = guidToString(guid);
+      if (guidToNodeMap.has(pathKey)) {
+        resolveToNode(pathKey, pathKey);
+        pathToNodeGuid.set(pathKey, pathKey);
       }
-      const overrideEntry = safeOverrides.find((entry) => {
-        const path = entry.guidPath?.guids;
-        return path && path.length === 1 && path[0] === derivedEntry?.guidPath?.guids[0];
-      });
-      if (overrideEntry) {
-        indexedOverrideMap.set(guid, overrideEntry);
+    }
+    for (const [pathKey, overrideEntry] of overrideMap) {
+      if (pathKey.includes("/")) {
+        continue;
       }
+      if (guidToNodeMap.has(pathKey)) {
+        nodeOverride.set(pathKey, overrideEntry);
+      }
+    }
+  } else if (oneLevelDerived.length === flatSymbol.length) {
+    for (let index = 0; index < flatSymbol.length; index += 1) {
+      const node = flatSymbol[index];
+      const entry = oneLevelDerived[index];
+      if (!node?.figma.guid || !entry?.guidPath?.guids?.length) {
+        continue;
+      }
+      const actualGuid = guidToString(node.figma.guid);
+      const pathKey = guidPathKey(entry.guidPath.guids);
+      resolveToNode(pathKey, actualGuid);
+      pathToNodeGuid.set(guidToString(entry.guidPath.guids[0] ?? node.figma.guid), actualGuid);
+    }
+  } else if (firstLocalID !== undefined && sessionID !== undefined) {
+    const fullPathToNode = new Map<string, string>();
+    let fullIndex = 0;
+    const walkFull = (node: FigmaTreeNode) => {
+      if (node.figma.guid) {
+        fullPathToNode.set(`${sessionID}:${firstLocalID + fullIndex}`, guidToString(node.figma.guid));
+      }
+      fullIndex += 1;
+      const sortedChildren = [...node.children].sort(
+        (left, right) => (left.figma.guid?.localID ?? 0) - (right.figma.guid?.localID ?? 0),
+      );
+      for (const child of sortedChildren) {
+        walkFull(child);
+      }
+    };
+    for (const child of [...symbolNode.children].sort(
+      (left, right) => (left.figma.guid?.localID ?? 0) - (right.figma.guid?.localID ?? 0),
+    )) {
+      walkFull(child);
+    }
+
+    const rootGuid = symbolNode.figma.guid ? guidToString(symbolNode.figma.guid) : "";
+    const rootPathToNode = new Map<string, string>();
+    let rootIndex = 0;
+    const walkRoot = (node: FigmaTreeNode) => {
+      if (node.figma.guid) {
+        rootPathToNode.set(`${sessionID}:${firstLocalID + rootIndex}`, guidToString(node.figma.guid));
+      }
+      rootIndex += 1;
+      const sortedChildren = [...node.children].sort(
+        (left, right) => (left.figma.guid?.localID ?? 0) - (right.figma.guid?.localID ?? 0),
+      );
+      for (const child of sortedChildren) {
+        walkRoot(child);
+      }
+    };
+    walkRoot(symbolNode);
+
+    for (const [pathKey, nodeGuid] of fullPathToNode) {
+      pathToNodeGuid.set(pathKey, nodeGuid);
+    }
+    for (const [pathKey, entry] of derivedMap) {
+      if (pathKey.includes("/")) {
+        continue;
+      }
+      const nodeGuid = fullPathToNode.get(pathKey);
+      if (nodeGuid) {
+        nodeDerived.set(nodeGuid, entry);
+      }
+    }
+    for (const [pathKey, overrideEntry] of overrideMap) {
+      if (pathKey.includes("/")) {
+        continue;
+      }
+      if (rootPathToNode.get(pathKey) === rootGuid) {
+        continue;
+      }
+      const nodeGuid = fullPathToNode.get(pathKey);
+      if (nodeGuid) {
+        nodeOverride.set(nodeGuid, overrideEntry);
+      }
+    }
+  } else {
+    for (let index = 0; index < Math.min(flatSymbol.length, safeDerived.length); index += 1) {
+      const node = flatSymbol[index];
+      const entry = safeDerived[index];
+      if (!node?.figma.guid || !entry?.guidPath?.guids?.length) {
+        continue;
+      }
+      const actualGuid = guidToString(node.figma.guid);
+      const pathKey = guidPathKey(entry.guidPath.guids);
+      resolveToNode(pathKey, actualGuid);
+      if (entry.guidPath.guids.length === 1) {
+        pathToNodeGuid.set(guidToString(entry.guidPath.guids[0] ?? node.figma.guid), actualGuid);
+      }
+    }
+  }
+
+  if (pathToNodeGuid.size === 0) {
+    const nestedRootGuids = new Set<string>();
+    for (const entry of [...safeOverrides, ...safeDerived]) {
+      const firstGuid = entry.guidPath?.guids?.[0];
+      if (firstGuid) {
+        nestedRootGuids.add(guidToString(firstGuid));
+      }
+    }
+
+    const candidateInstances = flatSymbol.filter(
+      (node) =>
+        node !== symbolNode &&
+        (node.figma.type === "INSTANCE" || Boolean(node.figma.symbolData)) &&
+        node.figma.guid,
+    );
+
+    if (
+      nestedRootGuids.size > 0 &&
+      candidateInstances.length > 0 &&
+      (nestedRootGuids.size === candidateInstances.length || candidateInstances.length === 1)
+    ) {
+      const orderedRootGuids = Array.from(nestedRootGuids);
+      for (let index = 0; index < orderedRootGuids.length; index += 1) {
+        const virtualGuid = orderedRootGuids[index];
+        const candidate = candidateInstances[index];
+        if (virtualGuid && candidate?.figma.guid) {
+          pathToNodeGuid.set(virtualGuid, guidToString(candidate.figma.guid));
+        }
+      }
+    }
+  }
+
+  const nestedOverrideMap = new Map<string, FigmaNodeChange[]>();
+  const nestedDerivedMap = new Map<string, FigmaDerivedSymbolDataEntry[]>();
+
+  for (const [pathKey, overrideEntry] of overrideMap) {
+    if (!pathKey.includes("/")) {
+      continue;
+    }
+    const parts = pathKey.split("/");
+    const rootPath = parts[0];
+    if (!rootPath) {
+      continue;
+    }
+    const instanceGuid = pathToNodeGuid.get(rootPath) ?? rootPath;
+    const childGuids = overrideEntry.guidPath?.guids?.slice(1);
+    if (childGuids?.length) {
+      const nestedOverride: FigmaNodeChange = {
+        ...overrideEntry,
+        guidPath: { guids: childGuids },
+      };
+      const existing = nestedOverrideMap.get(instanceGuid) ?? [];
+      existing.push(nestedOverride);
+      nestedOverrideMap.set(instanceGuid, existing);
+    }
+  }
+
+  for (const [pathKey, entry] of derivedMap) {
+    if (!pathKey.includes("/")) {
+      continue;
+    }
+    const parts = pathKey.split("/");
+    const rootPath = parts[0];
+    if (!rootPath) {
+      continue;
+    }
+    const instanceGuid = pathToNodeGuid.get(rootPath) ?? rootPath;
+    const childGuids = entry.guidPath?.guids?.slice(1);
+    if (childGuids?.length) {
+      const nestedEntry: FigmaDerivedSymbolDataEntry = {
+        ...entry,
+        guidPath: { guids: childGuids },
+      };
+      const existing = nestedDerivedMap.get(instanceGuid) ?? [];
+      existing.push(nestedEntry);
+      nestedDerivedMap.set(instanceGuid, existing);
     }
   }
 
@@ -893,8 +1114,10 @@ export function applyInstanceOverrides(
     const currentPath = currentGuid ? [...parentPath, currentGuid] : parentPath;
     const directKey = currentGuid ? guidToString(currentGuid) : "";
     const pathKey = currentPath.length > 0 ? guidPathKey(currentPath) : "";
-    const directOverride = overrideMap.get(pathKey) ?? indexedOverrideMap.get(directKey);
-    const directDerived = derivedMap.get(pathKey) ?? indexedDerivedMap.get(directKey);
+    const directOverride = nodeOverride.get(directKey) ?? overrideMap.get(pathKey);
+    const directDerived = nodeDerived.get(directKey) ?? derivedMap.get(pathKey);
+    const nestedOverrides = nestedOverrideMap.get(directKey);
+    const nestedDerived = nestedDerivedMap.get(directKey);
 
     const figma: FigmaNodeChange = {
       ...node.figma,
@@ -938,6 +1161,19 @@ export function applyInstanceOverrides(
 
     if (directOverride) {
       applyOverrideToNode(figma, directOverride);
+    }
+
+    if ((nestedOverrides || nestedDerived) && (figma.type === "INSTANCE" || figma.symbolData)) {
+      if (nestedOverrides) {
+        const existingOverrides = figma.symbolData?.symbolOverrides ?? [];
+        figma.symbolData = {
+          ...figma.symbolData,
+          symbolOverrides: [...existingOverrides, ...nestedOverrides],
+        };
+      }
+      if (nestedDerived) {
+        figma.derivedSymbolData = nestedDerived;
+      }
     }
 
     const children = node.children.map((child) => applyToNode(child, currentPath));
@@ -1080,7 +1316,7 @@ function pushFigmaWarnings(figma: FigmaNodeChange, warnings: FigmaNativeWarning[
   if (figma.stackMode && figma.stackMode !== "NONE") {
     warnings.push({
       code: "layout_degraded",
-      message: `Figma 自动布局 "${figma.name ?? originNodeType ?? "Unnamed"}" 当前按静态几何结构导入。`,
+      message: `Figma 自动布局 "${figma.name ?? originNodeType ?? "Unnamed"}" 已保留布局元数据，当前画布仍按静态几何结构导入。`,
       originNodeId,
       originNodeType,
     });
@@ -1116,15 +1352,62 @@ function pushFigmaWarnings(figma: FigmaNodeChange, warnings: FigmaNativeWarning[
 
 function createFigmaMeta(
   figma: FigmaNodeChange,
-  options?: { degradationHints?: string[] },
+  options?: {
+    degradationHints?: string[];
+    parentStackMode?: FigmaNodeChange["stackMode"];
+  },
 ): CanvasImportedNodeMeta {
+  const autoLayout = getFigmaAutoLayoutMeta(figma, options?.parentStackMode);
   return {
     source: "figma-paste",
     originNodeType: "figma-native",
     originNodeId: figma.guid ? guidToString(figma.guid) : undefined,
     figmaNodeType: figma.type,
     degradationHints: options?.degradationHints,
+    autoLayout,
   };
+}
+
+export function getFigmaAutoLayoutMeta(
+  figma: FigmaNodeChange,
+  parentStackMode?: FigmaNodeChange["stackMode"],
+): CanvasImportedAutoLayoutMeta | undefined {
+  const meta: CanvasImportedAutoLayoutMeta = {};
+  if (figma.stackMode && figma.stackMode !== "NONE") {
+    meta.layout = figma.stackMode === "HORIZONTAL" ? "horizontal" : "vertical";
+    if (
+      figma.stackSpacing !== undefined &&
+      figma.stackSpacing !== 0 &&
+      figma.stackPrimaryAlignItems !== "SPACE_EVENLY"
+    ) {
+      meta.gap = figma.stackSpacing;
+    }
+    const padding = getFigmaPadding(figma);
+    if (padding !== undefined) {
+      meta.padding = padding;
+    }
+    meta.justifyContent = mapFigmaJustifyContent(figma.stackPrimaryAlignItems);
+    meta.alignItems = mapFigmaAlignItems(figma.stackCounterAlignItems);
+    if (figma.frameMaskDisabled !== true) {
+      meta.clipContent = true;
+    }
+  }
+
+  meta.widthMode = mapFigmaWidthSizing(figma, parentStackMode);
+  meta.heightMode = mapFigmaHeightSizing(figma, parentStackMode);
+
+  if (figma.stackChildPrimaryGrow !== undefined && figma.stackChildPrimaryGrow > 0) {
+    meta.grow = figma.stackChildPrimaryGrow;
+  }
+  const alignSelf = mapFigmaAlignSelf(figma.stackChildAlignSelf);
+  if (alignSelf) {
+    meta.alignSelf = alignSelf;
+  }
+  if (figma.stackPositioning) {
+    meta.positioning = figma.stackPositioning === "ABSOLUTE" ? "absolute" : "auto";
+  }
+
+  return Object.values(meta).some((value) => value !== undefined) ? meta : undefined;
 }
 
 function getNodeBounds(figma: FigmaNodeChange): {
@@ -1161,6 +1444,130 @@ function normalizePathBounds(figma: FigmaNodeChange, path: string) {
     width: Math.max(1, computed.maxX - computed.minX),
     height: Math.max(1, computed.maxY - computed.minY),
   };
+}
+
+function getFigmaPadding(
+  figma: FigmaNodeChange,
+): CanvasImportedAutoLayoutMeta["padding"] | undefined {
+  const hasHorizontal = figma.stackHorizontalPadding !== undefined;
+  const hasVertical = figma.stackVerticalPadding !== undefined;
+  const hasRight = figma.stackPaddingRight !== undefined;
+  const hasBottom = figma.stackPaddingBottom !== undefined;
+
+  if (!hasHorizontal && !hasVertical && !hasRight && !hasBottom) {
+    if (figma.stackPadding && figma.stackPadding > 0) {
+      return figma.stackPadding;
+    }
+    return undefined;
+  }
+
+  const top = figma.stackVerticalPadding ?? figma.stackPadding ?? 0;
+  const bottom = figma.stackPaddingBottom ?? top;
+  const left = figma.stackHorizontalPadding ?? figma.stackPadding ?? 0;
+  const right = figma.stackPaddingRight ?? left;
+  if (top === 0 && right === 0 && bottom === 0 && left === 0) {
+    return undefined;
+  }
+  if (top === right && right === bottom && bottom === left) {
+    return top;
+  }
+  if (top === bottom && left === right) {
+    return [top, right];
+  }
+  return [top, right, bottom, left];
+}
+
+function mapFigmaJustifyContent(
+  align?: FigmaNodeChange["stackPrimaryAlignItems"],
+): CanvasImportedAutoLayoutMeta["justifyContent"] {
+  switch (align) {
+    case "CENTER":
+      return "center";
+    case "MAX":
+      return "end";
+    case "SPACE_EVENLY":
+      return "space_between";
+    case "MIN":
+      return "start";
+    default:
+      return undefined;
+  }
+}
+
+function mapFigmaAlignItems(
+  align?: FigmaNodeChange["stackCounterAlignItems"],
+): CanvasImportedAutoLayoutMeta["alignItems"] {
+  switch (align) {
+    case "CENTER":
+      return "center";
+    case "MAX":
+      return "end";
+    case "BASELINE":
+      return "baseline";
+    case "MIN":
+      return "start";
+    default:
+      return undefined;
+  }
+}
+
+function mapFigmaWidthSizing(
+  figma: FigmaNodeChange,
+  parentStackMode?: FigmaNodeChange["stackMode"],
+): CanvasImportedAutoLayoutMeta["widthMode"] {
+  if (figma.stackPrimarySizing === "RESIZE_TO_FIT" && figma.stackMode === "HORIZONTAL") {
+    return "fit_content";
+  }
+  if (figma.stackCounterSizing === "RESIZE_TO_FIT" && figma.stackMode === "VERTICAL") {
+    return "fit_content";
+  }
+  if (figma.stackChildPrimaryGrow === 1 && parentStackMode === "HORIZONTAL") {
+    return "fill_container";
+  }
+  if (figma.stackChildAlignSelf === "STRETCH" && parentStackMode === "VERTICAL") {
+    return "fill_container";
+  }
+  return figma.size?.x ? "fixed" : undefined;
+}
+
+function mapFigmaHeightSizing(
+  figma: FigmaNodeChange,
+  parentStackMode?: FigmaNodeChange["stackMode"],
+): CanvasImportedAutoLayoutMeta["heightMode"] {
+  if (figma.stackPrimarySizing === "RESIZE_TO_FIT" && figma.stackMode === "VERTICAL") {
+    return "fit_content";
+  }
+  if (figma.stackCounterSizing === "RESIZE_TO_FIT" && figma.stackMode === "HORIZONTAL") {
+    return "fit_content";
+  }
+  if (figma.stackChildPrimaryGrow === 1 && parentStackMode === "VERTICAL") {
+    return "fill_container";
+  }
+  if (figma.stackChildAlignSelf === "STRETCH" && parentStackMode === "HORIZONTAL") {
+    return "fill_container";
+  }
+  return figma.size?.y ? "fixed" : undefined;
+}
+
+function mapFigmaAlignSelf(
+  align?: FigmaNodeChange["stackChildAlignSelf"],
+): CanvasImportedAutoLayoutMeta["alignSelf"] {
+  switch (align) {
+    case "MIN":
+      return "start";
+    case "CENTER":
+      return "center";
+    case "MAX":
+      return "end";
+    case "STRETCH":
+      return "stretch";
+    case "BASELINE":
+      return "baseline";
+    case "AUTO":
+      return "auto";
+    default:
+      return undefined;
+  }
 }
 
 function getPrimaryVisiblePaint(paints?: FigmaPaint[]): FigmaPaint | undefined {

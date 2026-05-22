@@ -4,9 +4,9 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { WebSocketHandle } from "../src/hooks/use-websocket";
-import { ToastProvider } from "../src/components/toast";
 import { ChatSidebar } from "../src/components/chat-sidebar";
+import { ToastProvider } from "../src/components/toast";
+import type { WebSocketHandle } from "../src/hooks/use-websocket";
 
 const {
   createRunMock,
@@ -55,6 +55,7 @@ vi.mock("../src/hooks/use-sse-stream", () => ({
 
 function createMockWs(): WebSocketHandle {
   return {
+    bindCanvas: vi.fn(),
     connected: true,
     registerRPC: vi.fn(() => () => {}),
   };
@@ -142,9 +143,7 @@ describe("ChatSidebar", () => {
       </ToastProvider>,
     );
 
-    const input = await screen.findByPlaceholderText(
-      /start with an idea/i,
-    );
+    const input = await screen.findByPlaceholderText(/start with an idea/i);
     await userEvent.type(input, "hello cucumber{Enter}");
 
     await waitFor(() =>

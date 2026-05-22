@@ -1,6 +1,6 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-22 21:15 CST
+Last updated: 2026-05-22 23:23 CST
 
 ## Current Session
 
@@ -35,18 +35,27 @@ Status:
 - Added parser support files and dependency wiring for native Figma clipboard decode inside `packages/canvas-core`, plus focused tests that cover clipboard extraction and invalid-native-payload fallback behavior.
 - Continued P2.2 with a second batch focused on `SYMBOL / INSTANCE` fidelity: native import now collects symbol trees, merges inherited master props into instances, and replays direct override / derived data onto inlined instance children before mapping them into editable `CanvasNode` output.
 - Added focused `canvas-core` coverage for symbol prop merging and instance override replay so the new instance path is verified without requiring full clipboard binary fixtures.
+- Continued P2.2 with a third batch focused on nested instance fidelity: native import now resolves multi-segment `guidPath` entries, maps virtual outer-path GUIDs onto actual nested instance nodes, and forwards the remaining override / derived payload into child instances for recursive replay.
+- Added focused `canvas-core` coverage for nested instance path propagation so multi-layer override payloads are verified without needing a large clipboard binary fixture.
+- Continued P2.2 with a fourth batch focused on auto-layout fidelity: imported Figma nodes and Figma-like HTML fallback nodes now preserve normalized layout metadata such as direction, gap, padding, alignment, sizing mode, clip behavior, and child grow/align-self hints inside import metadata, while warnings now clarify that the runtime still renders static geometry.
+- Added a browser-side canvas import harness route plus a Playwright smoke scaffold for real paste events, then fixed the shared `tests/e2e` Next webServer bootstrap by launching from `apps/web` and forcing `NODE_ENV=development` so Tailwind/PostCSS initialize correctly in Playwright.
+- Re-enabled the real-paste `canvas-import` smoke, verified the existing `transport` smoke against the same webServer, and confirmed the full `tests/e2e` suite now runs cleanly instead of failing on the old CSS/Tailwind base issue.
+- Taught the editor to consume imported auto-layout metadata: `@cucumber/canvas-core` now exposes a pure reflow helper that reapplies imported layout hints onto child geometry, while `CanvasSurface` uses it for imported layout roots on bounds changes and the property panel now surfaces/imports those hints with a manual "应用布局" action.
+- Switched agent canvas tooling to the live editor path: opened canvases bind their WebSocket connection with `canvas.bind`, expose document get/set RPC, and `inspect_canvas` / `manipulate_canvas` now require the live editor instead of mutating legacy Excalidraw payloads.
+- Added the production migration path that resets non-`cucumber-canvas-v1` canvas content to the canonical Cucumber canvas document default, matching the decision to drop legacy Excalidraw canvas data.
 
 ## Next Targets
 
 1. Add deterministic browser/e2e smoke coverage for create container, bind Agent, insert generated content, refresh restore, and basic tool interactions.
 2. Add an Agent-output smoke scenario that verifies a visual prompt creates durable, containerized canvas results instead of leaving the canvas as an unstructured artifact dump.
 3. Design the selected-result Agent overlay and quick-action contract for image upscale, outpaint, local edit, and variant generation.
-4. Continue P2.2 by deepening native Figma clipboard decode for nested instance overrides, richer auto-layout preservation, and stronger image/style parity on top of the new native-first parser path.
-5. Add deterministic browser/e2e coverage for system paste from SVG/Figma clipboard content, including the compatibility summary and fallback path.
-6. Continue P1 canvas parity with richer path/icon editing, reference guides, advanced snapping, shape-specific handles, and more complete property controls.
-7. Build the next P2 layers on top of the new import provenance metadata: reusable components/ref, variables/design tokens, and design-as-code export.
-8. Replace the current DOM runtime internals with a dedicated editor adapter if needed, keeping `CanvasApi` stable.
-9. Decide whether `@excalidraw/excalidraw` can be removed after dependent panels and legacy helpers no longer import it.
+4. Continue P2.2 by deepening native Figma clipboard decode for stronger image/style parity and more robust nested virtual-GUID matching heuristics on top of the new recursive instance path mapping and auto-layout metadata.
+5. Expand deterministic browser/e2e coverage for system paste from SVG/Figma clipboard content, including nested component instances, the compatibility summary, and the fallback path now that the shared test webServer is healthy again.
+6. Decide whether to harden `apps/web/next.config.ts` for local multi-lockfile setups with `outputFileTracingRoot` / `allowedDevOrigins`, or keep those as known non-blocking dev warnings for now.
+7. Continue P1 canvas parity with richer path/icon editing, reference guides, advanced snapping, shape-specific handles, and more complete property controls.
+8. Build the next P2 layers on top of the new import provenance metadata: reusable components/ref, variables/design tokens, and design-as-code export.
+9. Replace the current DOM runtime internals with a dedicated editor adapter if needed, keeping `CanvasApi` stable.
+10. Decide whether `@excalidraw/excalidraw` can be removed after dependent panels and legacy helpers no longer import it.
 
 ## Handoff Notes
 
@@ -59,6 +68,12 @@ Status:
 
 - Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
 - Passed: `pnpm --filter @cucumber/canvas-core test`.
+- Passed: `pnpm --filter @cucumber/web typecheck`.
+- Passed: targeted diagnostics for `packages/canvas-core/src/types.ts`, `packages/canvas-core/src/import.ts`, `packages/canvas-core/src/figma-native-types.ts`, `packages/canvas-core/src/figma-native.ts`, `packages/canvas-core/src/__tests__/canvas-core.test.ts`, `apps/web/src/components/canvas/canvas-surface.tsx`, `apps/web/src/components/canvas-editor.tsx`, `apps/web/src/app/test/canvas-import/**`, `tests/e2e/canvas-import.spec.ts`, and `playwright.config.ts`.
+- Passed: `pnpm exec playwright test tests/e2e/transport.spec.ts`.
+- Passed: `pnpm exec playwright test tests/e2e/canvas-import.spec.ts`.
+- Passed: `pnpm exec playwright test tests/e2e`.
+- Passed: `pnpm --filter @cucumber/canvas-core test -- canvas-core.test.ts`.
 - Passed: `pnpm --filter @cucumber/web typecheck`.
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/use-canvas-clipboard-import.test.tsx`.
 - Passed: `pnpm install --no-frozen-lockfile` after adding native Figma clipboard parser dependencies to `packages/canvas-core`.

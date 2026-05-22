@@ -14,12 +14,21 @@ export const wsRpcResponseSchema = z.object({
   error: z.string().optional(),
 });
 
-export const wsClientMessageSchema = wsRpcResponseSchema;
+export const wsCanvasBindSchema = z.object({
+  type: z.literal("canvas.bind"),
+  canvasId: z.string().min(1),
+});
+
+export const wsClientMessageSchema = z.discriminatedUnion("type", [
+  wsRpcResponseSchema,
+  wsCanvasBindSchema,
+]);
 
 export const wsServerMessageSchema = wsRpcRequestSchema;
 
 export type WsRpcRequest = z.infer<typeof wsRpcRequestSchema>;
 export type WsRpcResponse = z.infer<typeof wsRpcResponseSchema>;
+export type WsCanvasBind = z.infer<typeof wsCanvasBindSchema>;
 export type WsClientMessage = z.infer<typeof wsClientMessageSchema>;
 export type WsServerMessage = z.infer<typeof wsServerMessageSchema>;
 

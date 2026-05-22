@@ -7,3 +7,4 @@ export * from "./history.js";
 export * from "./clipboard.js";
 export * from "./import.js";
 export * from "./figma-native.js";
+export * from "./layout.js";

@@ -1,4 +1,3 @@
-import { describe, expect, it } from "vitest";
 import {
   type ContainerNode,
   applyCanvasOperation,
@@ -6,6 +5,7 @@ import {
   createEmptyCanvasDocument,
   isCucumberCanvasDocument,
 } from "@cucumber/canvas-core";
+import { describe, expect, it } from "vitest";
 
 import { createManipulateCanvasTool } from "./manipulate-canvas.js";
 
@@ -36,19 +36,15 @@ function createContainer(id: string): ContainerNode {
 
 function createClient(content: unknown) {
   const state = { content };
-  const query = {
-    select: () => query,
-    update: (value: { content: unknown }) => {
-      state.content = value.content;
-      return query;
-    },
-    eq: () => query,
-    single: async () => ({ data: { content: state.content }, error: null }),
-  };
 
   return {
     state,
-    from: () => query,
+    liveCanvasService: {
+      getDocument: async () => state.content,
+      setDocument: async (_user: unknown, _canvasId: string, doc: unknown) => {
+        state.content = doc;
+      },
+    },
   };
 }
 
@@ -62,7 +58,8 @@ describe("createManipulateCanvasTool", () => {
 
     const client = createClient(doc);
     const tool = createManipulateCanvasTool({
-      createUserClient: () => client,
+      createUserClient: () => ({}),
+      liveCanvasService: client.liveCanvasService as never,
     });
 
     const raw = await tool.invoke(
@@ -83,13 +80,15 @@ describe("createManipulateCanvasTool", () => {
       createdIds?: Record<string, string>;
     };
     expect(result.applied).toBe(1);
-    expect(result.createdIds?.op_0).toBeTruthy();
+    const createdTextId = result.createdIds?.op_0;
+    expect(createdTextId).toBeTruthy();
+    if (!createdTextId) throw new Error("Expected add_text to create a node");
     expect(isCucumberCanvasDocument(client.state.content)).toBe(true);
 
     const nextDoc = client.state.content as ReturnType<
       typeof createEmptyCanvasDocument
     >;
-    expect(nextDoc.nodes[result.createdIds!.op_0!]).toMatchObject({
+    expect(nextDoc.nodes[createdTextId]).toMatchObject({
       type: "text",
       parentId: "container_1",
       text: "生成标题",
@@ -119,7 +118,8 @@ describe("createManipulateCanvasTool", () => {
 
     const client = createClient(doc);
     const tool = createManipulateCanvasTool({
-      createUserClient: () => client,
+      createUserClient: () => ({}),
+      liveCanvasService: client.liveCanvasService as never,
     });
 
     const raw = await tool.invoke(
@@ -147,6 +147,67 @@ describe("createManipulateCanvasTool", () => {
     >;
     expect(nextDoc.nodes[textId]).toMatchObject({
       bounds: { x: 24, y: 32, width: 160, height: 60 },
+    });
+  });
+
+  it("creates a container and lets later operations reference it by op id", async () => {
+    const client = createClient(createEmptyCanvasDocument());
+    const tool = createManipulateCanvasTool({
+      createUserClient: () => ({}),
+      liveCanvasService: client.liveCanvasService as never,
+    });
+
+    const raw = await tool.invoke(
+      {
+        operations: [
+          {
+            action: "add_container",
+            title: "方案 A",
+            x: 100,
+            y: 120,
+            width: 500,
+            height: 320,
+          },
+          {
+            action: "add_text",
+            container_id: "op_0",
+            text: "关键视觉方向",
+          },
+        ],
+      },
+      {
+        configurable: {
+          access_token: "token",
+          canvas_id: "canvas_1",
+          user_id: "user-1",
+        },
+      },
+    );
+
+    const result = JSON.parse(raw as string) as {
+      applied: number;
+      createdIds?: Record<string, string>;
+    };
+    expect(result.applied).toBe(2);
+    const containerId = result.createdIds?.op_0;
+    const textId = result.createdIds?.op_1;
+    expect(containerId).toBeTruthy();
+    expect(textId).toBeTruthy();
+    if (!containerId || !textId) {
+      throw new Error("Expected add_container and add_text to create nodes");
+    }
+
+    const nextDoc = client.state.content as ReturnType<
+      typeof createEmptyCanvasDocument
+    >;
+    expect(nextDoc.nodes[containerId]).toMatchObject({
+      type: "container",
+      title: "方案 A",
+    });
+    expect(nextDoc.nodes[textId]).toMatchObject({
+      type: "text",
+      parentId: containerId,
+      text: "关键视觉方向",
     });
   });
 });

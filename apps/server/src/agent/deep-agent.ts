@@ -15,6 +15,7 @@ import {
   type ServerEnv,
 } from "../config/env.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
+import type { LiveCanvasService } from "../features/canvas/live-canvas-service.js";
 import {
   type AgentBackendResult,
   createAgentBackend,
@@ -44,6 +45,7 @@ export type CucumberAgentFactory = (options: {
   connectionManager?: ConnectionManager;
   createUserClient?: (accessToken: string) => any;
   env: ServerEnv;
+  liveCanvasService?: LiveCanvasService;
   model?: BaseLanguageModel | string;
   persistImage?: PersistImageFn;
 
@@ -61,6 +63,7 @@ export function createCucumberDeepAgent(options: {
   connectionManager?: ConnectionManager;
   createUserClient?: (accessToken: string) => any;
   env: ServerEnv;
+  liveCanvasService?: LiveCanvasService;
   model?: BaseLanguageModel | string;
   persistImage?: PersistImageFn;
 
@@ -129,6 +132,9 @@ export function createCucumberDeepAgent(options: {
       ...(options.brandKitId != null ? { brandKitId: options.brandKitId } : {}),
       ...(options.connectionManager
         ? { connectionManager: options.connectionManager }
+        : {}),
+      ...(options.liveCanvasService
+        ? { liveCanvasService: options.liveCanvasService }
         : {}),
       ...(options.persistImage ? { persistImage: options.persistImage } : {}),
       ...(backendResult.sandboxDir

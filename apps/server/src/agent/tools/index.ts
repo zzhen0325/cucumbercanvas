@@ -1,6 +1,7 @@
 import type { StructuredTool } from "@langchain/core/tools";
 import type { BackendFactory, BackendProtocol } from "deepagents";
 
+import type { LiveCanvasService } from "../../features/canvas/live-canvas-service.js";
 import { bridgeMcpServerToolsToDeepAgent } from "../../mcp/deepagents-bridge.js";
 import { createCucumberMcpServer } from "../../mcp/server.js";
 import type { ConnectionManager } from "../../ws/connection-manager.js";
@@ -56,6 +57,7 @@ export function createMainAgentTools(
     createUserClient: (accessToken: string) => any;
     brandKitId?: string | null;
     connectionManager?: ConnectionManager;
+    liveCanvasService?: LiveCanvasService;
     persistImage?: PersistImageFn;
     sandboxDir?: string;
     submitImageJob?: SubmitImageJobFn;

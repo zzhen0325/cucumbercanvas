@@ -70,6 +70,8 @@ The next import-fidelity wave uses a native-first Figma clipboard strategy: when
 
 Within that native-first path, `SYMBOL` and `INSTANCE` nodes should be treated as an import-time fidelity concern first, not as a new runtime document type. The current wave is allowed to inline master symbol content into imported instance trees and replay override/derived data so visual results stay editable in the existing schema, while still surfacing explicit warnings that reusable component semantics are not yet preserved as first-class runtime references.
 
+Auto-layout fidelity now spans two layers. Imported Figma or Figma-like nodes still preserve normalized auto-layout metadata such as direction, gap, padding, alignment, sizing mode, grow, and clip behavior inside import metadata, and the editor now consumes those hints in two constrained ways without changing the persisted document schema: the property panel exposes the imported layout contract for inspection/manual re-application, and imported layout containers can reflow their child geometry from those hints when the user reapplies layout or resizes/moves the layout root. This remains a bounded editor/runtime adaptation rather than a full runtime flexbox engine or a new first-class layout schema.
+
 ## Backend Architecture
 
 The backend is split into route, service, agent, generation, and worker layers:

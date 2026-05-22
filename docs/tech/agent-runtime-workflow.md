@@ -107,6 +107,13 @@
 - `systemPrompt`
 - `workspaceSkills`
 
+画布工具还有一条 live editor 依赖链：
+
+- 前端画布打开后通过 WebSocket 发送 `canvas.bind`，把当前浏览器连接绑定到 `canvasId`
+- `CanvasEditor` 注册 `canvas.document.get` / `canvas.document.set` / `canvas.screenshot` RPC
+- `inspect_canvas` 和 `manipulate_canvas` 通过 `LiveCanvasService` 读取/写入当前打开的编辑器文档
+- 没有打开对应画布页面时，画布工具返回 `live_canvas_unavailable`，不会回退写数据库
+
 系统提示词会在基础 prompt 之上继续追加：
 
 - 品牌套件提示
@@ -318,7 +325,7 @@ Thinking 是运行时暴露给前端的推理流，不是独立产物类型。
 
 来源主要包括：
 
-- `manipulate_canvas`
+- `manipulate_canvas` 对 live editor 文档的写入
 - 生成完成后的图片落图
 - 生成完成后的视频插入
 
@@ -355,10 +362,10 @@ Agent 在 sandbox 中通过 `execute` 生成的文件，不会自动成为用户
   - 作用：在 `/workspace` 中搜索项目文本内容
   - 实现：`apps/server/src/agent/tools/project-search.ts`
 - `inspect_canvas`
-  - 作用：读取当前画布元素、区域、类型、边界框和视图信息
+  - 作用：通过 live editor 读取当前 Cucumber 画布节点、区域、类型、边界框和视图信息
   - 实现：`apps/server/src/agent/tools/inspect-canvas.ts`
 - `manipulate_canvas`
-  - 作用：增删改移动画布元素，支持文本、形状、线段、样式、对齐、分布、层级等
+  - 作用：通过 live editor 增删改移动 Cucumber 画布节点，支持容器、文本、形状、样式、对齐、分布、层级等
   - 实现：`apps/server/src/agent/tools/manipulate-canvas.ts`
 - `generate_image`
   - 作用：生成图片，支持结合附件和模型偏好

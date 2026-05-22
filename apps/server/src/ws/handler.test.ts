@@ -1,5 +1,5 @@
-import Fastify from "fastify";
 import websocket from "@fastify/websocket";
+import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 
@@ -55,6 +55,17 @@ describe("registerWsRoute", () => {
       expect(connectionManager.handleRpcResponse).not.toHaveBeenCalled();
 
       socket.send(
+        JSON.stringify({ type: "canvas.bind", canvasId: "canvas-1" }),
+      );
+      await expect
+        .poll(() => connectionManager.bindCanvas.mock.calls.length)
+        .toBe(1);
+      expect(connectionManager.bindCanvas).toHaveBeenCalledWith(
+        "conn-1",
+        "canvas-1",
+      );
+
+      socket.send(
         JSON.stringify({
           type: "rpc.response",
           id: "rpc-1",
@@ -89,6 +100,7 @@ async function createHarness(
   await app.register(websocket);
 
   const connectionManager = {
+    bindCanvas: vi.fn(),
     handleRpcResponse: vi.fn(),
     register: vi.fn(),
     remove: vi.fn(),
@@ -107,7 +119,7 @@ async function createHarness(
   return {
     app,
     connectionManager,
-    wsUrl: origin.replace("http", "ws") + "/api/ws",
+    wsUrl: `${origin.replace("http", "ws")}/api/ws`,
   };
 }
 

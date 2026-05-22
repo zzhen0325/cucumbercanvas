@@ -156,6 +156,17 @@ export interface FigmaNodeChange {
   stackMode?: "NONE" | "HORIZONTAL" | "VERTICAL";
   stackSpacing?: number;
   stackPadding?: number;
+  stackHorizontalPadding?: number;
+  stackVerticalPadding?: number;
+  stackPaddingRight?: number;
+  stackPaddingBottom?: number;
+  stackPrimarySizing?: string;
+  stackCounterSizing?: string;
+  stackPrimaryAlignItems?: "MIN" | "CENTER" | "MAX" | "SPACE_EVENLY";
+  stackCounterAlignItems?: "MIN" | "CENTER" | "MAX" | "BASELINE";
+  stackChildPrimaryGrow?: number;
+  stackChildAlignSelf?: string;
+  stackPositioning?: "AUTO" | "ABSOLUTE";
   frameMaskDisabled?: boolean;
   vectorData?: FigmaVectorData;
   fillGeometry?: FigmaPath[];

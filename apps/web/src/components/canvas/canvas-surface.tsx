@@ -2,9 +2,11 @@
 
 import {
   type AgentBinding,
+  applyImportedAutoLayout,
   type CanvasAsset,
   type CanvasBounds,
   type CanvasClipboardData,
+  type CanvasImportedAutoLayoutMeta,
   type ClipboardImportPayload,
   CanvasHistoryManager,
   getCanvasImportedNodeMeta,
@@ -131,6 +133,7 @@ export type CanvasApi = {
   deleteNode: (nodeId: string) => void;
   bindAgentToContainer: (containerId: string, binding: AgentBinding) => void;
   setSelection: (nodeIds: string[]) => void;
+  flushPendingSave: () => Promise<void>;
   exportImage: (opts?: {
     maxWidthOrHeight?: number;
     mimeType?: string;
@@ -871,6 +874,7 @@ export const CanvasSurface = memo(
         bindAgentToContainer: (containerId, binding) =>
           applyOperation({ type: "bindAgent", containerId, binding }),
         setSelection,
+        flushPendingSave: async () => undefined,
         exportImage: (opts) => exportDocumentImage(docRef.current, opts),
         getSceneElements: () => toSceneElements(docRef.current),
         getFiles: () => toFiles(docRef.current),
@@ -1083,11 +1087,46 @@ export const CanvasSurface = memo(
       // The server replaces initialContent only when the canvas changes.
     }, [commitDocument, initialContent]);
 
+    const applyAutoLayoutAwareNodeUpdate = useCallback(
+      (
+        baseDoc: CucumberCanvasDocument,
+        nodeId: string,
+        updates: Partial<CanvasNode>,
+      ) => {
+        const existing = baseDoc.nodes[nodeId];
+        if (!existing) {
+          return baseDoc;
+        }
+        let next = applyCanvasOperation(baseDoc, {
+          type: "updateNode",
+          nodeId,
+          updates,
+        });
+        if (
+          updates.bounds &&
+          "childrenOrder" in existing &&
+          getCanvasImportedNodeMeta(existing.meta)?.autoLayout
+        ) {
+          next = applyImportedAutoLayout(next, nodeId);
+        }
+        return next;
+      },
+      [],
+    );
+
     const updateNode = useCallback(
       (nodeId: string, updates: Partial<CanvasNode>) => {
-        applyOperation({ type: "updateNode", nodeId, updates });
+        const next = applyAutoLayoutAwareNodeUpdate(
+          docRef.current,
+          nodeId,
+          updates,
+        );
+        if (next === docRef.current) {
+          return;
+        }
+        commitDocument(next);
       },
-      [applyOperation],
+      [applyAutoLayoutAwareNodeUpdate, commitDocument],
     );
 
     const deleteSelected = useCallback(() => {
@@ -1348,13 +1387,9 @@ export const CanvasSurface = memo(
               y: origin.y + dy,
             });
             activeGuide = activeGuide ?? snapped.guides;
-            next = applyCanvasOperation(next, {
-              type: "updateNode",
-              nodeId,
-              updates: {
-                bounds: snapped.bounds,
-              } as Partial<CanvasNode>,
-            });
+            next = applyAutoLayoutAwareNodeUpdate(next, nodeId, {
+              bounds: snapped.bounds,
+            } as Partial<CanvasNode>);
           }
           setSnapGuides(activeGuide);
           commitDocument(next, { captureHistory: false, notify: false });
@@ -1393,14 +1428,12 @@ export const CanvasSurface = memo(
         );
         const { bounds: nextBounds, guides } = snapBoundsToGrid(resizedBounds);
         setSnapGuides(guides);
-        const next = applyCanvasOperation(docRef.current, {
-          type: "updateNode",
-          nodeId: drag.nodeId,
-          updates: { bounds: nextBounds } as Partial<CanvasNode>,
-        });
+          const next = applyAutoLayoutAwareNodeUpdate(docRef.current, drag.nodeId, {
+            bounds: nextBounds,
+          } as Partial<CanvasNode>);
         commitDocument(next, { captureHistory: false, notify: false });
       },
-      [commitDocument, setSelection],
+      [applyAutoLayoutAwareNodeUpdate, commitDocument, setSelection],
     );
 
     const handlePointerUp = useCallback(
@@ -1642,6 +1675,17 @@ export const CanvasSurface = memo(
             onUpdate={(updates) =>
               updateNode(selectedNode.id, updates as Partial<CanvasNode>)
             }
+            onApplyImportedAutoLayout={() => {
+              const next = applyImportedAutoLayout(docRef.current, selectedNode.id);
+              if (next === docRef.current) {
+                return;
+              }
+              console.info("[canvas-runtime] imported-auto-layout.applied", {
+                nodeId: selectedNode.id,
+                source: getCanvasImportedNodeMeta(selectedNode.meta)?.source,
+              });
+              commitDocument(next);
+            }}
             onBindAgent={(binding) =>
               selectedNode.type === "container"
                 ? api.bindAgentToContainer(selectedNode.id, binding)
@@ -1981,6 +2025,7 @@ function renderNodeContent(
   selected: boolean,
   onUpdate: (nodeId: string, updates: Partial<CanvasNode>) => void,
 ) {
+  const importedAutoLayout = getCanvasImportedNodeMeta(node.meta)?.autoLayout;
   const ring = selected
     ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
     : "";
@@ -1993,6 +2038,7 @@ function renderNodeContent(
             borderColor: node.style?.stroke ?? "#6c5ce7",
             backgroundColor: node.style?.fill ?? "rgba(255,255,255,.78)",
             opacity: node.style?.opacity ?? 1,
+            overflow: importedAutoLayout?.clipContent ? "hidden" : undefined,
           }}
         >
           <div className="flex h-8 items-center justify-between rounded-t-md border-b border-border/70 bg-background/60 px-3">
@@ -2102,16 +2148,28 @@ function CanvasPropertyPanel({
   node,
   context,
   onUpdate,
+  onApplyImportedAutoLayout,
   onBindAgent,
 }: {
   node: CanvasNode;
   context?: ContextSlots;
   onUpdate: (updates: Partial<CanvasNode>) => void;
+  onApplyImportedAutoLayout?: () => void;
   onBindAgent: (binding: AgentBinding) => void;
 }) {
   const [agentName, setAgentName] = useState(
     node.type === "container" ? (node.agentBinding?.name ?? "") : "",
   );
+  const importedMeta = getCanvasImportedNodeMeta(node.meta);
+  const importedAutoLayout = importedMeta?.autoLayout;
+  const importedAutoLayoutEntries = importedAutoLayout
+    ? formatImportedAutoLayoutEntries(importedAutoLayout)
+    : [];
+  const canApplyImportedAutoLayout =
+    Boolean(onApplyImportedAutoLayout) &&
+    Boolean(importedAutoLayout) &&
+    "childrenOrder" in node &&
+    node.childrenOrder.length > 0;
   const titleInputId = `${node.id}-title`;
   const rulesInputId = `${node.id}-rules`;
   const agentInputId = `${node.id}-agent`;
@@ -2323,6 +2381,46 @@ function CanvasPropertyPanel({
         </>
       ) : null}
 
+      {importedAutoLayout ? (
+        <div className="mt-3 rounded-lg border border-border/70 bg-background/70 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium text-foreground">导入布局</p>
+              <p className="text-[11px] text-muted-foreground">
+                {importedMeta?.importSourceLabel ?? "导入内容"} 的 auto-layout metadata
+              </p>
+            </div>
+            {canApplyImportedAutoLayout ? (
+              <button
+                type="button"
+                className="rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-muted"
+                onClick={() => onApplyImportedAutoLayout?.()}
+              >
+                应用布局
+              </button>
+            ) : null}
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            {importedAutoLayoutEntries.map(([label, value]) => (
+              <div
+                key={label}
+                className="rounded-md border border-border/60 bg-card px-2 py-1.5"
+              >
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  {label}
+                </div>
+                <div className="mt-0.5 text-xs text-foreground">{value}</div>
+              </div>
+            ))}
+          </div>
+          {canApplyImportedAutoLayout ? (
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              容器几何变化后会按这些导入布局提示重新排布当前子节点。
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {context ? (
         <p className="mt-3 line-clamp-2 text-[11px] text-muted-foreground">
           Effective context: {JSON.stringify(context)}
@@ -2457,6 +2555,39 @@ function TextField({
   );
 }
 
+function formatImportedAutoLayoutEntries(
+  autoLayout: CanvasImportedAutoLayoutMeta,
+): Array<[string, string]> {
+  const entries: Array<[string, string | number | boolean | undefined]> = [
+    ["方向", autoLayout.layout],
+    ["间距", autoLayout.gap],
+    ["内边距", formatImportedPadding(autoLayout.padding)],
+    ["主轴对齐", autoLayout.justifyContent],
+    ["交叉对齐", autoLayout.alignItems],
+    ["宽度模式", autoLayout.widthMode],
+    ["高度模式", autoLayout.heightMode],
+    ["自身对齐", autoLayout.alignSelf],
+    ["定位", autoLayout.positioning],
+    ["Grow", autoLayout.grow],
+    ["裁切", autoLayout.clipContent === undefined ? undefined : autoLayout.clipContent ? "开启" : "关闭"],
+  ];
+  return entries.filter((entry): entry is [string, string] => entry[1] !== undefined).map(
+    ([label, value]) => [label, String(value)],
+  );
+}
+
+function formatImportedPadding(
+  padding: CanvasImportedAutoLayoutMeta["padding"],
+): string | undefined {
+  if (padding === undefined) {
+    return undefined;
+  }
+  if (typeof padding === "number") {
+    return `${padding}`;
+  }
+  return padding.join(" / ");
+}
+
 function isPaintNode(node: CanvasNode): boolean {
   return [
     "rect",
@@ -2512,6 +2643,7 @@ function toSceneElement(node: CanvasNode, depth = 0): CanvasSceneElement {
       importSourceLabel: importMeta?.importSourceLabel,
       importWarningCount: importMeta?.warningCount,
       degradationHints: importMeta?.degradationHints,
+      autoLayout: importMeta?.autoLayout,
       isCucumberCanvasNode: true,
       nodeType: node.type,
     },

@@ -20,11 +20,11 @@ import type { ServerEnv } from "../config/env.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import {
-  createImageGenerationGroup,
   insertVideoElement,
   markImageGenerationGroupFailed,
   replaceImageGenerationPlaceholder,
 } from "../features/canvas/canvas-element-writer.js";
+import type { LiveCanvasService } from "../features/canvas/live-canvas-service.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import type {
   AuthenticatedUser,
@@ -46,7 +46,6 @@ import { adaptDeepAgentStream } from "./stream-adapter.js";
 // execute 工具由 deepagents 内置提供（LocalShellBackend 作为 sandbox backend）
 // 不需要自定义代码执行工具
 import type { SubmitImageJobFn } from "./tools/image-generate.js";
-import { resolveImagePlacement } from "./tools/image-generate.js";
 import { buildCanvasSummaryForContext } from "./tools/inspect-canvas.js";
 import type { SubmitVideoJobFn } from "./tools/video-generate.js";
 import {
@@ -268,6 +267,7 @@ type CreateAgentRuntimeOptions = {
   eventBuffer?: CanvasEventBuffer;
   eventDelayMs?: number;
   jobService?: JobService;
+  liveCanvasService?: LiveCanvasService;
   model?: BaseLanguageModel | string;
   now?: () => string;
   runIdFactory?: () => string;
@@ -493,71 +493,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               .eq("id", canvasId)
               .maybeSingle();
 
-            if (isCucumberCanvasDocument(canvasRow?.content)) {
-              jobLap("canvas_generation_group_skipped", {
-                canvasId,
-                jobId: job.id,
-                reason: "cucumber_canvas_document",
-              });
-            } else {
-              const imagePlacement = resolveImagePlacement({
-                ...(input.placementX != null
-                  ? { placementX: input.placementX }
-                  : {}),
-                ...(input.placementY != null
-                  ? { placementY: input.placementY }
-                  : {}),
-                ...(input.placementWidth != null
-                  ? { placementWidth: input.placementWidth }
-                  : {}),
-                ...(input.placementHeight != null
-                  ? { placementHeight: input.placementHeight }
-                  : {}),
-                aspectRatio: input.aspectRatio,
-              });
-              const group = await createImageGenerationGroup(writerClient, {
-                canvasId,
-                userPrompt: run.prompt,
-                optimizedPrompt: input.prompt,
-                title: input.title,
-                model: input.model,
-                jobId: job.id,
-                runId,
-                sessionId,
-                aspectRatio: input.aspectRatio,
-                ...(imagePlacement ? { imagePlacement } : {}),
-              });
-              groupId = group.groupId;
-              placeholderId = group.placeholderId;
-
-              const payloadWithGroup = {
-                ...(job.payload ?? {}),
-                image_generation_group_id: groupId,
-                image_placeholder_id: placeholderId,
-              };
-              const { error: payloadUpdateError } = await writerClient
-                .from("background_jobs")
-                .update({ payload: payloadWithGroup })
-                .eq("id", job.id);
-              if (payloadUpdateError) {
-                throw new Error(
-                  `Failed to attach image generation canvas group to job: ${payloadUpdateError.message}`,
-                );
-              }
-
-              options.eventBuffer?.publish(canvasId, {
-                type: "canvas.sync" as const,
-                runId,
-                timestamp: new Date().toISOString(),
-              });
-              jobLap("canvas_generation_group_created", {
-                jobId: job.id,
-                canvasId,
-                groupId,
-                placeholderId,
-                model: input.model,
-              });
-            }
+            jobLap("canvas_generation_group_skipped", {
+              canvasId,
+              jobId: job.id,
+              reason: isCucumberCanvasDocument(canvasRow?.content)
+                ? "cucumber_canvas_document"
+                : "non_cucumber_canvas_document_reset_on_insert",
+            });
           }
 
           // Poll until terminal state
@@ -1084,6 +1026,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               ? { connectionManager: options.connectionManager }
               : {}),
             env: options.env,
+            ...(options.liveCanvasService
+              ? { liveCanvasService: options.liveCanvasService }
+              : {}),
             ...(resolvedModel ? { model: resolvedModel } : {}),
             ...(persistImage ? { persistImage } : {}),
             // execute 工具由 LocalShellBackend 自动提供，无需手动传递

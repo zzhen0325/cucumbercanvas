@@ -8,6 +8,7 @@ import {
 import { tool } from "langchain";
 import { z } from "zod";
 
+import type { LiveCanvasService } from "../../features/canvas/live-canvas-service.js";
 import type { UserSupabaseClient } from "../../supabase/user.js";
 
 const inspectCanvasSchema = z.object({
@@ -40,6 +41,7 @@ type ToolRuntimeConfig = {
   configurable?: {
     access_token?: unknown;
     canvas_id?: unknown;
+    user_id?: unknown;
   };
 };
 
@@ -191,9 +193,7 @@ function computeBoundingBox(elements: CanvasElement[]) {
  * format stays consistent with inspect_canvas output.
  * Returns null if canvas is empty (no visible elements).
  */
-export function buildCanvasSummaryForContext(
-  content: unknown,
-): string | null {
+export function buildCanvasSummaryForContext(content: unknown): string | null {
   if (isCucumberCanvasDocument(content)) {
     const nodes = Object.values(content.nodes);
     if (nodes.length === 0) return null;
@@ -214,7 +214,9 @@ export function buildCanvasSummaryForContext(
     const toShow = summaries.slice(0, 30);
     for (const s of toShow) {
       const parts = [`${s.type}#${s.id}`];
-      parts.push(`@(${Math.round(s.x as number)},${Math.round(s.y as number)})`);
+      parts.push(
+        `@(${Math.round(s.x as number)},${Math.round(s.y as number)})`,
+      );
       parts.push(
         `${Math.round(s.width as number)}x${Math.round(s.height as number)}`,
       );
@@ -239,8 +241,12 @@ export function buildCanvasSummaryForContext(
   }
 
   const elements =
-    (content as { elements?: Array<Record<string, unknown>> } | null | undefined)
-      ?.elements ?? [];
+    (
+      content as
+        | { elements?: Array<Record<string, unknown>> }
+        | null
+        | undefined
+    )?.elements ?? [];
   const visible = elements.filter((el) => !el.isDeleted);
   if (visible.length === 0) return null;
 
@@ -280,6 +286,7 @@ export function buildCanvasSummaryForContext(
 
 export function createInspectCanvasTool(deps: {
   createUserClient: (accessToken: string) => UserSupabaseClient;
+  liveCanvasService?: LiveCanvasService;
 }) {
   return tool(
     async (input, config) => {
@@ -293,8 +300,10 @@ export function createInspectCanvasTool(deps: {
         typeof configurable?.access_token === "string"
           ? configurable.access_token
           : null;
+      const userId =
+        typeof configurable?.user_id === "string" ? configurable.user_id : null;
 
-      if (!canvasId || !accessToken) {
+      if (!canvasId || !accessToken || !userId) {
         return JSON.stringify({
           error: "no_canvas_context",
           message:
@@ -302,27 +311,24 @@ export function createInspectCanvasTool(deps: {
         });
       }
 
-      const client = deps.createUserClient(accessToken);
-      const { data, error } = await client
-        .from("canvases")
-        .select("content")
-        .eq("id", canvasId)
-        .single();
-
-      if (error || !data) {
+      if (!deps.liveCanvasService) {
         return JSON.stringify({
-          error: "canvas_not_found",
-          message: "Canvas not found or access denied.",
+          error: "live_canvas_unavailable",
+          message:
+            "Canvas tools require an open live editor. Open the canvas page and retry.",
         });
       }
 
-      const content = data.content as {
-        elements?: CanvasElement[];
-        appState?: Record<string, unknown>;
-      };
-
-      if (isCucumberCanvasDocument(data.content)) {
-        const cucumberDoc: CucumberCanvasDocument = data.content;
+      try {
+        const cucumberDoc = await deps.liveCanvasService.getDocument(
+          {
+            accessToken,
+            email: "",
+            id: userId,
+            userMetadata: {},
+          },
+          canvasId,
+        );
         const nodes = Object.values(cucumberDoc.nodes) as CanvasNode[];
         if (input.element_id) {
           const found = cucumberDoc.nodes[input.element_id];
@@ -367,73 +373,18 @@ export function createInspectCanvasTool(deps: {
           }),
           matchedCount: filteredNodes.length,
         });
-      }
-
-      const elements = (content.elements ?? []).filter((el) => !el.isDeleted);
-
-      if (input.element_id) {
-        const found = elements.find((el) => el.id === input.element_id);
-        if (!found) {
-          return JSON.stringify({
-            error: "element_not_found",
-            message: `Element ${input.element_id} not found on canvas.`,
-          });
-        }
-        return JSON.stringify(
-          input.detail_level === "full" ? found : summarizeElement(found),
-        );
-      }
-
-      // Apply optional filters
-      let filtered = elements;
-
-      if (input.filter_type && input.filter_type.length > 0) {
-        const filterTypes = input.filter_type;
-        filtered = filtered.filter((el) => {
-          // Resolve logical type: image/embeddable elements with customData.isVideo are treated as "video"
-          const customData = el.customData as
-            | Record<string, unknown>
-            | undefined;
-          const isVideoElement =
-            (el.type === "image" || el.type === "embeddable") &&
-            customData?.isVideo === true;
-          const logicalType = isVideoElement ? "video" : (el.type as string);
-          return filterTypes.includes(logicalType);
+      } catch (error) {
+        return JSON.stringify({
+          error:
+            error instanceof Error && "code" in error
+              ? String((error as { code: unknown }).code)
+              : "inspect_canvas_failed",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Failed to inspect the live canvas.",
         });
       }
-
-      if (input.filter_region) {
-        const r = input.filter_region;
-        filtered = filtered.filter((el) => {
-          const ex = Number(el.x) || 0;
-          const ey = Number(el.y) || 0;
-          const ew = Number(el.width) || 0;
-          const eh = Number(el.height) || 0;
-          // Element overlaps region if it's not completely outside
-          return !(
-            ex + ew < r.min_x ||
-            ex > r.max_x ||
-            ey + eh < r.min_y ||
-            ey > r.max_y
-          );
-        });
-      }
-
-      const summaryElements =
-        input.detail_level === "full"
-          ? filtered
-          : filtered.map(summarizeElement);
-
-      return JSON.stringify({
-        canvasId,
-        elementCount: elements.length,
-        matchedCount: filtered.length,
-        boundingBox: computeBoundingBox(filtered),
-        viewport: {
-          backgroundColor: content.appState?.viewBackgroundColor ?? "#ffffff",
-        },
-        elements: summaryElements,
-      });
     },
     {
       name: "inspect_canvas",

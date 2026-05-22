@@ -11,13 +11,15 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "pnpm --filter @cucumber/web exec next dev -p 3100",
+    command: "pnpm exec next dev -p 3100",
+    cwd: "apps/web",
     env: {
+      NODE_ENV: "development",
       NEXT_PUBLIC_CUCUMBER_SERVER_BASE_URL: "http://127.0.0.1:4011",
       NEXT_PUBLIC_CUCUMBER_SUPABASE_ANON_KEY: "test-anon-key",
       NEXT_PUBLIC_CUCUMBER_SUPABASE_URL: "http://127.0.0.1:54321",
     },
-    port: 3100,
+    url: "http://127.0.0.1:3100",
     reuseExistingServer: true,
     stdout: "pipe",
     stderr: "pipe",

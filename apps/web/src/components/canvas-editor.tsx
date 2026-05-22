@@ -30,6 +30,7 @@ export type CanvasSelectedElement = {
   importSourceLabel?: string;
   importWarningCount?: number;
   degradationHints?: string[];
+  autoLayout?: Record<string, unknown>;
 };
 
 type CanvasEditorProps = {
@@ -66,16 +67,32 @@ export function CanvasEditor({
   accessTokenRef.current = accessToken;
   canvasIdRef.current = canvasId;
 
+  const flushPendingSave = useCallback(async () => {
+    const payload = pendingContentRef.current;
+    if (!payload) return;
+    await saveCanvas(accessTokenRef.current, canvasIdRef.current, payload);
+    if (pendingContentRef.current === payload) {
+      pendingContentRef.current = null;
+    }
+    console.info("[canvas-editor] pending document flushed", {
+      canvasId: canvasIdRef.current,
+    });
+  }, []);
+
   const handleApiReady = useCallback(
     (nextApi: CanvasApi) => {
-      apiRef.current = nextApi;
-      setApi(nextApi);
-      onApiReady?.(nextApi);
+      const editorApi: CanvasApi = {
+        ...nextApi,
+        flushPendingSave,
+      };
+      apiRef.current = editorApi;
+      setApi(editorApi);
+      onApiReady?.(editorApi);
       console.info("[canvas-editor] cucumber canvas runtime ready", {
         canvasId,
       });
     },
-    [canvasId, onApiReady],
+    [canvasId, flushPendingSave, onApiReady],
   );
 
   const handleSelectionChange = useCallback(
@@ -106,6 +123,9 @@ export function CanvasEditor({
             | undefined,
           degradationHints: element.customData?.degradationHints as
             | string[]
+            | undefined,
+          autoLayout: element.customData?.autoLayout as
+            | Record<string, unknown>
             | undefined,
         })),
       );
@@ -159,16 +179,36 @@ export function CanvasEditor({
 
   useEffect(() => {
     if (!ws || !api) return;
-    return ws.registerRPC("canvas.screenshot", async (params) => {
-      const { max_dimension = 1024 } = params as { max_dimension?: number };
-      const blob = await api.exportImage({
-        maxWidthOrHeight: max_dimension,
-        mimeType: "image/svg+xml",
-      });
-      const dataUrl = await blobToDataUrl(blob);
-      return { url: dataUrl, width: max_dimension, height: max_dimension };
-    });
-  }, [api, ws]);
+    ws.bindCanvas(canvasId);
+    const unregisterScreenshot = ws.registerRPC(
+      "canvas.screenshot",
+      async (params) => {
+        const { max_dimension = 1024 } = params as { max_dimension?: number };
+        const blob = await api.exportImage({
+          maxWidthOrHeight: max_dimension,
+          mimeType: "image/svg+xml",
+        });
+        const dataUrl = await blobToDataUrl(blob);
+        return { url: dataUrl, width: max_dimension, height: max_dimension };
+      },
+    );
+    const unregisterGet = ws.registerRPC("canvas.document.get", async () => ({
+      document: api.getDocument(),
+    }));
+    const unregisterSet = ws.registerRPC(
+      "canvas.document.set",
+      async (params) => {
+        api.setDocument(params.document);
+        await api.flushPendingSave();
+        return { ok: true };
+      },
+    );
+    return () => {
+      unregisterScreenshot();
+      unregisterGet();
+      unregisterSet();
+    };
+  }, [api, canvasId, ws]);
 
   useEffect(() => {
     const flushBeforeUnload = () => {

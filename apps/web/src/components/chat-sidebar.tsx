@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { useBreakpoint } from "../hooks/use-breakpoint";
 import type {
   BrandKitAsset,
   ContentBlock,
@@ -13,11 +12,10 @@ import type {
   VideoArtifact,
   VideoGenerationPreference,
 } from "@cucumber/shared";
-import type { WebSocketHandle } from "../hooks/use-websocket";
 import { useAgentModel } from "../hooks/use-agent-model";
+import { useBreakpoint } from "../hooks/use-breakpoint";
 import { useChatSessions } from "../hooks/use-chat-sessions";
 import { useChatStream } from "../hooks/use-chat-stream";
-import { useSseStream } from "../hooks/use-sse-stream";
 import {
   INITIAL_AGENT_MODEL_KEY,
   INITIAL_ATTACHMENTS_KEY,
@@ -26,7 +24,9 @@ import {
 import type { ReadyAttachment } from "../hooks/use-image-attachments";
 import { useImageAttachments } from "../hooks/use-image-attachments";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
+import { useSseStream } from "../hooks/use-sse-stream";
 import { useVideoModelPreference } from "../hooks/use-video-model-preference";
+import type { WebSocketHandle } from "../hooks/use-websocket";
 import { fetchBrandKit } from "../lib/brand-kit-api";
 import {
   createRun,
@@ -39,16 +39,16 @@ import {
   type BrandKitMentionItem,
   type CanvasImageItem,
   type ImageModelMentionItem,
-  type SkillMentionItem,
   MessageMentionPicker,
   type MessageMentionPickerItem,
+  type SkillMentionItem,
 } from "./canvas-image-picker";
 import { ChatInput } from "./chat-input";
 import { ChatMessage } from "./chat-message";
 import { ChatSkills } from "./chat-skills";
-import { useToast } from "./toast";
 import { ErrorBoundary } from "./error-boundary";
 import { SessionSelector } from "./session-selector";
+import { useToast } from "./toast";
 
 // #region debug-point C:run-lifecycle
 const postChatSidebarDebugEvent = (
@@ -79,6 +79,7 @@ type ChatSidebarProps = {
   onToggle: () => void;
   onImageGenerated?: (artifact: ImageArtifact) => void;
   onVideoGenerated?: (artifact: VideoArtifact) => void;
+  onBeforeRun?: () => Promise<void>;
   onCanvasSync?: () => void;
   /** Called for every stream event — used by job fallback polling to detect timed-out jobs */
   onStreamEvent?: (event: StreamEvent) => void;
@@ -98,6 +99,7 @@ export function ChatSidebar({
   onToggle,
   onImageGenerated,
   onVideoGenerated,
+  onBeforeRun,
   onCanvasSync,
   onStreamEvent,
   initialPrompt,
@@ -251,7 +253,9 @@ export function ChatSidebar({
         document.removeEventListener("touchcancel", handleTouchEnd);
       };
 
-      document.addEventListener("touchmove", handleTouchMove, { passive: false });
+      document.addEventListener("touchmove", handleTouchMove, {
+        passive: false,
+      });
       document.addEventListener("touchend", handleTouchEnd);
       document.addEventListener("touchcancel", handleTouchEnd);
     },
@@ -317,7 +321,9 @@ export function ChatSidebar({
         if (cancelled) return;
         const allSkills = data.skills ?? [];
         const enabledSkills = allSkills.filter((s) => s.enabled);
-        console.log(`[chat-sidebar] Workspace skills loaded: ${allSkills.length} total, ${enabledSkills.length} enabled`);
+        console.log(
+          `[chat-sidebar] Workspace skills loaded: ${allSkills.length} total, ${enabledSkills.length} enabled`,
+        );
         setSkillMentionItems(
           enabledSkills.map((s) => ({
             kind: "skill" as const,
@@ -395,15 +401,20 @@ export function ChatSidebar({
       );
       if (selectedImageEls.length > 0 && !attachmentsOverride) {
         const existingIds = new Set(currentAttachments.map((a) => a.assetId));
-        const selectionAttachments: ReadyAttachment[] = selectedImageEls
-          .filter((el) => !existingIds.has(el.id))
-          .map((el) => ({
-            assetId: el.id,
-            url: el.storageUrl ?? el.dataUrl!,
-            mimeType: "image/png",
-            source: "canvas-ref" as const,
-            name: `Canvas selection ${el.id.slice(0, 6)}`,
-          }));
+        const selectionAttachments: ReadyAttachment[] =
+          selectedImageEls.flatMap((el) => {
+            const url = el.storageUrl ?? el.dataUrl;
+            if (existingIds.has(el.id) || !url) return [];
+            return [
+              {
+                assetId: el.id,
+                url,
+                mimeType: "image/png",
+                source: "canvas-ref" as const,
+                name: `Canvas selection ${el.id.slice(0, 6)}`,
+              },
+            ];
+          });
         if (selectionAttachments.length > 0) {
           currentAttachments = [...currentAttachments, ...selectionAttachments];
         }
@@ -451,7 +462,9 @@ export function ChatSidebar({
           ...(mention.textContent !== undefined
             ? { textContent: mention.textContent }
             : {}),
-          ...(mention.fileUrl !== undefined ? { fileUrl: mention.fileUrl } : {}),
+          ...(mention.fileUrl !== undefined
+            ? { fileUrl: mention.fileUrl }
+            : {}),
         };
       });
       const userMsg = {
@@ -498,6 +511,8 @@ export function ChatSidebar({
           gotFirstToken: false,
         };
 
+        await onBeforeRun?.();
+
         const run = await createRun(
           {
             sessionId: currentSessionId,
@@ -520,9 +535,7 @@ export function ChatSidebar({
                   videoGenerationPreference: currentVideoGenerationPreference,
                 }
               : {}),
-            ...(agentModelRef.current
-              ? { model: agentModelRef.current }
-              : {}),
+            ...(agentModelRef.current ? { model: agentModelRef.current } : {}),
           },
           { accessToken: accessTokenRef.current },
         );
@@ -677,6 +690,7 @@ export function ChatSidebar({
       updateSessionMessages,
       onImageGenerated,
       onVideoGenerated,
+      onBeforeRun,
       onCanvasSync,
       onStreamEvent,
       readyAttachments,
@@ -710,9 +724,18 @@ export function ChatSidebar({
       setMessageMentions((prev) => {
         let nextMention: MessageMention;
         if (item.kind === "image-model") {
-          nextMention = { mentionType: "image-model", id: item.id, label: item.label };
+          nextMention = {
+            mentionType: "image-model",
+            id: item.id,
+            label: item.label,
+          };
         } else if (item.kind === "skill") {
-          nextMention = { mentionType: "skill", id: item.id, label: item.label, slug: item.slug };
+          nextMention = {
+            mentionType: "skill",
+            id: item.id,
+            label: item.label,
+            slug: item.slug,
+          };
         } else {
           nextMention = {
             mentionType: "brand-kit-asset",
@@ -722,9 +745,7 @@ export function ChatSidebar({
             ...(item.textContent !== undefined
               ? { textContent: item.textContent }
               : {}),
-            ...(item.fileUrl !== undefined
-              ? { fileUrl: item.fileUrl }
-              : {}),
+            ...(item.fileUrl !== undefined ? { fileUrl: item.fileUrl } : {}),
           };
         }
 
@@ -754,12 +775,7 @@ export function ChatSidebar({
 
   // ── Auto-send initial prompt ──
   useEffect(() => {
-    if (
-      !initialPrompt ||
-      sessionsLoading ||
-      initialPromptSent.current
-    )
-      return;
+    if (!initialPrompt || sessionsLoading || initialPromptSent.current) return;
 
     let storedAttachments: ReadyAttachment[] | undefined;
     let storedImageGenerationPreference: ImageGenerationPreference | undefined;
@@ -805,13 +821,7 @@ export function ChatSidebar({
     }, 0);
 
     return () => clearTimeout(timer);
-  }, [
-    initialPrompt,
-    sessionsLoading,
-    handleSend,
-    activeSessionIdRef,
-  ]);
-
+  }, [initialPrompt, sessionsLoading, handleSend, activeSessionIdRef]);
 
   // ── Collapsed state ──
   if (!open) {
@@ -898,7 +908,11 @@ export function ChatSidebar({
           console.error("[chat-sidebar] message area render crashed:", err)
         }
       >
-        <div className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-6 px-4 py-4" aria-live="polite" aria-relevant="additions">
+        <div
+          className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-6 px-4 py-4"
+          aria-live="polite"
+          aria-relevant="additions"
+        >
           {sessionsLoading || messagesLoading ? (
             <div className="flex h-full items-center justify-center">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-foreground" />
@@ -1001,9 +1015,7 @@ export function ChatSidebar({
         onTouchStart={handleTouchStart}
         onKeyDown={handleResizeKeyDown}
       />
-      <div className="flex flex-1 flex-col bg-card min-w-0">
-        {panelContent}
-      </div>
+      <div className="flex flex-1 flex-col bg-card min-w-0">{panelContent}</div>
     </div>
   );
 }

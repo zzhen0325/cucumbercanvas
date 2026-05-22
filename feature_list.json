@@ -41,11 +41,12 @@
       "status": "active",
       "priority": "P0",
       "owner": "agent-engineering",
-      "summary": "Deep Agents/LangChain runtime with SSE streaming, MCP-compatible typed tools, persistence, and workspace skill execution.",
+      "summary": "Deep Agents/LangChain runtime with SSE streaming, MCP-compatible typed tools, live editor canvas document access, persistence, and workspace skill execution.",
       "artifacts": [
         "apps/server/src/agent/deep-agent.ts",
         "apps/server/src/agent/runtime.ts",
         "apps/server/src/agent/tools/index.ts",
+        "apps/server/src/features/canvas/live-canvas-service.ts",
         "apps/server/src/mcp/server.ts",
         "apps/server/src/mcp/deepagents-bridge.ts",
         "apps/server/src/agent/workspace-skills.ts"
@@ -100,7 +101,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "product-engineering",
-      "summary": "Canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing now includes tree-style layer management and modular shortcuts/clipboard flows, and the P2 import path now combines warning-rich SVG/Figma fallback metadata with a native-first Figma clipboard binary decode path that also replays first-batch SYMBOL / INSTANCE overrides into higher-fidelity canvas nodes.",
+      "summary": "Canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing now includes live editor RPC synchronization for agent tools, tree-style layer management, modular shortcuts/clipboard flows, and the P2 import path now combines warning-rich SVG/Figma fallback metadata with native-first Figma clipboard binary decode, instance overrides, auto-layout metadata, and runnable Playwright smoke coverage.",
       "artifacts": [
         "packages/canvas-core",
         "packages/canvas-core/src/clipboard.ts",
@@ -109,6 +110,7 @@
         "packages/canvas-core/src/figma-native.ts",
         "packages/canvas-core/src/figma-native-types.ts",
         "packages/canvas-core/src/import.ts",
+        "packages/canvas-core/src/layout.ts",
         "packages/canvas-core/src/__tests__/canvas-core.test.ts",
         "apps/web/src/components/canvas/canvas-surface.tsx",
         "apps/web/src/components/canvas/use-canvas-keyboard-shortcuts.ts",
@@ -117,12 +119,20 @@
         "apps/web/src/components/canvas-layers-panel.tsx",
         "apps/web/src/components/canvas-logo-menu.tsx",
         "apps/web/src/components/canvas-editor.tsx",
+        "apps/web/src/hooks/use-websocket.ts",
         "apps/web/src/app/canvas/page.tsx",
+        "apps/web/src/app/test/canvas-import/page.tsx",
+        "apps/web/src/app/test/canvas-import/canvas-import-harness.tsx",
         "apps/web/test/use-canvas-clipboard-import.test.tsx",
+        "playwright.config.ts",
+        "tests/e2e/canvas-import.spec.ts",
+        "tests/e2e/transport.spec.ts",
         "apps/server/src/agent/tools/manipulate-canvas.ts",
         "apps/server/src/features/canvas/canvas-element-writer.ts",
         "apps/server/src/agent/tools/inspect-canvas.ts",
-        "packages/shared/src/contracts.ts"
+        "packages/shared/src/contracts.ts",
+        "packages/shared/src/ws-protocol.ts",
+        "supabase/migrations/20260522000001_cucumber_canvas_only.sql"
       ]
     }
   ]

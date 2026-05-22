@@ -65,6 +65,8 @@ export const applicationErrorCodeSchema = z.enum([
   "brand_kit_asset_create_failed",
   "canvas_not_found",
   "canvas_save_failed",
+  "invalid_canvas_document",
+  "live_canvas_unavailable",
   "chat_error",
   "profile_update_failed",
   "project_query_failed",
@@ -170,8 +172,12 @@ export type CanvasGetResponse = z.infer<typeof canvasGetResponseSchema>;
 export type CanvasSaveRequest = z.infer<typeof canvasSaveRequestSchema>;
 export type CanvasSaveResponse = z.infer<typeof canvasSaveResponseSchema>;
 export type ProfileUpdateResponse = z.infer<typeof profileUpdateResponseSchema>;
-export type WorkspaceSettingsResponse = z.infer<typeof workspaceSettingsResponseSchema>;
-export type WorkspaceSettingsUpdateRequest = z.infer<typeof workspaceSettingsUpdateRequestSchema>;
+export type WorkspaceSettingsResponse = z.infer<
+  typeof workspaceSettingsResponseSchema
+>;
+export type WorkspaceSettingsUpdateRequest = z.infer<
+  typeof workspaceSettingsUpdateRequestSchema
+>;
 export type ModelListResponse = z.infer<typeof modelListResponseSchema>;
 
 export const uploadResponseSchema = z.object({
@@ -184,7 +190,9 @@ export const assetSignedUrlResponseSchema = z.object({
 });
 
 export type UploadResponse = z.infer<typeof uploadResponseSchema>;
-export type AssetSignedUrlResponse = z.infer<typeof assetSignedUrlResponseSchema>;
+export type AssetSignedUrlResponse = z.infer<
+  typeof assetSignedUrlResponseSchema
+>;
 
 export const projectUpdateRequestSchema = z.object({
   brand_kit_id: z.string().uuid().nullable().optional(),

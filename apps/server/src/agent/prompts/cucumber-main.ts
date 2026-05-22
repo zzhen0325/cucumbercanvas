@@ -40,6 +40,7 @@ Cucumber Studio 是 AI 原生无限画布。画布不是先存在的空白空间
 | resize | 调整尺寸 | — |
 | delete | 删除元素 | 自动级联删除绑定文字，清理箭头引用 |
 | update_style | 改样式 | strokeColor, backgroundColor, opacity, fontSize, strokeWidth |
+| add_container | 创建容器 | 复杂视觉输出先创建容器；后续操作可用同批返回的 op_0 引用 |
 | add_text | 独立文字 | 仅用于标题/注释/说明 |
 | add_shape | 形状+标签 | **形状内文字必须用 label 参数** |
 | add_line | 线段/箭头 | **箭头必须用 start_element_id/end_element_id 绑定** |
@@ -55,6 +56,7 @@ Cucumber Studio 是 AI 原生无限画布。画布不是先存在的空白空间
 4. **修改文字 = update_text**，不要 delete + 重建
 5. **element_id ≠ asset_id**：element_id 用于画布操作，asset_id 用于 generate_image 的参考图
 6. 批量操作一次 manipulate_canvas 传多个 operations，不要多次调用
+7. 复杂视觉/结构化产出 = 先 add_container，再把文本、形状、图片、视频放进该容器；同批后续操作用 container_id: "op_0" 引用刚创建的容器
 
 ## 尺寸计算
 - 中文字符宽度 ≈ fontSize × 1.05

@@ -3,10 +3,11 @@
 import {
   type CucumberCanvasDocument,
   applyCanvasOperation,
+  createEmptyCanvasDocument,
   createCanvasNodeId,
   isCucumberCanvasDocument,
 } from "@cucumber/canvas-core";
-import type { CanvasContent, Json } from "@cucumber/shared";
+import type { Json } from "@cucumber/shared";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -698,9 +699,7 @@ const GENERATION_COLUMN_GAP = 88;
 async function readCanvasContent(
   client: CanvasElementWriterClient,
   canvasId: string,
-): Promise<
-  CanvasContent & { files?: Record<string, Record<string, unknown>> }
-> {
+): Promise<CucumberCanvasDocument> {
   const { data, error } = await (client.from("canvases") as CanvasQuery)
     .select("content")
     .eq("id", canvasId)
@@ -710,13 +709,20 @@ async function readCanvasContent(
     throw new Error(`Canvas not found: ${canvasId}`);
   }
 
-  return (data.content as CanvasContent) ?? { elements: [], appState: {} };
+  if (isCucumberCanvasDocument(data.content)) {
+    return data.content;
+  }
+
+  console.warn("[canvas-element-writer] resetting non-cucumber canvas content", {
+    canvasId,
+  });
+  return createEmptyCanvasDocument();
 }
 
 async function writeCanvasContent(
   client: CanvasElementWriterClient,
   canvasId: string,
-  content: CanvasContent & { files?: Record<string, Record<string, unknown>> },
+  content: CucumberCanvasDocument,
 ): Promise<void> {
   const { error: writeError } = await (client.from("canvases") as CanvasQuery)
     .update({ content: content as unknown as Json })
@@ -883,207 +889,31 @@ export async function createImageGenerationGroup(
   client: CanvasElementWriterClient,
   opts: ImageGenerationGroupOpts,
 ): Promise<ImageGenerationGroupResult> {
-  const content = await readCanvasContent(client, opts.canvasId);
-  const elements: CanvasElement[] = (content.elements as CanvasElement[]) ?? [];
-  const group = buildImageGenerationGroupElements(elements, opts);
-
-  await writeCanvasContent(client, opts.canvasId, {
-    ...content,
-    elements: [...elements, ...group.elements],
-  });
-
-  console.log(
-    `[canvas-element-writer] image generation group created canvasId=${opts.canvasId} jobId=${opts.jobId} runId=${opts.runId} groupId=${group.groupId} placeholderId=${group.placeholderId}`,
+  void client;
+  void opts;
+  throw new Error(
+    "Image generation placeholders are not supported on the Cucumber canvas runtime.",
   );
-  return {
-    groupId: group.groupId,
-    placeholderId: group.placeholderId,
-  };
 }
 
 export async function replaceImageGenerationPlaceholder(
   client: CanvasElementWriterClient,
   opts: ImageGenerationReplaceOpts,
 ): Promise<InsertResult> {
-  const dataURL = await downloadStorageObjectAsDataURL(
-    client,
-    opts.objectPath,
-    opts.mimeType,
-  );
-  const content = await readCanvasContent(client, opts.canvasId);
-  const elements: CanvasElement[] = (content.elements as CanvasElement[]) ?? [];
-  const files = content.files ?? {};
-  const placeholder = elements.find(
-    (el) => el.id === opts.placeholderId && !el.isDeleted,
-  );
-
-  if (!placeholder) {
-    throw new Error(
-      `Image generation placeholder not found: ${opts.placeholderId}`,
-    );
-  }
-
-  const groupIds = Array.isArray(placeholder.groupIds)
-    ? (placeholder.groupIds as string[])
-    : opts.groupId
-      ? [opts.groupId]
-      : [];
-  const fileId = generateId();
-  const imageElement: CanvasElement = {
-    ...buildImageElement(
-      fileId,
-      {
-        x: Number(placeholder.x) || 0,
-        y: Number(placeholder.y) || 0,
-        width: Number(placeholder.width) || opts.width,
-        height: Number(placeholder.height) || opts.height,
-      },
-      opts,
-    ),
-    groupIds,
-    customData: {
-      ...(opts.title ? { title: opts.title } : {}),
-      ...(opts.prompt ? { prompt: opts.prompt } : {}),
-      ...(opts.model ? { model: opts.model } : {}),
-      ...(opts.jobId ? { jobId: opts.jobId } : {}),
-      ...(opts.runId ? { runId: opts.runId } : {}),
-      ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
-      source: "generated" as const,
-    },
-  };
-
-  const imageId = imageElement.id as string;
-  const arrowBounds =
-    (
-      placeholder.boundElements as Array<{ type: string; id: string }> | null
-    )?.filter((bound) => bound.type === "arrow") ?? [];
-  imageElement.boundElements = arrowBounds;
-
-  const updatedElements = elements.map((el) => {
-    if (el.id === opts.placeholderId) {
-      return { ...el, isDeleted: true, updated: Date.now() };
-    }
-
-    if (el.containerId === opts.placeholderId) {
-      return { ...el, isDeleted: true, updated: Date.now() };
-    }
-
-    let next = el;
-    const startBinding = next.startBinding as { elementId?: string } | null;
-    const endBinding = next.endBinding as { elementId?: string } | null;
-    if (startBinding?.elementId === opts.placeholderId) {
-      next = {
-        ...next,
-        startBinding: { ...startBinding, elementId: imageId },
-      };
-    }
-    if (endBinding?.elementId === opts.placeholderId) {
-      next = {
-        ...next,
-        endBinding: { ...endBinding, elementId: imageId },
-      };
-    }
-    if (next !== el) {
-      bumpVersion(next);
-    }
-    return next;
-  });
-
-  const updatedFiles = {
-    ...files,
-    [fileId]: {
-      id: fileId,
-      dataURL,
-      mimeType: opts.mimeType,
-      created: Date.now(),
-    },
-  };
-
-  await writeCanvasContent(client, opts.canvasId, {
-    ...content,
-    elements: [...updatedElements, imageElement],
-    files: updatedFiles,
-  });
-
-  console.log(
-    `[canvas-element-writer] image generation placeholder replaced canvasId=${opts.canvasId} placeholderId=${opts.placeholderId} elementId=${imageId} groupId=${groupIds[0] ?? "none"} jobId=${opts.jobId ?? "unknown"} runId=${opts.runId ?? "unknown"}`,
-  );
-  return { elementId: imageId };
+  return insertImageElement(client, opts, undefined);
 }
 
 export async function markImageGenerationGroupFailed(
   client: CanvasElementWriterClient,
   opts: ImageGenerationFailureOpts,
 ): Promise<void> {
-  const content = await readCanvasContent(client, opts.canvasId);
-  const elements: CanvasElement[] = (content.elements as CanvasElement[]) ?? [];
-  const failureText = `生成结果\n\n${sanitizeErrorMessage(opts.errorMessage)}`;
-  let found = false;
-
-  const updatedElements = elements.map((el) => {
-    if (el.id === opts.placeholderId && !el.isDeleted) {
-      found = true;
-      const next = {
-        ...el,
-        strokeColor: "#DC2626",
-        backgroundColor: "#FEF2F2",
-        customData: {
-          ...((el.customData as Record<string, unknown> | undefined) ?? {}),
-          type: "image-generator",
-          status: "error",
-          errorMessage: sanitizeErrorMessage(opts.errorMessage),
-        },
-      };
-      bumpVersion(next);
-      return next;
-    }
-
-    if (el.containerId === opts.placeholderId && !el.isDeleted) {
-      const container = elements.find((item) => item.id === opts.placeholderId);
-      const containerWidth =
-        Number(container?.width) || GENERATION_IMAGE_MAX_SIZE;
-      const containerHeight =
-        Number(container?.height) || GENERATION_IMAGE_MAX_SIZE;
-      const containerX = Number(container?.x) || 0;
-      const containerY = Number(container?.y) || 0;
-      const wrapped = wrapTextToWidth(
-        failureText,
-        18,
-        Math.max(containerWidth - 48, 120),
-      );
-      const wrappedSize = textSize(wrapped, 18);
-      const next = {
-        ...el,
-        text: wrapped,
-        originalText: wrapped,
-        x: containerX + Math.max((containerWidth - wrappedSize.width) / 2, 24),
-        y:
-          containerY + Math.max((containerHeight - wrappedSize.height) / 2, 24),
-        width: Math.min(wrappedSize.width, containerWidth - 48),
-        height: wrappedSize.height,
-        strokeColor: "#991B1B",
-      };
-      bumpVersion(next);
-      return next;
-    }
-
-    return el;
+  void client;
+  console.warn("[canvas-element-writer] generation failed before canvas insert", {
+    canvasId: opts.canvasId,
+    errorMessage: sanitizeErrorMessage(opts.errorMessage),
+    groupId: opts.groupId,
+    placeholderId: opts.placeholderId,
   });
-
-  if (!found) {
-    throw new Error(
-      `Image generation placeholder not found: ${opts.placeholderId}`,
-    );
-  }
-
-  await writeCanvasContent(client, opts.canvasId, {
-    ...content,
-    elements: updatedElements,
-  });
-
-  console.log(
-    `[canvas-element-writer] image generation group marked failed canvasId=${opts.canvasId} placeholderId=${opts.placeholderId} groupId=${opts.groupId ?? "unknown"}`,
-  );
 }
 
 /**
@@ -1114,116 +944,53 @@ export async function insertImageElement(
   const base64 = buffer.toString("base64");
   const dataURL = `data:${opts.mimeType};base64,${base64}`;
 
-  // 2. Read canvas
-  const { data, error } = await (client.from("canvases") as CanvasQuery)
-    .select("content")
-    .eq("id", opts.canvasId)
-    .single();
-
-  if (error || !data) {
-    throw new Error(`Canvas not found: ${opts.canvasId}`);
-  }
-
-  const content = (data.content as CanvasContent) ?? {
-    elements: [],
-    appState: {},
-  };
-
-  if (isCucumberCanvasDocument(content)) {
-    const sizedPlacement = explicitPlacement
-      ? explicitPlacement
-      : scaleToFit(opts.width, opts.height, IMAGE_MAX_SIZE);
-    const { containerId, placement } = resolveCucumberPlacement(
-      content,
-      sizedPlacement.width,
-      sizedPlacement.height,
-      explicitPlacement,
-    );
-    const assetId = createCanvasNodeId("asset");
-    const nodeId = createCanvasNodeId("image");
-    const nextWithAsset: CucumberCanvasDocument = {
-      ...content,
-      assets: {
-        ...content.assets,
-        [assetId]: {
-          id: assetId,
-          url: dataURL,
-          mimeType: opts.mimeType,
-          name: opts.title,
-          width: opts.width,
-          height: opts.height,
-          source: "generated",
-        },
+  const content = await readCanvasContent(client, opts.canvasId);
+  const sizedPlacement = explicitPlacement
+    ? explicitPlacement
+    : scaleToFit(opts.width, opts.height, IMAGE_MAX_SIZE);
+  const { containerId, placement } = resolveCucumberPlacement(
+    content,
+    sizedPlacement.width,
+    sizedPlacement.height,
+    explicitPlacement,
+  );
+  const assetId = createCanvasNodeId("asset");
+  const nodeId = createCanvasNodeId("image");
+  const nextWithAsset: CucumberCanvasDocument = {
+    ...content,
+    assets: {
+      ...content.assets,
+      [assetId]: {
+        id: assetId,
+        url: dataURL,
+        mimeType: opts.mimeType,
+        name: opts.title,
+        width: opts.width,
+        height: opts.height,
+        source: "generated",
       },
-    };
-    const nextDoc = applyCanvasOperation(nextWithAsset, {
-      type: "insertNode",
-      node: {
-        id: nodeId,
-        type: "image",
-        parentId: containerId,
-        bounds: placement,
-        title: opts.title ?? "Generated image",
-        assetId,
-        src: dataURL,
-        meta: { source: "generated" },
-      },
-      ...(containerId ? { containerId } : {}),
-    });
-
-    await writeCanvasContent(client, opts.canvasId, nextDoc as unknown as CanvasContent);
-    console.log(
-      `[canvas-element-writer] cucumber image inserted canvasId=${opts.canvasId} elementId=${nodeId} containerId=${containerId ?? "root"}`,
-    );
-    return { elementId: nodeId };
-  }
-
-  const elements: CanvasElement[] = (content.elements as CanvasElement[]) ?? [];
-  const files =
-    (
-      content as CanvasContent & {
-        files?: Record<string, Record<string, unknown>>;
-      }
-    ).files ?? {};
-
-  // 3. Placement
-  const placement =
-    explicitPlacement ??
-    calculateAutoPlacement(elements, opts.width, opts.height, IMAGE_MAX_SIZE);
-
-  // 4. Build element + files entry with base64 dataURL
-  const fileId = generateId();
-  const element = buildImageElement(fileId, placement, opts);
-
-  const updatedFiles = {
-    ...files,
-    [fileId]: {
-      id: fileId,
-      dataURL,
-      mimeType: opts.mimeType,
-      created: Date.now(),
     },
   };
+  const nextDoc = applyCanvasOperation(nextWithAsset, {
+    type: "insertNode",
+    node: {
+      id: nodeId,
+      type: "image",
+      parentId: containerId,
+      bounds: placement,
+      title: opts.title ?? "Generated image",
+      assetId,
+      src: dataURL,
+      meta: { source: "generated" },
+    },
+    ...(containerId ? { containerId } : {}),
+  });
 
-  // 5. Write
-  const updatedContent = {
-    ...content,
-    elements: [...elements, element],
-    files: updatedFiles,
-  };
-
-  const { error: writeError } = await (client.from("canvases") as CanvasQuery)
-    .update({ content: updatedContent as unknown as Json })
-    .eq("id", opts.canvasId);
-
-  if (writeError) {
-    throw new Error(`Failed to write canvas: ${writeError.message}`);
-  }
-
+  await writeCanvasContent(client, opts.canvasId, nextDoc);
   console.log(
-    `[canvas-element-writer] image inserted canvasId=${opts.canvasId} elementId=${element.id}`,
+    `[canvas-element-writer] cucumber image inserted canvasId=${opts.canvasId} elementId=${nodeId} containerId=${containerId ?? "root"}`,
   );
-  return { elementId: element.id as string };
+  return { elementId: nodeId };
 }
 
 /**
@@ -1235,81 +1002,36 @@ export async function insertVideoElement(
   opts: VideoInsertOpts,
   explicitPlacement?: Placement,
 ): Promise<InsertResult> {
-  // 1. Read
-  const { data, error } = await (client.from("canvases") as CanvasQuery)
-    .select("content")
-    .eq("id", opts.canvasId)
-    .single();
-
-  if (error || !data) {
-    throw new Error(`Canvas not found: ${opts.canvasId}`);
-  }
-
-  const content = (data.content as CanvasContent) ?? {
-    elements: [],
-    appState: {},
-  };
-
-  if (isCucumberCanvasDocument(content)) {
-    const sizedPlacement = explicitPlacement
-      ? explicitPlacement
-      : scaleToFit(opts.width, opts.height, VIDEO_MAX_SIZE);
-    const { containerId, placement } = resolveCucumberPlacement(
-      content,
-      sizedPlacement.width,
-      sizedPlacement.height,
-      explicitPlacement,
-    );
-    const nodeId = createCanvasNodeId("video");
-    const nextDoc = applyCanvasOperation(content, {
-      type: "insertNode",
-      node: {
-        id: nodeId,
-        type: "videoEmbed",
-        parentId: containerId,
-        bounds: placement,
-        title: opts.title ?? "Generated video",
-        src: opts.signedUrl,
-        mimeType: opts.mimeType,
-        durationSeconds: opts.durationSeconds,
-        meta: { source: "generated" },
-      },
-      ...(containerId ? { containerId } : {}),
-    });
-
-    await writeCanvasContent(client, opts.canvasId, nextDoc as unknown as CanvasContent);
-    console.log(
-      `[canvas-element-writer] cucumber video inserted canvasId=${opts.canvasId} elementId=${nodeId} containerId=${containerId ?? "root"}`,
-    );
-    return { elementId: nodeId };
-  }
-
-  const elements: CanvasElement[] = (content.elements as CanvasElement[]) ?? [];
-
-  // 2. Placement
-  const placement =
-    explicitPlacement ??
-    calculateAutoPlacement(elements, opts.width, opts.height, VIDEO_MAX_SIZE);
-
-  // 3. Build element
-  const element = buildVideoElement(placement, opts);
-
-  // 4. Write
-  const updatedContent = {
-    ...content,
-    elements: [...elements, element],
-  };
-
-  const { error: writeError } = await (client.from("canvases") as CanvasQuery)
-    .update({ content: updatedContent as unknown as Json })
-    .eq("id", opts.canvasId);
-
-  if (writeError) {
-    throw new Error(`Failed to write canvas: ${writeError.message}`);
-  }
-
-  console.log(
-    `[canvas-element-writer] video inserted canvasId=${opts.canvasId} elementId=${element.id}`,
+  const content = await readCanvasContent(client, opts.canvasId);
+  const sizedPlacement = explicitPlacement
+    ? explicitPlacement
+    : scaleToFit(opts.width, opts.height, VIDEO_MAX_SIZE);
+  const { containerId, placement } = resolveCucumberPlacement(
+    content,
+    sizedPlacement.width,
+    sizedPlacement.height,
+    explicitPlacement,
   );
-  return { elementId: element.id as string };
+  const nodeId = createCanvasNodeId("video");
+  const nextDoc = applyCanvasOperation(content, {
+    type: "insertNode",
+    node: {
+      id: nodeId,
+      type: "videoEmbed",
+      parentId: containerId,
+      bounds: placement,
+      title: opts.title ?? "Generated video",
+      src: opts.signedUrl,
+      mimeType: opts.mimeType,
+      durationSeconds: opts.durationSeconds,
+      meta: { source: "generated" },
+    },
+    ...(containerId ? { containerId } : {}),
+  });
+
+  await writeCanvasContent(client, opts.canvasId, nextDoc);
+  console.log(
+    `[canvas-element-writer] cucumber video inserted canvasId=${opts.canvasId} elementId=${nodeId} containerId=${containerId ?? "root"}`,
+  );
+  return { elementId: nodeId };
 }

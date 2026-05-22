@@ -1,4 +1,5 @@
 import type { CanvasContent, CanvasDetail, Json } from "@cucumber/shared";
+import { normalizeCanvasDocument } from "@cucumber/canvas-core";
 
 import type { AuthenticatedUser, UserSupabaseClient } from "../../supabase/user.js";
 
@@ -49,28 +50,20 @@ export function createCanvasService(options: {
         throw new CanvasServiceError("canvas_not_found", "Canvas not found.", 404);
       }
 
-      const content = (data.content as CanvasContent) ?? { elements: [], appState: {} };
-
-      // Resolve OSS-stored files back to base64 dataURLs for the frontend
-      const resolvedContent = await resolveFilesFromStorage(client, content);
-
       return {
         id: data.id,
         name: data.name,
         projectId: data.project_id,
-        content: resolvedContent,
+        content: normalizeCanvasDocument(data.content) as unknown as CanvasContent,
       };
     },
 
     async saveCanvasContent(user, canvasId, content) {
       const client = options.createUserClient(user.accessToken);
 
-      // Extract base64 files to Storage, replacing dataURLs with oss:// markers
-      const leanContent = await extractFilesToStorage(client, canvasId, content);
-
       const { error } = await client
         .from("canvases")
-        .update({ content: leanContent as unknown as Json })
+        .update({ content: content as unknown as Json })
         .eq("id", canvasId);
 
       if (error) {

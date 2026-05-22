@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
 import {
   type ContainerNode,
   applyCanvasOperation,
   createEmptyCanvasDocument,
+  isCucumberCanvasDocument,
 } from "@cucumber/canvas-core";
+import { describe, expect, it } from "vitest";
 
 import {
   buildImageGenerationGroupElements,
@@ -12,11 +13,13 @@ import {
   replaceImageGenerationPlaceholder,
 } from "./canvas-element-writer.js";
 
-type CanvasContentForTest = {
-  elements: Record<string, unknown>[];
-  appState: Record<string, unknown>;
-  files?: Record<string, Record<string, unknown>>;
-} | ReturnType<typeof createEmptyCanvasDocument>;
+type CanvasContentForTest =
+  | {
+      elements: Record<string, unknown>[];
+      appState: Record<string, unknown>;
+      files?: Record<string, Record<string, unknown>>;
+    }
+  | ReturnType<typeof createEmptyCanvasDocument>;
 
 function createClient(content: CanvasContentForTest) {
   const state = { content };
@@ -89,7 +92,7 @@ describe("canvas-element-writer image generation groups", () => {
     ).toBe(true);
   });
 
-  it("replaces the image placeholder in place and preserves group arrow bindings", async () => {
+  it("resets legacy placeholder canvases and inserts a Cucumber image node", async () => {
     const group = buildImageGenerationGroupElements([], {
       userPrompt: "生成一张图片",
       optimizedPrompt: "Generate a clean product image.",
@@ -122,29 +125,18 @@ describe("canvas-element-writer image generation groups", () => {
       sessionId: "session_2",
     });
 
-    const legacyContent = client.state.content as {
-      elements: Record<string, unknown>[];
-      files?: Record<string, Record<string, unknown>>;
-    };
-    const elements = legacyContent.elements;
-    const image = elements.find((el) => el.id === result.elementId);
-    const placeholder = elements.find((el) => el.id === group.placeholderId);
-    const arrows = elements.filter((el) => el.type === "arrow");
-
-    expect(image?.type).toBe("image");
-    expect(image?.groupIds).toContain(group.groupId);
-    expect(placeholder?.isDeleted).toBe(true);
-    expect(Object.keys(legacyContent.files ?? {})).toHaveLength(1);
-    expect(
-      arrows.some(
-        (el) =>
-          (el.endBinding as { elementId?: string } | null)?.elementId ===
-          result.elementId,
-      ),
-    ).toBe(true);
+    const nextDoc = client.state.content as ReturnType<
+      typeof createEmptyCanvasDocument
+    >;
+    expect(isCucumberCanvasDocument(nextDoc)).toBe(true);
+    expect(nextDoc.nodes[result.elementId]).toMatchObject({
+      type: "image",
+      title: "Clean product image",
+    });
+    expect(Object.keys(nextDoc.assets)).toHaveLength(1);
   });
 
-  it("marks the image placeholder as failed with a concrete error message", async () => {
+  it("logs generation failure without writing legacy placeholder state", async () => {
     const group = buildImageGenerationGroupElements([], {
       userPrompt: "生成一张图片",
       optimizedPrompt: "Generate a clean product image.",
@@ -167,21 +159,10 @@ describe("canvas-element-writer image generation groups", () => {
       errorMessage: "Provider rejected the prompt because it was empty.",
     });
 
-    const legacyContent = client.state.content as {
-      elements: Record<string, unknown>[];
-    };
-    const placeholder = legacyContent.elements.find(
-      (el) => el.id === group.placeholderId,
-    );
-    const message = legacyContent.elements.find(
-      (el) => el.containerId === group.placeholderId,
-    );
-
-    expect((placeholder?.customData as { status?: string })?.status).toBe(
-      "error",
-    );
-    expect(String(message?.text)).toContain("Provider rejected the prompt");
-    expect(String(message?.text)).not.toMatch(/null|undefined/);
+    expect(client.state.content).toMatchObject({
+      elements: group.elements,
+      appState: {},
+    });
   });
 
   it("inserts generated images into the new Cucumber canvas document", async () => {

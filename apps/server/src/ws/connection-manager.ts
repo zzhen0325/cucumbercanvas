@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import type { WebSocket } from "ws";
 import type { StreamEvent } from "@cucumber/shared";
+import type { WebSocket } from "ws";
 
 type PendingRPC = {
-  resolve: (value: any) => void;
+  resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
 };
@@ -243,7 +243,11 @@ export class ConnectionManager {
         reject(new Error(`RPC timeout: ${method} (${timeout}ms)`));
       }, timeout);
 
-      this.pendingRPCs.set(id, { resolve, reject, timer });
+      this.pendingRPCs.set(id, {
+        reject,
+        resolve: (value) => resolve(value as T),
+        timer,
+      });
 
       ws.send(
         JSON.stringify({
@@ -254,6 +258,31 @@ export class ConnectionManager {
         }),
       );
     });
+  }
+
+  async rpcToCanvas<T = unknown>(
+    canvasId: string,
+    userId: string,
+    method: string,
+    params: Record<string, unknown>,
+    timeout = 10_000,
+  ): Promise<T> {
+    const ids = this.canvasIndex.get(canvasId);
+    if (!ids || ids.size === 0) {
+      throw new Error(`No live editor is connected for canvas ${canvasId}`);
+    }
+
+    for (const connectionId of ids) {
+      const entry = this.connections.get(connectionId);
+      if (!entry || entry.userId !== userId || entry.ws.readyState !== 1) {
+        continue;
+      }
+      return this.rpc<T>(connectionId, method, params, timeout);
+    }
+
+    throw new Error(
+      `No live editor is connected for canvas ${canvasId} and user ${userId}`,
+    );
   }
 
   /**
@@ -297,7 +326,10 @@ export class ConnectionManager {
   // Internal helpers
   // ---------------------------------------------------------------------------
 
-  private removeFromIndexes(connectionId: string, entry: ConnectionEntry): void {
+  private removeFromIndexes(
+    connectionId: string,
+    entry: ConnectionEntry,
+  ): void {
     // Remove from user index
     const userSet = this.userIndex.get(entry.userId);
     if (userSet) {

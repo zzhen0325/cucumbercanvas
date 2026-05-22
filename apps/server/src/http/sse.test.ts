@@ -114,6 +114,7 @@ async function createHarness() {
       }),
     }),
     eventBuffer,
+    webOrigin: "http://localhost:3000",
   });
 
   const origin = await app.listen({

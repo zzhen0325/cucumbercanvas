@@ -1,5 +1,6 @@
 import type { BackendFactory, BackendProtocol } from "deepagents";
 
+import type { LiveCanvasService } from "../features/canvas/live-canvas-service.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import type { PersistImageFn, SubmitImageJobFn } from "../agent/tools/image-generate.js";
 import type { SubmitVideoJobFn } from "../agent/tools/video-generate.js";
@@ -15,6 +16,7 @@ export type CreateCucumberMcpServerDeps = {
   createUserClient: (accessToken: string) => any;
   brandKitId?: string | null;
   connectionManager?: ConnectionManager;
+  liveCanvasService?: LiveCanvasService;
   persistImage?: PersistImageFn;
   sandboxDir?: string;
   submitImageJob?: SubmitImageJobFn;

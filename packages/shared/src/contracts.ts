@@ -131,16 +131,11 @@ export const projectSummarySchema = z.object({
 
 export const canvasContentSchema = z
   .object({
-    // Legacy Excalidraw fields stay optional so existing API callers continue
-    // to compile while the new Cucumber document format takes over.
-    elements: z.array(z.record(z.unknown())).default([]),
-    appState: z.record(z.unknown()).default({}),
-    files: z.record(z.record(z.unknown())).default({}),
-    schemaVersion: z.string().optional(),
-    nodes: z.record(z.unknown()).optional(),
-    rootNodeIds: z.array(z.string()).optional(),
-    assets: z.record(z.unknown()).optional(),
-    viewport: z.record(z.unknown()).optional(),
+    schemaVersion: z.literal("cucumber-canvas-v1"),
+    nodes: z.record(z.unknown()),
+    rootNodeIds: z.array(z.string()),
+    assets: z.record(z.unknown()),
+    viewport: z.record(z.unknown()),
     selection: z.array(z.string()).optional(),
     updatedAt: z.string().optional(),
   })

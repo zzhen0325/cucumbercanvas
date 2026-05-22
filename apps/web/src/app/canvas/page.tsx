@@ -86,9 +86,8 @@ function CanvasPageContent() {
   const [selectedCanvasElements, setSelectedCanvasElements] = useState<
     CanvasSelectedElement[]
   >([]);
-  const [importSummary, setImportSummary] = useState<CanvasImportSummary | null>(
-    null,
-  );
+  const [importSummary, setImportSummary] =
+    useState<CanvasImportSummary | null>(null);
   const [showImportWarnings, setShowImportWarnings] = useState(false);
 
   const canvasApiRef = useRef<CanvasApi | null>(null);
@@ -129,7 +128,9 @@ function CanvasPageContent() {
     if (selectedCanvasElements.length === 0) return;
     const imported = selectedCanvasElements.filter((element) =>
       ["svg-import", "figma-paste"].includes(
-        String((element as CanvasSelectedElement & { source?: string }).source ?? ""),
+        String(
+          (element as CanvasSelectedElement & { source?: string }).source ?? "",
+        ),
       ),
     );
     if (imported.length === 0) return;
@@ -138,9 +139,7 @@ function CanvasPageContent() {
       0,
     );
     const degradationHints = Array.from(
-      new Set(
-        imported.flatMap((element) => element.degradationHints ?? []),
-      ),
+      new Set(imported.flatMap((element) => element.degradationHints ?? [])),
     );
     setImportSummary({
       sourceLabel: imported[0]?.importSourceLabel ?? "导入内容",
@@ -368,7 +367,9 @@ function CanvasPageContent() {
             </div>
             {showImportWarnings && importSummary.degradationHints.length > 0 ? (
               <div className="mt-2 rounded-xl bg-muted/60 px-3 py-2 text-[11px] text-muted-foreground">
-                {importSummary.degradationHints.map(formatImportHint).join(" · ")}
+                {importSummary.degradationHints
+                  .map(formatImportHint)
+                  .join(" · ")}
               </div>
             ) : null}
           </div>
@@ -410,6 +411,9 @@ function CanvasPageContent() {
         onToggle={handleToggleChat}
         onImageGenerated={handleImageGenerated}
         onVideoGenerated={handleVideoGenerated}
+        onBeforeRun={async () => {
+          await canvasApiRef.current?.flushPendingSave();
+        }}
         onCanvasSync={handleCanvasSync}
         onStreamEvent={checkForTimedOutJobs}
         initialPrompt={initialPrompt}

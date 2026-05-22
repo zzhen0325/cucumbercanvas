@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { FigmaTreeNode } from "../figma-native-types.js";
 
 import {
+  applyImportedAutoLayout,
   applyInstanceOverrides,
   type CanvasNode,
   type ContainerNode,
   applyCanvasOperation,
   buildAgentContext,
   extractFigmaClipboardData,
+  getFigmaAutoLayoutMeta,
   mergeSymbolProps,
   parseClipboardImport,
   createCanvasNodeId,
@@ -455,6 +457,9 @@ describe("cucumber canvas core", () => {
         source: "figma-paste",
         importSourceLabel: "Figma",
         originNodeType: "div",
+        autoLayout: {
+          layout: "horizontal",
+        },
       });
     },
   );
@@ -518,6 +523,229 @@ describe("cucumber canvas core", () => {
     expect(merged.strokePaints?.[0]?.type).toBe("SOLID");
   });
 
+  it("maps figma auto-layout metadata for containers and children", () => {
+    expect(
+      getFigmaAutoLayoutMeta(
+        {
+          type: "FRAME",
+          stackMode: "VERTICAL",
+          stackSpacing: 16,
+          stackPadding: 20,
+          stackPrimaryAlignItems: "CENTER",
+          stackCounterAlignItems: "MAX",
+          frameMaskDisabled: false,
+          size: { x: 320, y: 180 },
+        },
+        undefined,
+      ),
+    ).toEqual({
+      layout: "vertical",
+      gap: 16,
+      padding: 20,
+      justifyContent: "center",
+      alignItems: "end",
+      clipContent: true,
+      widthMode: "fixed",
+      heightMode: "fixed",
+    });
+
+    expect(
+      getFigmaAutoLayoutMeta(
+        {
+          type: "TEXT",
+          size: { x: 120, y: 40 },
+          stackChildPrimaryGrow: 1,
+          stackChildAlignSelf: "STRETCH",
+          stackPositioning: "AUTO",
+        },
+        "VERTICAL",
+      ),
+    ).toEqual({
+      widthMode: "fill_container",
+      heightMode: "fill_container",
+      alignSelf: "stretch",
+      positioning: "auto",
+      grow: 1,
+    });
+  });
+
+  it("applies imported auto-layout to container children and nested layout containers", () => {
+    let doc = createEmptyCanvasDocument();
+    const root = makeContainer("root");
+    root.bounds = { x: 10, y: 20, width: 300, height: 200 };
+    root.meta = {
+      source: "figma-paste",
+      autoLayout: {
+        layout: "vertical",
+        gap: 10,
+        padding: [12, 16],
+        justifyContent: "center",
+      },
+    };
+
+    const titleNode: CanvasNode = {
+      id: "title",
+      type: "text",
+      parentId: "root",
+      bounds: { x: 0, y: 0, width: 50, height: 20 },
+      text: "Title",
+      fontSize: 16,
+      meta: {
+        source: "figma-paste",
+        autoLayout: {
+          widthMode: "fill_container",
+        },
+      },
+    };
+    const nested = makeContainer("nested", "root");
+    nested.bounds = { x: 0, y: 0, width: 100, height: 40 };
+    nested.meta = {
+      source: "figma-paste",
+      autoLayout: {
+        layout: "horizontal",
+        gap: 8,
+        padding: 8,
+        widthMode: "fill_container",
+        alignItems: "center",
+      },
+    };
+
+    const nestedLabel: CanvasNode = {
+      id: "nested-label",
+      type: "text",
+      parentId: "nested",
+      bounds: { x: 0, y: 0, width: 60, height: 20 },
+      text: "Nested",
+      fontSize: 14,
+    };
+    const nestedValue: CanvasNode = {
+      id: "nested-value",
+      type: "text",
+      parentId: "nested",
+      bounds: { x: 0, y: 0, width: 40, height: 20 },
+      text: "Value",
+      fontSize: 14,
+      meta: {
+        source: "figma-paste",
+        autoLayout: {
+          grow: 1,
+          heightMode: "fill_container",
+        },
+      },
+    };
+
+    doc = applyCanvasOperation(doc, { type: "insertNode", node: root });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: titleNode,
+      containerId: "root",
+    });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: nested,
+      containerId: "root",
+    });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: nestedLabel,
+      containerId: "nested",
+    });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: nestedValue,
+      containerId: "nested",
+    });
+
+    const next = applyImportedAutoLayout(doc, "root");
+
+    expect(next.nodes.title?.bounds).toMatchObject({
+      x: 26,
+      y: 85,
+      width: 268,
+      height: 20,
+    });
+    expect(next.nodes.nested?.bounds).toMatchObject({
+      x: 26,
+      y: 115,
+      width: 268,
+      height: 40,
+    });
+    expect(next.nodes["nested-label"]?.bounds).toMatchObject({
+      x: 34,
+      y: 125,
+      width: 60,
+      height: 20,
+    });
+    expect(next.nodes["nested-value"]?.bounds).toMatchObject({
+      x: 102,
+      y: 123,
+      width: 184,
+      height: 24,
+    });
+  });
+
+  it("keeps imported absolute-positioned children fixed during auto-layout reflow", () => {
+    let doc = createEmptyCanvasDocument();
+    const root = makeContainer("absolute-root");
+    root.bounds = { x: 0, y: 0, width: 200, height: 120 };
+    root.meta = {
+      source: "figma-paste",
+      autoLayout: {
+        layout: "horizontal",
+        gap: 12,
+        padding: 10,
+      },
+    };
+
+    const flowNode: CanvasNode = {
+      id: "flow",
+      type: "rect",
+      parentId: "absolute-root",
+      bounds: { x: 0, y: 0, width: 40, height: 20 },
+      fill: "#fff",
+    };
+    const absoluteNode: CanvasNode = {
+      id: "absolute",
+      type: "rect",
+      parentId: "absolute-root",
+      bounds: { x: 77, y: 33, width: 30, height: 30 },
+      fill: "#000",
+      meta: {
+        source: "figma-paste",
+        autoLayout: {
+          positioning: "absolute",
+        },
+      },
+    };
+
+    doc = applyCanvasOperation(doc, { type: "insertNode", node: root });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: flowNode,
+      containerId: "absolute-root",
+    });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: absoluteNode,
+      containerId: "absolute-root",
+    });
+
+    const next = applyImportedAutoLayout(doc, "absolute-root");
+
+    expect(next.nodes.flow?.bounds).toMatchObject({
+      x: 10,
+      y: 10,
+      width: 40,
+      height: 20,
+    });
+    expect(next.nodes.absolute?.bounds).toMatchObject({
+      x: 77,
+      y: 33,
+      width: 30,
+      height: 30,
+    });
+  });
+
   it("applies instance overrides and derived data to symbol children", () => {
     const symbolNode: FigmaTreeNode = {
       figma: {
@@ -574,5 +802,77 @@ describe("cucumber canvas core", () => {
       m11: 1,
       m12: 36,
     });
+  });
+
+  it("propagates nested instance override paths to child instances", () => {
+    const symbolNode: FigmaTreeNode = {
+      figma: {
+        type: "SYMBOL",
+        name: "Outer Card",
+        guid: { sessionID: 1, localID: 1000 },
+        size: { x: 300, y: 180 },
+        transform: { m00: 1, m01: 0, m02: 0, m10: 0, m11: 1, m12: 0 },
+      },
+      children: [
+        {
+          figma: {
+            type: "INSTANCE",
+            name: "Nested Badge Instance",
+            guid: { sessionID: 1, localID: 1001 },
+            size: { x: 120, y: 48 },
+            transform: { m00: 1, m01: 0, m02: 20, m10: 0, m11: 1, m12: 24 },
+            symbolData: {
+              symbolID: { sessionID: 1, localID: 2000 },
+            },
+          },
+          children: [],
+        },
+      ],
+    };
+
+    const children = applyInstanceOverrides(
+      symbolNode,
+      [
+        {
+          guidPath: {
+            guids: [
+              { sessionID: 8, localID: 5000 },
+              { sessionID: 8, localID: 5001 },
+            ],
+          },
+          textData: { characters: "Nested override title" },
+          fontSize: 18,
+        },
+      ],
+      [
+        {
+          guidPath: {
+            guids: [
+              { sessionID: 8, localID: 5000 },
+              { sessionID: 8, localID: 5001 },
+            ],
+          },
+          size: { x: 96, y: 36 },
+          transform: { m00: 1, m01: 0, m02: 26, m10: 0, m11: 1, m12: 32 },
+        },
+      ],
+      { x: 300, y: 180 },
+    );
+
+    expect(children).toHaveLength(1);
+    const nestedInstance = children[0];
+    expect(nestedInstance?.figma.symbolData?.symbolOverrides).toEqual([
+      expect.objectContaining({
+        guidPath: { guids: [{ sessionID: 8, localID: 5001 }] },
+        textData: { characters: "Nested override title" },
+        fontSize: 18,
+      }),
+    ]);
+    expect(nestedInstance?.figma.derivedSymbolData).toEqual([
+      expect.objectContaining({
+        guidPath: { guids: [{ sessionID: 8, localID: 5001 }] },
+        size: { x: 96, y: 36 },
+      }),
+    ]);
   });
 });

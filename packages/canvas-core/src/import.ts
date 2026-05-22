@@ -3,6 +3,7 @@ import { parseFigmaClipboardNative } from "./figma-native.js";
 import type {
   CanvasAsset,
   CanvasBounds,
+  CanvasImportedAutoLayoutMeta,
   CanvasImportedNodeMeta,
   CanvasNode,
   CanvasImportSource,
@@ -92,6 +93,7 @@ function createImportedNodeMeta(
     figmaNodeType?: string;
     degradationHints?: string[];
     warningCount?: number;
+    autoLayout?: CanvasImportedAutoLayoutMeta;
   },
 ): CanvasImportedNodeMeta {
   const { nodeSource, sourceLabel } = getImportSourceMeta(state.source);
@@ -107,11 +109,85 @@ function createImportedNodeMeta(
         ? Array.from(new Set(options.degradationHints))
         : undefined,
     warningCount: options?.warningCount,
+    autoLayout: options?.autoLayout,
   };
 }
 
 function getWarningCodes(warnings: CanvasImportWarning[]): string[] {
   return Array.from(new Set(warnings.map((warning) => warning.code)));
+}
+
+function getHtmlAutoLayoutMeta(style: Record<string, string>): CanvasImportedAutoLayoutMeta | undefined {
+  const isFlex = style.display === "flex" || style.display === "inline-flex";
+  if (!isFlex) {
+    return undefined;
+  }
+
+  const meta: CanvasImportedAutoLayoutMeta = {
+    layout: style.flexDirection === "column" ? "vertical" : "horizontal",
+    gap: parseCssNumber(style.gap),
+    padding: readCssPadding(style),
+    justifyContent: mapCssJustifyContent(style.justifyContent),
+    alignItems: mapCssAlignItems(style.alignItems),
+    clipContent: style.overflow === "hidden" || style.overflow === "clip" ? true : undefined,
+  };
+
+  return Object.values(meta).some((value) => value !== undefined) ? meta : undefined;
+}
+
+function readCssPadding(
+  style: Record<string, string>,
+): CanvasImportedAutoLayoutMeta["padding"] | undefined {
+  const top = parseCssNumber(style.paddingTop ?? style.padding);
+  const right = parseCssNumber(style.paddingRight ?? style.padding);
+  const bottom = parseCssNumber(style.paddingBottom ?? style.padding);
+  const left = parseCssNumber(style.paddingLeft ?? style.padding);
+
+  if ([top, right, bottom, left].every((value) => value === undefined || value === 0)) {
+    return undefined;
+  }
+
+  const safeTop = top ?? 0;
+  const safeRight = right ?? 0;
+  const safeBottom = bottom ?? 0;
+  const safeLeft = left ?? 0;
+  if (safeTop === safeRight && safeRight === safeBottom && safeBottom === safeLeft) {
+    return safeTop;
+  }
+  if (safeTop === safeBottom && safeLeft === safeRight) {
+    return [safeTop, safeRight];
+  }
+  return [safeTop, safeRight, safeBottom, safeLeft];
+}
+
+function mapCssJustifyContent(value?: string): CanvasImportedAutoLayoutMeta["justifyContent"] {
+  switch (value) {
+    case "center":
+      return "center";
+    case "flex-end":
+      return "end";
+    case "space-between":
+    case "space-evenly":
+    case "space-around":
+      return "space_between";
+    case "flex-start":
+    default:
+      return value ? "start" : undefined;
+  }
+}
+
+function mapCssAlignItems(value?: string): CanvasImportedAutoLayoutMeta["alignItems"] {
+  switch (value) {
+    case "center":
+      return "center";
+    case "flex-end":
+      return "end";
+    case "baseline":
+      return "baseline";
+    case "flex-start":
+    default:
+      return value ? "start" : undefined;
+  }
 }
 
 export function isLikelySvgMarkup(value: string): boolean {
@@ -342,12 +418,13 @@ function parseStyledHtmlElement(
     element.getAttribute("id") ??
     undefined;
   const degradationHints: string[] = [];
+  const autoLayout = getHtmlAutoLayoutMeta(style);
 
-  if (style.display === "flex" || style.display === "inline-flex") {
+  if (autoLayout) {
     degradationHints.push("layout_degraded");
     pushImportWarning(state, {
       code: "layout_degraded",
-      message: "检测到 Figma 自动布局样式，当前按绝对定位近似导入。",
+      message: "检测到 Figma 自动布局样式，已保留布局元数据，当前画布仍按静态几何近似导入。",
       originNodeId,
       originNodeType,
     });
@@ -387,6 +464,7 @@ function parseStyledHtmlElement(
         originNodeId,
         figmaNodeType: inferFigmaNodeType(element),
         degradationHints,
+        autoLayout,
       }),
     } as CanvasNode);
     localNodeIds.push(rectId);
@@ -416,6 +494,7 @@ function parseStyledHtmlElement(
         originNodeId,
         figmaNodeType: inferFigmaNodeType(element),
         degradationHints,
+        autoLayout,
       }),
     } as CanvasNode);
     localNodeIds.push(textId);
@@ -464,6 +543,7 @@ function parseStyledHtmlElement(
         originNodeId,
         figmaNodeType: inferFigmaNodeType(element),
         degradationHints,
+        autoLayout,
       }),
     });
     return [groupId];
