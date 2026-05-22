@@ -3,11 +3,14 @@
 import { createCanvasNodeId } from "@cucumber/canvas-core";
 import {
   Copy,
+  ClipboardPaste,
+  Scissors,
   FolderOpen,
   Home,
   ImagePlus,
   Maximize2,
   Plus,
+  ScanText,
   Trash2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -54,40 +57,16 @@ export function CanvasLogoMenu({
   canvasApi,
 }: CanvasLogoMenuProps) {
   const router = useRouter();
-  const { error: toastError } = useToast();
+  const { error: toastError, success: toastSuccess } = useToast();
   const { create: createNewProject } = useCreateProject();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const svgInputRef = useRef<HTMLInputElement>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const handleDuplicateElements = useCallback(() => {
     if (!canvasApi) return;
-    const selectedIds = canvasApi.getAppState().selectedElementIds ?? {};
-    const doc = canvasApi.getDocument();
-    const selected = Object.values(doc.nodes).filter(
-      (node) => selectedIds[node.id],
-    );
-    if (!selected.length) return;
-
-    const cloneIds: string[] = [];
-    for (const node of selected) {
-      const cloneId = createCanvasNodeId(node.type);
-      cloneIds.push(cloneId);
-      canvasApi.insertNode(
-        {
-          ...node,
-          id: cloneId,
-          bounds: {
-            ...node.bounds,
-            x: node.bounds.x + 10,
-            y: node.bounds.y + 10,
-          },
-          title: node.title ? `${node.title} copy` : node.title,
-          ...(node.type === "container" ? { childrenOrder: [] } : {}),
-        },
-        node.parentId,
-      );
-    }
-    canvasApi.setSelection(cloneIds);
+    const cloneIds = canvasApi.duplicateSelection();
+    if (!cloneIds.length) return;
     console.info("[canvas-menu] duplicated canvas nodes", {
       count: cloneIds.length,
     });
@@ -109,7 +88,7 @@ export function CanvasLogoMenu({
     }
   }, [accessToken, projectId, router, confirmingDelete, toastError]);
 
-  const handleFileImport = useCallback(
+  const handleImageImport = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
       if (!file || !canvasApi) return;
@@ -140,6 +119,56 @@ export function CanvasLogoMenu({
     },
     [canvasApi],
   );
+
+  const handleSvgImport = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+      if (!file || !canvasApi) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const svgMarkup = String(reader.result ?? "");
+        const inserted = canvasApi.importSvgMarkup(svgMarkup);
+        if (inserted.length > 0) {
+          toastSuccess(
+            `SVG 已导入 ${inserted.length} 个节点，如有兼容性提醒会显示在画布顶部。`,
+          );
+        }
+      };
+      reader.onerror = () => toastError("SVG 文件读取失败");
+      reader.readAsText(file);
+    },
+    [canvasApi, toastError, toastSuccess],
+  );
+
+  const handleCopy = useCallback(() => {
+    if (canvasApi?.copySelection()) {
+      toastSuccess("已复制当前选区");
+    }
+  }, [canvasApi, toastSuccess]);
+
+  const handleCut = useCallback(() => {
+    if (!canvasApi) return;
+    if (canvasApi.copySelection()) {
+      canvasApi.deleteSelection();
+      toastSuccess("已剪切当前选区");
+    }
+  }, [canvasApi, toastSuccess]);
+
+  const handlePaste = useCallback(async () => {
+    if (!canvasApi) return;
+    const internal = canvasApi.pasteClipboard();
+    if (internal.length > 0) {
+      toastSuccess(`已粘贴 ${internal.length} 个节点`);
+      return;
+    }
+    const imported = await canvasApi.pasteFromSystemClipboard();
+    if (imported.length > 0) {
+      toastSuccess(
+        `已从系统剪贴板导入 ${imported.length} 个节点，请留意画布顶部兼容性提醒。`,
+      );
+    }
+  }, [canvasApi, toastSuccess]);
 
   return (
     <>
@@ -190,11 +219,30 @@ export function CanvasLogoMenu({
               <ImagePlus className="size-4" />
               导入图片
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => svgInputRef.current?.click()}>
+              <ScanText className="size-4" />
+              导入 SVG
+            </DropdownMenuItem>
           </DropdownMenuGroup>
 
           <DropdownMenuSeparator />
 
           <DropdownMenuGroup>
+            <DropdownMenuItem onClick={handleCopy}>
+              <Copy className="size-4" />
+              复制
+              <DropdownMenuShortcut>⌘C</DropdownMenuShortcut>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleCut}>
+              <Scissors className="size-4" />
+              剪切
+              <DropdownMenuShortcut>⌘X</DropdownMenuShortcut>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void handlePaste()}>
+              <ClipboardPaste className="size-4" />
+              粘贴
+              <DropdownMenuShortcut>⌘V</DropdownMenuShortcut>
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={handleDuplicateElements}>
               <Copy className="size-4" />
               复制对象
@@ -218,7 +266,14 @@ export function CanvasLogoMenu({
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={handleFileImport}
+        onChange={handleImageImport}
+      />
+      <input
+        ref={svgInputRef}
+        type="file"
+        accept=".svg,image/svg+xml"
+        className="hidden"
+        onChange={handleSvgImport}
       />
     </>
   );

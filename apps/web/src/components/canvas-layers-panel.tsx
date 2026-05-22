@@ -1,5 +1,15 @@
 "use client";
 
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Eye,
+  EyeOff,
+  Lock,
+  MoreHorizontal,
+  Unlock,
+} from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import type {
@@ -7,6 +17,14 @@ import type {
   CanvasFileRecord,
   CanvasSceneElement,
 } from "./canvas/canvas-surface";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 
 export type CanvasLayersPanelProps = {
   canvasApi: CanvasApi | null;
@@ -16,13 +34,13 @@ export type CanvasLayersPanelProps = {
 
 /* -- Throttle utility -- */
 /** Simple trailing-edge throttle. Ensures fn fires at most once per `ms`. */
-function throttle<T extends (...args: any[]) => void>(
-  fn: T,
+function throttle<Args extends unknown[]>(
+  fn: (...args: Args) => void,
   ms: number,
-): T & { cancel: () => void } {
+): ((...args: Args) => void) & { cancel: () => void } {
   let timer: ReturnType<typeof setTimeout> | null = null;
-  let lastArgs: Parameters<T> | null = null;
-  const throttled = ((...args: Parameters<T>) => {
+  let lastArgs: Args | null = null;
+  const throttled = ((...args: Args) => {
     lastArgs = args;
     if (timer) return;
     timer = setTimeout(() => {
@@ -30,7 +48,7 @@ function throttle<T extends (...args: any[]) => void>(
       if (lastArgs) fn(...lastArgs);
       lastArgs = null;
     }, ms);
-  }) as T & { cancel: () => void };
+  }) as ((...args: Args) => void) & { cancel: () => void };
   throttled.cancel = () => {
     if (timer) {
       clearTimeout(timer);
@@ -41,41 +59,9 @@ function throttle<T extends (...args: any[]) => void>(
   return throttled;
 }
 
-/* -- Icon helpers -- */
-const LockIcon = ({ className }: { className?: string }) => (
-  <svg viewBox="0 0 16 16" fill="none" className={className}>
-    <rect
-      x="3.5"
-      y="7"
-      width="9"
-      height="6.5"
-      rx="1.5"
-      stroke="currentColor"
-      strokeWidth="1.3"
-    />
-    <path
-      d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-    />
-  </svg>
-);
-
-const EyeIcon = ({ className }: { className?: string }) => (
-  <svg viewBox="0 0 16 16" fill="none" className={className}>
-    <path
-      d="M1.5 8s2.5-4 6.5-4 6.5 4 6.5 4-2.5 4-6.5 4S1.5 8 1.5 8Z"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinejoin="round"
-    />
-    <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3" />
-  </svg>
-);
-
 const CloseIcon = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 16 16" fill="none" className={className}>
+    <title>Close</title>
     <path
       d="M4.5 4.5l7 7M11.5 4.5l-7 7"
       stroke="currentColor"
@@ -152,47 +138,238 @@ const LayerRow = memo(function LayerRow({
   el,
   files,
   selected,
+  collapsed,
+  canCollapse,
   onSelect,
+  onToggleLock,
+  onToggleVisible,
+  onReorder,
+  onToggleCollapse,
+  onRename,
+  onDelete,
+  onDuplicate,
+  onDragStart,
+  onDragOver,
+  onDrop,
 }: {
   el: CanvasSceneElement;
   files: Record<string, CanvasFileRecord>;
   selected: boolean;
-  onSelect: (id: string) => void;
+  collapsed: boolean;
+  canCollapse: boolean;
+  onSelect: (id: string, additive?: boolean) => void;
+  onToggleLock: (id: string) => void;
+  onToggleVisible: (id: string) => void;
+  onReorder: (
+    id: string,
+    direction: "forward" | "backward" | "front" | "back",
+  ) => void;
+  onToggleCollapse: (id: string) => void;
+  onRename: (id: string, title: string) => void;
+  onDelete: (id: string) => void;
+  onDuplicate: (id: string) => void;
+  onDragStart: (id: string) => void;
+  onDragOver: (id: string, event: React.DragEvent<HTMLDivElement>) => void;
+  onDrop: (id: string) => void;
 }) {
-  const handleClick = useCallback(() => onSelect(el.id), [onSelect, el.id]);
+  const [editing, setEditing] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(elLabel(el));
+  useEffect(() => {
+    setDraftTitle(elLabel(el));
+  }, [el]);
+  const handleClick = useCallback(
+    (event?: React.MouseEvent) => onSelect(el.id, Boolean(event?.shiftKey || event?.metaKey)),
+    [onSelect, el.id],
+  );
+  const depth = el.depth ?? 0;
 
   return (
     <div
       style={{ contentVisibility: "auto", containIntrinsicSize: "auto 44px" }}
+      draggable
+      onDragStart={() => onDragStart(el.id)}
+      onDragOver={(event) => onDragOver(el.id, event)}
+      onDrop={() => onDrop(el.id)}
     >
       <button
         type="button"
         className={`group/layer flex h-11 w-full items-center gap-2.5 rounded-lg px-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
           selected ? "bg-muted" : "hover:bg-muted"
-        }`}
-        onClick={handleClick}
+        } ${el.visible === false ? "opacity-55" : ""}`}
+        style={{ paddingLeft: 8 + depth * 14 }}
+        onClick={(event) => handleClick(event)}
+        onDoubleClick={() => setEditing(true)}
       >
+        <button
+          type="button"
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-background"
+          onClick={(event) => {
+            event.stopPropagation();
+            if (canCollapse) onToggleCollapse(el.id);
+          }}
+          aria-label={collapsed ? "展开图层" : "收起图层"}
+        >
+          {canCollapse ? (
+            collapsed ? (
+              <ChevronRight className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronDown className="h-3.5 w-3.5" />
+            )
+          ) : null}
+        </button>
         <LayerThumbnail el={el} files={files} />
-        <span className="flex-1 truncate text-[11px] text-foreground min-w-0">
-          {elLabel(el)}
-        </span>
+        {editing ? (
+          <input
+            className="h-7 min-w-0 flex-1 rounded border border-border bg-background px-2 text-[11px] text-foreground outline-none"
+            value={draftTitle}
+            autoFocus
+            onClick={(event) => event.stopPropagation()}
+            onChange={(event) => setDraftTitle(event.currentTarget.value)}
+            onBlur={() => {
+              setEditing(false);
+              onRename(el.id, draftTitle.trim() || elLabel(el));
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                setEditing(false);
+                onRename(el.id, draftTitle.trim() || elLabel(el));
+              }
+              if (event.key === "Escape") {
+                setEditing(false);
+                setDraftTitle(elLabel(el));
+              }
+            }}
+          />
+        ) : (
+          <span className="flex-1 truncate text-[11px] text-foreground min-w-0">
+            {elLabel(el)}
+          </span>
+        )}
         <div className="flex items-center gap-0.5">
           <button
             type="button"
             className="invisible flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground group-hover/layer:visible cursor-pointer outline-none focus-visible:visible focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-            aria-label="Lock layer"
-            onClick={(e) => e.stopPropagation()}
+            aria-label="Move layer forward"
+            onClick={(e) => {
+              e.stopPropagation();
+              onReorder(el.id, "forward");
+            }}
           >
-            <LockIcon className="h-4 w-4" />
+            <ChevronUp className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            className="invisible flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground group-hover/layer:visible cursor-pointer outline-none focus-visible:visible focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+            aria-label="Move layer backward"
+            onClick={(e) => {
+              e.stopPropagation();
+              onReorder(el.id, "backward");
+            }}
+          >
+            <ChevronDown className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            className="invisible flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground group-hover/layer:visible cursor-pointer outline-none focus-visible:visible focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+            aria-label={el.locked ? "Unlock layer" : "Lock layer"}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleLock(el.id);
+            }}
+          >
+            {el.locked ? (
+              <Lock className="h-4 w-4" />
+            ) : (
+              <Unlock className="h-4 w-4" />
+            )}
           </button>
           <button
             type="button"
             className="invisible flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground group-hover/layer:visible cursor-pointer outline-none focus-visible:visible focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
             aria-label="Toggle layer visibility"
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleVisible(el.id);
+            }}
           >
-            <EyeIcon className="h-4 w-4" />
+            {el.visible === false ? (
+              <EyeOff className="h-4 w-4" />
+            ) : (
+              <Eye className="h-4 w-4" />
+            )}
           </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              className="invisible flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground group-hover/layer:visible focus-visible:visible"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuGroup>
+                <DropdownMenuItem
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setEditing(true);
+                  }}
+                >
+                  重命名
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDuplicate(el.id);
+                  }}
+                >
+                  复制
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onReorder(el.id, "front");
+                  }}
+                >
+                  置顶
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onReorder(el.id, "back");
+                  }}
+                >
+                  置底
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuItem
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onToggleLock(el.id);
+                  }}
+                >
+                  {el.locked ? "解锁" : "锁定"}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onToggleVisible(el.id);
+                  }}
+                >
+                  {el.visible === false ? "显示" : "隐藏"}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDelete(el.id);
+                  }}
+                >
+                  删除
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </button>
     </div>
@@ -211,6 +388,8 @@ export function CanvasLayersPanel({
   const [elements, setElements] = useState<CanvasSceneElement[]>([]);
   const [files, setFiles] = useState<Record<string, CanvasFileRecord>>({});
   const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
+  const [collapsedIds, setCollapsedIds] = useState<Record<string, boolean>>({});
+  const dragIdRef = useRef<string | null>(null);
 
   /* -- Refresh elements on open + subscribe to changes -- */
   const refreshElements = useCallback(() => {
@@ -254,18 +433,126 @@ export function CanvasLayersPanel({
 
   /* -- Select element on canvas -- */
   const selectElement = useCallback(
+    (id: string, additive = false) => {
+      if (!canvasApi) return;
+      if (!additive) {
+        canvasApi.setSelection([id]);
+        return;
+      }
+      const nextSelected = selectedIds[id]
+        ? Object.keys(selectedIds).filter((selectedId) => selectedId !== id)
+        : [...Object.keys(selectedIds), id];
+      canvasApi.setSelection(nextSelected);
+    },
+    [canvasApi, selectedIds],
+  );
+
+  const toggleLock = useCallback(
     (id: string) => {
-      canvasApi?.setSelection([id]);
+      canvasApi?.toggleNodeLocked(id);
     },
     [canvasApi],
   );
+
+  const toggleVisible = useCallback(
+    (id: string) => {
+      canvasApi?.toggleNodeVisible(id);
+    },
+    [canvasApi],
+  );
+
+  const reorderElement = useCallback(
+    (id: string, direction: "forward" | "backward" | "front" | "back") => {
+      canvasApi?.reorderNode(id, direction);
+    },
+    [canvasApi],
+  );
+
+  const renameElement = useCallback(
+    (id: string, title: string) => {
+      canvasApi?.updateNode(id, { title });
+    },
+    [canvasApi],
+  );
+
+  const deleteElement = useCallback(
+    (id: string) => {
+      canvasApi?.deleteNode(id);
+    },
+    [canvasApi],
+  );
+
+  const duplicateElement = useCallback(
+    (id: string) => {
+      if (!canvasApi) return;
+      canvasApi.setSelection([id]);
+      canvasApi.duplicateSelection();
+    },
+    [canvasApi],
+  );
+
+  const toggleCollapse = useCallback((id: string) => {
+    setCollapsedIds((prev) => ({ ...prev, [id]: !prev[id] }));
+  }, []);
+
+  const handleDragStart = useCallback((id: string) => {
+    dragIdRef.current = id;
+  }, []);
+
+  const handleDragOver = useCallback(
+    (_id: string, event: React.DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+    },
+    [],
+  );
+
+  const handleDrop = useCallback(
+    (targetId: string) => {
+      const draggedId = dragIdRef.current;
+      dragIdRef.current = null;
+      if (!canvasApi || !draggedId || draggedId === targetId) return;
+      const ordered = canvasApi.getSceneElements().filter((el) => !el.isDeleted);
+      const target = ordered.find((el) => el.id === targetId);
+      if (!target) return;
+      const targetParentId =
+        (target.customData?.containerId as string | null | undefined) ?? null;
+      const siblings = ordered.filter(
+        (el) =>
+          ((el.customData?.containerId as string | null | undefined) ?? null) ===
+          targetParentId,
+      );
+      const targetIndex = siblings.findIndex((el) => el.id === targetId);
+      if (targetIndex < 0) return;
+      canvasApi.moveNodeToIndex(draggedId, targetParentId, targetIndex);
+    },
+    [canvasApi],
+  );
+
+  const childrenByParent = elements.reduce<Record<string, number>>((acc, el) => {
+    const parentId =
+      (el.customData?.containerId as string | null | undefined) ?? null;
+    const key = parentId ?? "__root__";
+    acc[key] = (acc[key] ?? 0) + 1;
+    return acc;
+  }, {});
+  const visibleElements = elements.filter((el) => {
+    let parentId =
+      (el.customData?.containerId as string | null | undefined) ?? null;
+    while (parentId) {
+      if (collapsedIds[parentId]) return false;
+      const parent = elements.find((candidate) => candidate.id === parentId);
+      parentId =
+        (parent?.customData?.containerId as string | null | undefined) ?? null;
+    }
+    return true;
+  });
 
   if (!open) return null;
 
   return (
     <div
       ref={panelRef}
-      className="fixed left-0 top-0 z-30 flex h-full w-[280px] flex-col border-r border-border bg-card animate-in slide-in-from-left duration-200"
+      className="fixed left-0 top-0 z-30 flex h-full w-70 flex-col border-r border-border bg-card animate-in slide-in-from-left duration-200"
       onKeyDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >
@@ -295,13 +582,25 @@ export function CanvasLayersPanel({
             画布为空
           </p>
         ) : (
-          elements.map((el) => (
+          visibleElements.map((el) => (
             <LayerRow
               key={el.id}
               el={el}
               files={files}
               selected={!!selectedIds[el.id]}
+              collapsed={!!collapsedIds[el.id]}
+              canCollapse={Boolean(childrenByParent[el.id])}
               onSelect={selectElement}
+              onToggleLock={toggleLock}
+              onToggleVisible={toggleVisible}
+              onReorder={reorderElement}
+              onToggleCollapse={toggleCollapse}
+              onRename={renameElement}
+              onDelete={deleteElement}
+              onDuplicate={duplicateElement}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
             />
           ))
         )}

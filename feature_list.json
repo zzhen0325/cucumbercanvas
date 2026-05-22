@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-22T02:10:00+08:00",
+  "updatedAt": "2026-05-22T16:28:00+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -28,7 +28,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "product-engineering",
-      "summary": "Infinite canvas and chat-driven creative workspace for projects, assets, generation, and editing.",
+      "summary": "AI-native infinite canvas where Agent execution creates durable containerized outputs, and users arrange, refine, or continue from those results.",
       "artifacts": [
         "apps/web/src/components/canvas-editor.tsx",
         "apps/web/src/app/canvas/page.tsx",
@@ -100,12 +100,23 @@
       "status": "active",
       "priority": "P0",
       "owner": "product-engineering",
-      "summary": "New Cucumber canvas document model, container editing, Agent-bound CanvasOperation writes, artifact insertion, backend inspection support, and the first native tool batch including hand mode, in-canvas image upload, image resize bounds, and lightweight line/arrow nodes.",
+      "summary": "Canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing now includes tree-style layer management and modular shortcuts/clipboard flows, and the enhanced P2 import slice preserves warning-rich SVG/Figma-like provenance metadata while inserting clipboard content as editable canvas nodes.",
       "artifacts": [
         "packages/canvas-core",
+        "packages/canvas-core/src/clipboard.ts",
+        "packages/canvas-core/src/geometry.ts",
+        "packages/canvas-core/src/history.ts",
+        "packages/canvas-core/src/import.ts",
+        "packages/canvas-core/src/__tests__/canvas-core.test.ts",
         "apps/web/src/components/canvas/canvas-surface.tsx",
+        "apps/web/src/components/canvas/use-canvas-keyboard-shortcuts.ts",
+        "apps/web/src/components/canvas/use-canvas-clipboard-import.ts",
+        "apps/web/src/components/canvas/canvas-selection-helpers.ts",
+        "apps/web/src/components/canvas-layers-panel.tsx",
+        "apps/web/src/components/canvas-logo-menu.tsx",
         "apps/web/src/components/canvas-editor.tsx",
         "apps/web/src/app/canvas/page.tsx",
+        "apps/web/test/use-canvas-clipboard-import.test.tsx",
         "apps/server/src/agent/tools/manipulate-canvas.ts",
         "apps/server/src/features/canvas/canvas-element-writer.ts",
         "apps/server/src/agent/tools/inspect-canvas.ts",

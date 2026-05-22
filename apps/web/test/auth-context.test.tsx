@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
-import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const { mockOnAuthStateChange, mockGetSession, mockSignOut } = vi.hoisted(() => ({
   mockOnAuthStateChange: vi.fn(),
@@ -32,9 +31,6 @@ function TestConsumer() {
 }
 
 describe("AuthProvider", () => {
-  afterEach(() => {
-    cleanup();
-  });
 
   beforeEach(() => {
     vi.clearAllMocks();

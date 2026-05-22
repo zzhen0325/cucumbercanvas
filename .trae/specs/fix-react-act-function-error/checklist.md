@@ -1,0 +1,4 @@
+- [x] `apps/web` 的测试基础设施已在单一入口完成 React 19 `act` 兼容接入
+- [x] 受影响的 Web 测试文件已统一为项目约定的 `act` 使用方式
+- [x] `pnpm --filter @cucumber/web test` 不再因为 `React.act is not a function` 中断
+- [x] 若仍有测试失败，失败原因已明确为与本兼容问题无关的真实断言或业务错误

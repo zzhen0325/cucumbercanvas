@@ -25,6 +25,11 @@ export type CanvasSelectedElement = {
   fileId?: string;
   dataUrl?: string;
   storageUrl?: string;
+  source?: string;
+  importSessionId?: string;
+  importSourceLabel?: string;
+  importWarningCount?: number;
+  degradationHints?: string[];
 };
 
 type CanvasEditorProps = {
@@ -89,6 +94,19 @@ export function CanvasEditor({
             ? apiRef.current?.getFiles()[element.fileId]?.dataURL
             : undefined,
           storageUrl: element.customData?.storageUrl as string | undefined,
+          source: element.customData?.source as string | undefined,
+          importSessionId: element.customData?.importSessionId as
+            | string
+            | undefined,
+          importSourceLabel: element.customData?.importSourceLabel as
+            | string
+            | undefined,
+          importWarningCount: element.customData?.importWarningCount as
+            | number
+            | undefined,
+          degradationHints: element.customData?.degradationHints as
+            | string[]
+            | undefined,
         })),
       );
     },

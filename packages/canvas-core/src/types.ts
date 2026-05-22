@@ -5,6 +5,10 @@ export type CanvasNodeType =
   | "image"
   | "text"
   | "rect"
+  | "ellipse"
+  | "polygon"
+  | "path"
+  | "icon"
   | "line"
   | "arrow"
   | "videoEmbed"
@@ -34,6 +38,26 @@ export interface ContextSlots {
   tokens?: Record<string, unknown>;
   rules?: string[];
   constraints?: Record<string, unknown>;
+}
+
+export type CanvasImportSource = "svg-import" | "figma-paste";
+
+export type CanvasImportWarningCode =
+  | "unsupported_tag"
+  | "partial_fidelity"
+  | "layout_degraded"
+  | "component_metadata_dropped"
+  | "effects_dropped";
+
+export interface CanvasImportedNodeMeta extends Record<string, unknown> {
+  source: CanvasImportSource;
+  originNodeType?: string;
+  importSessionId?: string;
+  importSourceLabel?: string;
+  originNodeId?: string;
+  figmaNodeType?: string;
+  degradationHints?: string[];
+  warningCount?: number;
 }
 
 export interface AgentBinding {
@@ -107,6 +131,37 @@ export interface RectNode extends CanvasNodeBase {
   radius?: number;
 }
 
+export interface EllipseNode extends CanvasNodeBase {
+  type: "ellipse";
+  fill?: string;
+  stroke?: string;
+  strokeWidth?: number;
+}
+
+export interface PolygonNode extends CanvasNodeBase {
+  type: "polygon";
+  points: number;
+  fill?: string;
+  stroke?: string;
+  strokeWidth?: number;
+}
+
+export interface PathNode extends CanvasNodeBase {
+  type: "path";
+  d: string;
+  fill?: string;
+  stroke?: string;
+  strokeWidth?: number;
+}
+
+export interface IconNode extends CanvasNodeBase {
+  type: "icon";
+  icon: "sparkles" | "star" | "check" | string;
+  fill?: string;
+  stroke?: string;
+  strokeWidth?: number;
+}
+
 export type ConnectorAnchor = "tl" | "tr" | "bl" | "br";
 
 export interface ConnectorNode extends CanvasNodeBase {
@@ -135,6 +190,10 @@ export type CanvasNode =
   | ImageNode
   | TextNode
   | RectNode
+  | EllipseNode
+  | PolygonNode
+  | PathNode
+  | IconNode
   | ConnectorNode
   | VideoEmbedNode
   | GroupNode;
@@ -176,6 +235,19 @@ export interface AgentContext {
   siblings: { containerId: string; agentId?: string; status?: string }[];
 }
 
+export function isCanvasImportSource(value: unknown): value is CanvasImportSource {
+  return value === "svg-import" || value === "figma-paste";
+}
+
+export function getCanvasImportedNodeMeta(
+  meta: Record<string, unknown> | undefined,
+): CanvasImportedNodeMeta | null {
+  if (!meta || !isCanvasImportSource(meta.source)) {
+    return null;
+  }
+  return meta as CanvasImportedNodeMeta;
+}
+
 export type CanvasOperation =
   | {
       type: "insertNode";
@@ -195,6 +267,32 @@ export type CanvasOperation =
       nodeId: string;
       agentId?: string;
       containerId?: string | null;
+    }
+  | {
+      type: "setSelection";
+      nodeIds: string[];
+    }
+  | {
+      type: "reorderNode";
+      nodeId: string;
+      direction?: "forward" | "backward" | "front" | "back";
+      targetParentId?: string | null;
+      targetIndex?: number;
+    }
+  | {
+      type: "groupNodes";
+      groupId: string;
+      nodeIds: string[];
+      title?: string;
+    }
+  | {
+      type: "ungroupNode";
+      groupId: string;
+    }
+  | {
+      type: "alignNodes";
+      nodeIds: string[];
+      alignment: "left" | "center" | "right" | "top" | "middle" | "bottom";
     }
   | {
       type: "bindAgent";

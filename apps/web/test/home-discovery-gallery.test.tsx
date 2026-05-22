@@ -1,16 +1,12 @@
 // @vitest-environment jsdom
-import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { HomeDiscoveryGallery } from "@/components/home-discovery-gallery";
 import { homeDiscoverySeedCategories } from "@/lib/home-discovery-seeds";
 
 describe("HomeDiscoveryGallery", () => {
-  afterEach(() => {
-    cleanup();
-  });
 
   it("shows all discovery cards by default", () => {
     render(

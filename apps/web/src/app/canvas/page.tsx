@@ -30,6 +30,30 @@ import { useWebSocket } from "../../hooks/use-websocket";
 import { useAuth } from "../../lib/auth-context";
 import { ApiAuthError, fetchCanvas, fetchProject } from "../../lib/server-api";
 
+type CanvasImportSummary = {
+  sourceLabel: string;
+  importedCount: number;
+  warningCount: number;
+  degradationHints: string[];
+};
+
+function formatImportHint(hint: string): string {
+  switch (hint) {
+    case "unsupported_tag":
+      return "部分 SVG 标签未支持";
+    case "partial_fidelity":
+      return "复杂结构按降级路径导入";
+    case "layout_degraded":
+      return "自动布局已按绝对定位近似";
+    case "component_metadata_dropped":
+      return "组件引用语义未保留";
+    case "effects_dropped":
+      return "高级效果未完整保留";
+    default:
+      return hint;
+  }
+}
+
 function CanvasPageContent() {
   const searchParams = useSearchParams();
   const canvasId = searchParams.get("id");
@@ -62,6 +86,10 @@ function CanvasPageContent() {
   const [selectedCanvasElements, setSelectedCanvasElements] = useState<
     CanvasSelectedElement[]
   >([]);
+  const [importSummary, setImportSummary] = useState<CanvasImportSummary | null>(
+    null,
+  );
+  const [showImportWarnings, setShowImportWarnings] = useState(false);
 
   const canvasApiRef = useRef<CanvasApi | null>(null);
   const [canvasApi, setCanvasApi] = useState<CanvasApi | null>(null);
@@ -96,6 +124,37 @@ function CanvasPageContent() {
     canvasApiRef.current = api;
     setCanvasApi(api);
   }, []);
+
+  useEffect(() => {
+    if (selectedCanvasElements.length === 0) return;
+    const imported = selectedCanvasElements.filter((element) =>
+      ["svg-import", "figma-paste"].includes(
+        String((element as CanvasSelectedElement & { source?: string }).source ?? ""),
+      ),
+    );
+    if (imported.length === 0) return;
+    const warningCount = Math.max(
+      ...imported.map((element) => element.importWarningCount ?? 0),
+      0,
+    );
+    const degradationHints = Array.from(
+      new Set(
+        imported.flatMap((element) => element.degradationHints ?? []),
+      ),
+    );
+    setImportSummary({
+      sourceLabel: imported[0]?.importSourceLabel ?? "导入内容",
+      importedCount: imported.length,
+      warningCount,
+      degradationHints,
+    });
+    setShowImportWarnings(false);
+    const timer = window.setTimeout(() => {
+      setImportSummary(null);
+      setShowImportWarnings(false);
+    }, 4000);
+    return () => window.clearTimeout(timer);
+  }, [selectedCanvasElements]);
 
   const handleImageGenerated = useCallback((artifact: ImageArtifact) => {
     const api = canvasApiRef.current;
@@ -283,6 +342,37 @@ function CanvasPageContent() {
       </div>
       {/* Canvas always takes full width; on mobile/tablet, ChatSidebar overlays instead of side-by-side */}
       <div className="flex-1 relative min-w-0 overflow-hidden">
+        {importSummary ? (
+          <div className="absolute left-1/2 top-16 z-20 w-95 max-w-[calc(100vw-32px)] -translate-x-1/2 rounded-2xl border border-border bg-card/95 px-4 py-3 text-xs text-foreground shadow-card backdrop-blur">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <p className="font-medium">
+                  {importSummary.sourceLabel} 已导入并选中{" "}
+                  {importSummary.importedCount} 个可编辑节点
+                </p>
+                <p className="text-muted-foreground">
+                  {importSummary.warningCount > 0
+                    ? `包含 ${importSummary.warningCount} 条兼容性提醒`
+                    : "未检测到兼容性提醒"}
+                </p>
+              </div>
+              {importSummary.warningCount > 0 ? (
+                <button
+                  type="button"
+                  className="shrink-0 rounded-full border border-border px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  onClick={() => setShowImportWarnings((value) => !value)}
+                >
+                  {showImportWarnings ? "收起提醒" : "查看兼容性提醒"}
+                </button>
+              ) : null}
+            </div>
+            {showImportWarnings && importSummary.degradationHints.length > 0 ? (
+              <div className="mt-2 rounded-xl bg-muted/60 px-3 py-2 text-[11px] text-muted-foreground">
+                {importSummary.degradationHints.map(formatImportHint).join(" · ")}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         <CanvasEditor
           canvasId={canvasData.id}
           projectId={canvasData.projectId}

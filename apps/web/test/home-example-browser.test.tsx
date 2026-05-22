@@ -1,16 +1,12 @@
 // @vitest-environment jsdom
-import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { HomeExampleBrowser } from "@/components/home-example-browser";
 import { homeExampleSeedCategories } from "@/lib/home-example-seeds";
 
 describe("HomeExampleBrowser", () => {
-  afterEach(() => {
-    cleanup();
-  });
 
   it("expands Seedream image examples after clicking the image chip", async () => {
     render(
