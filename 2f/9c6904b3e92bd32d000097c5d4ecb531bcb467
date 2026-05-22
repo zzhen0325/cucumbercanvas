@@ -1,0 +1,433 @@
+packages/canvas-core/package.json
+  04a04f6a68ff5ec2 16-20,22 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10581642e645128ff70ba0","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[16,20]},{"Single":22}]}]}
+packages/canvas-core/src/__tests__/canvas-core.test.ts
+  04a04f6a68ff5ec2 2,5,10-11,461-577 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10581642e645128ff70ba0","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Single":2},{"Single":5},{"Range":[10,11]},{"Range":[461,577]}]}]}
+packages/canvas-core/src/vendor-modules.d.ts
+  04a04f6a68ff5ec2 1-20 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10581642e645128ff70ba0","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[1,20]}]}]}
+packages/canvas-core/src/index.ts
+  04a04f6a68ff5ec2 9 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10581642e645128ff70ba0","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Single":9}]}]}
+packages/canvas-core/tsconfig.json
+  04a04f6a68ff5ec2 7 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10581642e645128ff70ba0","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Single":7}]}]}
+docs/architecture.md
+  04a04f6a68ff5ec2 69-72 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10581642e645128ff70ba0","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[69,72]}]}]}
+progress.md
+  04a04f6a68ff5ec2 3,34-37,44-49,64 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10581642e645128ff70ba0","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Single":3},{"Range":[34,37]},{"Range":[44,49]},{"Single":64}]}]}
+packages/canvas-core/src/figma-native.ts
+  04a04f6a68ff5ec2 1-1684 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10581642e645128ff70ba0","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[1,1684]}]}]}
+feature_list.json
+  04a04f6a68ff5ec2 3,103,109-110 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10581642e645128ff70ba0","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Single":3},{"Single":103},{"Range":[109,110]}]}]}
+packages/canvas-core/src/import.ts
+  04a04f6a68ff5ec2 2,129-144 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10581642e645128ff70ba0","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Single":2},{"Range":[129,144]}]}]}
+packages/canvas-core/src/figma-native-types.ts
+  04a04f6a68ff5ec2 1-191 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10581642e645128ff70ba0","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[1,191]}]}]}
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "2f9c6904b3e92bd32d000097c5d4ecb531bcb467",
+  "prompts": {
+    "04a04f6a68ff5ec2": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a0fc90a42e645128ff6f58e",
+        "model": "gpt-5.4__dev"
+      },
+      "human_author": "Your Name <you@example.com>",
+      "messages": [],
+      "total_additions": 2095,
+      "total_deletions": 43,
+      "accepted_lines": 2061,
+      "overriden_lines": 0
+    }
+  },
+  "attestation_metadata": {
+    "docs/architecture.md": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Range": [
+              69,
+              72
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10581642e645128ff70ba0",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  69,
+                  72
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "feature_list.json": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Single": 3
+          },
+          {
+            "Single": 103
+          },
+          {
+            "Range": [
+              109,
+              110
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10581642e645128ff70ba0",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Single": 3
+              },
+              {
+                "Single": 103
+              },
+              {
+                "Range": [
+                  109,
+                  110
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "packages/canvas-core/package.json": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Range": [
+              16,
+              20
+            ]
+          },
+          {
+            "Single": 22
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10581642e645128ff70ba0",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  16,
+                  20
+                ]
+              },
+              {
+                "Single": 22
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "packages/canvas-core/src/__tests__/canvas-core.test.ts": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Single": 2
+          },
+          {
+            "Single": 5
+          },
+          {
+            "Range": [
+              10,
+              11
+            ]
+          },
+          {
+            "Range": [
+              461,
+              577
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10581642e645128ff70ba0",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Single": 2
+              },
+              {
+                "Single": 5
+              },
+              {
+                "Range": [
+                  10,
+                  11
+                ]
+              },
+              {
+                "Range": [
+                  461,
+                  577
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "packages/canvas-core/src/figma-native-types.ts": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Range": [
+              1,
+              191
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10581642e645128ff70ba0",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  1,
+                  191
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "packages/canvas-core/src/figma-native.ts": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Range": [
+              1,
+              1684
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10581642e645128ff70ba0",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  1,
+                  1684
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "packages/canvas-core/src/import.ts": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Single": 2
+          },
+          {
+            "Range": [
+              129,
+              144
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10581642e645128ff70ba0",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Single": 2
+              },
+              {
+                "Range": [
+                  129,
+                  144
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "packages/canvas-core/src/index.ts": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Single": 9
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10581642e645128ff70ba0",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Single": 9
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "packages/canvas-core/src/vendor-modules.d.ts": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Range": [
+              1,
+              20
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10581642e645128ff70ba0",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  1,
+                  20
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "packages/canvas-core/tsconfig.json": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Single": 7
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10581642e645128ff70ba0",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Single": 7
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "progress.md": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Single": 3
+          },
+          {
+            "Range": [
+              34,
+              37
+            ]
+          },
+          {
+            "Range": [
+              44,
+              49
+            ]
+          },
+          {
+            "Single": 64
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10581642e645128ff70ba0",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Single": 3
+              },
+              {
+                "Range": [
+                  34,
+                  37
+                ]
+              },
+              {
+                "Range": [
+                  44,
+                  49
+                ]
+              },
+              {
+                "Single": 64
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "remote_transcripts": {
+    "04a04f6a68ff5ec2": {
+      "tool": "trae",
+      "conversation_id": "6a0fc90a42e645128ff6f58e",
+      "session_id": "6a0fc90a42e645128ff6f58e",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    }
+  }
+}
