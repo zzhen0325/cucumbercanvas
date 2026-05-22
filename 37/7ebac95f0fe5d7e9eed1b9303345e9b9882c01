@@ -1,0 +1,2758 @@
+apps/web/src/components/canvas/canvas-surface.tsx
+  04a04f6a68ff5ec2 7-10,18,20-25,27-28,32-38,40,42-43,47-48,50-51,54,56-57,71-83,100-102,145-168,207,210,215,221-229,235-240,244,246-247,253-256,274-292,294,298-299,303-309,312-314,327-339,348-355,358,361-372,377-395,444,534,559-855,859-864,873,881-897,899-900,920-926,928-946,951,975-997,1006-1077,1079-1082,1094-1095,1099,1115-1158,1161,1181-1185,1193-1239,1244-1261,1264-1272,1280-1287,1289-1303,1305-1315,1319-1322,1324-1333,1338-1384,1387-1401,1403,1408,1411,1416-1426,1432,1443-1449,1460-1465,1490,1493-1502,1510-1539,1541-1542,1545-1550,1553-1598,1600-1641,1646-1648,1651,1670,1673-1680,1687,1690-1697,1722-1740,1774-1809,1837-1855,1868,1872,1877-1878,1884-1888,1894,1900-1901,1912,1925-1949,1954-1978,2071-2086,2101-2102,2107-2109,2113,2115-2120,2128-2129,2144,2147-2152,2154-2187,2189-2330,2335-2484,2486-2488,2491-2492,2503-2505,2508,2511-2514,2591-2698,2712-2714,2804,2811-2833,2835-2839,2848-2853,2859-2906,2979-2981,2983,2986,2996-3016,3030 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10102242e645128ff6ff31","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[7,10]},{"Single":18},{"Range":[20,25]},{"Range":[27,28]},{"Range":[32,38]},{"Single":40},{"Range":[42,43]},{"Range":[47,48]},{"Range":[50,51]},{"Single":54},{"Range":[56,57]},{"Range":[71,83]},{"Range":[100,102]},{"Range":[145,168]},{"Single":207},{"Single":210},{"Single":215},{"Range":[221,229]},{"Range":[235,240]},{"Single":244},{"Range":[246,247]},{"Range":[253,256]},{"Range":[274,292]},{"Single":294},{"Range":[298,299]},{"Range":[303,309]},{"Range":[312,314]},{"Range":[327,339]},{"Range":[348,355]},{"Single":358},{"Range":[361,372]},{"Range":[377,395]},{"Single":444},{"Single":534},{"Range":[559,855]},{"Range":[859,864]},{"Single":873},{"Range":[881,897]},{"Range":[899,900]},{"Range":[920,926]},{"Range":[928,946]},{"Single":951},{"Range":[975,997]},{"Range":[1006,1077]},{"Range":[1079,1082]},{"Range":[1094,1095]},{"Single":1099},{"Range":[1115,1158]},{"Single":1161},{"Range":[1181,1185]},{"Range":[1193,1239]},{"Range":[1244,1261]},{"Range":[1264,1272]},{"Range":[1280,1287]},{"Range":[1289,1303]},{"Range":[1305,1315]},{"Range":[1319,1322]},{"Range":[1324,1333]},{"Range":[1338,1384]},{"Range":[1387,1401]},{"Single":1403},{"Single":1408},{"Single":1411},{"Range":[1416,1426]},{"Single":1432},{"Range":[1443,1449]},{"Range":[1460,1465]},{"Single":1490},{"Range":[1493,1502]},{"Range":[1510,1539]},{"Range":[1541,1542]},{"Range":[1545,1550]},{"Range":[1553,1598]},{"Range":[1600,1641]},{"Range":[1646,1648]},{"Single":1651},{"Single":1670},{"Range":[1673,1680]},{"Single":1687},{"Range":[1690,1697]},{"Range":[1722,1740]},{"Range":[1774,1809]},{"Range":[1837,1855]},{"Single":1868},{"Single":1872},{"Range":[1877,1878]},{"Range":[1884,1888]},{"Single":1894},{"Range":[1900,1901]},{"Single":1912},{"Range":[1925,1949]},{"Range":[1954,1978]},{"Range":[2071,2086]},{"Range":[2101,2102]},{"Range":[2107,2109]},{"Single":2113},{"Range":[2115,2120]},{"Range":[2128,2129]},{"Single":2144},{"Range":[2147,2152]},{"Range":[2154,2187]},{"Range":[2189,2330]},{"Range":[2335,2484]},{"Range":[2486,2488]},{"Range":[2491,2492]},{"Range":[2503,2505]},{"Single":2508},{"Range":[2511,2514]},{"Range":[2591,2698]},{"Range":[2712,2714]},{"Single":2804},{"Range":[2811,2833]},{"Range":[2835,2839]},{"Range":[2848,2853]},{"Range":[2859,2906]},{"Range":[2979,2981]},{"Single":2983},{"Single":2986},{"Range":[2996,3016]},{"Single":3030}]}]}
+.trae/specs/fix-react-act-function-error/tasks.md
+  e333f19c6820c4b0 1-13 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101ed042e645128ff7065d","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[1,13]}]}]}
+apps/web/src/components/canvas/use-canvas-keyboard-shortcuts.ts
+  04a04f6a68ff5ec2 1-125 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10102242e645128ff6ff31","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[1,125]}]}]}
+.trae/documents/canvas-p2-import-fidelity-single-wave-plan.md
+  04a04f6a68ff5ec2 1-286 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10102242e645128ff6ff31","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[1,286]}]}]}
+packages/canvas-core/src/import.ts
+  04a04f6a68ff5ec2 1-949 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10102242e645128ff6ff31","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[1,949]}]}]}
+apps/web/src/components/canvas-layers-panel.tsx
+  04a04f6a68ff5ec2 3-12,20-27,37-38,40,42-43,51,64,141-142,144-153,158-173,175-184,189-192,198-201,203-219,221-247,252-278,280-284,290-293,295-299,301-372,391-392,436-457,459-473,478-549,555,585,591-592,594-603 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10102242e645128ff6ff31","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[3,12]},{"Range":[20,27]},{"Range":[37,38]},{"Single":40},{"Range":[42,43]},{"Single":51},{"Single":64},{"Range":[141,142]},{"Range":[144,153]},{"Range":[158,173]},{"Range":[175,184]},{"Range":[189,192]},{"Range":[198,201]},{"Range":[203,219]},{"Range":[221,247]},{"Range":[252,278]},{"Range":[280,284]},{"Range":[290,293]},{"Range":[295,299]},{"Range":[301,372]},{"Range":[391,392]},{"Range":[436,457]},{"Range":[459,473]},{"Range":[478,549]},{"Single":555},{"Single":585},{"Range":[591,592]},{"Range":[594,603]}]}]}
+apps/web/src/components/canvas-logo-menu.tsx
+  04a04f6a68ff5ec2 6-7,13,60,63,68-69,91,123-172,222-225,231-245,269-276 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10102242e645128ff6ff31","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[6,7]},{"Single":13},{"Single":60},{"Single":63},{"Range":[68,69]},{"Single":91},{"Range":[123,172]},{"Range":[222,225]},{"Range":[231,245]},{"Range":[269,276]}]}]}
+progress.md
+  04a04f6a68ff5ec2 3,7,11-15,26-33,38-44,57-61,63,66-67 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10102242e645128ff6ff31","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Single":3},{"Single":7},{"Range":[11,15]},{"Range":[26,33]},{"Range":[38,44]},{"Range":[57,61]},{"Single":63},{"Range":[66,67]}]}]}
+apps/web/vitest.config.ts
+  e333f19c6820c4b0 15 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101ed042e645128ff7065d","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Single":15}]}]}
+.trae/specs/fix-react-act-function-error/spec.md
+  e333f19c6820c4b0 1-36 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101ed042e645128ff7065d","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[1,36]}]}]}
+feature_list.json
+  04a04f6a68ff5ec2 3,31,103,106-110,112-116,119 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10102242e645128ff6ff31","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Single":3},{"Single":31},{"Single":103},{"Range":[106,110]},{"Range":[112,116]},{"Single":119}]}]}
+apps/web/src/components/canvas/use-canvas-clipboard-import.ts
+  04a04f6a68ff5ec2 1-107 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10102242e645128ff6ff31","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[1,107]}]}]}
+apps/web/src/components/canvas-editor.tsx
+  04a04f6a68ff5ec2 28-32,97-109 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10102242e645128ff6ff31","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[28,32]},{"Range":[97,109]}]}]}
+.trae/documents/canvas-p1-wrap-p2-import-plan.md
+  04a04f6a68ff5ec2 1-323 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10102242e645128ff6ff31","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[1,323]}]}]}
+packages/canvas-core/src/operations.ts
+  04a04f6a68ff5ec2 3,66-101,132-378 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10102242e645128ff6ff31","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Single":3},{"Range":[66,101]},{"Range":[132,378]}]}]}
+.trae/specs/fix-react-act-function-error/checklist.md
+  e333f19c6820c4b0 1-4 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101ed042e645128ff7065d","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[1,4]}]}]}
+apps/web/test/setup.ts
+  e333f19c6820c4b0 1-16 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101ed042e645128ff7065d","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[1,16]}]}]}
+packages/canvas-core/src/__tests__/canvas-core.test.ts
+  04a04f6a68ff5ec2 8,11-14,18-20,138-456 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10102242e645128ff6ff31","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Single":8},{"Range":[11,14]},{"Range":[18,20]},{"Range":[138,456]}]}]}
+packages/canvas-core/src/types.ts
+  04a04f6a68ff5ec2 8-11,43-62,134-164,193-196,238-250,271-295 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10102242e645128ff6ff31","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[8,11]},{"Range":[43,62]},{"Range":[134,164]},{"Range":[193,196]},{"Range":[238,250]},{"Range":[271,295]}]}]}
+apps/web/src/app/canvas/page.tsx
+  04a04f6a68ff5ec2 33-56,89-92,128-158,345-375 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10102242e645128ff6ff31","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[33,56]},{"Range":[89,92]},{"Range":[128,158]},{"Range":[345,375]}]}]}
+docs/architecture.md
+  04a04f6a68ff5ec2 5-7,10-25,51-67 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10102242e645128ff6ff31","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[5,7]},{"Range":[10,25]},{"Range":[51,67]}]}]}
+apps/web/src/components/canvas/canvas-selection-helpers.ts
+  04a04f6a68ff5ec2 1-30 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10102242e645128ff6ff31","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[1,30]}]}]}
+packages/canvas-core/src/index.ts
+  04a04f6a68ff5ec2 5-8 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10102242e645128ff6ff31","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[5,8]}]}]}
+apps/web/test/use-canvas-clipboard-import.test.tsx
+  e333f19c6820c4b0 1,37-42,53 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a101ed042e645128ff7065d","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Single":1},{"Range":[37,42]},{"Single":53}]}]}
+  04a04f6a68ff5ec2 2-36,43-52,54-117 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a10102242e645128ff6ff31","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Range":[2,36]},{"Range":[43,52]},{"Range":[54,117]}]}]}
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "377ebac95f0fe5d7e9eed1b9303345e9b9882c01",
+  "prompts": {
+    "04a04f6a68ff5ec2": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a0fc90a42e645128ff6f58e",
+        "model": "gpt-5.4__dev"
+      },
+      "human_author": "Your Name <you@example.com>",
+      "messages": [],
+      "total_additions": 5450,
+      "total_deletions": 1255,
+      "accepted_lines": 5174,
+      "overriden_lines": 0
+    },
+    "1f41478a7c9405ca": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a0ed5ea42e645128ff6f2ae",
+        "model": "gpt-5.4__dev"
+      },
+      "human_author": "Your Name <you@example.com>",
+      "messages": [],
+      "total_additions": 289,
+      "total_deletions": 12,
+      "accepted_lines": 277,
+      "overriden_lines": 0
+    },
+    "e333f19c6820c4b0": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a1018ea42e645128ff6ffc5",
+        "model": "gpt-5.4__dev"
+      },
+      "human_author": "Your Name <you@example.com>",
+      "messages": [],
+      "total_additions": 89,
+      "total_deletions": 17,
+      "accepted_lines": 78,
+      "overriden_lines": 0
+    }
+  },
+  "attestation_metadata": {
+    ".trae/documents/canvas-p1-wrap-p2-import-plan.md": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Range": [
+              1,
+              323
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10102242e645128ff6ff31",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  1,
+                  323
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    ".trae/documents/canvas-p2-import-fidelity-single-wave-plan.md": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Range": [
+              1,
+              286
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10102242e645128ff6ff31",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  1,
+                  286
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    ".trae/specs/fix-react-act-function-error/checklist.md": [
+      {
+        "hash": "e333f19c6820c4b0",
+        "line_ranges": [
+          {
+            "Range": [
+              1,
+              4
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101ed042e645128ff7065d",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  1,
+                  4
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    ".trae/specs/fix-react-act-function-error/spec.md": [
+      {
+        "hash": "e333f19c6820c4b0",
+        "line_ranges": [
+          {
+            "Range": [
+              1,
+              36
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101ed042e645128ff7065d",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  1,
+                  36
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    ".trae/specs/fix-react-act-function-error/tasks.md": [
+      {
+        "hash": "e333f19c6820c4b0",
+        "line_ranges": [
+          {
+            "Range": [
+              1,
+              13
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101ed042e645128ff7065d",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  1,
+                  13
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "apps/web/src/app/canvas/page.tsx": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Range": [
+              33,
+              56
+            ]
+          },
+          {
+            "Range": [
+              89,
+              92
+            ]
+          },
+          {
+            "Range": [
+              128,
+              158
+            ]
+          },
+          {
+            "Range": [
+              345,
+              375
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10102242e645128ff6ff31",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  33,
+                  56
+                ]
+              },
+              {
+                "Range": [
+                  89,
+                  92
+                ]
+              },
+              {
+                "Range": [
+                  128,
+                  158
+                ]
+              },
+              {
+                "Range": [
+                  345,
+                  375
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "apps/web/src/components/canvas-editor.tsx": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Range": [
+              28,
+              32
+            ]
+          },
+          {
+            "Range": [
+              97,
+              109
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10102242e645128ff6ff31",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  28,
+                  32
+                ]
+              },
+              {
+                "Range": [
+                  97,
+                  109
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "apps/web/src/components/canvas-layers-panel.tsx": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Range": [
+              3,
+              12
+            ]
+          },
+          {
+            "Range": [
+              20,
+              27
+            ]
+          },
+          {
+            "Range": [
+              37,
+              38
+            ]
+          },
+          {
+            "Single": 40
+          },
+          {
+            "Range": [
+              42,
+              43
+            ]
+          },
+          {
+            "Single": 51
+          },
+          {
+            "Single": 64
+          },
+          {
+            "Range": [
+              141,
+              142
+            ]
+          },
+          {
+            "Range": [
+              144,
+              153
+            ]
+          },
+          {
+            "Range": [
+              158,
+              173
+            ]
+          },
+          {
+            "Range": [
+              175,
+              184
+            ]
+          },
+          {
+            "Range": [
+              189,
+              192
+            ]
+          },
+          {
+            "Range": [
+              198,
+              201
+            ]
+          },
+          {
+            "Range": [
+              203,
+              219
+            ]
+          },
+          {
+            "Range": [
+              221,
+              247
+            ]
+          },
+          {
+            "Range": [
+              252,
+              278
+            ]
+          },
+          {
+            "Range": [
+              280,
+              284
+            ]
+          },
+          {
+            "Range": [
+              290,
+              293
+            ]
+          },
+          {
+            "Range": [
+              295,
+              299
+            ]
+          },
+          {
+            "Range": [
+              301,
+              372
+            ]
+          },
+          {
+            "Range": [
+              391,
+              392
+            ]
+          },
+          {
+            "Range": [
+              436,
+              457
+            ]
+          },
+          {
+            "Range": [
+              459,
+              473
+            ]
+          },
+          {
+            "Range": [
+              478,
+              549
+            ]
+          },
+          {
+            "Single": 555
+          },
+          {
+            "Single": 585
+          },
+          {
+            "Range": [
+              591,
+              592
+            ]
+          },
+          {
+            "Range": [
+              594,
+              603
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10102242e645128ff6ff31",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  3,
+                  12
+                ]
+              },
+              {
+                "Range": [
+                  20,
+                  27
+                ]
+              },
+              {
+                "Range": [
+                  37,
+                  38
+                ]
+              },
+              {
+                "Single": 40
+              },
+              {
+                "Range": [
+                  42,
+                  43
+                ]
+              },
+              {
+                "Single": 51
+              },
+              {
+                "Single": 64
+              },
+              {
+                "Range": [
+                  141,
+                  142
+                ]
+              },
+              {
+                "Range": [
+                  144,
+                  153
+                ]
+              },
+              {
+                "Range": [
+                  158,
+                  173
+                ]
+              },
+              {
+                "Range": [
+                  175,
+                  184
+                ]
+              },
+              {
+                "Range": [
+                  189,
+                  192
+                ]
+              },
+              {
+                "Range": [
+                  198,
+                  201
+                ]
+              },
+              {
+                "Range": [
+                  203,
+                  219
+                ]
+              },
+              {
+                "Range": [
+                  221,
+                  247
+                ]
+              },
+              {
+                "Range": [
+                  252,
+                  278
+                ]
+              },
+              {
+                "Range": [
+                  280,
+                  284
+                ]
+              },
+              {
+                "Range": [
+                  290,
+                  293
+                ]
+              },
+              {
+                "Range": [
+                  295,
+                  299
+                ]
+              },
+              {
+                "Range": [
+                  301,
+                  372
+                ]
+              },
+              {
+                "Range": [
+                  391,
+                  392
+                ]
+              },
+              {
+                "Range": [
+                  436,
+                  457
+                ]
+              },
+              {
+                "Range": [
+                  459,
+                  473
+                ]
+              },
+              {
+                "Range": [
+                  478,
+                  549
+                ]
+              },
+              {
+                "Single": 555
+              },
+              {
+                "Single": 585
+              },
+              {
+                "Range": [
+                  591,
+                  592
+                ]
+              },
+              {
+                "Range": [
+                  594,
+                  603
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "apps/web/src/components/canvas-logo-menu.tsx": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Range": [
+              6,
+              7
+            ]
+          },
+          {
+            "Single": 13
+          },
+          {
+            "Single": 60
+          },
+          {
+            "Single": 63
+          },
+          {
+            "Range": [
+              68,
+              69
+            ]
+          },
+          {
+            "Single": 91
+          },
+          {
+            "Range": [
+              123,
+              172
+            ]
+          },
+          {
+            "Range": [
+              222,
+              225
+            ]
+          },
+          {
+            "Range": [
+              231,
+              245
+            ]
+          },
+          {
+            "Range": [
+              269,
+              276
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10102242e645128ff6ff31",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  6,
+                  7
+                ]
+              },
+              {
+                "Single": 13
+              },
+              {
+                "Single": 60
+              },
+              {
+                "Single": 63
+              },
+              {
+                "Range": [
+                  68,
+                  69
+                ]
+              },
+              {
+                "Single": 91
+              },
+              {
+                "Range": [
+                  123,
+                  172
+                ]
+              },
+              {
+                "Range": [
+                  222,
+                  225
+                ]
+              },
+              {
+                "Range": [
+                  231,
+                  245
+                ]
+              },
+              {
+                "Range": [
+                  269,
+                  276
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "apps/web/src/components/canvas/canvas-selection-helpers.ts": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Range": [
+              1,
+              30
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10102242e645128ff6ff31",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  1,
+                  30
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "apps/web/src/components/canvas/canvas-surface.tsx": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Range": [
+              7,
+              10
+            ]
+          },
+          {
+            "Single": 18
+          },
+          {
+            "Range": [
+              20,
+              25
+            ]
+          },
+          {
+            "Range": [
+              27,
+              28
+            ]
+          },
+          {
+            "Range": [
+              32,
+              38
+            ]
+          },
+          {
+            "Single": 40
+          },
+          {
+            "Range": [
+              42,
+              43
+            ]
+          },
+          {
+            "Range": [
+              47,
+              48
+            ]
+          },
+          {
+            "Range": [
+              50,
+              51
+            ]
+          },
+          {
+            "Single": 54
+          },
+          {
+            "Range": [
+              56,
+              57
+            ]
+          },
+          {
+            "Range": [
+              71,
+              83
+            ]
+          },
+          {
+            "Range": [
+              100,
+              102
+            ]
+          },
+          {
+            "Range": [
+              145,
+              168
+            ]
+          },
+          {
+            "Single": 207
+          },
+          {
+            "Single": 210
+          },
+          {
+            "Single": 215
+          },
+          {
+            "Range": [
+              221,
+              229
+            ]
+          },
+          {
+            "Range": [
+              235,
+              240
+            ]
+          },
+          {
+            "Single": 244
+          },
+          {
+            "Range": [
+              246,
+              247
+            ]
+          },
+          {
+            "Range": [
+              253,
+              256
+            ]
+          },
+          {
+            "Range": [
+              274,
+              292
+            ]
+          },
+          {
+            "Single": 294
+          },
+          {
+            "Range": [
+              298,
+              299
+            ]
+          },
+          {
+            "Range": [
+              303,
+              309
+            ]
+          },
+          {
+            "Range": [
+              312,
+              314
+            ]
+          },
+          {
+            "Range": [
+              327,
+              339
+            ]
+          },
+          {
+            "Range": [
+              348,
+              355
+            ]
+          },
+          {
+            "Single": 358
+          },
+          {
+            "Range": [
+              361,
+              372
+            ]
+          },
+          {
+            "Range": [
+              377,
+              395
+            ]
+          },
+          {
+            "Single": 444
+          },
+          {
+            "Single": 534
+          },
+          {
+            "Range": [
+              559,
+              855
+            ]
+          },
+          {
+            "Range": [
+              859,
+              864
+            ]
+          },
+          {
+            "Single": 873
+          },
+          {
+            "Range": [
+              881,
+              897
+            ]
+          },
+          {
+            "Range": [
+              899,
+              900
+            ]
+          },
+          {
+            "Range": [
+              920,
+              926
+            ]
+          },
+          {
+            "Range": [
+              928,
+              946
+            ]
+          },
+          {
+            "Single": 951
+          },
+          {
+            "Range": [
+              975,
+              997
+            ]
+          },
+          {
+            "Range": [
+              1006,
+              1077
+            ]
+          },
+          {
+            "Range": [
+              1079,
+              1082
+            ]
+          },
+          {
+            "Range": [
+              1094,
+              1095
+            ]
+          },
+          {
+            "Single": 1099
+          },
+          {
+            "Range": [
+              1115,
+              1158
+            ]
+          },
+          {
+            "Single": 1161
+          },
+          {
+            "Range": [
+              1181,
+              1185
+            ]
+          },
+          {
+            "Range": [
+              1193,
+              1239
+            ]
+          },
+          {
+            "Range": [
+              1244,
+              1261
+            ]
+          },
+          {
+            "Range": [
+              1264,
+              1272
+            ]
+          },
+          {
+            "Range": [
+              1280,
+              1287
+            ]
+          },
+          {
+            "Range": [
+              1289,
+              1303
+            ]
+          },
+          {
+            "Range": [
+              1305,
+              1315
+            ]
+          },
+          {
+            "Range": [
+              1319,
+              1322
+            ]
+          },
+          {
+            "Range": [
+              1324,
+              1333
+            ]
+          },
+          {
+            "Range": [
+              1338,
+              1384
+            ]
+          },
+          {
+            "Range": [
+              1387,
+              1401
+            ]
+          },
+          {
+            "Single": 1403
+          },
+          {
+            "Single": 1408
+          },
+          {
+            "Single": 1411
+          },
+          {
+            "Range": [
+              1416,
+              1426
+            ]
+          },
+          {
+            "Single": 1432
+          },
+          {
+            "Range": [
+              1443,
+              1449
+            ]
+          },
+          {
+            "Range": [
+              1460,
+              1465
+            ]
+          },
+          {
+            "Single": 1490
+          },
+          {
+            "Range": [
+              1493,
+              1502
+            ]
+          },
+          {
+            "Range": [
+              1510,
+              1539
+            ]
+          },
+          {
+            "Range": [
+              1541,
+              1542
+            ]
+          },
+          {
+            "Range": [
+              1545,
+              1550
+            ]
+          },
+          {
+            "Range": [
+              1553,
+              1598
+            ]
+          },
+          {
+            "Range": [
+              1600,
+              1641
+            ]
+          },
+          {
+            "Range": [
+              1646,
+              1648
+            ]
+          },
+          {
+            "Single": 1651
+          },
+          {
+            "Single": 1670
+          },
+          {
+            "Range": [
+              1673,
+              1680
+            ]
+          },
+          {
+            "Single": 1687
+          },
+          {
+            "Range": [
+              1690,
+              1697
+            ]
+          },
+          {
+            "Range": [
+              1722,
+              1740
+            ]
+          },
+          {
+            "Range": [
+              1774,
+              1809
+            ]
+          },
+          {
+            "Range": [
+              1837,
+              1855
+            ]
+          },
+          {
+            "Single": 1868
+          },
+          {
+            "Single": 1872
+          },
+          {
+            "Range": [
+              1877,
+              1878
+            ]
+          },
+          {
+            "Range": [
+              1884,
+              1888
+            ]
+          },
+          {
+            "Single": 1894
+          },
+          {
+            "Range": [
+              1900,
+              1901
+            ]
+          },
+          {
+            "Single": 1912
+          },
+          {
+            "Range": [
+              1925,
+              1949
+            ]
+          },
+          {
+            "Range": [
+              1954,
+              1978
+            ]
+          },
+          {
+            "Range": [
+              2071,
+              2086
+            ]
+          },
+          {
+            "Range": [
+              2101,
+              2102
+            ]
+          },
+          {
+            "Range": [
+              2107,
+              2109
+            ]
+          },
+          {
+            "Single": 2113
+          },
+          {
+            "Range": [
+              2115,
+              2120
+            ]
+          },
+          {
+            "Range": [
+              2128,
+              2129
+            ]
+          },
+          {
+            "Single": 2144
+          },
+          {
+            "Range": [
+              2147,
+              2152
+            ]
+          },
+          {
+            "Range": [
+              2154,
+              2187
+            ]
+          },
+          {
+            "Range": [
+              2189,
+              2330
+            ]
+          },
+          {
+            "Range": [
+              2335,
+              2484
+            ]
+          },
+          {
+            "Range": [
+              2486,
+              2488
+            ]
+          },
+          {
+            "Range": [
+              2491,
+              2492
+            ]
+          },
+          {
+            "Range": [
+              2503,
+              2505
+            ]
+          },
+          {
+            "Single": 2508
+          },
+          {
+            "Range": [
+              2511,
+              2514
+            ]
+          },
+          {
+            "Range": [
+              2591,
+              2698
+            ]
+          },
+          {
+            "Range": [
+              2712,
+              2714
+            ]
+          },
+          {
+            "Single": 2804
+          },
+          {
+            "Range": [
+              2811,
+              2833
+            ]
+          },
+          {
+            "Range": [
+              2835,
+              2839
+            ]
+          },
+          {
+            "Range": [
+              2848,
+              2853
+            ]
+          },
+          {
+            "Range": [
+              2859,
+              2906
+            ]
+          },
+          {
+            "Range": [
+              2979,
+              2981
+            ]
+          },
+          {
+            "Single": 2983
+          },
+          {
+            "Single": 2986
+          },
+          {
+            "Range": [
+              2996,
+              3016
+            ]
+          },
+          {
+            "Single": 3030
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10102242e645128ff6ff31",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  7,
+                  10
+                ]
+              },
+              {
+                "Single": 18
+              },
+              {
+                "Range": [
+                  20,
+                  25
+                ]
+              },
+              {
+                "Range": [
+                  27,
+                  28
+                ]
+              },
+              {
+                "Range": [
+                  32,
+                  38
+                ]
+              },
+              {
+                "Single": 40
+              },
+              {
+                "Range": [
+                  42,
+                  43
+                ]
+              },
+              {
+                "Range": [
+                  47,
+                  48
+                ]
+              },
+              {
+                "Range": [
+                  50,
+                  51
+                ]
+              },
+              {
+                "Single": 54
+              },
+              {
+                "Range": [
+                  56,
+                  57
+                ]
+              },
+              {
+                "Range": [
+                  71,
+                  83
+                ]
+              },
+              {
+                "Range": [
+                  100,
+                  102
+                ]
+              },
+              {
+                "Range": [
+                  145,
+                  168
+                ]
+              },
+              {
+                "Single": 207
+              },
+              {
+                "Single": 210
+              },
+              {
+                "Single": 215
+              },
+              {
+                "Range": [
+                  221,
+                  229
+                ]
+              },
+              {
+                "Range": [
+                  235,
+                  240
+                ]
+              },
+              {
+                "Single": 244
+              },
+              {
+                "Range": [
+                  246,
+                  247
+                ]
+              },
+              {
+                "Range": [
+                  253,
+                  256
+                ]
+              },
+              {
+                "Range": [
+                  274,
+                  292
+                ]
+              },
+              {
+                "Single": 294
+              },
+              {
+                "Range": [
+                  298,
+                  299
+                ]
+              },
+              {
+                "Range": [
+                  303,
+                  309
+                ]
+              },
+              {
+                "Range": [
+                  312,
+                  314
+                ]
+              },
+              {
+                "Range": [
+                  327,
+                  339
+                ]
+              },
+              {
+                "Range": [
+                  348,
+                  355
+                ]
+              },
+              {
+                "Single": 358
+              },
+              {
+                "Range": [
+                  361,
+                  372
+                ]
+              },
+              {
+                "Range": [
+                  377,
+                  395
+                ]
+              },
+              {
+                "Single": 444
+              },
+              {
+                "Single": 534
+              },
+              {
+                "Range": [
+                  559,
+                  855
+                ]
+              },
+              {
+                "Range": [
+                  859,
+                  864
+                ]
+              },
+              {
+                "Single": 873
+              },
+              {
+                "Range": [
+                  881,
+                  897
+                ]
+              },
+              {
+                "Range": [
+                  899,
+                  900
+                ]
+              },
+              {
+                "Range": [
+                  920,
+                  926
+                ]
+              },
+              {
+                "Range": [
+                  928,
+                  946
+                ]
+              },
+              {
+                "Single": 951
+              },
+              {
+                "Range": [
+                  975,
+                  997
+                ]
+              },
+              {
+                "Range": [
+                  1006,
+                  1077
+                ]
+              },
+              {
+                "Range": [
+                  1079,
+                  1082
+                ]
+              },
+              {
+                "Range": [
+                  1094,
+                  1095
+                ]
+              },
+              {
+                "Single": 1099
+              },
+              {
+                "Range": [
+                  1115,
+                  1158
+                ]
+              },
+              {
+                "Single": 1161
+              },
+              {
+                "Range": [
+                  1181,
+                  1185
+                ]
+              },
+              {
+                "Range": [
+                  1193,
+                  1239
+                ]
+              },
+              {
+                "Range": [
+                  1244,
+                  1261
+                ]
+              },
+              {
+                "Range": [
+                  1264,
+                  1272
+                ]
+              },
+              {
+                "Range": [
+                  1280,
+                  1287
+                ]
+              },
+              {
+                "Range": [
+                  1289,
+                  1303
+                ]
+              },
+              {
+                "Range": [
+                  1305,
+                  1315
+                ]
+              },
+              {
+                "Range": [
+                  1319,
+                  1322
+                ]
+              },
+              {
+                "Range": [
+                  1324,
+                  1333
+                ]
+              },
+              {
+                "Range": [
+                  1338,
+                  1384
+                ]
+              },
+              {
+                "Range": [
+                  1387,
+                  1401
+                ]
+              },
+              {
+                "Single": 1403
+              },
+              {
+                "Single": 1408
+              },
+              {
+                "Single": 1411
+              },
+              {
+                "Range": [
+                  1416,
+                  1426
+                ]
+              },
+              {
+                "Single": 1432
+              },
+              {
+                "Range": [
+                  1443,
+                  1449
+                ]
+              },
+              {
+                "Range": [
+                  1460,
+                  1465
+                ]
+              },
+              {
+                "Single": 1490
+              },
+              {
+                "Range": [
+                  1493,
+                  1502
+                ]
+              },
+              {
+                "Range": [
+                  1510,
+                  1539
+                ]
+              },
+              {
+                "Range": [
+                  1541,
+                  1542
+                ]
+              },
+              {
+                "Range": [
+                  1545,
+                  1550
+                ]
+              },
+              {
+                "Range": [
+                  1553,
+                  1598
+                ]
+              },
+              {
+                "Range": [
+                  1600,
+                  1641
+                ]
+              },
+              {
+                "Range": [
+                  1646,
+                  1648
+                ]
+              },
+              {
+                "Single": 1651
+              },
+              {
+                "Single": 1670
+              },
+              {
+                "Range": [
+                  1673,
+                  1680
+                ]
+              },
+              {
+                "Single": 1687
+              },
+              {
+                "Range": [
+                  1690,
+                  1697
+                ]
+              },
+              {
+                "Range": [
+                  1722,
+                  1740
+                ]
+              },
+              {
+                "Range": [
+                  1774,
+                  1809
+                ]
+              },
+              {
+                "Range": [
+                  1837,
+                  1855
+                ]
+              },
+              {
+                "Single": 1868
+              },
+              {
+                "Single": 1872
+              },
+              {
+                "Range": [
+                  1877,
+                  1878
+                ]
+              },
+              {
+                "Range": [
+                  1884,
+                  1888
+                ]
+              },
+              {
+                "Single": 1894
+              },
+              {
+                "Range": [
+                  1900,
+                  1901
+                ]
+              },
+              {
+                "Single": 1912
+              },
+              {
+                "Range": [
+                  1925,
+                  1949
+                ]
+              },
+              {
+                "Range": [
+                  1954,
+                  1978
+                ]
+              },
+              {
+                "Range": [
+                  2071,
+                  2086
+                ]
+              },
+              {
+                "Range": [
+                  2101,
+                  2102
+                ]
+              },
+              {
+                "Range": [
+                  2107,
+                  2109
+                ]
+              },
+              {
+                "Single": 2113
+              },
+              {
+                "Range": [
+                  2115,
+                  2120
+                ]
+              },
+              {
+                "Range": [
+                  2128,
+                  2129
+                ]
+              },
+              {
+                "Single": 2144
+              },
+              {
+                "Range": [
+                  2147,
+                  2152
+                ]
+              },
+              {
+                "Range": [
+                  2154,
+                  2187
+                ]
+              },
+              {
+                "Range": [
+                  2189,
+                  2330
+                ]
+              },
+              {
+                "Range": [
+                  2335,
+                  2484
+                ]
+              },
+              {
+                "Range": [
+                  2486,
+                  2488
+                ]
+              },
+              {
+                "Range": [
+                  2491,
+                  2492
+                ]
+              },
+              {
+                "Range": [
+                  2503,
+                  2505
+                ]
+              },
+              {
+                "Single": 2508
+              },
+              {
+                "Range": [
+                  2511,
+                  2514
+                ]
+              },
+              {
+                "Range": [
+                  2591,
+                  2698
+                ]
+              },
+              {
+                "Range": [
+                  2712,
+                  2714
+                ]
+              },
+              {
+                "Single": 2804
+              },
+              {
+                "Range": [
+                  2811,
+                  2833
+                ]
+              },
+              {
+                "Range": [
+                  2835,
+                  2839
+                ]
+              },
+              {
+                "Range": [
+                  2848,
+                  2853
+                ]
+              },
+              {
+                "Range": [
+                  2859,
+                  2906
+                ]
+              },
+              {
+                "Range": [
+                  2979,
+                  2981
+                ]
+              },
+              {
+                "Single": 2983
+              },
+              {
+                "Single": 2986
+              },
+              {
+                "Range": [
+                  2996,
+                  3016
+                ]
+              },
+              {
+                "Single": 3030
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "apps/web/src/components/canvas/use-canvas-clipboard-import.ts": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Range": [
+              1,
+              107
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10102242e645128ff6ff31",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  1,
+                  107
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "apps/web/src/components/canvas/use-canvas-keyboard-shortcuts.ts": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Range": [
+              1,
+              125
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10102242e645128ff6ff31",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  1,
+                  125
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "apps/web/test/setup.ts": [
+      {
+        "hash": "e333f19c6820c4b0",
+        "line_ranges": [
+          {
+            "Range": [
+              1,
+              16
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101ed042e645128ff7065d",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  1,
+                  16
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "apps/web/test/use-canvas-clipboard-import.test.tsx": [
+      {
+        "hash": "e333f19c6820c4b0",
+        "line_ranges": [
+          {
+            "Single": 1
+          },
+          {
+            "Range": [
+              37,
+              42
+            ]
+          },
+          {
+            "Single": 53
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101ed042e645128ff7065d",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Single": 1
+              },
+              {
+                "Range": [
+                  37,
+                  42
+                ]
+              },
+              {
+                "Single": 53
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Range": [
+              2,
+              36
+            ]
+          },
+          {
+            "Range": [
+              43,
+              52
+            ]
+          },
+          {
+            "Range": [
+              54,
+              117
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10102242e645128ff6ff31",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  2,
+                  36
+                ]
+              },
+              {
+                "Range": [
+                  43,
+                  52
+                ]
+              },
+              {
+                "Range": [
+                  54,
+                  117
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "apps/web/vitest.config.ts": [
+      {
+        "hash": "e333f19c6820c4b0",
+        "line_ranges": [
+          {
+            "Single": 15
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a101ed042e645128ff7065d",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Single": 15
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "docs/architecture.md": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Range": [
+              5,
+              7
+            ]
+          },
+          {
+            "Range": [
+              10,
+              25
+            ]
+          },
+          {
+            "Range": [
+              51,
+              67
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10102242e645128ff6ff31",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  5,
+                  7
+                ]
+              },
+              {
+                "Range": [
+                  10,
+                  25
+                ]
+              },
+              {
+                "Range": [
+                  51,
+                  67
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "feature_list.json": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Single": 3
+          },
+          {
+            "Single": 31
+          },
+          {
+            "Single": 103
+          },
+          {
+            "Range": [
+              106,
+              110
+            ]
+          },
+          {
+            "Range": [
+              112,
+              116
+            ]
+          },
+          {
+            "Single": 119
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10102242e645128ff6ff31",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Single": 3
+              },
+              {
+                "Single": 31
+              },
+              {
+                "Single": 103
+              },
+              {
+                "Range": [
+                  106,
+                  110
+                ]
+              },
+              {
+                "Range": [
+                  112,
+                  116
+                ]
+              },
+              {
+                "Single": 119
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "packages/canvas-core/src/__tests__/canvas-core.test.ts": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Single": 8
+          },
+          {
+            "Range": [
+              11,
+              14
+            ]
+          },
+          {
+            "Range": [
+              18,
+              20
+            ]
+          },
+          {
+            "Range": [
+              138,
+              456
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10102242e645128ff6ff31",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Single": 8
+              },
+              {
+                "Range": [
+                  11,
+                  14
+                ]
+              },
+              {
+                "Range": [
+                  18,
+                  20
+                ]
+              },
+              {
+                "Range": [
+                  138,
+                  456
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "packages/canvas-core/src/import.ts": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Range": [
+              1,
+              949
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10102242e645128ff6ff31",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  1,
+                  949
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "packages/canvas-core/src/index.ts": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Range": [
+              5,
+              8
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10102242e645128ff6ff31",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  5,
+                  8
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "packages/canvas-core/src/operations.ts": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Single": 3
+          },
+          {
+            "Range": [
+              66,
+              101
+            ]
+          },
+          {
+            "Range": [
+              132,
+              378
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10102242e645128ff6ff31",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Single": 3
+              },
+              {
+                "Range": [
+                  66,
+                  101
+                ]
+              },
+              {
+                "Range": [
+                  132,
+                  378
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "packages/canvas-core/src/types.ts": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Range": [
+              8,
+              11
+            ]
+          },
+          {
+            "Range": [
+              43,
+              62
+            ]
+          },
+          {
+            "Range": [
+              134,
+              164
+            ]
+          },
+          {
+            "Range": [
+              193,
+              196
+            ]
+          },
+          {
+            "Range": [
+              238,
+              250
+            ]
+          },
+          {
+            "Range": [
+              271,
+              295
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10102242e645128ff6ff31",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Range": [
+                  8,
+                  11
+                ]
+              },
+              {
+                "Range": [
+                  43,
+                  62
+                ]
+              },
+              {
+                "Range": [
+                  134,
+                  164
+                ]
+              },
+              {
+                "Range": [
+                  193,
+                  196
+                ]
+              },
+              {
+                "Range": [
+                  238,
+                  250
+                ]
+              },
+              {
+                "Range": [
+                  271,
+                  295
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "progress.md": [
+      {
+        "hash": "04a04f6a68ff5ec2",
+        "line_ranges": [
+          {
+            "Single": 3
+          },
+          {
+            "Single": 7
+          },
+          {
+            "Range": [
+              11,
+              15
+            ]
+          },
+          {
+            "Range": [
+              26,
+              33
+            ]
+          },
+          {
+            "Range": [
+              38,
+              44
+            ]
+          },
+          {
+            "Range": [
+              57,
+              61
+            ]
+          },
+          {
+            "Single": 63
+          },
+          {
+            "Range": [
+              66,
+              67
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a10102242e645128ff6ff31",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Single": 3
+              },
+              {
+                "Single": 7
+              },
+              {
+                "Range": [
+                  11,
+                  15
+                ]
+              },
+              {
+                "Range": [
+                  26,
+                  33
+                ]
+              },
+              {
+                "Range": [
+                  38,
+                  44
+                ]
+              },
+              {
+                "Range": [
+                  57,
+                  61
+                ]
+              },
+              {
+                "Single": 63
+              },
+              {
+                "Range": [
+                  66,
+                  67
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "remote_transcripts": {
+    "04a04f6a68ff5ec2": {
+      "tool": "trae",
+      "conversation_id": "6a0fc90a42e645128ff6f58e",
+      "session_id": "6a0fc90a42e645128ff6f58e",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "1f41478a7c9405ca": {
+      "tool": "trae",
+      "conversation_id": "6a0ed5ea42e645128ff6f2ae",
+      "session_id": "6a0ed5ea42e645128ff6f2ae",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "e333f19c6820c4b0": {
+      "tool": "trae",
+      "conversation_id": "6a1018ea42e645128ff6ffc5",
+      "session_id": "6a1018ea42e645128ff6ffc5",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    }
+  }
+}
