@@ -1,4 +1,5 @@
-import type { AgentBinding, ContainerNode, IOPort, ContextSlots } from '../types.js';
+import type { AgentBinding, IOPort, ContextSlots, PenNode } from '@cucumber/pen-types';
+type ContainerNode = PenNode;
 
 export type AgentCollabMessageType = 'request' | 'response' | 'broadcast';
 

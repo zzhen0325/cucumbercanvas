@@ -1,15 +1,15 @@
 export type {
   ContainerRole,
   InheritPolicy,
-  ContainerBounds,
   ContextSlots,
   IOPort,
   AgentBinding,
   ContainerPermissions,
-  ContainerNode,
-} from './types.js';
+} from '@cucumber/pen-types';
 
-export { resolveContext } from './context-resolver.js';
+export type { ContainerNode, ContainerBounds } from './types.js';
+
+export { resolveContext, getContainerPath } from './context-resolver.js';
 export { ContainerManager } from './container-manager.js';
 export type { ContainerManagerEvents, CreateContainerOptions } from './container-manager.js';
 

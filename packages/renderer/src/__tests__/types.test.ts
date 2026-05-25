@@ -13,7 +13,10 @@ describe('PixiRenderer types', () => {
       contextSlots: {},
       inheritPolicy: 'merge',
       ioPorts: [],
-      style: { fill: '#ff0000', stroke: '#00ff00', opacity: 0.8, label: 'Test' },
+      fills: [{ type: 'solid', color: '#ff0000' }],
+      stroke: { thickness: 2, fill: [{ type: 'solid', color: '#00ff00' }] },
+      opacity: 0.8,
+      title: 'Test',
     };
 
     const renderNode = containerNodeToRenderNode(container);

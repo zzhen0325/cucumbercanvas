@@ -31,7 +31,7 @@ describe('P3 E2E: Multi-Agent Collaboration Pipeline', () => {
     expect(instance!.containerIds).toHaveLength(5);
 
     const containers = containerManager.getAllContainers();
-    const reviewers = containers.filter(c => c.style?.label?.includes('Reviewer'));
+    const reviewers = containers.filter(c => c.title?.includes('Reviewer'));
     expect(reviewers).toHaveLength(3);
 
     for (const reviewer of reviewers) {
@@ -57,8 +57,8 @@ describe('P3 E2E: Multi-Agent Collaboration Pipeline', () => {
     expect(instance).not.toBeNull();
 
     const containers = containerManager.getAllContainers();
-    const promptGen = containers.find(c => c.style?.label === 'Prompt Generator')!;
-    const imgRenderer = containers.find(c => c.style?.label === 'Image Renderer')!;
+    const promptGen = containers.find(c => c.title === 'Prompt Generator')!;
+    const imgRenderer = containers.find(c => c.title === 'Image Renderer')!;
 
     dataFlowEngine.register(promptGen.id, async (inputs, ctx, emit) => {
       emit(promptGen.ioPorts.find(p => p.direction === 'output')!.id, {

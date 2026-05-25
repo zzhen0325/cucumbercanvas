@@ -18,9 +18,9 @@ export function ContainerPropertiesPanel({
 }: ContainerPropertiesPanelProps) {
   return React.createElement('div', { className: 'container-properties-panel' },
     React.createElement('div', { className: 'panel-header' },
-      React.createElement('h3', null, container.style?.label ?? 'Container'),
+      React.createElement('h3', null, container.name ?? 'Container'),
       React.createElement('div', { className: 'container-roles' },
-        container.role.map(r =>
+        (container.containerRole ?? []).map(r =>
           React.createElement('span', { key: r, className: `role-tag role-${r}` }, r)
         ),
       ),

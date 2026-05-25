@@ -1,4 +1,4 @@
-import { TypedEventEmitter } from '@cucumber/engine';
+import { TypedEventEmitter } from '@cucumber/pen-engine';
 import type { ContainerManager } from '../container-manager.js';
 import type { IOPortManager } from '../io-port-manager.js';
 import type { DataFlowEngine } from '../dataflow/dataflow-engine.js';
@@ -147,7 +147,7 @@ export class TemplateRegistry extends TypedEventEmitter<TemplateRegistryEvents> 
       nodes.push({
         refId: id,
         role: container.role,
-        label: container.style?.label ?? 'Container',
+        label: container.title ?? 'Container',
         relativePosition: {
           x: container.bounds.x - originX,
           y: container.bounds.y - originY,

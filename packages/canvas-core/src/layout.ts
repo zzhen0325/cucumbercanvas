@@ -1,12 +1,13 @@
-import { cloneCanvasDocument } from "./document.js";
+import type { PenDocument, PenNode } from '@cucumber/pen-types';
+import { findNode, getNodeBounds } from './document.js';
+import { applyCanvasOperation } from './operations.js';
 import {
   getCanvasImportedNodeMeta,
   type CanvasImportedAutoLayoutMeta,
   type CanvasImportedLayoutAlign,
   type CanvasImportedPadding,
-  type CanvasNode,
-  type CucumberCanvasDocument,
-} from "./types.js";
+  type CanvasBounds,
+} from './types.js';
 
 export interface ApplyImportedAutoLayoutOptions {
   contentInsetTop?: number;
@@ -15,71 +16,110 @@ export interface ApplyImportedAutoLayoutOptions {
   contentInsetLeft?: number;
 }
 
-type ChildOrderNode = CanvasNode & { childrenOrder: string[] };
+/**
+ * A PenNode that is a container (has children).
+ * FrameNode and GroupNode both satisfy this shape.
+ */
+type ContainerPenNode = PenNode & { children: PenNode[] };
 
 type FlowLayoutEntry = {
   autoLayout?: CanvasImportedAutoLayoutMeta;
-  bounds: CanvasNode["bounds"];
-  node: CanvasNode;
+  bounds: CanvasBounds;
+  node: PenNode;
   grow: number;
 };
 
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Apply auto-layout from imported metadata (Figma/SVG) to the subtree
+ * rooted at `nodeId`. Returns a new document if any positions changed,
+ * otherwise the original document.
+ */
 export function applyImportedAutoLayout(
-  doc: CucumberCanvasDocument,
+  doc: PenDocument,
   nodeId: string,
   options: ApplyImportedAutoLayoutOptions = {},
-): CucumberCanvasDocument {
-  const next = cloneCanvasDocument(doc);
-  const changed = reflowImportedAutoLayoutTree(next, nodeId, options);
+): PenDocument {
+  const { doc: next, changed } = reflowImportedAutoLayoutTree(doc, nodeId, options);
   if (!changed) {
     return doc;
   }
-  next.updatedAt = new Date().toISOString();
   return next;
 }
 
+// ---------------------------------------------------------------------------
+// Tree traversal
+// ---------------------------------------------------------------------------
+
+/**
+ * Walk the container subtree depth-first, applying auto-layout at each
+ * container node that carries imported autoLayout metadata.
+ */
 function reflowImportedAutoLayoutTree(
-  doc: CucumberCanvasDocument,
+  doc: PenDocument,
   nodeId: string,
   options: ApplyImportedAutoLayoutOptions,
-): boolean {
-  const node = doc.nodes[nodeId];
-  if (!hasChildrenOrder(node)) {
-    return false;
+): { doc: PenDocument; changed: boolean } {
+  const node = findNode(doc, nodeId);
+  if (!isContainerNode(node)) {
+    return { doc, changed: false };
   }
 
   let changed = false;
-  const autoLayout = getCanvasImportedNodeMeta(node.meta)?.autoLayout;
+  let currentDoc = doc;
+
+  const autoLayout = getImportedAutoLayout(node);
   if (autoLayout) {
-    changed = reflowImportedAutoLayoutChildren(doc, node, autoLayout, options);
+    const result = reflowImportedAutoLayoutChildren(currentDoc, node, autoLayout, options);
+    currentDoc = result.doc;
+    changed = result.changed;
   }
 
-  for (const childId of node.childrenOrder) {
-    changed =
-      reflowImportedAutoLayoutTree(doc, childId, options) || changed;
+  // Recurse into children. Read children from the original node snapshot
+  // since the iteration order is stable; child IDs don't change.
+  for (const child of node.children) {
+    const result = reflowImportedAutoLayoutTree(currentDoc, child.id, options);
+    currentDoc = result.doc;
+    changed = result.changed || changed;
   }
 
-  return changed;
+  return { doc: currentDoc, changed };
 }
 
+// ---------------------------------------------------------------------------
+// Single-container auto-layout reflow
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute new positions for all "auto" children of a single container
+ * and apply the updates to the document via `applyCanvasOperation`.
+ */
 function reflowImportedAutoLayoutChildren(
-  doc: CucumberCanvasDocument,
-  node: ChildOrderNode,
+  doc: PenDocument,
+  node: ContainerPenNode,
   autoLayout: CanvasImportedAutoLayoutMeta,
   options: ApplyImportedAutoLayoutOptions,
-): boolean {
-  if (node.childrenOrder.length === 0) {
-    return false;
+): { doc: PenDocument; changed: boolean } {
+  if (node.children.length === 0) {
+    return { doc, changed: false };
   }
 
-  const direction = autoLayout.layout ?? "vertical";
+  const direction = autoLayout.layout ?? 'vertical';
   const gap = Math.max(autoLayout.gap ?? 0, 0);
   const [paddingTop, paddingRight, paddingBottom, paddingLeft] =
     expandPadding(autoLayout.padding);
-  const contentX = node.bounds.x + paddingLeft + (options.contentInsetLeft ?? 0);
-  const contentY = node.bounds.y + paddingTop + (options.contentInsetTop ?? 0);
+
+  const nodeX = node.x ?? 0;
+  const nodeY = node.y ?? 0;
+  const nodeBounds = getNodeBounds(node);
+
+  const contentX = nodeX + paddingLeft + (options.contentInsetLeft ?? 0);
+  const contentY = nodeY + paddingTop + (options.contentInsetTop ?? 0);
   const contentWidth = Math.max(
-    node.bounds.width -
+    nodeBounds.width -
       paddingLeft -
       paddingRight -
       (options.contentInsetLeft ?? 0) -
@@ -87,7 +127,7 @@ function reflowImportedAutoLayoutChildren(
     0,
   );
   const contentHeight = Math.max(
-    node.bounds.height -
+    nodeBounds.height -
       paddingTop -
       paddingBottom -
       (options.contentInsetTop ?? 0) -
@@ -95,29 +135,45 @@ function reflowImportedAutoLayoutChildren(
     0,
   );
 
-  const flowEntries = node.childrenOrder
-    .map((childId) => doc.nodes[childId])
-    .filter((child): child is CanvasNode => Boolean(child))
-    .map((child) => ({
-      autoLayout: getCanvasImportedNodeMeta(child.meta)?.autoLayout,
-      bounds: { ...child.bounds },
-      node: child,
-      grow: 0,
-    }))
-    .filter((entry) => entry.autoLayout?.positioning !== "absolute");
+  // Build flow entries for all children that participate in auto-layout.
+  const flowEntries: FlowLayoutEntry[] = node.children
+    .filter((child): child is PenNode => Boolean(child))
+    .map((child) => {
+      const childBounds = getNodeBounds(child);
+      return {
+        autoLayout: getImportedAutoLayout(child),
+        bounds: {
+          x: child.x ?? 0,
+          y: child.y ?? 0,
+          width: childBounds.width,
+          height: childBounds.height,
+        },
+        node: child,
+        grow: 0,
+      };
+    })
+    .filter((entry) => entry.autoLayout?.positioning !== 'absolute');
 
   if (flowEntries.length === 0) {
-    return false;
+    return { doc, changed: false };
   }
 
+  // --- Grow and cross-axis sizing ---
   for (const entry of flowEntries) {
     entry.grow = Math.max(entry.autoLayout?.grow ?? 0, 0);
     applyCrossAxisSizing(entry, direction, contentWidth, contentHeight);
-    applySingleChildFill(entry, flowEntries.length, direction, contentWidth, contentHeight);
+    applySingleChildFill(
+      entry,
+      flowEntries.length,
+      direction,
+      contentWidth,
+      contentHeight,
+    );
   }
 
+  // --- Main-axis space distribution (grow) ---
   const mainAxisAvailable =
-    direction === "horizontal" ? contentWidth : contentHeight;
+    direction === 'horizontal' ? contentWidth : contentHeight;
   const totalGap = gap * Math.max(flowEntries.length - 1, 0);
   const fixedMainSize = flowEntries.reduce(
     (sum, entry) => sum + getMainAxisSize(entry.bounds, direction),
@@ -139,6 +195,7 @@ function reflowImportedAutoLayoutChildren(
     }
   }
 
+  // --- Justification ---
   const usedMainSpace =
     flowEntries.reduce(
       (sum, entry) => sum + getMainAxisSize(entry.bounds, direction),
@@ -148,29 +205,41 @@ function reflowImportedAutoLayoutChildren(
 
   let leadingMainSpace = 0;
   let gapBetweenItems = gap;
-  if (autoLayout.justifyContent === "center") {
+  if (autoLayout.justifyContent === 'center') {
     leadingMainSpace = freeMainSpace / 2;
-  } else if (autoLayout.justifyContent === "end") {
+  } else if (autoLayout.justifyContent === 'end') {
     leadingMainSpace = freeMainSpace;
   } else if (
-    autoLayout.justifyContent === "space_between" &&
+    autoLayout.justifyContent === 'space_between' &&
     flowEntries.length > 1
   ) {
     gapBetweenItems = gap + freeMainSpace / (flowEntries.length - 1);
   }
 
+  // --- Apply position updates ---
   let cursor = leadingMainSpace;
   let changed = false;
+  let currentDoc = doc;
+
   for (const entry of flowEntries) {
-    const nextBounds = { ...entry.node.bounds };
-    if (direction === "horizontal") {
+    const nextBounds: CanvasBounds = {
+      x: 0,
+      y: 0,
+      width: entry.bounds.width,
+      height: entry.bounds.height,
+    };
+
+    if (direction === 'horizontal') {
       nextBounds.x = contentX + cursor;
       nextBounds.y =
         contentY +
         resolveCrossAxisOffset(
           contentHeight,
           entry.bounds.height,
-          resolveCrossAxisAlign(autoLayout.alignItems, entry.autoLayout?.alignSelf),
+          resolveCrossAxisAlign(
+            autoLayout.alignItems,
+            entry.autoLayout?.alignSelf,
+          ),
         );
     } else {
       nextBounds.x =
@@ -178,38 +247,56 @@ function reflowImportedAutoLayoutChildren(
         resolveCrossAxisOffset(
           contentWidth,
           entry.bounds.width,
-          resolveCrossAxisAlign(autoLayout.alignItems, entry.autoLayout?.alignSelf),
+          resolveCrossAxisAlign(
+            autoLayout.alignItems,
+            entry.autoLayout?.alignSelf,
+          ),
         );
       nextBounds.y = contentY + cursor;
     }
-    nextBounds.width = entry.bounds.width;
-    nextBounds.height = entry.bounds.height;
 
-    if (!areBoundsEqual(entry.node.bounds, nextBounds)) {
-      doc.nodes[entry.node.id] = {
-        ...entry.node,
-        bounds: nextBounds,
-      };
+    const currentBounds: CanvasBounds = {
+      x: entry.node.x ?? 0,
+      y: entry.node.y ?? 0,
+      width: getNodeBounds(entry.node).width,
+      height: getNodeBounds(entry.node).height,
+    };
+
+    if (!areBoundsEqual(currentBounds, nextBounds)) {
+      currentDoc = applyCanvasOperation(currentDoc, {
+        type: 'updateNode',
+        nodeId: entry.node.id,
+        updates: {
+          x: nextBounds.x,
+          y: nextBounds.y,
+          width: nextBounds.width,
+          height: nextBounds.height,
+        },
+      });
       changed = true;
     }
 
     cursor += getMainAxisSize(entry.bounds, direction) + gapBetweenItems;
   }
 
-  return changed;
+  return { doc: currentDoc, changed };
 }
+
+// ---------------------------------------------------------------------------
+// Sizing helpers
+// ---------------------------------------------------------------------------
 
 function applyCrossAxisSizing(
   entry: FlowLayoutEntry,
-  direction: "horizontal" | "vertical",
+  direction: 'horizontal' | 'vertical',
   contentWidth: number,
   contentHeight: number,
 ): void {
   const align = resolveCrossAxisAlign(undefined, entry.autoLayout?.alignSelf);
-  if (direction === "horizontal") {
+  if (direction === 'horizontal') {
     if (
-      entry.autoLayout?.heightMode === "fill_container" ||
-      align === "stretch"
+      entry.autoLayout?.heightMode === 'fill_container' ||
+      align === 'stretch'
     ) {
       entry.bounds.height = contentHeight;
     }
@@ -217,8 +304,8 @@ function applyCrossAxisSizing(
   }
 
   if (
-    entry.autoLayout?.widthMode === "fill_container" ||
-    align === "stretch"
+    entry.autoLayout?.widthMode === 'fill_container' ||
+    align === 'stretch'
   ) {
     entry.bounds.width = contentWidth;
   }
@@ -227,7 +314,7 @@ function applyCrossAxisSizing(
 function applySingleChildFill(
   entry: FlowLayoutEntry,
   siblingCount: number,
-  direction: "horizontal" | "vertical",
+  direction: 'horizontal' | 'vertical',
   contentWidth: number,
   contentHeight: number,
 ): void {
@@ -235,95 +322,96 @@ function applySingleChildFill(
     return;
   }
 
-  if (direction === "horizontal" && entry.autoLayout?.widthMode === "fill_container") {
+  if (
+    direction === 'horizontal' &&
+    entry.autoLayout?.widthMode === 'fill_container'
+  ) {
     entry.bounds.width = contentWidth;
   }
-  if (direction === "vertical" && entry.autoLayout?.heightMode === "fill_container") {
+  if (
+    direction === 'vertical' &&
+    entry.autoLayout?.heightMode === 'fill_container'
+  ) {
     entry.bounds.height = contentHeight;
   }
 }
 
+// ---------------------------------------------------------------------------
+// Alignment helpers
+// ---------------------------------------------------------------------------
+
 function resolveCrossAxisAlign(
   containerAlign: CanvasImportedLayoutAlign | undefined,
-  childAlign:
-    | CanvasImportedAutoLayoutMeta["alignSelf"]
-    | undefined,
-): "start" | "center" | "end" | "stretch" {
-  if (childAlign === "stretch") {
-    return "stretch";
-  }
-  if (childAlign === "center") {
-    return "center";
-  }
-  if (childAlign === "end") {
-    return "end";
-  }
-  if (childAlign === "baseline") {
-    return "start";
-  }
-  if (containerAlign === "center") {
-    return "center";
-  }
-  if (containerAlign === "end") {
-    return "end";
-  }
-  return "start";
+  childAlign: CanvasImportedAutoLayoutMeta['alignSelf'] | undefined,
+): 'start' | 'center' | 'end' | 'stretch' {
+  if (childAlign === 'stretch') return 'stretch';
+  if (childAlign === 'center') return 'center';
+  if (childAlign === 'end') return 'end';
+  if (childAlign === 'baseline') return 'start';
+  if (containerAlign === 'center') return 'center';
+  if (containerAlign === 'end') return 'end';
+  return 'start';
 }
 
 function resolveCrossAxisOffset(
   contentSize: number,
   childSize: number,
-  align: "start" | "center" | "end" | "stretch",
+  align: 'start' | 'center' | 'end' | 'stretch',
 ): number {
-  if (align === "center") {
-    return Math.max((contentSize - childSize) / 2, 0);
-  }
-  if (align === "end") {
-    return Math.max(contentSize - childSize, 0);
-  }
+  if (align === 'center') return Math.max((contentSize - childSize) / 2, 0);
+  if (align === 'end') return Math.max(contentSize - childSize, 0);
   return 0;
 }
 
+// ---------------------------------------------------------------------------
+// Axis helpers
+// ---------------------------------------------------------------------------
+
 function getMainAxisSize(
-  bounds: CanvasNode["bounds"],
-  direction: "horizontal" | "vertical",
+  bounds: CanvasBounds,
+  direction: 'horizontal' | 'vertical',
 ): number {
-  return direction === "horizontal" ? bounds.width : bounds.height;
+  return direction === 'horizontal' ? bounds.width : bounds.height;
 }
 
 function setMainAxisSize(
-  bounds: CanvasNode["bounds"],
-  direction: "horizontal" | "vertical",
+  bounds: CanvasBounds,
+  direction: 'horizontal' | 'vertical',
   size: number,
 ): void {
-  if (direction === "horizontal") {
+  if (direction === 'horizontal') {
     bounds.width = size;
     return;
   }
   bounds.height = size;
 }
 
-function expandPadding(padding?: CanvasImportedPadding): [number, number, number, number] {
-  if (padding === undefined) {
-    return [0, 0, 0, 0];
-  }
-  if (typeof padding === "number") {
-    return [padding, padding, padding, padding];
-  }
-  if (padding.length === 2) {
-    return [padding[0], padding[1], padding[0], padding[1]];
-  }
+// ---------------------------------------------------------------------------
+// Padding helper
+// ---------------------------------------------------------------------------
+
+function expandPadding(
+  padding?: CanvasImportedPadding,
+): [number, number, number, number] {
+  if (padding === undefined) return [0, 0, 0, 0];
+  if (typeof padding === 'number') return [padding, padding, padding, padding];
+  if (padding.length === 2) return [padding[0], padding[1], padding[0], padding[1]];
   return padding;
 }
 
-function hasChildrenOrder(node: CanvasNode | undefined): node is ChildOrderNode {
-  return Boolean(node && "childrenOrder" in node);
+// ---------------------------------------------------------------------------
+// Guard / Equality helpers
+// ---------------------------------------------------------------------------
+
+function isContainerNode(node: PenNode | undefined): node is ContainerPenNode {
+  return Boolean(
+    node &&
+      'children' in node &&
+      Array.isArray((node as unknown as Record<string, unknown>).children),
+  );
 }
 
-function areBoundsEqual(
-  left: CanvasNode["bounds"],
-  right: CanvasNode["bounds"],
-): boolean {
+function areBoundsEqual(left: CanvasBounds, right: CanvasBounds): boolean {
   return (
     approximatelyEqual(left.x, right.x) &&
     approximatelyEqual(left.y, right.y) &&
@@ -334,4 +422,22 @@ function areBoundsEqual(
 
 function approximatelyEqual(left: number, right: number): boolean {
   return Math.abs(left - right) < 0.01;
+}
+
+// ---------------------------------------------------------------------------
+// Metadata extraction helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract `CanvasImportedAutoLayoutMeta` from a PenNode's metadata.
+ * PenNode carries imported metadata in a `meta` property set during
+ * import, which is typed as `Record<string, unknown>` at runtime.
+ */
+function getImportedAutoLayout(
+  node: PenNode,
+): CanvasImportedAutoLayoutMeta | undefined {
+  const meta = (node as unknown as Record<string, unknown>).meta as
+    | Record<string, unknown>
+    | undefined;
+  return getCanvasImportedNodeMeta(meta)?.autoLayout;
 }

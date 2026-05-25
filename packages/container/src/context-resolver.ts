@@ -1,65 +1,50 @@
-import type { ContainerNode, ContextSlots } from './types.js';
+import type { PenNode, ContextSlots } from '@cucumber/pen-types';
+import { findNodeInTree, findParentInTree } from '@cucumber/pen-core';
 
-export function resolveContext(
-  containerId: string,
-  tree: Map<string, ContainerNode>
-): ContextSlots {
-  const chain: ContainerNode[] = [];
-  let cur = tree.get(containerId);
-  while (cur) {
-    chain.push(cur);
-    cur = cur.parentId ? tree.get(cur.parentId) : undefined;
-  }
-  chain.reverse();
+/**
+ * Resolve effective context slots by walking ancestor chain from containerId
+ * through the PenNode tree, applying inherit policies (merge/override/block).
+ */
+export function resolveContext(containerId: string, nodes: PenNode[]): ContextSlots {
+  const chain = getContainerPath(containerId, nodes)
+    .map((id) => findNodeInTree(nodes, id))
+    .filter((n): n is PenNode => !!n);
 
   let acc: ContextSlots = {};
   for (const node of chain) {
+    const slots = node.contextSlots ?? {};
     switch (node.inheritPolicy) {
       case 'block':
-        acc = filterOutBlockedSlots(acc, node.contextSlots);
+        acc = {
+          style: slots.style ?? acc.style,
+          tokens: slots.tokens ?? acc.tokens,
+          rules: slots.rules ?? acc.rules,
+          constraints: slots.constraints ?? acc.constraints,
+        };
         break;
       case 'override':
-        acc = { ...acc, ...node.contextSlots };
+        acc = { ...acc, ...slots };
         break;
-      case 'merge':
-      default:
-        acc = mergeSlots(acc, node.contextSlots);
+      default: // merge
+        acc = {
+          style: { ...(acc.style ?? {}), ...(slots.style ?? {}) },
+          tokens: { ...(acc.tokens ?? {}), ...(slots.tokens ?? {}) },
+          rules: [...(acc.rules ?? []), ...(slots.rules ?? [])],
+          constraints: { ...(acc.constraints ?? {}), ...(slots.constraints ?? {}) },
+        };
         break;
     }
   }
   return acc;
 }
 
-function mergeSlots(base: ContextSlots, overlay: ContextSlots): ContextSlots {
-  return {
-    style: { ...(base.style ?? {}), ...(overlay.style ?? {}) },
-    tokens: { ...(base.tokens ?? {}), ...(overlay.tokens ?? {}) },
-    rules: [...(base.rules ?? []), ...(overlay.rules ?? [])],
-    constraints: { ...(base.constraints ?? {}), ...(overlay.constraints ?? {}) },
-  };
-}
-
-function filterOutBlockedSlots(base: ContextSlots, local: ContextSlots): ContextSlots {
-  const result: ContextSlots = {};
-  if (local.style) {
-    result.style = local.style;
-  } else {
-    result.style = base.style;
+/** Walk up the tree to get ancestor path for a container */
+export function getContainerPath(containerId: string, nodes: PenNode[]): string[] {
+  const path: string[] = [];
+  let current = findNodeInTree(nodes, containerId);
+  while (current) {
+    path.unshift(current.id);
+    current = findParentInTree(nodes, current.id);
   }
-  if (local.tokens) {
-    result.tokens = local.tokens;
-  } else {
-    result.tokens = base.tokens;
-  }
-  if (local.rules) {
-    result.rules = local.rules;
-  } else {
-    result.rules = base.rules;
-  }
-  if (local.constraints) {
-    result.constraints = local.constraints;
-  } else {
-    result.constraints = base.constraints;
-  }
-  return result;
+  return path;
 }

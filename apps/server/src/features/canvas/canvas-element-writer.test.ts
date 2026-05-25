@@ -1,7 +1,9 @@
 import {
-  type ContainerNode,
+  type ContainerRole,
+  type PenNode,
   applyCanvasOperation,
   createEmptyCanvasDocument,
+  findNode,
   isCucumberCanvasDocument,
 } from "@cucumber/canvas-core";
 import { describe, expect, it } from "vitest";
@@ -129,11 +131,11 @@ describe("canvas-element-writer image generation groups", () => {
       typeof createEmptyCanvasDocument
     >;
     expect(isCucumberCanvasDocument(nextDoc)).toBe(true);
-    expect(nextDoc.nodes[result.elementId]).toMatchObject({
+    expect(findNode(nextDoc, result.elementId)).toMatchObject({
       type: "image",
-      title: "Clean product image",
+      name: "Clean product image",
     });
-    expect(Object.keys(nextDoc.assets)).toHaveLength(1);
+    expect(Object.keys(nextDoc.assets ?? {})).toHaveLength(1);
   });
 
   it("logs generation failure without writing legacy placeholder state", async () => {
@@ -166,22 +168,24 @@ describe("canvas-element-writer image generation groups", () => {
   });
 
   it("inserts generated images into the new Cucumber canvas document", async () => {
-    const container: ContainerNode = {
+    const container = {
       id: "container_1",
-      type: "container",
-      parentId: null,
-      title: "Agent Host",
-      bounds: { x: 0, y: 0, width: 420, height: 280 },
-      role: ["visual", "task", "context"],
-      childrenOrder: [],
+      type: "frame" as const,
+      name: "Agent Host",
+      x: 0,
+      y: 0,
+      width: 420,
+      height: 280,
+      containerRole: ["visual", "task", "context"] as ContainerRole[],
+      children: [] as PenNode[],
       contextSlots: {},
-      inheritPolicy: "merge",
+      inheritPolicy: "merge" as const,
       agentBinding: {
         agentId: "designer-agent",
-        permissions: ["read", "write"],
+        permissions: ["read", "write"] as ("read" | "write" | "spawn")[],
       },
-      permissions: { canRead: [], canWrite: [], isolationLevel: "open" },
-    };
+      permissions: { canRead: [], canWrite: [], isolationLevel: "open" as const },
+    } satisfies PenNode;
     let doc = createEmptyCanvasDocument();
     doc = applyCanvasOperation(doc, {
       type: "insertNode",
@@ -201,11 +205,10 @@ describe("canvas-element-writer image generation groups", () => {
     const nextDoc = client.state.content as ReturnType<
       typeof createEmptyCanvasDocument
     >;
-    expect(nextDoc.nodes[result.elementId]).toMatchObject({
+    expect(findNode(nextDoc, result.elementId)).toMatchObject({
       type: "image",
-      parentId: "container_1",
-      title: "Generated hero image",
+      name: "Generated hero image",
     });
-    expect(Object.keys(nextDoc.assets)).toHaveLength(1);
+    expect(Object.keys(nextDoc.assets ?? {})).toHaveLength(1);
   });
 });

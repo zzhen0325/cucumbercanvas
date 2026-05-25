@@ -470,7 +470,7 @@ export function CanvasLayersPanel({
 
   const renameElement = useCallback(
     (id: string, title: string) => {
-      canvasApi?.updateNode(id, { title });
+      canvasApi?.updateNode(id, { name: title } as any);
     },
     [canvasApi],
   );

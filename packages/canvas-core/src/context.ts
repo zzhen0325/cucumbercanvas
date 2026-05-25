@@ -1,66 +1,63 @@
-import { isBoundsInside } from "./document.js";
-import type {
-  AgentContext,
-  CanvasNode,
-  ContainerNode,
-  ContextSlots,
-  CucumberCanvasDocument,
-  NodeSummary,
-} from "./types.js";
+import type { PenDocument, PenNode, ContextSlots } from '@cucumber/pen-types';
+import type { AgentContext, NodeSummary } from './types.js';
+import { findNode, findParent, flattenNodes, getNodeBounds, isBoundsInside } from './document.js';
 
 export class CanvasOperationError extends Error {
   readonly code:
-    | "container_not_found"
-    | "node_not_found"
-    | "permission_denied"
-    | "bounds_violation"
-    | "invalid_operation";
+    | 'container_not_found'
+    | 'node_not_found'
+    | 'permission_denied'
+    | 'bounds_violation'
+    | 'invalid_operation';
 
-  constructor(code: CanvasOperationError["code"], message: string) {
+  constructor(code: CanvasOperationError['code'], message: string) {
     super(message);
-    this.name = "CanvasOperationError";
+    this.name = 'CanvasOperationError';
     this.code = code;
   }
 }
 
-export function isContainerNode(
-  node: CanvasNode | undefined,
-): node is ContainerNode {
-  return node?.type === "container";
+/** Check if a PenNode has container capabilities (Frame/Group with children) */
+export function isContainerNode(node: PenNode | undefined): node is PenNode {
+  if (!node) return false;
+  return node.type === 'frame' || node.type === 'group';
 }
 
-export function getContainerPath(
-  doc: CucumberCanvasDocument,
-  containerId: string,
-): string[] {
+/** Check if a PenNode acts as an agent container */
+export function isAgentContainer(node: PenNode | undefined): node is PenNode {
+  if (!node) return false;
+  return isContainerNode(node) && (node.containerRole?.length ?? 0) > 0;
+}
+
+/** Walk up the tree from containerId to root, returning the path */
+export function getContainerPath(doc: PenDocument, containerId: string): string[] {
   const path: string[] = [];
-  let current = doc.nodes[containerId];
+  let current = findNode(doc, containerId);
   while (current) {
     path.unshift(current.id);
-    current = current.parentId ? doc.nodes[current.parentId] : undefined;
+    current = findParent(doc, current.id);
   }
   return path;
 }
 
-export function resolveContext(
-  doc: CucumberCanvasDocument,
-  containerId: string,
-): ContextSlots {
+/** Resolve effective context slots by walking ancestor chain with inherit policies */
+export function resolveContext(doc: PenDocument, containerId: string): ContextSlots {
   const chain = getContainerPath(doc, containerId)
-    .map((id) => doc.nodes[id])
-    .filter(isContainerNode);
+    .map((id) => findNode(doc, id))
+    .filter(isAgentContainer);
 
   let acc: ContextSlots = {};
   for (const node of chain) {
+    const slots = node.contextSlots ?? {};
     switch (node.inheritPolicy) {
-      case "block":
-        acc = blockSlots(acc, node.contextSlots);
+      case 'block':
+        acc = blockSlots(acc, slots);
         break;
-      case "override":
-        acc = { ...acc, ...node.contextSlots };
+      case 'override':
+        acc = { ...acc, ...slots };
         break;
       default:
-        acc = mergeSlots(acc, node.contextSlots);
+        acc = mergeSlots(acc, slots);
         break;
     }
   }
@@ -68,53 +65,51 @@ export function resolveContext(
 }
 
 export function buildAgentContext(args: {
-  doc: CucumberCanvasDocument;
+  doc: PenDocument;
   agentId: string;
   containerId: string;
 }): AgentContext {
-  const container = args.doc.nodes[args.containerId];
-  if (!isContainerNode(container)) {
+  const container = findNode(args.doc, args.containerId);
+  if (!isAgentContainer(container)) {
     throw new CanvasOperationError(
-      "container_not_found",
-      `Container ${args.containerId} does not exist.`,
+      'container_not_found',
+      `Container ${args.containerId} does not exist or has no container role.`,
     );
   }
+
+  const allNodes = flattenNodes(args.doc);
+  const containerBounds = getNodeBounds(container);
 
   return {
     agentId: args.agentId,
     containerId: args.containerId,
     containerPath: getContainerPath(args.doc, args.containerId),
     effectiveContext: resolveContext(args.doc, args.containerId),
-    visibleNodes: getVisibleNodes(args.doc, container),
-    permissions: container.agentBinding?.permissions ?? ["read"],
-    siblings: Object.values(args.doc.nodes)
+    visibleNodes: allNodes
+      .filter((n) => n.id !== container.id)
+      .filter((n) => isBoundsInside(getNodeBounds(n), containerBounds))
+      .map((n) => ({
+        id: n.id,
+        type: n.type,
+        title: n.name,
+        bounds: getNodeBounds(n),
+      })),
+    permissions: container.agentBinding?.permissions ?? ['read'],
+    siblings: allNodes
       .filter(
-        (node): node is ContainerNode =>
-          node.type === "container" &&
-          node.parentId === container.parentId &&
-          node.id !== container.id,
+        (n): boolean => {
+          if (!isAgentContainer(n)) return false;
+          const p = findParent(args.doc, n.id);
+          const cp = findParent(args.doc, container.id);
+          return p?.id === cp?.id && n.id !== container.id;
+        },
       )
-      .map((node) => ({
-        containerId: node.id,
-        agentId: node.agentBinding?.agentId,
-        status: node.agentBinding?.status,
+      .map((n) => ({
+        containerId: n.id,
+        agentId: n.agentBinding?.agentId,
+        status: n.agentBinding?.status,
       })),
   };
-}
-
-function getVisibleNodes(
-  doc: CucumberCanvasDocument,
-  container: ContainerNode,
-): NodeSummary[] {
-  return Object.values(doc.nodes)
-    .filter((node) => node.id !== container.id)
-    .filter((node) => isBoundsInside(node.bounds, container.bounds))
-    .map((node) => ({
-      id: node.id,
-      type: node.type,
-      title: node.title,
-      bounds: node.bounds,
-    }));
 }
 
 function mergeSlots(base: ContextSlots, overlay: ContextSlots): ContextSlots {
@@ -122,10 +117,7 @@ function mergeSlots(base: ContextSlots, overlay: ContextSlots): ContextSlots {
     style: { ...(base.style ?? {}), ...(overlay.style ?? {}) },
     tokens: { ...(base.tokens ?? {}), ...(overlay.tokens ?? {}) },
     rules: [...(base.rules ?? []), ...(overlay.rules ?? [])],
-    constraints: {
-      ...(base.constraints ?? {}),
-      ...(overlay.constraints ?? {}),
-    },
+    constraints: { ...(base.constraints ?? {}), ...(overlay.constraints ?? {}) },
   };
 }
 

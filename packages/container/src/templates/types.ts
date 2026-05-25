@@ -1,4 +1,4 @@
-import type { ContainerNode, IOPort, AgentBinding, ContextSlots, ContainerRole, InheritPolicy } from '../types.js';
+import type { PenNode as ContainerNode, IOPort, AgentBinding, ContextSlots, ContainerRole, InheritPolicy } from '@cucumber/pen-types';
 
 export interface ContainerTemplatePort {
   direction: IOPort['direction'];

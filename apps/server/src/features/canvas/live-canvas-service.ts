@@ -1,6 +1,7 @@
 import {
   type CucumberCanvasDocument,
   isCucumberCanvasDocument,
+  flattenNodes,
 } from "@cucumber/canvas-core";
 
 import type {
@@ -128,7 +129,7 @@ export function createLiveCanvasService(options: {
       );
       console.info("[live-canvas] document synced to live editor", {
         canvasId,
-        nodeCount: Object.keys(document.nodes).length,
+        nodeCount: flattenNodes(document).length,
         userId: user.id,
       });
     },

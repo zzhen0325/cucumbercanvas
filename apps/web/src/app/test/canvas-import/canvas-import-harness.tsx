@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import { createEmptyCanvasDocument, type CucumberCanvasDocument } from "@cucumber/canvas-core";
+import { createEmptyCanvasDocument, type CucumberCanvasDocument, flattenNodes } from "@cucumber/canvas-core";
 
 import {
   CanvasSurface,
@@ -94,10 +94,10 @@ export function CanvasImportHarness() {
         >
           {JSON.stringify(
             {
-              nodeCount: Object.keys(doc.nodes).length,
-              rootNodeIds: doc.rootNodeIds,
-              selection: doc.selection,
-              nodes: Object.values(doc.nodes).map((node) => ({
+              nodeCount: flattenNodes(doc).length,
+              rootNodeIds: doc.children?.map((c: any) => c.id) ?? [],
+              selection: [],
+              nodes: flattenNodes(doc).map((node: any) => ({
                 id: node.id,
                 type: node.type,
                 title: node.title,

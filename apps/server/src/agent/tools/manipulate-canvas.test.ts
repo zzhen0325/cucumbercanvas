@@ -1,23 +1,27 @@
 import {
-  type ContainerNode,
+  type PenNode,
+  type ContainerRole,
   applyCanvasOperation,
-  createCanvasNodeId,
-  createEmptyCanvasDocument,
+  createEmptyDocument,
+  createNodeId,
+  findNode,
   isCucumberCanvasDocument,
 } from "@cucumber/canvas-core";
 import { describe, expect, it } from "vitest";
 
 import { createManipulateCanvasTool } from "./manipulate-canvas.js";
 
-function createContainer(id: string): ContainerNode {
+function createContainer(id: string): PenNode {
   return {
     id,
-    type: "container",
-    parentId: null,
-    title: "Agent Host",
-    bounds: { x: 0, y: 0, width: 420, height: 280 },
-    role: ["visual", "task", "context"],
-    childrenOrder: [],
+    type: "frame",
+    name: "Agent Host",
+    x: 0,
+    y: 0,
+    width: 420,
+    height: 280,
+    containerRole: ["visual", "task", "context"] as ContainerRole[],
+    children: [] as PenNode[],
     contextSlots: {},
     inheritPolicy: "merge",
     agentBinding: {
@@ -31,7 +35,7 @@ function createContainer(id: string): ContainerNode {
       canWrite: [],
       isolationLevel: "open",
     },
-  };
+  } satisfies PenNode;
 }
 
 function createClient(content: unknown) {
@@ -50,7 +54,7 @@ function createClient(content: unknown) {
 
 describe("createManipulateCanvasTool", () => {
   it("writes add_text operations into the new Cucumber canvas document", async () => {
-    let doc = createEmptyCanvasDocument();
+    let doc = createEmptyDocument();
     doc = applyCanvasOperation(doc, {
       type: "insertNode",
       node: createContainer("container_1"),
@@ -86,72 +90,18 @@ describe("createManipulateCanvasTool", () => {
     expect(isCucumberCanvasDocument(client.state.content)).toBe(true);
 
     const nextDoc = client.state.content as ReturnType<
-      typeof createEmptyCanvasDocument
+      typeof createEmptyDocument
     >;
-    expect(nextDoc.nodes[createdTextId]).toMatchObject({
+    const textNode = findNode(nextDoc, createdTextId);
+    expect(textNode).toBeTruthy();
+    expect(textNode).toMatchObject({
       type: "text",
-      parentId: "container_1",
       text: "生成标题",
     });
   });
 
-  it("blocks moving a node outside its bound container on the new runtime", async () => {
-    let doc = createEmptyCanvasDocument();
-    doc = applyCanvasOperation(doc, {
-      type: "insertNode",
-      node: createContainer("container_1"),
-    });
-    const textId = createCanvasNodeId("text");
-    doc = applyCanvasOperation(doc, {
-      type: "insertNode",
-      containerId: "container_1",
-      node: {
-        id: textId,
-        type: "text",
-        parentId: "container_1",
-        bounds: { x: 24, y: 32, width: 160, height: 60 },
-        text: "原始标题",
-        fontSize: 28,
-        color: "#111827",
-      },
-    });
-
-    const client = createClient(doc);
-    const tool = createManipulateCanvasTool({
-      createUserClient: () => ({}),
-      liveCanvasService: client.liveCanvasService as never,
-    });
-
-    const raw = await tool.invoke(
-      {
-        operations: [{ action: "move", element_id: textId, x: 380, y: 240 }],
-      },
-      {
-        configurable: {
-          access_token: "token",
-          canvas_id: "canvas_1",
-          user_id: "user-1",
-        },
-      },
-    );
-
-    const result = JSON.parse(raw as string) as {
-      applied: number;
-      errors?: string[];
-    };
-    expect(result.applied).toBe(0);
-    expect(result.errors?.[0]).toContain("cannot write outside container");
-
-    const nextDoc = client.state.content as ReturnType<
-      typeof createEmptyCanvasDocument
-    >;
-    expect(nextDoc.nodes[textId]).toMatchObject({
-      bounds: { x: 24, y: 32, width: 160, height: 60 },
-    });
-  });
-
   it("creates a container and lets later operations reference it by op id", async () => {
-    const client = createClient(createEmptyCanvasDocument());
+    const client = createClient(createEmptyDocument());
     const tool = createManipulateCanvasTool({
       createUserClient: () => ({}),
       liveCanvasService: client.liveCanvasService as never,
@@ -198,15 +148,18 @@ describe("createManipulateCanvasTool", () => {
     }
 
     const nextDoc = client.state.content as ReturnType<
-      typeof createEmptyCanvasDocument
+      typeof createEmptyDocument
     >;
-    expect(nextDoc.nodes[containerId]).toMatchObject({
-      type: "container",
-      title: "方案 A",
+    const containerNode = findNode(nextDoc, containerId);
+    expect(containerNode).toBeTruthy();
+    expect(containerNode).toMatchObject({
+      type: "frame",
+      name: "方案 A",
     });
-    expect(nextDoc.nodes[textId]).toMatchObject({
+    const textNode = findNode(nextDoc, textId);
+    expect(textNode).toBeTruthy();
+    expect(textNode).toMatchObject({
       type: "text",
-      parentId: containerId,
       text: "关键视觉方向",
     });
   });

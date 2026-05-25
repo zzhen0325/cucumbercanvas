@@ -128,7 +128,8 @@ function ImageSearchSection() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ service: 'openverse', clientId, clientSecret }),
       });
-      setTestStatus(res.ok ? 'valid' : 'invalid');
+      const data = (await res.json()) as { valid?: boolean };
+      setTestStatus(res.ok && data.valid ? 'valid' : 'invalid');
     } catch {
       setTestStatus('invalid');
     }
@@ -199,6 +200,7 @@ const PROVIDER_LABELS: Record<ImageGenProvider, string> = {
   gemini: 'Google Gemini',
   replicate: 'Replicate',
   custom: 'Custom',
+  volcengine: 'Volcengine Seedream',
 };
 
 /* ---------- Single profile editor ---------- */
@@ -211,6 +213,9 @@ function ProfileEditor({
   onUpdate: (updates: Partial<Omit<ImageGenProfile, 'id'>>) => void;
 }) {
   const [testStatus, setTestStatus] = useState<TestStatus>('idle');
+  const apiKeyLabel = profile.provider === 'volcengine' ? 'Access Key ID' : 'API Key';
+  const apiKeyPlaceholder = profile.provider === 'volcengine' ? 'AK... or leave empty to use env' : 'sk-...';
+  const canTestCredentials = profile.provider === 'volcengine' ? true : !!profile.apiKey;
 
   const handleTest = async () => {
     setTestStatus('testing');
@@ -225,7 +230,8 @@ function ProfileEditor({
           baseUrl: profile.baseUrl,
         }),
       });
-      setTestStatus(res.ok ? 'valid' : 'invalid');
+      const data = (await res.json()) as { valid?: boolean };
+      setTestStatus(res.ok && data.valid ? 'valid' : 'invalid');
     } catch {
       setTestStatus('invalid');
     }
@@ -259,12 +265,12 @@ function ProfileEditor({
         </Select>
       </FieldRow>
 
-      <FieldRow label="API Key">
+      <FieldRow label={apiKeyLabel}>
         <div className="flex items-center gap-2">
           <TextInput
             value={profile.apiKey}
             onChange={(v) => onUpdate({ apiKey: v })}
-            placeholder="sk-..."
+            placeholder={apiKeyPlaceholder}
             type="password"
             className="flex-1"
           />
@@ -274,7 +280,7 @@ function ProfileEditor({
               size="sm"
               variant="outline"
               onClick={handleTest}
-              disabled={testStatus === 'testing' || !profile.apiKey}
+              disabled={testStatus === 'testing' || !canTestCredentials}
               className="h-6 px-2.5 text-[11px]"
             >
               Test
@@ -296,7 +302,11 @@ function ProfileEditor({
           <TextInput
             value={profile.baseUrl ?? ''}
             onChange={(v) => onUpdate({ baseUrl: v || undefined })}
-            placeholder="https://api.example.com/v1"
+            placeholder={
+              profile.provider === 'volcengine'
+                ? 'https://visual.volcengineapi.com'
+                : 'https://api.example.com/v1'
+            }
           />
         </FieldRow>
       </Collapsible>

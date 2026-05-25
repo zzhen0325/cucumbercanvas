@@ -1,4 +1,5 @@
 import { defineEventHandler, readBody } from 'h3';
+import { testVolcengineCredentials } from '../../utils/volcengine-seedream';
 
 interface ImageServiceTestRequest {
   service: string;
@@ -94,6 +95,14 @@ export default defineEventHandler(async (event): Promise<ImageServiceTestRespons
             error: `Replicate models request failed (${res.status}): ${text}`,
           };
         }
+        return { valid: true };
+      }
+
+      case 'volcengine': {
+        await testVolcengineCredentials({
+          accessKeyId: apiKey?.trim() || undefined,
+          baseUrl,
+        });
         return { valid: true };
       }
 

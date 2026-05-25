@@ -101,13 +101,13 @@ describe('TemplateRegistry', () => {
     const containers = containerManager.getAllContainers();
     expect(containers).toHaveLength(2);
 
-    const promptGen = containers.find(c => c.style?.label === 'Prompt Generator');
+    const promptGen = containers.find(c => c.title === 'Prompt Generator');
     expect(promptGen).toBeDefined();
     expect(promptGen!.bounds.x).toBe(100);
     expect(promptGen!.ioPorts).toHaveLength(2);
     expect(promptGen!.agentBinding?.agentType).toBe('composer');
 
-    const imgRenderer = containers.find(c => c.style?.label === 'Image Renderer');
+    const imgRenderer = containers.find(c => c.title === 'Image Renderer');
     expect(imgRenderer).toBeDefined();
     expect(imgRenderer!.bounds.x).toBe(500);
     expect(imgRenderer!.ioPorts).toHaveLength(2);

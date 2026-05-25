@@ -129,17 +129,8 @@ export const projectSummarySchema = z.object({
   updatedAt: timestampSchema,
 });
 
-export const canvasContentSchema = z
-  .object({
-    schemaVersion: z.literal("cucumber-canvas-v1"),
-    nodes: z.record(z.unknown()),
-    rootNodeIds: z.array(z.string()),
-    assets: z.record(z.unknown()),
-    viewport: z.record(z.unknown()),
-    selection: z.array(z.string()).optional(),
-    updatedAt: z.string().optional(),
-  })
-  .passthrough();
+/** PenDocument-based canvas content — any object shape is accepted. */
+export const canvasContentSchema = z.object({}).passthrough();
 
 export const canvasDetailSchema = z.object({
   id: canvasIdSchema,

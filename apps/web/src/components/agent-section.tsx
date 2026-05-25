@@ -3,8 +3,10 @@
 import type { ModelInfo } from "@cucumber/shared";
 import { useEffect, useState } from "react";
 
+import { AgentProviderSection } from "./agent-provider-section";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
+import { Separator } from "./ui/separator";
 
 interface AgentSectionProps {
   defaultModel: string;
@@ -105,6 +107,10 @@ export function AgentSection({
           {saving ? "Saving..." : "Save"}
         </Button>
       </form>
+
+      <Separator className="my-6" />
+
+      <AgentProviderSection />
     </div>
   );
 }

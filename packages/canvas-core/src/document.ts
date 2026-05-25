@@ -1,90 +1,139 @@
-import {
-  CUCUMBER_CANVAS_SCHEMA_VERSION,
-  type CanvasBounds,
-  type CanvasNode,
-  type CucumberCanvasDocument,
-} from "./types.js";
+import type { PenDocument, PenNode, PenPage } from '@cucumber/pen-types';
+import type { CanvasBounds, CanvasViewport } from './types.js';
 
 let idCounter = 0;
 
-export function createCanvasNodeId(prefix = "node"): string {
+export function createNodeId(prefix = 'node'): string {
   idCounter += 1;
   return `${prefix}_${Date.now().toString(36)}_${idCounter.toString(36)}`;
 }
 
-export function createEmptyCanvasDocument(): CucumberCanvasDocument {
+/** @deprecated Use createNodeId */
+export const createCanvasNodeId = createNodeId;
+
+export function createEmptyDocument(name?: string): PenDocument {
+  const defaultPage: PenPage = {
+    id: 'page-default',
+    name: 'Page 1',
+    children: [],
+  };
   return {
-    schemaVersion: CUCUMBER_CANVAS_SCHEMA_VERSION,
-    nodes: {},
-    rootNodeIds: [],
-    assets: {},
-    viewport: {
-      x: 0,
-      y: 0,
-      zoom: 1,
-      backgroundColor: "#ffffff",
-    },
-    selection: [],
-    updatedAt: new Date().toISOString(),
+    version: '1.0.0',
+    name: name ?? 'Untitled',
+    pages: [defaultPage],
+    children: [],
   };
 }
 
-export function isCucumberCanvasDocument(
-  value: unknown,
-): value is CucumberCanvasDocument {
-  if (!value || typeof value !== "object") return false;
-  const doc = value as {
-    schemaVersion?: unknown;
-    nodes?: unknown;
-    rootNodeIds?: unknown;
-  };
-  return (
-    doc.schemaVersion === CUCUMBER_CANVAS_SCHEMA_VERSION &&
-    typeof doc.nodes === "object" &&
-    doc.nodes !== null &&
-    Array.isArray(doc.rootNodeIds)
-  );
+export function getActivePage(doc: PenDocument): PenPage {
+  if (doc.pages && doc.pages.length > 0) {
+    return doc.pages[0]!;
+  }
+  return { id: 'page-default', name: 'Page 1', children: doc.children };
 }
 
-export function normalizeCanvasDocument(
-  value: unknown,
-): CucumberCanvasDocument {
-  if (isCucumberCanvasDocument(value)) {
+export function getActiveChildren(doc: PenDocument): PenNode[] {
+  return getActivePage(doc).children;
+}
+
+export function setActiveChildren(doc: PenDocument, children: PenNode[]): PenDocument {
+  const page = getActivePage(doc);
+  if (doc.pages && doc.pages.length > 0) {
     return {
-      ...value,
-      viewport: {
-        x: value.viewport?.x ?? 0,
-        y: value.viewport?.y ?? 0,
-        zoom: value.viewport?.zoom ?? 1,
-        backgroundColor: value.viewport?.backgroundColor ?? "#ffffff",
-      },
-      assets: value.assets ?? {},
-      selection: value.selection ?? [],
+      ...doc,
+      pages: doc.pages.map((p) =>
+        p.id === page.id ? { ...p, children } : p,
+      ),
     };
   }
-  return createEmptyCanvasDocument();
+  return { ...doc, children };
 }
 
-export function getNodeChildren(
-  doc: CucumberCanvasDocument,
-  parentId: string | null,
-): CanvasNode[] {
-  if (parentId === null) {
-    return doc.rootNodeIds
-      .map((id) => doc.nodes[id])
-      .filter(Boolean) as CanvasNode[];
+/** BFS search for a node by ID in the document tree */
+export function findNode(doc: PenDocument, nodeId: string): PenNode | undefined {
+  const children = getActiveChildren(doc);
+  return findNodeInList(children, nodeId);
+}
+
+export function findNodeInList(nodes: PenNode[], nodeId: string): PenNode | undefined {
+  for (const node of nodes) {
+    if (node.id === nodeId) return node;
+    if ('children' in node && Array.isArray(node.children)) {
+      const found = findNodeInList(node.children as PenNode[], nodeId);
+      if (found) return found;
+    }
   }
-  const parent = doc.nodes[parentId];
-  if (!parent || !("childrenOrder" in parent)) return [];
-  return parent.childrenOrder
-    .map((id) => doc.nodes[id])
-    .filter(Boolean) as CanvasNode[];
+  return undefined;
 }
 
-export function isBoundsInside(
-  inner: CanvasBounds,
-  outer: CanvasBounds,
-): boolean {
+/** Find parent node of a given node ID */
+export function findParent(doc: PenDocument, nodeId: string): PenNode | undefined {
+  const children = getActiveChildren(doc);
+  return findParentInList(children, nodeId);
+}
+
+export function findParentInList(nodes: PenNode[], nodeId: string): PenNode | undefined {
+  for (const node of nodes) {
+    if ('children' in node && Array.isArray(node.children)) {
+      const childList = node.children as PenNode[];
+      if (childList.some((c) => c.id === nodeId)) return node;
+      const found = findParentInList(childList, nodeId);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
+/** Check if candidateId is a descendant of ancestorId */
+export function isDescendantOf(doc: PenDocument, nodeId: string, ancestorId: string): boolean {
+  let current = findParent(doc, nodeId);
+  while (current) {
+    if (current.id === ancestorId) return true;
+    current = findParent(doc, current.id);
+  }
+  return false;
+}
+
+/** Flatten the document tree into a flat array (depth-first) */
+export function flattenNodes(doc: PenDocument): PenNode[] {
+  const result: PenNode[] = [];
+  const walk = (nodes: PenNode[]) => {
+    for (const node of nodes) {
+      result.push(node);
+      if ('children' in node && Array.isArray(node.children)) {
+        walk(node.children as PenNode[]);
+      }
+    }
+  };
+  walk(getActiveChildren(doc));
+  return result;
+}
+
+/** Get children of a container node */
+export function getNodeChildren(doc: PenDocument, nodeId: string | null): PenNode[] {
+  if (nodeId === null) return getActiveChildren(doc);
+  const node = findNode(doc, nodeId);
+  if (!node || !('children' in node) || !Array.isArray(node.children)) return [];
+  return node.children as PenNode[];
+}
+
+export function getNodeBounds(node: PenNode): CanvasBounds {
+  const x = node.x ?? 0;
+  const y = node.y ?? 0;
+  let width = 100;
+  let height = 100;
+  if ('width' in node) {
+    const w = (node as any).width;
+    width = typeof w === 'number' ? w : 100;
+  }
+  if ('height' in node) {
+    const h = (node as any).height;
+    height = typeof h === 'number' ? h : 100;
+  }
+  return { x, y, width, height, rotation: node.rotation };
+}
+
+export function isBoundsInside(inner: CanvasBounds, outer: CanvasBounds): boolean {
   return (
     inner.x >= outer.x &&
     inner.y >= outer.y &&
@@ -93,20 +142,17 @@ export function isBoundsInside(
   );
 }
 
-export function cloneCanvasDocument(
-  doc: CucumberCanvasDocument,
-): CucumberCanvasDocument {
-  return {
-    ...doc,
-    nodes: Object.fromEntries(
-      Object.entries(doc.nodes).map(([id, node]) => [
-        id,
-        structuredClone(node),
-      ]),
-    ),
-    assets: structuredClone(doc.assets),
-    rootNodeIds: [...doc.rootNodeIds],
-    viewport: { ...doc.viewport },
-    selection: [...(doc.selection ?? [])],
-  };
+export function cloneDocument(doc: PenDocument): PenDocument {
+  return structuredClone(doc);
+}
+
+/** @deprecated Use cloneDocument */
+export const cloneCanvasDocument = cloneDocument;
+
+// ---------------------------------------------------------------------------
+// Default viewport
+// ---------------------------------------------------------------------------
+
+export function defaultViewport(): CanvasViewport {
+  return { x: 0, y: 0, zoom: 1, backgroundColor: '#ffffff' };
 }

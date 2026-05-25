@@ -1,4 +1,4 @@
-import { TypedEventEmitter } from '@cucumber/engine';
+import { TypedEventEmitter } from '@cucumber/pen-engine';
 
 export interface ThrottlerConfig {
   maxConcurrent: number;

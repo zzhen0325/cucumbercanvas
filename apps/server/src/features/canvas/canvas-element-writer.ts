@@ -2,10 +2,16 @@
 
 import {
   type CucumberCanvasDocument,
+  type PenDocument,
+  type PenNode,
   applyCanvasOperation,
   createEmptyCanvasDocument,
   createCanvasNodeId,
   isCucumberCanvasDocument,
+  isContainerNode,
+  findNode,
+  flattenNodes,
+  getNodeBounds,
 } from "@cucumber/canvas-core";
 import type { Json } from "@cucumber/shared";
 
@@ -623,18 +629,19 @@ function buildVideoElement(
 function inferCucumberInsertContainerId(
   doc: CucumberCanvasDocument,
 ): string | null {
-  const boundWritableContainers = Object.values(doc.nodes).filter(
+  const allNodes = flattenNodes(doc);
+  const boundWritableContainers = allNodes.filter(
     (node) =>
-      node.type === "container" &&
+      isContainerNode(node) &&
       Boolean(node.agentBinding?.permissions?.includes("write")),
   );
   if (boundWritableContainers.length === 1) {
     return boundWritableContainers[0]!.id;
   }
 
-  const openContainers = Object.values(doc.nodes).filter(
+  const openContainers = allNodes.filter(
     (node) =>
-      node.type === "container" && node.permissions?.isolationLevel === "open",
+      isContainerNode(node) && node.permissions?.isolationLevel === "open",
   );
   if (openContainers.length === 1) {
     return openContainers[0]!.id;
@@ -658,13 +665,14 @@ function resolveCucumberPlacement(
 
   const containerId = inferCucumberInsertContainerId(doc);
   if (containerId) {
-    const container = doc.nodes[containerId];
-    if (container?.type === "container") {
+    const container = findNode(doc, containerId);
+    if (container && isContainerNode(container)) {
+      const cb = getNodeBounds(container);
       return {
         containerId,
         placement: {
-          x: container.bounds.x + 24,
-          y: container.bounds.y + 32,
+          x: cb.x + 24,
+          y: cb.y + 32,
           width,
           height,
         },
@@ -672,13 +680,16 @@ function resolveCucumberPlacement(
     }
   }
 
-  const nodeBoxes = Object.values(doc.nodes).map((node) => ({
-    x: node.bounds.x,
-    y: node.bounds.y,
-    width: node.bounds.width,
-    height: node.bounds.height,
-    isDeleted: false,
-  }));
+  const nodeBoxes = flattenNodes(doc).map((node) => {
+    const b = getNodeBounds(node);
+    return {
+      x: b.x,
+      y: b.y,
+      width: b.width,
+      height: b.height,
+      isDeleted: false,
+    };
+  });
   return {
     containerId: null,
     placement: calculateAutoPlacement(nodeBoxes, width, height, IMAGE_MAX_SIZE),
@@ -975,14 +986,16 @@ export async function insertImageElement(
     type: "insertNode",
     node: {
       id: nodeId,
-      type: "image",
-      parentId: containerId,
-      bounds: placement,
-      title: opts.title ?? "Generated image",
+      type: "image" as const,
+      x: placement.x,
+      y: placement.y,
+      width: placement.width,
+      height: placement.height,
+      name: opts.title ?? "Generated image",
       assetId,
       src: dataURL,
       meta: { source: "generated" },
-    },
+    } as PenNode,
     ...(containerId ? { containerId } : {}),
   });
 
@@ -1017,15 +1030,17 @@ export async function insertVideoElement(
     type: "insertNode",
     node: {
       id: nodeId,
-      type: "videoEmbed",
-      parentId: containerId,
-      bounds: placement,
-      title: opts.title ?? "Generated video",
+      type: "videoEmbed" as const,
+      x: placement.x,
+      y: placement.y,
+      width: placement.width,
+      height: placement.height,
+      name: opts.title ?? "Generated video",
       src: opts.signedUrl,
       mimeType: opts.mimeType,
       durationSeconds: opts.durationSeconds,
       meta: { source: "generated" },
-    },
+    } as PenNode,
     ...(containerId ? { containerId } : {}),
   });
 

@@ -2,45 +2,38 @@ import { tool } from "langchain";
 import { z } from "zod";
 import {
   type CanvasBounds,
-  type CanvasNode as CucumberCanvasNode,
-  type ContainerNode,
-  type CucumberCanvasDocument,
+  type PenNode,
+  type PenDocument,
+  type ContainerRole,
+  type PenPathAnchor,
+  type PenFill,
   CanvasOperationError,
   applyCanvasOperation,
   assertAgentCanWrite,
-  cloneCanvasDocument,
-  createCanvasNodeId,
+  cloneDocument,
+  createNodeId,
   isContainerNode,
+  findNode,
+  findParent,
+  flattenNodes,
+  getNodeBounds,
+  groupNodesInDoc,
+  ungroupNodeInDoc,
 } from "@cucumber/canvas-core";
 import {
-  CanvasElement,
-  HandlerResult,
-  generateId,
   measureTextWidth,
   coerceColor,
-  createElementBase,
-  bumpVersion,
-  findElement,
-  shortLabel,
-  ensureBoundElements,
-  validateBindings,
-  BINDING_GAP,
-  getElementCenter,
-  computeEdgePoint,
-  computeFixedPoint,
 } from "./canvas-element-helpers.js";
+import { executeBooleanOp, type BooleanOpType } from "@cucumber/pen-core";
+import { anchorsToPathData } from "@cucumber/pen-core";
 import type { LiveCanvasService } from "../../features/canvas/live-canvas-service.js";
 
 // Re-export for consumers that import measureTextWidth from this module
-// (e.g. the test suite). New code should import directly from canvas-element-helpers.
 export { measureTextWidth } from "./canvas-element-helpers.js";
 
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
-
-// Note: color coercion (number → hex string) moved to runtime handler.
-// Gemini cannot represent z.preprocess/z.transform in JSON Schema.
 
 const labelSchema = z
   .object({
@@ -51,18 +44,20 @@ const labelSchema = z
   .optional()
   .describe("Optional centered text label inside the shape");
 
-// Flat object schema — Gemini doesn't support union/oneOf/anyOf in tool params.
-// All fields are optional; which ones are required depends on `action`.
 const operationSchema = z.object({
   action: z
     .enum([
       "move", "resize", "delete", "update_style",
       "add_container", "add_text", "add_shape", "add_line",
+      "add_path",
       "reorder", "align", "distribute", "update_text",
+      "group", "ungroup", "duplicate", "rotate",
+      "edit_path", "boolean_ops",
+      "gradient_fill", "effects", "auto_layout",
+      "lock", "unlock", "flip",
     ])
     .describe("The operation to perform"),
 
-  // Common: target element ID (move, resize, delete, update_style, reorder)
   element_id: z.string().optional().describe("ID of element to operate on"),
   container_id: z
     .string()
@@ -71,13 +66,11 @@ const operationSchema = z.object({
       "Optional target container ID for new Cucumber canvas operations. Useful when multiple agent-bound containers exist.",
     ),
 
-  // Position / size
   x: z.number().optional().describe("X coordinate"),
   y: z.number().optional().describe("Y coordinate"),
   width: z.number().optional().describe("Width"),
   height: z.number().optional().describe("Height"),
 
-  // Style (update_style, add_shape, add_line, add_text)
   strokeColor: z.string().optional().describe("Stroke/text color hex, e.g. #FF0000"),
   backgroundColor: z.string().optional().describe("Fill color hex"),
   opacity: z.number().optional().describe("Opacity 0-100"),
@@ -85,15 +78,12 @@ const operationSchema = z.object({
   strokeWidth: z.number().optional().describe("Stroke width"),
   fillStyle: z.enum(["solid", "hachure", "cross-hatch"]).optional().describe("Fill style"),
 
-  // add_text / update_text
   text: z.string().optional().describe("Text content (add_text / update_text)"),
   title: z.string().optional().describe("Container or node title"),
 
-  // add_shape
   shape: z.enum(["rectangle", "ellipse", "diamond"]).optional().describe("Shape type (add_shape)"),
   label: labelSchema,
 
-  // add_line
   line_type: z.enum(["line", "arrow"]).optional().describe("Line or arrow (add_line)"),
   points: z
     .array(z.object({ x: z.number(), y: z.number() }))
@@ -102,16 +92,67 @@ const operationSchema = z.object({
   start_element_id: z.string().optional().describe("Bind arrow start to this element ID"),
   end_element_id: z.string().optional().describe("Bind arrow end to this element ID"),
 
-  // reorder
   position: z.enum(["front", "back"]).optional().describe("Bring to front or send to back (reorder)"),
 
-  // align / distribute
   element_ids: z.array(z.string()).optional().describe("IDs of elements (align/distribute)"),
   alignment: z
     .enum(["left", "right", "center", "top", "bottom", "middle"])
     .optional()
     .describe("Alignment direction (align)"),
   direction: z.enum(["horizontal", "vertical"]).optional().describe("Distribution direction (distribute)"),
+
+  // -- new actions (group/ungroup/duplicate/rotate/path/boolean/gradient/effects/layout) --
+  node_ids: z.array(z.string()).optional().describe("IDs for group/ungroup/duplicate"),
+  angle: z.number().optional().describe("Rotation angle in degrees (rotate)"),
+  path_d: z.string().optional().describe("SVG path data string (add_path)"),
+  anchors: z
+    .array(z.object({
+      x: z.number(), y: z.number(),
+      handleIn: z.object({ x: z.number(), y: z.number() }).optional(),
+      handleOut: z.object({ x: z.number(), y: z.number() }).optional(),
+      pointType: z.enum(["corner", "mirrored", "independent"]).optional(),
+    }))
+    .optional()
+    .describe("Path anchor points (add_path / edit_path)"),
+  closed: z.boolean().optional().describe("Whether the path is closed (add_path)"),
+
+  source_id: z.string().optional().describe("Source element ID (boolean_ops)"),
+  boolean_operation: z.enum(["union", "subtract", "intersect"]).optional().describe("Boolean operation type"),
+
+  gradient_type: z.enum(["linear_gradient", "radial_gradient"]).optional().describe("Gradient type (gradient_fill)"),
+  gradient_angle: z.number().optional().describe("Gradient angle in degrees (gradient_fill, linear only)"),
+  stops: z
+    .array(z.object({ offset: z.number(), color: z.string() }))
+    .optional()
+    .describe("Gradient color stops (gradient_fill)"),
+
+  shadow: z
+    .object({
+      offsetX: z.number().default(0),
+      offsetY: z.number().default(4),
+      blur: z.number().default(8),
+      spread: z.number().default(0),
+      color: z.string().default("#00000040"),
+      inner: z.boolean().default(false),
+    })
+    .nullable()
+    .optional()
+    .describe("Shadow effect config, or null to remove (effects)"),
+  blur: z.number().nullable().optional().describe("Blur radius, or null to remove (effects)"),
+
+  layout_direction: z.enum(["vertical", "horizontal"]).optional().describe("Auto layout direction"),
+  gap: z.number().optional().describe("Auto layout gap between children"),
+  padding: z.union([z.number(), z.array(z.number())]).optional().describe("Auto layout padding"),
+  justifyContent: z.enum(["start", "center", "end", "space_between"]).optional().describe("Auto layout main-axis alignment"),
+  alignItems: z.enum(["start", "center", "end"]).optional().describe("Auto layout cross-axis alignment"),
+  sizing_width: z.union([z.number(), z.enum(["fit_content", "fill_container"])]).optional().describe("Auto layout width sizing"),
+  sizing_height: z.union([z.number(), z.enum(["fit_content", "fill_container"])]).optional().describe("Auto layout height sizing"),
+
+  flip_horizontal: z.boolean().optional().describe("Flip horizontally"),
+  flip_vertical: z.boolean().optional().describe("Flip vertically"),
+
+  offset_x: z.number().optional().describe("X offset for duplicated nodes"),
+  offset_y: z.number().optional().describe("Y offset for duplicated nodes"),
 });
 
 const manipulateCanvasSchema = z.object({
@@ -121,606 +162,7 @@ const manipulateCanvasSchema = z.object({
     .describe("List of operations to apply"),
 });
 
-// Flat operation type — all fields optional except `action`.
 type Operation = z.infer<typeof operationSchema>;
-
-// ---------------------------------------------------------------------------
-// Operation handlers
-// ---------------------------------------------------------------------------
-
-function applyMove(
-  elements: CanvasElement[],
-  op: Operation,
-): HandlerResult {
-  const el = findElement(elements, op.element_id!);
-  if (!el) return { description: `[skip] element ${op.element_id} not found` };
-  el.x = op.x;
-  el.y = op.y;
-  bumpVersion(el);
-  return { description: `moved ${shortLabel(el)} to (${op.x}, ${op.y})` };
-}
-
-function applyResize(
-  elements: CanvasElement[],
-  op: Operation,
-): HandlerResult {
-  const el = findElement(elements, op.element_id!);
-  if (!el) return { description: `[skip] element ${op.element_id} not found` };
-  el.width = op.width;
-  el.height = op.height;
-  bumpVersion(el);
-  return {
-    description: `resized ${shortLabel(el)} to ${op.width}x${op.height}`,
-  };
-}
-
-/**
- * Delete an element with full cascade:
- * - Marks the target as deleted
- * - Cascades deletion to bound text elements (label cleanup)
- * - Clears startBinding / endBinding on arrows pointing to deleted element
- */
-function applyDelete(
-  elements: CanvasElement[],
-  op: Operation,
-): HandlerResult {
-  const el = findElement(elements, op.element_id!);
-  if (!el) return { description: `[skip] element ${op.element_id} not found` };
-  el.isDeleted = true;
-  bumpVersion(el);
-
-  const cascaded: string[] = [];
-
-  // Cascade to bound text children (labels)
-  if (Array.isArray(el.boundElements)) {
-    for (const bound of el.boundElements as Array<{ type: string; id: string }>) {
-      if (bound.type === "text") {
-        const textEl = findElement(elements, bound.id);
-        if (textEl) {
-          textEl.isDeleted = true;
-          bumpVersion(textEl);
-          cascaded.push(`text(${bound.id})`);
-        }
-      }
-    }
-  }
-
-  // Clean up arrow bindings pointing at the deleted element
-  for (const other of elements) {
-    if (other.isDeleted) continue;
-    const startBinding = other.startBinding as { elementId: string } | null;
-    const endBinding = other.endBinding as { elementId: string } | null;
-    if (startBinding?.elementId === op.element_id) {
-      other.startBinding = null;
-      bumpVersion(other);
-    }
-    if (endBinding?.elementId === op.element_id) {
-      other.endBinding = null;
-      bumpVersion(other);
-    }
-  }
-
-  const cascadeInfo = cascaded.length > 0 ? ` (cascaded: ${cascaded.join(", ")})` : "";
-  return { description: `deleted ${shortLabel(el)}${cascadeInfo}` };
-}
-
-function applyUpdateStyle(
-  elements: CanvasElement[],
-  op: Operation,
-): HandlerResult {
-  const el = findElement(elements, op.element_id!);
-  if (!el) return { description: `[skip] element ${op.element_id} not found` };
-
-  const applied: string[] = [];
-  const props = [
-    "strokeColor",
-    "backgroundColor",
-    "opacity",
-    "fontSize",
-    "strokeWidth",
-  ] as const;
-  for (const key of props) {
-    if (op[key] !== undefined) {
-      el[key] = op[key];
-      applied.push(key);
-    }
-  }
-  bumpVersion(el);
-  return {
-    description: `updated ${shortLabel(el)} style: ${applied.join(", ")}`,
-  };
-}
-
-function applyAddText(
-  elements: CanvasElement[],
-  op: Operation,
-): HandlerResult {
-  const id = generateId();
-  const el: CanvasElement = {
-    ...createElementBase(),
-    id,
-    type: "text",
-    text: op.text!,
-    x: op.x,
-    y: op.y,
-    width: measureTextWidth(op.text!, op.fontSize ?? 20),
-    height: (op.fontSize ?? 20) * 1.25,
-    fontSize: op.fontSize ?? 20,
-    fontFamily: 1,
-    textAlign: "left",
-    verticalAlign: "top",
-    strokeColor: op.strokeColor ?? "#000000",
-    containerId: null,
-    originalText: op.text!,
-    autoResize: true,
-    lineHeight: 1.25,
-  };
-  elements.push(el);
-  const short =
-    op.text!.length > 20 ? op.text!.slice(0, 17) + "..." : op.text!;
-  return {
-    description: `added text '${short}' at (${op.x}, ${op.y}) [id=${id}]`,
-    createdId: id,
-  };
-}
-
-/**
- * Update the text content of a standalone text element or a shape's label.
- * Resizes the text element and expands the container if needed.
- */
-function applyUpdateText(
-  elements: CanvasElement[],
-  op: Operation,
-): HandlerResult {
-  const el = findElement(elements, op.element_id!);
-  if (!el) return { description: `[skip] element ${op.element_id} not found` };
-
-  let textEl: CanvasElement | undefined;
-  if (el.type === "text") {
-    textEl = el;
-  } else if (Array.isArray(el.boundElements)) {
-    const boundText = (el.boundElements as Array<{ type: string; id: string }>).find(
-      (b) => b.type === "text",
-    );
-    if (boundText) textEl = findElement(elements, boundText.id);
-  }
-
-  if (!textEl) return { description: `[skip] no text found for element ${op.element_id}` };
-
-  const newText = op.text!;
-  const fontSize = (op.fontSize ?? textEl.fontSize ?? 20) as number;
-  textEl.text = newText;
-  textEl.originalText = newText;
-
-  const lines = newText.split("\n");
-  const textWidth = Math.max(...lines.map((l) => measureTextWidth(l, fontSize)));
-  const textHeight = lines.length * fontSize * 1.25;
-  textEl.width = textWidth;
-  textEl.height = textHeight;
-
-  if (op.fontSize !== undefined) textEl.fontSize = fontSize;
-  bumpVersion(textEl);
-
-  // Expand container if text no longer fits
-  const containerId = textEl.containerId as string | null;
-  if (containerId) {
-    const container = findElement(elements, containerId);
-    if (container) {
-      const paddingX = Math.max(fontSize * 1.5, 30);
-      const paddingY = Math.max(fontSize * 1.2, 24);
-      const minWidth = textWidth + paddingX * 2;
-      const minHeight = textHeight + paddingY * 2;
-      let resized = false;
-      if ((Number(container.width) || 0) < minWidth) { container.width = minWidth; resized = true; }
-      if ((Number(container.height) || 0) < minHeight) { container.height = minHeight; resized = true; }
-      if (resized) {
-        // Re-center text within the (possibly expanded) container
-        textEl.x = Number(container.x) + (Number(container.width) - textWidth) / 2;
-        textEl.y = Number(container.y) + (Number(container.height) - textHeight) / 2;
-        bumpVersion(container);
-      }
-    }
-  }
-
-  const short = newText.length > 20 ? newText.slice(0, 17) + "..." : newText;
-  return { description: `updated text to '${short}' on ${op.element_id}` };
-}
-
-/**
- * Add a shape with optional centered label.
- * Uses proportional padding based on fontSize to ensure text never overflows.
- * Enforces absolute minimum sizes per shape type.
- */
-function applyAddShape(
-  elements: CanvasElement[],
-  op: Operation,
-): HandlerResult {
-  const shapeId = generateId();
-  const el: CanvasElement = {
-    ...createElementBase(),
-    id: shapeId,
-    type: op.shape,
-    x: op.x,
-    y: op.y,
-    width: op.width,
-    height: op.height,
-    strokeColor: coerceColor(op.strokeColor, "#000000"),
-    backgroundColor: coerceColor(op.backgroundColor, "transparent"),
-    fillStyle: op.fillStyle ?? "solid",
-  };
-
-  if (op.label) {
-    const textId = generateId();
-    const fontSize = op.label.fontSize;
-
-    // For multi-line labels, measure the longest line and compute total height
-    const lines = op.label.text.split("\n");
-    const textWidth = Math.max(...lines.map((l) => measureTextWidth(l, fontSize)));
-    const textHeight = lines.length * fontSize * 1.25;
-
-    // Proportional padding — scales with font size to avoid overflow at any size
-    const paddingX = Math.max(fontSize * 1.5, 30);
-    const paddingY = Math.max(fontSize * 1.2, 24);
-    const minWidth = textWidth + paddingX * 2;
-    const minHeight = textHeight + paddingY * 2;
-
-    // Enforce minimum shape size so text never overflows, plus absolute floor
-    el.width = Math.max(Number(el.width) || 0, minWidth, 120);
-    el.height = Math.max(Number(el.height) || 0, minHeight, 60);
-
-    // Bind text to shape
-    ensureBoundElements(el).push({ type: "text", id: textId });
-
-    const textEl: CanvasElement = {
-      ...createElementBase(),
-      id: textId,
-      type: "text",
-      text: op.label.text,
-      originalText: op.label.text,
-      x: Number(el.x) + (Number(el.width) - textWidth) / 2,
-      y: Number(el.y) + (Number(el.height) - textHeight) / 2,
-      width: textWidth,
-      height: textHeight,
-      fontSize,
-      fontFamily: 1,
-      textAlign: "center",
-      verticalAlign: "middle",
-      strokeColor: coerceColor(op.label.strokeColor, "#000000"),
-      containerId: shapeId,
-      autoResize: true,
-      lineHeight: 1.25,
-    };
-
-    elements.push(el);
-    elements.push(textEl);
-
-    const short =
-      op.label.text.length > 20
-        ? op.label.text.slice(0, 17) + "..."
-        : op.label.text;
-    return {
-      description: `added ${op.shape} ${el.width}x${el.height} with label '${short}' at (${op.x}, ${op.y}) [id=${shapeId}]`,
-      createdId: shapeId,
-    };
-  }
-
-  // No label — enforce minimum sizes per shape type
-  const shapeType = op.shape as string;
-  if (shapeType === "ellipse") {
-    el.width = Math.max(Number(el.width) || 0, 140);
-    el.height = Math.max(Number(el.height) || 0, 70);
-  } else {
-    el.width = Math.max(Number(el.width) || 0, 120);
-    el.height = Math.max(Number(el.height) || 0, 60);
-  }
-
-  elements.push(el);
-  return {
-    description: `added ${op.shape} ${el.width}x${el.height} at (${op.x}, ${op.y}) [id=${shapeId}]`,
-    createdId: shapeId,
-  };
-}
-
-function applyAddLine(
-  elements: CanvasElement[],
-  op: Operation,
-): HandlerResult {
-  const hasBinding = op.start_element_id || op.end_element_id;
-
-  if (hasBinding) {
-    return applyAddBoundLine(elements, op);
-  }
-
-  // Non-binding path: points are required
-  if (!op.points || op.points.length < 2) {
-    return {
-      description:
-        "[skip] add_line without bindings requires points (>= 2)",
-    };
-  }
-
-  // Auto-derive origin from first point if x/y not provided.
-  // Excalidraw stores points relative to the element's x/y origin.
-  const originX = op.x ?? op.points[0]!.x;
-  const originY = op.y ?? op.points[0]!.y;
-  const excalidrawPoints = op.points.map((p) => [p.x - originX, p.y - originY]);
-
-  const relXs = excalidrawPoints.map((p) => p[0]!);
-  const relYs = excalidrawPoints.map((p) => p[1]!);
-  const width = Math.abs(Math.max(...relXs) - Math.min(...relXs));
-  const height = Math.abs(Math.max(...relYs) - Math.min(...relYs));
-
-  const arrowId = generateId();
-  const el: CanvasElement = {
-    ...createElementBase(),
-    id: arrowId,
-    type: op.line_type ?? "arrow",
-    x: originX,
-    y: originY,
-    width,
-    height,
-    points: excalidrawPoints,
-    strokeColor: coerceColor(op.strokeColor, "#000000"),
-    strokeWidth: op.strokeWidth ?? 2,
-    lastCommittedPoint: excalidrawPoints[excalidrawPoints.length - 1],
-    startBinding: null,
-    endBinding: null,
-    startArrowhead: null,
-    endArrowhead: op.line_type === "arrow" ? "arrow" : null,
-  };
-  elements.push(el);
-  return {
-    description: `added ${op.line_type} with ${op.points.length} points at (${originX}, ${originY}) [id=${arrowId}]`,
-    createdId: arrowId,
-  };
-}
-
-/**
- * Add an arrow/line with element bindings.
- * Uses computeFixedPoint to set stable fixedPoint values so Excalidraw does
- * not recompute endpoints when bound shapes are resized.
- */
-function applyAddBoundLine(
-  elements: CanvasElement[],
-  op: Operation,
-): HandlerResult {
-  const startEl = op.start_element_id
-    ? findElement(elements, op.start_element_id)
-    : null;
-  const endEl = op.end_element_id
-    ? findElement(elements, op.end_element_id)
-    : null;
-
-  if (op.start_element_id && !startEl) {
-    return {
-      description: `[skip] start element ${op.start_element_id} not found`,
-    };
-  }
-  if (op.end_element_id && !endEl) {
-    return {
-      description: `[skip] end element ${op.end_element_id} not found`,
-    };
-  }
-
-  const startCenter = startEl
-    ? getElementCenter(startEl)
-    : { cx: op.x ?? 0, cy: op.y ?? 0 };
-  const endCenter = endEl
-    ? getElementCenter(endEl)
-    : { cx: (op.x ?? 0) + 100, cy: op.y ?? 0 };
-
-  const startPoint = startEl
-    ? computeEdgePoint(startEl, { x: endCenter.cx, y: endCenter.cy })
-    : { x: startCenter.cx, y: startCenter.cy };
-
-  const endPoint = endEl
-    ? computeEdgePoint(endEl, { x: startCenter.cx, y: startCenter.cy })
-    : { x: endCenter.cx, y: endCenter.cy };
-
-  const arrowId = generateId();
-  const relEnd = {
-    x: endPoint.x - startPoint.x,
-    y: endPoint.y - startPoint.y,
-  };
-
-  let startBinding: unknown = null;
-  let endBinding: unknown = null;
-
-  if (startEl) {
-    const fixedPoint = endEl
-      ? computeFixedPoint(startEl, endEl)
-      : [1, 0.5] as [number, number];
-    startBinding = {
-      elementId: op.start_element_id,
-      focus: 0,
-      gap: BINDING_GAP,
-      fixedPoint,
-    };
-    ensureBoundElements(startEl).push({ type: "arrow", id: arrowId });
-    bumpVersion(startEl);
-  }
-
-  if (endEl) {
-    const fixedPoint = startEl
-      ? computeFixedPoint(endEl, startEl)
-      : [0, 0.5] as [number, number];
-    endBinding = {
-      elementId: op.end_element_id,
-      focus: 0,
-      gap: BINDING_GAP,
-      fixedPoint,
-    };
-    ensureBoundElements(endEl).push({ type: "arrow", id: arrowId });
-    bumpVersion(endEl);
-  }
-
-  const el: CanvasElement = {
-    ...createElementBase(),
-    id: arrowId,
-    type: op.line_type ?? "arrow",
-    x: startPoint.x,
-    y: startPoint.y,
-    width: Math.abs(relEnd.x),
-    height: Math.abs(relEnd.y),
-    points: [
-      [0, 0],
-      [relEnd.x, relEnd.y],
-    ],
-    strokeColor: coerceColor(op.strokeColor, "#000000"),
-    strokeWidth: op.strokeWidth ?? 2,
-    lastCommittedPoint: [relEnd.x, relEnd.y],
-    startBinding,
-    endBinding,
-    startArrowhead: null,
-    endArrowhead: op.line_type === "arrow" || !op.line_type ? "arrow" : null,
-  };
-  elements.push(el);
-
-  const fromLabel = op.start_element_id ?? "free";
-  const toLabel = op.end_element_id ?? "free";
-  return {
-    description: `added bound ${op.line_type ?? "arrow"} ${fromLabel} → ${toLabel} [id=${arrowId}]`,
-    createdId: arrowId,
-  };
-}
-
-function applyReorder(
-  elements: CanvasElement[],
-  op: Operation,
-): HandlerResult {
-  const idx = elements.findIndex(
-    (el) => el.id === op.element_id && !el.isDeleted,
-  );
-  if (idx === -1)
-    return { description: `[skip] element ${op.element_id} not found` };
-
-  const removed = elements.splice(idx, 1);
-  const el = removed[0]!;
-  if (op.position === "front") {
-    elements.push(el);
-  } else {
-    elements.unshift(el);
-  }
-  bumpVersion(el);
-  return { description: `reordered ${shortLabel(el)} to ${op.position}` };
-}
-
-function applyAlign(
-  elements: CanvasElement[],
-  op: Operation,
-): HandlerResult {
-  const targets = (op.element_ids ?? [])
-    .map((id) => findElement(elements, id))
-    .filter((el): el is CanvasElement => el !== undefined);
-
-  if (targets.length < 2) {
-    return {
-      description: `[skip] need >= 2 valid elements to align, found ${targets.length}`,
-    };
-  }
-
-  switch (op.alignment) {
-    case "left": {
-      const minX = Math.min(...targets.map((el) => Number(el.x) || 0));
-      for (const el of targets) { el.x = minX; bumpVersion(el); }
-      break;
-    }
-    case "right": {
-      const maxRight = Math.max(
-        ...targets.map((el) => (Number(el.x) || 0) + (Number(el.width) || 0)),
-      );
-      for (const el of targets) { el.x = maxRight - (Number(el.width) || 0); bumpVersion(el); }
-      break;
-    }
-    case "center": {
-      const centers = targets.map(
-        (el) => (Number(el.x) || 0) + (Number(el.width) || 0) / 2,
-      );
-      const avg = centers.reduce((a, b) => a + b, 0) / centers.length;
-      for (const el of targets) { el.x = avg - (Number(el.width) || 0) / 2; bumpVersion(el); }
-      break;
-    }
-    case "top": {
-      const minY = Math.min(...targets.map((el) => Number(el.y) || 0));
-      for (const el of targets) { el.y = minY; bumpVersion(el); }
-      break;
-    }
-    case "bottom": {
-      const maxBottom = Math.max(
-        ...targets.map((el) => (Number(el.y) || 0) + (Number(el.height) || 0)),
-      );
-      for (const el of targets) { el.y = maxBottom - (Number(el.height) || 0); bumpVersion(el); }
-      break;
-    }
-    case "middle": {
-      const middles = targets.map(
-        (el) => (Number(el.y) || 0) + (Number(el.height) || 0) / 2,
-      );
-      const avg = middles.reduce((a, b) => a + b, 0) / middles.length;
-      for (const el of targets) { el.y = avg - (Number(el.height) || 0) / 2; bumpVersion(el); }
-      break;
-    }
-  }
-
-  return {
-    description: `aligned ${targets.length} elements ${op.alignment}`,
-  };
-}
-
-function applyDistribute(
-  elements: CanvasElement[],
-  op: Operation,
-): HandlerResult {
-  const targets = (op.element_ids ?? [])
-    .map((id) => findElement(elements, id))
-    .filter((el): el is CanvasElement => el !== undefined);
-
-  if (targets.length < 3) {
-    return {
-      description: `[skip] need >= 3 valid elements to distribute, found ${targets.length}`,
-    };
-  }
-
-  if (op.direction === "horizontal") {
-    targets.sort((a, b) => (Number(a.x) || 0) - (Number(b.x) || 0));
-    const first = targets[0]!;
-    const last = targets[targets.length - 1]!;
-    const totalSpan =
-      (Number(last.x) || 0) +
-      (Number(last.width) || 0) -
-      (Number(first.x) || 0);
-    const totalWidths = targets.reduce((sum, el) => sum + (Number(el.width) || 0), 0);
-    const gap = (totalSpan - totalWidths) / (targets.length - 1);
-
-    let currentX = Number(first.x) || 0;
-    for (const el of targets) {
-      el.x = currentX;
-      bumpVersion(el);
-      currentX += (Number(el.width) || 0) + gap;
-    }
-  } else {
-    targets.sort((a, b) => (Number(a.y) || 0) - (Number(b.y) || 0));
-    const first = targets[0]!;
-    const last = targets[targets.length - 1]!;
-    const totalSpan =
-      (Number(last.y) || 0) +
-      (Number(last.height) || 0) -
-      (Number(first.y) || 0);
-    const totalHeights = targets.reduce((sum, el) => sum + (Number(el.height) || 0), 0);
-    const gap = (totalSpan - totalHeights) / (targets.length - 1);
-
-    let currentY = Number(first.y) || 0;
-    for (const el of targets) {
-      el.y = currentY;
-      bumpVersion(el);
-      currentY += (Number(el.height) || 0) + gap;
-    }
-  }
-
-  return {
-    description: `distributed ${targets.length} elements ${op.direction}ly`,
-  };
-}
 
 type ToolRuntimeConfig = {
   configurable?: {
@@ -744,8 +186,12 @@ function getConfiguredAgentId(
   return undefined;
 }
 
+// ---------------------------------------------------------------------------
+// Helpers — PenDocument tree model
+// ---------------------------------------------------------------------------
+
 function inferWritableContainerId(
-  doc: CucumberCanvasDocument,
+  doc: PenDocument,
   op: Operation,
 ): string | null {
   const referencedIds = [
@@ -757,18 +203,20 @@ function inferWritableContainerId(
   ].filter((value): value is string => typeof value === "string" && value.length > 0);
 
   for (const id of referencedIds) {
-    const node = doc.nodes[id];
+    const node = findNode(doc, id);
     if (!node) continue;
-    if (node.type === "container") {
+    if (isContainerNode(node)) {
       return node.id;
     }
-    if (node.parentId) {
-      return node.parentId;
+    const parentId = findParent(doc, (node as PenNode).id)?.id;
+    if (parentId) {
+      return parentId;
     }
   }
 
-  const boundWritableContainers = Object.values(doc.nodes).filter(
-    (node): node is ContainerNode =>
+  const allNodes = flattenNodes(doc);
+  const boundWritableContainers = allNodes.filter(
+    (node): boolean =>
       isContainerNode(node) &&
       Boolean(node.agentBinding?.permissions?.includes("write")),
   );
@@ -776,8 +224,8 @@ function inferWritableContainerId(
     return boundWritableContainers[0]!.id;
   }
 
-  const openContainers = Object.values(doc.nodes).filter(
-    (node): node is ContainerNode =>
+  const openContainers = allNodes.filter(
+    (node): boolean =>
       isContainerNode(node) &&
       node.permissions?.isolationLevel === "open",
   );
@@ -789,34 +237,35 @@ function inferWritableContainerId(
 }
 
 function ensureContainer(
-  doc: CucumberCanvasDocument,
+  doc: PenDocument,
   containerId: string | null,
-): ContainerNode {
+): PenNode {
   if (!containerId) {
     throw new CanvasOperationError(
       "permission_denied",
       "No writable container could be resolved for this operation. Bind the agent to a container or pass container_id explicitly.",
     );
   }
-  const container = doc.nodes[containerId];
+  const container = findNode(doc, containerId);
   if (!isContainerNode(container)) {
     throw new CanvasOperationError(
       "container_not_found",
       `Container ${containerId} does not exist.`,
     );
   }
-  return container;
+  return container!;
 }
 
 function defaultNodeBounds(
-  doc: CucumberCanvasDocument,
-  type: CucumberCanvasNode["type"],
+  doc: PenDocument,
+  type: string,
   containerId: string | null,
   op: Operation,
 ): CanvasBounds {
   const container = containerId ? ensureContainer(doc, containerId) : null;
-  const baseX = op.x ?? (container ? container.bounds.x + 24 : 120);
-  const baseY = op.y ?? (container ? container.bounds.y + 32 : 120);
+  const containerBounds = container ? getNodeBounds(container) : null;
+  const baseX = op.x ?? (containerBounds ? containerBounds.x + 24 : 120);
+  const baseY = op.y ?? (containerBounds ? containerBounds.y + 32 : 120);
 
   switch (type) {
     case "text": {
@@ -860,13 +309,17 @@ function defaultNodeBounds(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Operation helpers
+// ---------------------------------------------------------------------------
+
 function applyCucumberUpdate(
-  doc: CucumberCanvasDocument,
+  doc: PenDocument,
   nodeId: string,
-  updates: Partial<CucumberCanvasNode>,
+  updates: Partial<PenNode>,
   agentId: string | undefined,
   containerId?: string | null,
-): CucumberCanvasDocument {
+): PenDocument {
   return applyCanvasOperation(doc, {
     type: "updateNode",
     nodeId,
@@ -877,11 +330,11 @@ function applyCucumberUpdate(
 }
 
 function applyCucumberDelete(
-  doc: CucumberCanvasDocument,
+  doc: PenDocument,
   nodeId: string,
   agentId: string | undefined,
   containerId?: string | null,
-): CucumberCanvasDocument {
+): PenDocument {
   return applyCanvasOperation(doc, {
     type: "deleteNode",
     nodeId,
@@ -891,11 +344,11 @@ function applyCucumberDelete(
 }
 
 function applyCucumberInsert(
-  doc: CucumberCanvasDocument,
-  node: CucumberCanvasNode,
+  doc: PenDocument,
+  node: PenNode,
   agentId: string | undefined,
   containerId?: string | null,
-): CucumberCanvasDocument {
+): PenDocument {
   return applyCanvasOperation(doc, {
     type: "insertNode",
     node,
@@ -905,12 +358,12 @@ function applyCucumberInsert(
 }
 
 function reorderCucumberNode(
-  doc: CucumberCanvasDocument,
+  doc: PenDocument,
   nodeId: string,
   position: "front" | "back",
   agentId: string | undefined,
-): CucumberCanvasDocument {
-  const node = doc.nodes[nodeId];
+): PenDocument {
+  const node = findNode(doc, nodeId);
   if (!node) {
     throw new CanvasOperationError(
       "node_not_found",
@@ -918,42 +371,53 @@ function reorderCucumberNode(
     );
   }
 
-  assertAgentCanWrite(doc, agentId, node.parentId, node);
+  const parent = findParent(doc, nodeId);
+  const parentId = parent?.id ?? null;
+  assertAgentCanWrite(doc, agentId, parentId);
 
-  const next = cloneCanvasDocument(doc);
-  const current = next.nodes[nodeId];
-  if (!current) return next;
-  const parentNode =
-    current.parentId !== null ? next.nodes[current.parentId] : undefined;
+  // In tree model: "front" = last child (rendered on top), "back" = first child
+  const siblings = parent && "children" in parent && Array.isArray(parent.children)
+    ? [...parent.children as PenNode[]]
+    : [...flattenNodes(doc).filter((n) => findParent(doc, n.id)?.id === parentId)];
 
-  const order =
-    current.parentId === null
-      ? next.rootNodeIds
-      : parentNode && "childrenOrder" in parentNode
-        ? (
-            parentNode as ContainerNode | {
-              childrenOrder: string[];
-            }
-          ).childrenOrder
-        : null;
+  // Actually, for root-level nodes, use getActiveChildren
+  let childrenList: PenNode[];
+  if (parent && "children" in parent && Array.isArray(parent.children)) {
+    childrenList = parent.children as PenNode[];
+  } else {
+    // Root level — use moveNode operation
+    const allRoot = flattenNodes(doc).filter((n) => !findParent(doc, n.id));
+    childrenList = allRoot;
+  }
 
-  if (!order) return next;
+  const currentIndex = childrenList.findIndex((c) => c.id === nodeId);
+  if (currentIndex < 0) return doc;
 
-  const filtered = order.filter((id) => id !== nodeId);
+  const reordered = childrenList.filter((c) => c.id !== nodeId);
   if (position === "front") {
-    filtered.push(nodeId);
+    reordered.push(node);
   } else {
-    filtered.unshift(nodeId);
+    reordered.unshift(node);
   }
 
-  if (current.parentId === null) {
-    next.rootNodeIds = filtered;
-  } else {
-    (
-      next.nodes[current.parentId] as ContainerNode | { childrenOrder: string[] }
-    ).childrenOrder = filtered;
+  // Update parent's children
+  if (parent && "children" in parent) {
+    return applyCanvasOperation(doc, {
+      type: "updateNode",
+      nodeId: parent.id,
+      updates: { children: reordered } as Partial<PenNode>,
+      ...(agentId ? { agentId } : {}),
+    });
   }
-  next.updatedAt = new Date().toISOString();
+
+  // Root level — remove and re-insert all at root
+  let next = cloneDocument(doc);
+  for (const child of childrenList) {
+    next = applyCanvasOperation(next, { type: "deleteNode", nodeId: child.id });
+  }
+  for (const child of reordered) {
+    next = applyCanvasOperation(next, { type: "insertNode", node: child, parentId: null });
+  }
   return next;
 }
 
@@ -981,15 +445,19 @@ function resolveOperationRefs(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Main operation dispatcher
+// ---------------------------------------------------------------------------
+
 function manipulateCucumberCanvas(args: {
-  doc: CucumberCanvasDocument;
+  doc: PenDocument;
   operations: Operation[];
   agentId?: string;
 }): {
   createdIds: Record<string, string>;
   descriptions: string[];
   errors: string[];
-  nextDoc: CucumberCanvasDocument;
+  nextDoc: PenDocument;
 } {
   let nextDoc = args.doc;
   const descriptions: string[] = [];
@@ -1003,40 +471,45 @@ function manipulateCucumberCanvas(args: {
 
       switch (op.action) {
         case "add_container": {
-          const nodeId = createCanvasNodeId("container");
-          const bounds = defaultNodeBounds(nextDoc, "container", null, {
+          const nodeId = createNodeId("container");
+          const bounds = defaultNodeBounds(nextDoc, "frame", null, {
             ...op,
             width: op.width ?? 520,
             height: op.height ?? 360,
           });
-          const container: ContainerNode = {
+          const container = {
             id: nodeId,
-            type: "container",
-            parentId: null,
-            title: op.title ?? op.text ?? "Agent output",
-            bounds,
-            role: ["visual", "task", "context"],
-            childrenOrder: [],
+            type: "frame" as const,
+            name: op.title ?? op.text ?? "Agent output",
+            x: bounds.x,
+            y: bounds.y,
+            width: bounds.width,
+            height: bounds.height,
+            containerRole: ["visual", "task", "context"] as ContainerRole[],
+            children: [] as PenNode[],
             contextSlots: {},
-            inheritPolicy: "merge",
+            inheritPolicy: "merge" as const,
             permissions: {
               canRead: [],
               canWrite: [],
-              isolationLevel: "open",
+              isolationLevel: "open" as const,
             },
-            style: {
-              fill: coerceColor(op.backgroundColor, "#ffffff"),
-              stroke: coerceColor(op.strokeColor, "#6c5ce7"),
-              opacity:
-                op.opacity !== undefined ? Math.max(0, Math.min(100, op.opacity)) / 100 : 1,
-            },
-          };
+            fill: coerceColor(op.backgroundColor, "#ffffff")
+              ? [{ type: "solid" as const, color: coerceColor(op.backgroundColor, "#ffffff") }]
+              : undefined,
+            stroke: coerceColor(op.strokeColor, "#6c5ce7")
+              ? { thickness: 1, align: "center" as const, fill: [{ type: "solid" as const, color: coerceColor(op.strokeColor, "#6c5ce7") }] }
+              : undefined,
+            opacity:
+              op.opacity !== undefined ? Math.max(0, Math.min(100, op.opacity)) / 100 : 1,
+          } satisfies PenNode;
+
           nextDoc = applyCanvasOperation(nextDoc, {
             type: "insertNode",
             node: container,
           });
           descriptions.push(
-            `added container '${container.title}' [id=${nodeId}]`,
+            `added container '${container.name}' [id=${nodeId}]`,
           );
           createdIds[`op_${i}`] = nodeId;
           break;
@@ -1048,26 +521,24 @@ function manipulateCucumberCanvas(args: {
               "move requires element_id",
             );
           }
-          const node = nextDoc.nodes[op.element_id];
+          const node = findNode(nextDoc, op.element_id);
           if (!node) {
             errors.push(`[skip] node ${op.element_id} not found`);
             continue;
           }
+          const nodeBounds = getNodeBounds(node);
           nextDoc = applyCucumberUpdate(
             nextDoc,
             node.id,
             {
-              bounds: {
-                ...node.bounds,
-                x: op.x ?? node.bounds.x,
-                y: op.y ?? node.bounds.y,
-              },
-            } as Partial<CucumberCanvasNode>,
+              x: op.x ?? nodeBounds.x,
+              y: op.y ?? nodeBounds.y,
+            } as Partial<PenNode>,
             args.agentId,
-            inferredContainerId ?? node.parentId,
+            inferredContainerId ?? findParent(nextDoc, node.id)?.id,
           );
           descriptions.push(
-            `moved ${node.type} ${node.id} to (${op.x ?? node.bounds.x}, ${op.y ?? node.bounds.y})`,
+            `moved ${node.type} ${node.id} to (${op.x ?? nodeBounds.x}, ${op.y ?? nodeBounds.y})`,
           );
           break;
         }
@@ -1078,26 +549,24 @@ function manipulateCucumberCanvas(args: {
               "resize requires element_id",
             );
           }
-          const node = nextDoc.nodes[op.element_id];
+          const node = findNode(nextDoc, op.element_id);
           if (!node) {
             errors.push(`[skip] node ${op.element_id} not found`);
             continue;
           }
+          const nodeBounds = getNodeBounds(node);
           nextDoc = applyCucumberUpdate(
             nextDoc,
             node.id,
             {
-              bounds: {
-                ...node.bounds,
-                width: op.width ?? node.bounds.width,
-                height: op.height ?? node.bounds.height,
-              },
-            } as Partial<CucumberCanvasNode>,
+              width: op.width ?? nodeBounds.width,
+              height: op.height ?? nodeBounds.height,
+            } as Partial<PenNode>,
             args.agentId,
-            inferredContainerId ?? node.parentId,
+            inferredContainerId ?? findParent(nextDoc, node.id)?.id,
           );
           descriptions.push(
-            `resized ${node.type} ${node.id} to ${op.width ?? node.bounds.width}x${op.height ?? node.bounds.height}`,
+            `resized ${node.type} ${node.id} to ${op.width ?? nodeBounds.width}x${op.height ?? nodeBounds.height}`,
           );
           break;
         }
@@ -1108,7 +577,7 @@ function manipulateCucumberCanvas(args: {
               "delete requires element_id",
             );
           }
-          const node = nextDoc.nodes[op.element_id];
+          const node = findNode(nextDoc, op.element_id);
           if (!node) {
             errors.push(`[skip] node ${op.element_id} not found`);
             continue;
@@ -1117,7 +586,7 @@ function manipulateCucumberCanvas(args: {
             nextDoc,
             node.id,
             args.agentId,
-            inferredContainerId ?? node.parentId,
+            inferredContainerId ?? findParent(nextDoc, node.id)?.id,
           );
           descriptions.push(`deleted ${node.type} ${node.id}`);
           break;
@@ -1129,45 +598,101 @@ function manipulateCucumberCanvas(args: {
               "update_style requires element_id",
             );
           }
-          const node = nextDoc.nodes[op.element_id];
+          const node = findNode(nextDoc, op.element_id);
           if (!node) {
             errors.push(`[skip] node ${op.element_id} not found`);
             continue;
           }
 
-          let updates: Partial<CucumberCanvasNode> | null = null;
-          if (node.type === "rect") {
+          let updates: Partial<PenNode> | null = null;
+          const nodeType = (node as PenNode).type;
+          if (
+            nodeType === "rectangle" ||
+            nodeType === "ellipse" ||
+            nodeType === "polygon"
+          ) {
+            const existingStroke = (node as any).stroke as
+              | { thickness?: number; fill?: Array<{ type: string; color: string }> }
+              | undefined;
+            const newThickness = op.strokeWidth ?? existingStroke?.thickness ?? 1;
+            const newStrokeColor =
+              op.strokeColor ??
+              existingStroke?.fill?.[0]?.color ??
+              "#111827";
             updates = {
               ...(op.backgroundColor !== undefined
-                ? { fill: coerceColor(op.backgroundColor, "#d3f256") }
+                ? {
+                    fill: [
+                      {
+                        type: "solid" as const,
+                        color: coerceColor(op.backgroundColor, "#d3f256"),
+                      },
+                    ],
+                  }
                 : {}),
-              ...(op.strokeColor !== undefined
-                ? { stroke: coerceColor(op.strokeColor, "#111827") }
+              ...(op.strokeColor !== undefined || op.strokeWidth !== undefined
+                ? {
+                    stroke: {
+                      thickness: newThickness,
+                      align: "center" as const,
+                      fill: [
+                        {
+                          type: "solid" as const,
+                          color: coerceColor(newStrokeColor, "#111827"),
+                        },
+                      ],
+                    },
+                  }
                 : {}),
-              ...(op.strokeWidth !== undefined
-                ? { strokeWidth: op.strokeWidth }
-                : {}),
-            } as Partial<CucumberCanvasNode>;
-          } else if (node.type === "container") {
+            } as Partial<PenNode>;
+          } else if (isContainerNode(node)) {
+            const existingStroke = (node as any).stroke as
+              | { thickness?: number; fill?: Array<{ type: string; color: string }> }
+              | undefined;
+            const hasStrokeUpdate =
+              op.strokeColor !== undefined || op.strokeWidth !== undefined;
             updates = {
-              style: {
-                ...node.style,
-                ...(op.backgroundColor !== undefined
-                  ? { fill: coerceColor(op.backgroundColor, "#ffffff") }
-                  : {}),
-                ...(op.strokeColor !== undefined
-                  ? { stroke: coerceColor(op.strokeColor, "#6c5ce7") }
-                  : {}),
-                ...(op.opacity !== undefined ? { opacity: op.opacity / 100 } : {}),
-              },
-            } as Partial<CucumberCanvasNode>;
-          } else if (node.type === "text") {
+              ...(op.backgroundColor !== undefined
+                ? {
+                    fill: [
+                      {
+                        type: "solid" as const,
+                        color: coerceColor(op.backgroundColor, "#ffffff"),
+                      },
+                    ],
+                  }
+                : {}),
+              ...(hasStrokeUpdate
+                ? {
+                    stroke: {
+                      thickness:
+                        op.strokeWidth ?? existingStroke?.thickness ?? 1,
+                      align: "center" as const,
+                      fill: [
+                        {
+                          type: "solid" as const,
+                          color: coerceColor(
+                            op.strokeColor ??
+                              existingStroke?.fill?.[0]?.color ??
+                              "#6c5ce7",
+                            "#6c5ce7",
+                          ),
+                        },
+                      ],
+                    },
+                  }
+                : {}),
+              ...(op.opacity !== undefined
+                ? { opacity: Math.max(0, Math.min(100, op.opacity)) / 100 }
+                : {}),
+            } as Partial<PenNode>;
+          } else if (nodeType === "text") {
             updates = {
               ...(op.strokeColor !== undefined
-                ? { color: coerceColor(op.strokeColor, "#111827") }
+                ? { fill: [{ type: "solid" as const, color: coerceColor(op.strokeColor, "#111827") }] }
                 : {}),
               ...(op.fontSize !== undefined ? { fontSize: op.fontSize } : {}),
-            } as Partial<CucumberCanvasNode>;
+            } as Partial<PenNode>;
           }
 
           if (!updates || Object.keys(updates).length === 0) {
@@ -1182,7 +707,7 @@ function manipulateCucumberCanvas(args: {
             node.id,
             updates,
             args.agentId,
-            inferredContainerId ?? node.parentId,
+            inferredContainerId ?? findParent(nextDoc, node.id)?.id,
           );
           descriptions.push(`updated ${node.type} ${node.id} style`);
           break;
@@ -1195,18 +720,22 @@ function manipulateCucumberCanvas(args: {
             );
           }
           const container = ensureContainer(nextDoc, inferredContainerId);
-          const nodeId = createCanvasNodeId("text");
-          const node: CucumberCanvasNode = {
+          const nodeId = createNodeId("text");
+          const bounds = defaultNodeBounds(nextDoc, "text", container.id, op);
+          const node = {
             id: nodeId,
-            type: "text",
-            parentId: container.id,
-            title:
+            type: "text" as const,
+            name:
               op.text.length > 32 ? `${op.text.slice(0, 29)}...` : op.text,
-            bounds: defaultNodeBounds(nextDoc, "text", container.id, op),
-            text: op.text,
+            x: bounds.x,
+            y: bounds.y,
+            width: bounds.width,
+            height: bounds.height,
+            content: op.text,
             fontSize: op.fontSize ?? 28,
-            color: coerceColor(op.strokeColor, "#111827"),
-          };
+            fill: [{ type: "solid" as const, color: coerceColor(op.strokeColor, "#111827") }],
+          } satisfies PenNode;
+
           nextDoc = applyCucumberInsert(
             nextDoc,
             node,
@@ -1214,42 +743,77 @@ function manipulateCucumberCanvas(args: {
             container.id,
           );
           descriptions.push(
-            `added text '${node.title}' in container ${container.id} [id=${nodeId}]`,
+            `added text '${node.name}' in container ${container.id} [id=${nodeId}]`,
           );
           createdIds[`op_${i}`] = nodeId;
           break;
         }
         case "add_shape": {
-          if (op.shape !== "rectangle") {
+          const shape = op.shape ?? "rectangle";
+          if (shape !== "rectangle" && shape !== "ellipse") {
             errors.push(
-              `[skip] add_shape only supports rectangle on the new Cucumber canvas runtime`,
+              `[skip] add_shape supports rectangle and ellipse on the current canvas runtime`,
             );
             continue;
           }
           const container = ensureContainer(nextDoc, inferredContainerId);
-          const nodeId = createCanvasNodeId("rect");
-          const title =
+          const nodeId = createNodeId("shape");
+          const name =
             op.label?.text ??
-            (op.text?.trim() || `Rectangle ${Object.keys(createdIds).length + 1}`);
-          const node: CucumberCanvasNode = {
+            (op.text?.trim() || `${shape.charAt(0).toUpperCase() + shape.slice(1)} ${Object.keys(createdIds).length + 1}`);
+          const bounds = defaultNodeBounds(nextDoc, shape, container.id, op);
+          const node = {
             id: nodeId,
-            type: "rect",
-            parentId: container.id,
-            title,
-            bounds: defaultNodeBounds(nextDoc, "rect", container.id, op),
-            fill: coerceColor(op.backgroundColor, "#d3f256"),
-            stroke: coerceColor(op.strokeColor, "#111827"),
-            strokeWidth: op.strokeWidth ?? 1,
-            radius: 12,
-          };
+            type: shape as "rectangle" | "ellipse",
+            name,
+            x: bounds.x,
+            y: bounds.y,
+            width: bounds.width,
+            height: bounds.height,
+            fill: [{ type: "solid" as const, color: coerceColor(op.backgroundColor, "#d3f256") }],
+            stroke: { thickness: op.strokeWidth ?? 1, align: "center" as const, fill: [{ type: "solid" as const, color: coerceColor(op.strokeColor, "#111827") }] },
+            cornerRadius: shape === "rectangle" ? 12 : undefined,
+          } satisfies PenNode;
+
           nextDoc = applyCucumberInsert(
             nextDoc,
             node,
             args.agentId,
             container.id,
           );
+
+          // Create visible text label as child if provided
+          if (op.label?.text) {
+            const labelId = createNodeId("text");
+            const labelFontSize = op.label.fontSize ?? 20;
+            const labelNode = {
+              id: labelId,
+              type: "text" as const,
+              name: op.label.text,
+              x: bounds.x + bounds.width / 2 - measureTextWidth(op.label.text, labelFontSize) / 2,
+              y: bounds.y + bounds.height / 2 - labelFontSize * 0.6,
+              width: measureTextWidth(op.label.text, labelFontSize) + 8,
+              height: labelFontSize * 1.4,
+              content: op.label.text,
+              fontSize: labelFontSize,
+              fill: [{ type: "solid" as const, color: coerceColor(op.label.strokeColor, "#000000") }],
+              textAlign: "center" as const,
+            } satisfies PenNode;
+            nextDoc = applyCucumberInsert(
+              nextDoc,
+              labelNode,
+              args.agentId,
+              container.id,
+            );
+            descriptions.push(
+              `added ${shape} '${name}' with label '${op.label.text}' in container ${container.id} [id=${nodeId}, label=${labelId}]`,
+            );
+            createdIds[`op_${i}`] = nodeId;
+            break;
+          }
+
           descriptions.push(
-            `added rectangle '${title}' in container ${container.id} [id=${nodeId}]`,
+            `added ${shape} '${name}' in container ${container.id} [id=${nodeId}]`,
           );
           createdIds[`op_${i}`] = nodeId;
           break;
@@ -1261,39 +825,37 @@ function manipulateCucumberCanvas(args: {
               "update_text requires element_id and text",
             );
           }
-          const node = nextDoc.nodes[op.element_id];
+          const node = findNode(nextDoc, op.element_id);
           if (!node) {
             errors.push(`[skip] node ${op.element_id} not found`);
             continue;
           }
           if (node.type === "text") {
-            const fontSize = op.fontSize ?? node.fontSize;
+            const fontSize = op.fontSize ?? ((node as any).fontSize as number | undefined) ?? 28;
             const lines = op.text.split("\n");
             const measuredWidth = Math.max(
               ...lines.map((line) => measureTextWidth(line, fontSize)),
               1,
             );
+            const nodeBounds = getNodeBounds(node);
             nextDoc = applyCucumberUpdate(
               nextDoc,
               node.id,
               {
-                text: op.text,
-                title:
+                content: op.text,
+                name:
                   op.text.length > 32
                     ? `${op.text.slice(0, 29)}...`
                     : op.text,
                 fontSize,
-                bounds: {
-                  ...node.bounds,
-                  width: Math.max(node.bounds.width, Math.ceil(measuredWidth + fontSize)),
-                  height: Math.max(
-                    node.bounds.height,
-                    Math.ceil(lines.length * fontSize * 1.4 + fontSize),
-                  ),
-                },
-              } as Partial<CucumberCanvasNode>,
+                width: Math.max(nodeBounds.width, Math.ceil(measuredWidth + fontSize)),
+                height: Math.max(
+                  nodeBounds.height,
+                  Math.ceil(lines.length * fontSize * 1.4 + fontSize),
+                ),
+              } as Partial<PenNode>,
               args.agentId,
-              inferredContainerId ?? node.parentId,
+              inferredContainerId ?? findParent(nextDoc, node.id)?.id,
             );
             descriptions.push(`updated text on ${node.id}`);
             break;
@@ -1303,18 +865,18 @@ function manipulateCucumberCanvas(args: {
             nextDoc,
             node.id,
             {
-              title: op.text.length > 64 ? `${op.text.slice(0, 61)}...` : op.text,
-            } as Partial<CucumberCanvasNode>,
+              name: op.text.length > 64 ? `${op.text.slice(0, 61)}...` : op.text,
+            } as Partial<PenNode>,
             args.agentId,
-            inferredContainerId ?? node.parentId,
+            inferredContainerId ?? findParent(nextDoc, node.id)?.id,
           );
           descriptions.push(`updated title on ${node.id}`);
           break;
         }
         case "align": {
           const targets = (op.element_ids ?? [])
-            .map((id) => nextDoc.nodes[id])
-            .filter((node): node is CucumberCanvasNode => Boolean(node));
+            .map((id) => findNode(nextDoc, id))
+            .filter((n): n is PenNode => Boolean(n));
           if (targets.length < 2) {
             errors.push(
               `[skip] need >= 2 valid nodes to align, found ${targets.length}`,
@@ -1322,71 +884,79 @@ function manipulateCucumberCanvas(args: {
             continue;
           }
 
-          const updates = new Map<string, CanvasBounds>();
+          const updates = new Map<string, Partial<PenNode>>();
           switch (op.alignment) {
             case "left": {
-              const minX = Math.min(...targets.map((node) => node.bounds.x));
-              for (const node of targets) {
-                updates.set(node.id, { ...node.bounds, x: minX });
+              const minX = Math.min(...targets.map((n) => getNodeBounds(n).x));
+              for (const n of targets) {
+                updates.set(n.id, { x: minX } as Partial<PenNode>);
               }
               break;
             }
             case "right": {
               const maxRight = Math.max(
-                ...targets.map((node) => node.bounds.x + node.bounds.width),
+                ...targets.map((n) => {
+                  const b = getNodeBounds(n);
+                  return b.x + b.width;
+                }),
               );
-              for (const node of targets) {
-                updates.set(node.id, {
-                  ...node.bounds,
-                  x: maxRight - node.bounds.width,
-                });
+              for (const n of targets) {
+                updates.set(n.id, {
+                  x: maxRight - getNodeBounds(n).width,
+                } as Partial<PenNode>);
               }
               break;
             }
             case "center": {
               const averageCenter =
                 targets.reduce(
-                  (sum, node) => sum + node.bounds.x + node.bounds.width / 2,
+                  (sum, n) => {
+                    const b = getNodeBounds(n);
+                    return sum + b.x + b.width / 2;
+                  },
                   0,
                 ) / targets.length;
-              for (const node of targets) {
-                updates.set(node.id, {
-                  ...node.bounds,
-                  x: averageCenter - node.bounds.width / 2,
-                });
+              for (const n of targets) {
+                updates.set(n.id, {
+                  x: averageCenter - getNodeBounds(n).width / 2,
+                } as Partial<PenNode>);
               }
               break;
             }
             case "top": {
-              const minY = Math.min(...targets.map((node) => node.bounds.y));
-              for (const node of targets) {
-                updates.set(node.id, { ...node.bounds, y: minY });
+              const minY = Math.min(...targets.map((n) => getNodeBounds(n).y));
+              for (const n of targets) {
+                updates.set(n.id, { y: minY } as Partial<PenNode>);
               }
               break;
             }
             case "bottom": {
               const maxBottom = Math.max(
-                ...targets.map((node) => node.bounds.y + node.bounds.height),
+                ...targets.map((n) => {
+                  const b = getNodeBounds(n);
+                  return b.y + b.height;
+                }),
               );
-              for (const node of targets) {
-                updates.set(node.id, {
-                  ...node.bounds,
-                  y: maxBottom - node.bounds.height,
-                });
+              for (const n of targets) {
+                updates.set(n.id, {
+                  y: maxBottom - getNodeBounds(n).height,
+                } as Partial<PenNode>);
               }
               break;
             }
             case "middle": {
               const averageMiddle =
                 targets.reduce(
-                  (sum, node) => sum + node.bounds.y + node.bounds.height / 2,
+                  (sum, n) => {
+                    const b = getNodeBounds(n);
+                    return sum + b.y + b.height / 2;
+                  },
                   0,
                 ) / targets.length;
-              for (const node of targets) {
-                updates.set(node.id, {
-                  ...node.bounds,
-                  y: averageMiddle - node.bounds.height / 2,
-                });
+              for (const n of targets) {
+                updates.set(n.id, {
+                  y: averageMiddle - getNodeBounds(n).height / 2,
+                } as Partial<PenNode>);
               }
               break;
             }
@@ -1396,15 +966,15 @@ function manipulateCucumberCanvas(args: {
             }
           }
 
-          for (const node of targets) {
-            const nextBounds = updates.get(node.id);
-            if (!nextBounds) continue;
+          for (const n of targets) {
+            const nextUpdate = updates.get(n.id);
+            if (!nextUpdate) continue;
             nextDoc = applyCucumberUpdate(
               nextDoc,
-              node.id,
-              { bounds: nextBounds } as Partial<CucumberCanvasNode>,
+              n.id,
+              nextUpdate,
               args.agentId,
-              node.parentId,
+              findParent(nextDoc, n.id)?.id,
             );
           }
           descriptions.push(`aligned ${targets.length} nodes ${op.alignment}`);
@@ -1412,8 +982,8 @@ function manipulateCucumberCanvas(args: {
         }
         case "distribute": {
           const targets = (op.element_ids ?? [])
-            .map((id) => nextDoc.nodes[id])
-            .filter((node): node is CucumberCanvasNode => Boolean(node));
+            .map((id) => findNode(nextDoc, id))
+            .filter((n): n is PenNode => Boolean(n));
           if (targets.length < 3) {
             errors.push(
               `[skip] need >= 3 valid nodes to distribute, found ${targets.length}`,
@@ -1423,55 +993,55 @@ function manipulateCucumberCanvas(args: {
 
           if (op.direction === "horizontal") {
             const sorted = [...targets].sort(
-              (left, right) => left.bounds.x - right.bounds.x,
+              (a, b) => getNodeBounds(a).x - getNodeBounds(b).x,
             );
             const first = sorted[0]!;
             const last = sorted[sorted.length - 1]!;
+            const firstBounds = getNodeBounds(first);
+            const lastBounds = getNodeBounds(last);
             const totalSpan =
-              last.bounds.x + last.bounds.width - first.bounds.x;
+              lastBounds.x + lastBounds.width - firstBounds.x;
             const totalWidth = sorted.reduce(
-              (sum, node) => sum + node.bounds.width,
+              (sum, n) => sum + getNodeBounds(n).width,
               0,
             );
             const gap = (totalSpan - totalWidth) / (sorted.length - 1);
-            let cursor = first.bounds.x;
-            for (const node of sorted) {
+            let cursor = firstBounds.x;
+            for (const n of sorted) {
               nextDoc = applyCucumberUpdate(
                 nextDoc,
-                node.id,
-                {
-                  bounds: { ...node.bounds, x: cursor },
-                } as Partial<CucumberCanvasNode>,
+                n.id,
+                { x: cursor } as Partial<PenNode>,
                 args.agentId,
-                node.parentId,
+                findParent(nextDoc, n.id)?.id,
               );
-              cursor += node.bounds.width + gap;
+              cursor += getNodeBounds(n).width + gap;
             }
           } else {
             const sorted = [...targets].sort(
-              (top, bottom) => top.bounds.y - bottom.bounds.y,
+              (a, b) => getNodeBounds(a).y - getNodeBounds(b).y,
             );
             const first = sorted[0]!;
             const last = sorted[sorted.length - 1]!;
+            const firstBounds = getNodeBounds(first);
+            const lastBounds = getNodeBounds(last);
             const totalSpan =
-              last.bounds.y + last.bounds.height - first.bounds.y;
+              lastBounds.y + lastBounds.height - firstBounds.y;
             const totalHeight = sorted.reduce(
-              (sum, node) => sum + node.bounds.height,
+              (sum, n) => sum + getNodeBounds(n).height,
               0,
             );
             const gap = (totalSpan - totalHeight) / (sorted.length - 1);
-            let cursor = first.bounds.y;
-            for (const node of sorted) {
+            let cursor = firstBounds.y;
+            for (const n of sorted) {
               nextDoc = applyCucumberUpdate(
                 nextDoc,
-                node.id,
-                {
-                  bounds: { ...node.bounds, y: cursor },
-                } as Partial<CucumberCanvasNode>,
+                n.id,
+                { y: cursor } as Partial<PenNode>,
                 args.agentId,
-                node.parentId,
+                findParent(nextDoc, n.id)?.id,
               );
-              cursor += node.bounds.height + gap;
+              cursor += getNodeBounds(n).height + gap;
             }
           }
           descriptions.push(
@@ -1496,9 +1066,321 @@ function manipulateCucumberCanvas(args: {
           break;
         }
         case "add_line": {
-          errors.push(
-            "[skip] add_line is not yet supported on the new Cucumber canvas runtime",
+          const container = inferredContainerId
+            ? ensureContainer(nextDoc, inferredContainerId)
+            : null;
+          const containerBounds = container ? getNodeBounds(container) : { x: 0, y: 0, width: 800, height: 600 };
+          const nodeId = createNodeId("line");
+
+          let x1: number, y1: number, x2: number, y2: number;
+
+          if (op.points && op.points.length >= 2) {
+            x1 = op.points[0]!.x;
+            y1 = op.points[0]!.y;
+            x2 = op.points[1]!.x;
+            y2 = op.points[1]!.y;
+          } else if (op.start_element_id && op.end_element_id) {
+            const startNode = findNode(nextDoc, op.start_element_id);
+            const endNode = findNode(nextDoc, op.end_element_id);
+            if (!startNode || !endNode) {
+              errors.push("[skip] add_line start or end element not found");
+              continue;
+            }
+            const startBounds = getNodeBounds(startNode);
+            const endBounds = getNodeBounds(endNode);
+            x1 = startBounds.x + startBounds.width / 2;
+            y1 = startBounds.y + startBounds.height / 2;
+            x2 = endBounds.x + endBounds.width / 2;
+            y2 = endBounds.y + endBounds.height / 2;
+          } else {
+            // Default: horizontal line in container
+            x1 = op.x ?? containerBounds.x + 24;
+            y1 = op.y ?? containerBounds.y + (container ? containerBounds.height / 2 : 60);
+            x2 = x1 + (op.width ?? 160);
+            y2 = y1;
+          }
+
+          const isArrow = op.line_type === "arrow";
+          const strokeColor = coerceColor(op.strokeColor, "#111827");
+          const node = {
+            id: nodeId,
+            type: "line" as const,
+            name: isArrow ? "Arrow" : "Line",
+            x: x1,
+            y: y1,
+            x2,
+            y2,
+            stroke: {
+              thickness: op.strokeWidth ?? 2,
+              align: "center" as const,
+              fill: [{ type: "solid" as const, color: strokeColor }],
+            },
+          } satisfies PenNode;
+
+          nextDoc = applyCucumberInsert(
+            nextDoc,
+            node,
+            args.agentId,
+            container?.id ?? inferredContainerId ?? null,
           );
+          descriptions.push(
+            `added ${isArrow ? "arrow" : "line"} [id=${nodeId}] from (${x1},${y1}) to (${x2},${y2})`,
+          );
+          createdIds[`op_${i}`] = nodeId;
+          break;
+        }
+        case "group": {
+          const ids = op.node_ids ?? (op.element_id ? [op.element_id] : []);
+          if (ids.length < 2) {
+            throw new CanvasOperationError("invalid_operation", "group requires at least 2 node_ids");
+          }
+          const groupId = createNodeId("group");
+          groupNodesInDoc(nextDoc, groupId, ids, op.title);
+          descriptions.push(`grouped ${ids.length} nodes into group [id=${groupId}]`);
+          createdIds[`op_${i}`] = groupId;
+          break;
+        }
+        case "ungroup": {
+          if (!op.element_id) {
+            throw new CanvasOperationError("invalid_operation", "ungroup requires element_id");
+          }
+          ungroupNodeInDoc(nextDoc, op.element_id);
+          descriptions.push(`ungrouped ${op.element_id}`);
+          break;
+        }
+        case "duplicate": {
+          const ids = op.node_ids ?? (op.element_id ? [op.element_id] : []);
+          if (ids.length === 0) {
+            throw new CanvasOperationError("invalid_operation", "duplicate requires node_ids or element_id");
+          }
+          const dx = op.offset_x ?? 40;
+          const dy = op.offset_y ?? 40;
+          for (const srcId of ids) {
+            const src = findNode(nextDoc, srcId);
+            if (!src) {
+              errors.push(`[skip] duplicate source ${srcId} not found`);
+              continue;
+            }
+            const newId = createNodeId(src.type);
+            const cloned = JSON.parse(JSON.stringify(src)) as PenNode;
+            cloned.id = newId;
+            cloned.name = (cloned.name ?? "") + " (copy)";
+            cloned.x = (cloned.x ?? 0) + dx;
+            cloned.y = (cloned.y ?? 0) + dy;
+            // Clear agent binding on clone
+            if ("agentBinding" in cloned) delete (cloned as any).agentBinding;
+            const parentId = findParent(nextDoc, srcId)?.id ?? null;
+            nextDoc = applyCanvasOperation(nextDoc, {
+              type: "insertNode",
+              node: cloned,
+              parentId,
+            });
+            createdIds[`op_${i}`] = newId;
+          }
+          descriptions.push(`duplicated ${ids.length} node(s)`);
+          break;
+        }
+        case "rotate": {
+          if (!op.element_id) {
+            throw new CanvasOperationError("invalid_operation", "rotate requires element_id");
+          }
+          if (op.angle === undefined) {
+            throw new CanvasOperationError("invalid_operation", "rotate requires angle");
+          }
+          const node = findNode(nextDoc, op.element_id);
+          if (!node) {
+            errors.push(`[skip] node ${op.element_id} not found`);
+            continue;
+          }
+          nextDoc = applyCucumberUpdate(
+            nextDoc, node.id,
+            { rotation: op.angle } as Partial<PenNode>,
+            args.agentId,
+            inferredContainerId ?? findParent(nextDoc, node.id)?.id,
+          );
+          descriptions.push(`rotated ${node.id} to ${op.angle}deg`);
+          break;
+        }
+        case "add_path": {
+          const container = inferredContainerId
+            ? ensureContainer(nextDoc, inferredContainerId)
+            : null;
+          const nodeId = createNodeId("path");
+          const d = op.path_d ?? (op.anchors ? anchorsToPathData(op.anchors as any, op.closed ?? true) : "");
+          if (!d) {
+            throw new CanvasOperationError("invalid_operation", "add_path requires path_d or anchors");
+          }
+          const containerBounds = container ? getNodeBounds(container) : { x: 0, y: 0, width: 800, height: 600 };
+          const node = {
+            id: nodeId,
+            type: "path" as const,
+            name: op.title ?? "Path",
+            x: op.x ?? containerBounds.x + 24,
+            y: op.y ?? containerBounds.y + 32,
+            width: op.width ?? 200,
+            height: op.height ?? 120,
+            d,
+            closed: op.closed ?? true,
+            fill: coerceColor(op.backgroundColor, "#d3f256")
+              ? [{ type: "solid" as const, color: coerceColor(op.backgroundColor, "#d3f256") }]
+              : undefined,
+            stroke: { thickness: op.strokeWidth ?? 1, align: "center" as const, fill: [{ type: "solid" as const, color: coerceColor(op.strokeColor, "#111827") }] },
+          } satisfies PenNode;
+          nextDoc = applyCucumberInsert(nextDoc, node, args.agentId, container?.id ?? inferredContainerId ?? null);
+          descriptions.push(`added path [id=${nodeId}]`);
+          createdIds[`op_${i}`] = nodeId;
+          break;
+        }
+        case "edit_path": {
+          if (!op.element_id) {
+            throw new CanvasOperationError("invalid_operation", "edit_path requires element_id");
+          }
+          const node = findNode(nextDoc, op.element_id);
+          if (!node || node.type !== "path") {
+            errors.push(`[skip] node ${op.element_id} not found or not a path`);
+            continue;
+          }
+          let updates: Partial<PenNode> = {};
+          if (op.anchors) {
+            const newD = anchorsToPathData(op.anchors as any, (node as any).closed ?? op.closed ?? true);
+            updates = { ...updates, d: newD } as Partial<PenNode>;
+          }
+          if (op.closed !== undefined) {
+            updates = { ...updates, closed: op.closed } as Partial<PenNode>;
+          }
+          nextDoc = applyCucumberUpdate(nextDoc, node.id, updates, args.agentId, inferredContainerId ?? findParent(nextDoc, node.id)?.id);
+          descriptions.push(`edited path ${node.id}`);
+          break;
+        }
+        case "boolean_ops": {
+          const targetId = op.element_id;
+          const sourceId = op.source_id;
+          if (!targetId || !sourceId) {
+            throw new CanvasOperationError("invalid_operation", "boolean_ops requires element_id and source_id");
+          }
+          const opType = op.boolean_operation ?? "union";
+          const target = findNode(nextDoc, targetId);
+          const source = findNode(nextDoc, sourceId);
+          if (!target || !source) {
+            errors.push("[skip] boolean_ops: one or both nodes not found");
+            continue;
+          }
+          const result = executeBooleanOp([target, source], opType as BooleanOpType);
+          if (!result) {
+            errors.push("[skip] boolean_ops failed — the shapes may not be compatible");
+            continue;
+          }
+          const parentId = findParent(nextDoc, targetId)?.id ?? null;
+          // Remove source and target, insert result
+          nextDoc = applyCanvasOperation(nextDoc, { type: "deleteNode", nodeId: targetId });
+          nextDoc = applyCanvasOperation(nextDoc, { type: "deleteNode", nodeId: sourceId });
+          nextDoc = applyCanvasOperation(nextDoc, { type: "insertNode", node: result, parentId });
+          descriptions.push(`boolean ${opType} on ${targetId} + ${sourceId} → [id=${result.id}]`);
+          createdIds[`op_${i}`] = result.id;
+          break;
+        }
+        case "gradient_fill": {
+          if (!op.element_id) {
+            throw new CanvasOperationError("invalid_operation", "gradient_fill requires element_id");
+          }
+          const node = findNode(nextDoc, op.element_id);
+          if (!node) {
+            errors.push(`[skip] node ${op.element_id} not found`);
+            continue;
+          }
+          const type = op.gradient_type ?? "linear_gradient";
+          const stops = (op.stops ?? [{ offset: 0, color: "#d3f256" }, { offset: 1, color: "#6c5ce7" }])
+            .map((s) => ({ offset: Math.max(0, Math.min(1, s.offset)), color: s.color }));
+          const gradientFill: PenFill = {
+            type,
+            stops,
+            ...(type === "linear_gradient" ? { angle: op.gradient_angle ?? 0 } : {}),
+          };
+          nextDoc = applyCucumberUpdate(nextDoc, node.id, { fill: [gradientFill] } as Partial<PenNode>, args.agentId, inferredContainerId ?? findParent(nextDoc, node.id)?.id);
+          descriptions.push(`set ${type} fill on ${node.id}`);
+          break;
+        }
+        case "effects": {
+          if (!op.element_id) {
+            throw new CanvasOperationError("invalid_operation", "effects requires element_id");
+          }
+          const node = findNode(nextDoc, op.element_id);
+          if (!node) {
+            errors.push(`[skip] node ${op.element_id} not found`);
+            continue;
+          }
+          const effects: any[] = [];
+          if (op.shadow !== undefined && op.shadow !== null) {
+            effects.push({ type: "shadow", ...op.shadow });
+          }
+          if (op.blur !== undefined && op.blur !== null) {
+            effects.push({ type: "blur", radius: op.blur });
+          }
+          nextDoc = applyCucumberUpdate(nextDoc, node.id, { effects } as Partial<PenNode>, args.agentId, inferredContainerId ?? findParent(nextDoc, node.id)?.id);
+          descriptions.push(`updated effects on ${node.id}`);
+          break;
+        }
+        case "auto_layout": {
+          if (!op.element_id) {
+            throw new CanvasOperationError("invalid_operation", "auto_layout requires element_id");
+          }
+          const node = findNode(nextDoc, op.element_id);
+          if (!node || !isContainerNode(node)) {
+            errors.push(`[skip] node ${op.element_id} not found or not a container`);
+            continue;
+          }
+          const layoutUpdates: Partial<PenNode> = {};
+          if (op.layout_direction) (layoutUpdates as any).layout = op.layout_direction;
+          if (op.gap !== undefined) (layoutUpdates as any).gap = op.gap;
+          if (op.padding !== undefined) (layoutUpdates as any).padding = op.padding;
+          if (op.justifyContent) (layoutUpdates as any).justifyContent = op.justifyContent;
+          if (op.alignItems) (layoutUpdates as any).alignItems = op.alignItems;
+          if (op.sizing_width !== undefined) (layoutUpdates as any).sizingWidth = op.sizing_width;
+          if (op.sizing_height !== undefined) (layoutUpdates as any).sizingHeight = op.sizing_height;
+          nextDoc = applyCucumberUpdate(nextDoc, node.id, layoutUpdates, args.agentId, inferredContainerId ?? findParent(nextDoc, node.id)?.id);
+          descriptions.push(`set auto layout on container ${node.id}`);
+          break;
+        }
+        case "lock": {
+          if (!op.element_id) {
+            throw new CanvasOperationError("invalid_operation", "lock requires element_id");
+          }
+          const node = findNode(nextDoc, op.element_id);
+          if (!node) {
+            errors.push(`[skip] node ${op.element_id} not found`);
+            continue;
+          }
+          nextDoc = applyCucumberUpdate(nextDoc, node.id, { locked: true } as Partial<PenNode>, args.agentId, inferredContainerId ?? findParent(nextDoc, node.id)?.id);
+          descriptions.push(`locked ${node.id}`);
+          break;
+        }
+        case "unlock": {
+          if (!op.element_id) {
+            throw new CanvasOperationError("invalid_operation", "unlock requires element_id");
+          }
+          const node = findNode(nextDoc, op.element_id);
+          if (!node) {
+            errors.push(`[skip] node ${op.element_id} not found`);
+            continue;
+          }
+          nextDoc = applyCucumberUpdate(nextDoc, node.id, { locked: false } as Partial<PenNode>, args.agentId, inferredContainerId ?? findParent(nextDoc, node.id)?.id);
+          descriptions.push(`unlocked ${node.id}`);
+          break;
+        }
+        case "flip": {
+          if (!op.element_id) {
+            throw new CanvasOperationError("invalid_operation", "flip requires element_id");
+          }
+          const node = findNode(nextDoc, op.element_id);
+          if (!node) {
+            errors.push(`[skip] node ${op.element_id} not found`);
+            continue;
+          }
+          const updates: Partial<PenNode> = {};
+          if (op.flip_horizontal !== undefined) updates.flipX = op.flip_horizontal;
+          if (op.flip_vertical !== undefined) updates.flipY = op.flip_vertical;
+          nextDoc = applyCucumberUpdate(nextDoc, node.id, updates, args.agentId, inferredContainerId ?? findParent(nextDoc, node.id)?.id);
+          descriptions.push(`flipped ${node.id}`);
           break;
         }
         default: {
@@ -1519,30 +1401,6 @@ function manipulateCucumberCanvas(args: {
 
   return { createdIds, descriptions, errors, nextDoc };
 }
-
-// ---------------------------------------------------------------------------
-// Dispatcher
-// ---------------------------------------------------------------------------
-
-const handlers: Record<
-  Operation["action"],
-  (elements: CanvasElement[], op: any) => HandlerResult
-> = {
-  add_container: () => ({
-    description: "[skip] add_container requires the Cucumber canvas runtime",
-  }),
-  move: applyMove,
-  resize: applyResize,
-  delete: applyDelete,
-  update_style: applyUpdateStyle,
-  add_text: applyAddText,
-  add_shape: applyAddShape,
-  add_line: applyAddLine,
-  reorder: applyReorder,
-  align: applyAlign,
-  distribute: applyDistribute,
-  update_text: applyUpdateText,
-};
 
 // ---------------------------------------------------------------------------
 // Tool factory
@@ -1616,7 +1474,7 @@ export function createManipulateCanvasTool(deps: {
           applied: descriptions.length,
           canvasId,
           errors: errors.length,
-          nodeCount: Object.keys(nextDoc.nodes).length,
+          nodeCount: flattenNodes(nextDoc).length,
           userId,
         });
         return JSON.stringify(result);
@@ -1636,7 +1494,7 @@ export function createManipulateCanvasTool(deps: {
     {
       name: "manipulate_canvas",
       description:
-        "Manipulate elements on the live Cucumber canvas. Supports: add_container, move, resize, delete, update_style, update_text, add_text, add_shape, add_line, align, distribute, reorder. Use inspect_canvas first to understand the current layout. Returns created element IDs for subsequent binding, and same-batch operations can reference earlier IDs with op_0, op_1, etc.",
+        "Manipulate elements on the live Cucumber canvas. Supports: add_container, move, resize, delete, update_style, update_text, add_text, add_shape, add_line, add_path, align, distribute, reorder, group, ungroup, duplicate, rotate, edit_path, boolean_ops, gradient_fill, effects, auto_layout, lock, unlock, flip. Use inspect_canvas first to understand the current layout. Returns created element IDs for subsequent binding, and same-batch operations can reference earlier IDs with op_0, op_1, etc.",
       schema: manipulateCanvasSchema,
     },
   );

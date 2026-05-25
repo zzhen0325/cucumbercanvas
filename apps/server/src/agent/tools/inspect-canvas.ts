@@ -1,9 +1,13 @@
 import {
-  type CanvasNode,
-  type CucumberCanvasDocument,
+  type PenDocument,
+  type PenNode,
   isContainerNode,
   isCucumberCanvasDocument,
   resolveContext,
+  findNode,
+  findParent,
+  flattenNodes,
+  getNodeBounds,
 } from "@cucumber/canvas-core";
 import { tool } from "langchain";
 import { z } from "zod";
@@ -36,7 +40,6 @@ const inspectCanvasSchema = z.object({
     .describe("Filter to elements within a bounding box region"),
 });
 
-type CanvasElement = Record<string, unknown>;
 type ToolRuntimeConfig = {
   configurable?: {
     access_token?: unknown;
@@ -45,89 +48,43 @@ type ToolRuntimeConfig = {
   };
 };
 
-const DEFAULT_STROKE_COLOR = "#1e1e1e";
-const DEFAULT_BACKGROUND_COLOR = "transparent";
-const SHAPE_TYPES = new Set(["rectangle", "ellipse", "diamond"]);
-
-function summarizeElement(el: CanvasElement) {
-  const base: Record<string, unknown> = {
-    id: el.id,
-    type: el.type,
-    x: el.x,
-    y: el.y,
-    width: el.width,
-    height: el.height,
-  };
-
-  if (el.type === "text" && typeof el.text === "string") {
-    base.text = el.text.length > 50 ? `${el.text.slice(0, 47)}...` : el.text;
-    base.fontSize = el.fontSize;
-  }
-
-  if (el.type === "image") {
-    const customData = el.customData as Record<string, unknown> | undefined;
-    // Video elements are stored as Excalidraw image elements with customData.isVideo = true
-    if (customData?.isVideo === true) {
-      base.type = "video";
-      if (customData.videoUrl) base.videoUrl = customData.videoUrl;
-      if (customData.mimeType) base.mimeType = customData.mimeType;
-      if (customData.durationSeconds !== undefined)
-        base.durationSeconds = customData.durationSeconds;
-    } else {
-      if (customData?.title) {
-        base.title = customData.title;
-      }
-    }
-  }
-
-  // Embeddable elements: video elements are stored as Excalidraw embeddable with customData.isVideo
-  if (el.type === "embeddable") {
-    const customData = el.customData as Record<string, unknown> | undefined;
-    if (customData?.isVideo === true) {
-      base.type = "video";
-      if (customData.title) base.title = customData.title;
-      if (customData.prompt) base.prompt = customData.prompt;
-      if (customData.mimeType) base.mimeType = customData.mimeType;
-      if (customData.durationSeconds !== undefined)
-        base.durationSeconds = customData.durationSeconds;
-    }
-  }
-
-  if (SHAPE_TYPES.has(el.type as string)) {
-    if (el.strokeColor && el.strokeColor !== DEFAULT_STROKE_COLOR) {
-      base.strokeColor = el.strokeColor;
-    }
-    if (el.backgroundColor && el.backgroundColor !== DEFAULT_BACKGROUND_COLOR) {
-      base.backgroundColor = el.backgroundColor;
-    }
-  }
-
-  const groupIds = el.groupIds as unknown[] | undefined;
-  if (Array.isArray(groupIds) && groupIds.length > 0) {
-    base.grouped = true;
-  }
-
-  return base;
-}
-
-function summarizeCanvasNode(node: CanvasNode) {
+function summarizeCanvasNode(node: PenNode, doc: PenDocument) {
+  const bounds = getNodeBounds(node);
+  const parent = findParent(doc, node.id);
   const base: Record<string, unknown> = {
     id: node.id,
     type: node.type,
-    parentId: node.parentId,
-    title: node.title,
-    x: node.bounds.x,
-    y: node.bounds.y,
-    width: node.bounds.width,
-    height: node.bounds.height,
+    parentId: parent?.id ?? null,
+    title: node.name,
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    rotation: node.rotation ?? 0,
+    locked: node.locked ?? false,
+    visible: node.visible !== false,
   };
   if (node.type === "text")
     base.text =
-      node.text.length > 50 ? `${node.text.slice(0, 47)}...` : node.text;
-  if (node.type === "image") base.assetId = node.assetId;
+      typeof node.content === "string"
+        ? (node.content.length > 50 ? `${node.content.slice(0, 47)}...` : node.content)
+        : undefined;
+  if (node.type === "image") base.assetId = (node as any).assetId;
   if (node.type === "videoEmbed") base.mimeType = node.mimeType;
-  if (node.type === "container") {
-    base.role = node.role;
+  if (node.type === "path") {
+    const pn = node as any;
+    base.pathD = typeof pn.d === "string" ? (pn.d.length > 100 ? `${pn.d.slice(0, 97)}...` : pn.d) : undefined;
+    base.closed = pn.closed;
+  }
+  if ((node as any).effects && Array.isArray((node as any).effects) && (node as any).effects.length > 0) {
+    base.effects = (node as any).effects;
+  }
+  const fill = (node as any).fill;
+  if (Array.isArray(fill) && fill.length > 0 && fill[0]?.type && fill[0].type !== "solid") {
+    base.gradientFill = { type: fill[0].type, stops: fill[0].stops };
+  }
+  if (isContainerNode(node)) {
+    base.role = node.containerRole;
     base.agent = node.agentBinding
       ? {
           id: node.agentBinding.agentId,
@@ -135,24 +92,35 @@ function summarizeCanvasNode(node: CanvasNode) {
           status: node.agentBinding.status,
         }
       : null;
+    const layout = (node as any).layout;
+    if (layout) {
+      base.autoLayout = {
+        layout,
+        gap: (node as any).gap,
+        justifyContent: (node as any).justifyContent,
+        alignItems: (node as any).alignItems,
+      };
+    }
   }
   return base;
 }
 
-function summarizeCucumberDocument(doc: CucumberCanvasDocument) {
-  const nodes = Object.values(doc.nodes);
-  const containers = nodes.filter(isContainerNode);
+function summarizeCucumberDocument(doc: PenDocument, filteredNodes?: PenNode[]) {
+  const allNodes = flattenNodes(doc);
+  const nodes = filteredNodes ?? allNodes;
+  const containers = allNodes.filter(isContainerNode);
   return {
-    schemaVersion: doc.schemaVersion,
-    nodeCount: nodes.length,
+    schemaVersion: doc.version,
+    nodeCount: allNodes.length,
+    matchedCount: nodes.length,
     containerCount: containers.length,
-    viewport: doc.viewport,
+    viewport: (doc as any).viewport ?? null,
     containers: containers.map((container) => ({
       id: container.id,
-      title: container.title,
-      parentId: container.parentId,
-      role: container.role,
-      bounds: container.bounds,
+      title: container.name,
+      parentId: findParent(doc, container.id)?.id ?? null,
+      role: container.containerRole,
+      bounds: getNodeBounds(container),
       agentBinding: container.agentBinding
         ? {
             agentId: container.agentBinding.agentId,
@@ -162,13 +130,15 @@ function summarizeCucumberDocument(doc: CucumberCanvasDocument) {
           }
         : null,
       effectiveContext: resolveContext(doc, container.id),
-      childCount: container.childrenOrder.length,
+      childCount: ("children" in container && Array.isArray(container.children)
+        ? container.children.length
+        : 0),
     })),
-    nodes: nodes.map(summarizeCanvasNode),
+    nodes: nodes.map((node) => summarizeCanvasNode(node, doc)),
   };
 }
 
-function computeBoundingBox(elements: CanvasElement[]) {
+function computeBoundingBox(elements: Record<string, unknown>[]) {
   if (elements.length === 0) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
   let minX = Number.POSITIVE_INFINITY;
   let minY = Number.POSITIVE_INFINITY;
@@ -195,18 +165,21 @@ function computeBoundingBox(elements: CanvasElement[]) {
  */
 export function buildCanvasSummaryForContext(content: unknown): string | null {
   if (isCucumberCanvasDocument(content)) {
-    const nodes = Object.values(content.nodes);
+    const nodes = flattenNodes(content);
     if (nodes.length === 0) return null;
 
     const bbox = computeBoundingBox(
-      nodes.map((node) => ({
-        x: node.bounds.x,
-        y: node.bounds.y,
-        width: node.bounds.width,
-        height: node.bounds.height,
-      })),
+      nodes.map((node) => {
+        const bounds = getNodeBounds(node);
+        return {
+          x: bounds.x,
+          y: bounds.y,
+          width: bounds.width,
+          height: bounds.height,
+        };
+      }),
     );
-    const summaries = nodes.map((node) => summarizeCanvasNode(node));
+    const summaries = nodes.map((node) => summarizeCanvasNode(node, content));
     const lines: string[] = [
       `Canvas: ${nodes.length} nodes, bounds (${Math.round(bbox.minX)},${Math.round(bbox.minY)})→(${Math.round(bbox.maxX)},${Math.round(bbox.maxY)})`,
     ];
@@ -240,48 +213,32 @@ export function buildCanvasSummaryForContext(content: unknown): string | null {
     return lines.join("\n");
   }
 
-  const elements =
-    (
-      content as
-        | { elements?: Array<Record<string, unknown>> }
-        | null
-        | undefined
-    )?.elements ?? [];
-  const visible = elements.filter((el) => !el.isDeleted);
-  if (visible.length === 0) return null;
-
-  const bbox = computeBoundingBox(visible);
-  const summaries = visible.map((el) => summarizeElement(el));
-
-  // Compact format: element count + bounding box + per-element one-liner
-  const lines: string[] = [
-    `Canvas: ${visible.length} elements, bounds (${Math.round(bbox.minX)},${Math.round(bbox.minY)})→(${Math.round(bbox.maxX)},${Math.round(bbox.maxY)})`,
-  ];
-
-  // Cap at 30 elements to avoid bloating the context window
-  const toShow = summaries.slice(0, 30);
-  for (const s of toShow) {
-    const parts = [`${s.type}#${s.id}`];
-    parts.push(`@(${Math.round(s.x as number)},${Math.round(s.y as number)})`);
-    parts.push(
-      `${Math.round(s.width as number)}x${Math.round(s.height as number)}`,
-    );
-    if (s.text) parts.push(`"${s.text}"`);
-    if (s.title) parts.push(`title="${s.title}"`);
-    if (s.type === "video") {
-      if (s.durationSeconds) parts.push(`${s.durationSeconds}s`);
-      if (s.prompt)
-        parts.push(`prompt="${(s.prompt as string).slice(0, 120)}"`);
+  // Fallback for legacy flat-map format (pre-PenDocument migration)
+  if (
+    content &&
+    typeof content === "object" &&
+    "nodes" in content &&
+    Array.isArray((content as any).rootNodeIds)
+  ) {
+    const doc = content as any;
+    const nodeCount = Object.keys(doc.nodes ?? {}).length;
+    if (nodeCount === 0) return null;
+    const entries = Object.values(doc.nodes as Record<string, any>).slice(0, 30);
+    const lines: string[] = [`Canvas (legacy): ${nodeCount} nodes`];
+    for (const node of entries) {
+      const bounds = node.bounds ?? {};
+      lines.push(
+        `  ${node.type}#${node.id} @(${Math.round(bounds.x ?? 0)},${Math.round(bounds.y ?? 0)}) ${Math.round(bounds.width ?? 0)}x${Math.round(bounds.height ?? 0)}` +
+        (node.title ? ` title="${node.title}"` : ""),
+      );
     }
-    if (s.strokeColor) parts.push(`stroke=${s.strokeColor}`);
-    if (s.backgroundColor) parts.push(`fill=${s.backgroundColor}`);
-    lines.push(`  ${parts.join(" ")}`);
-  }
-  if (summaries.length > 30) {
-    lines.push(`  ... and ${summaries.length - 30} more elements`);
+    if (nodeCount > 30) {
+      lines.push(`  ... and ${nodeCount - 30} more nodes`);
+    }
+    return lines.join("\n");
   }
 
-  return lines.join("\n");
+  return null;
 }
 
 export function createInspectCanvasTool(deps: {
@@ -329,9 +286,10 @@ export function createInspectCanvasTool(deps: {
           },
           canvasId,
         );
-        const nodes = Object.values(cucumberDoc.nodes) as CanvasNode[];
+        const nodes = flattenNodes(cucumberDoc);
+
         if (input.element_id) {
-          const found = cucumberDoc.nodes[input.element_id];
+          const found = findNode(cucumberDoc, input.element_id);
           if (!found) {
             return JSON.stringify({
               error: "node_not_found",
@@ -339,39 +297,38 @@ export function createInspectCanvasTool(deps: {
             });
           }
           return JSON.stringify(
-            input.detail_level === "full" ? found : summarizeCanvasNode(found),
+            input.detail_level === "full"
+              ? found
+              : summarizeCanvasNode(found, cucumberDoc),
           );
         }
 
         let filteredNodes = nodes;
+        let hasFilter = false;
         if (input.filter_type && input.filter_type.length > 0) {
           const filterTypes = input.filter_type;
           filteredNodes = filteredNodes.filter((node) =>
             filterTypes.includes(node.type),
           );
+          hasFilter = true;
         }
         if (input.filter_region) {
           const r = input.filter_region;
           filteredNodes = filteredNodes.filter((node) => {
-            const { x, y, width, height } = node.bounds;
+            const bounds = getNodeBounds(node);
             return !(
-              x + width < r.min_x ||
-              x > r.max_x ||
-              y + height < r.min_y ||
-              y > r.max_y
+              bounds.x + bounds.width < r.min_x ||
+              bounds.x > r.max_x ||
+              bounds.y + bounds.height < r.min_y ||
+              bounds.y > r.max_y
             );
           });
+          hasFilter = true;
         }
 
         return JSON.stringify({
           canvasId,
-          ...summarizeCucumberDocument({
-            ...cucumberDoc,
-            nodes: Object.fromEntries(
-              filteredNodes.map((node) => [node.id, node]),
-            ),
-          }),
-          matchedCount: filteredNodes.length,
+          ...summarizeCucumberDocument(cucumberDoc, hasFilter ? filteredNodes : undefined),
         });
       } catch (error) {
         return JSON.stringify({

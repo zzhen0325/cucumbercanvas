@@ -31,7 +31,7 @@ export default function ImageGeneratePopover({
   const activeProfile = useAgentSettingsStore((s) => s.getActiveImageGenProfile());
   const setDialogOpen = useAgentSettingsStore((s) => s.setDialogOpen);
 
-  const isConfigured = !!activeProfile?.apiKey;
+  const isConfigured = !!activeProfile?.apiKey || activeProfile?.provider === 'volcengine';
 
   const handleOpenChange = (next: boolean) => {
     setOpen(next);

@@ -16,6 +16,7 @@ import { useAgentModel } from "../hooks/use-agent-model";
 import { useBreakpoint } from "../hooks/use-breakpoint";
 import { useChatSessions } from "../hooks/use-chat-sessions";
 import { useChatStream } from "../hooks/use-chat-stream";
+import { useToolContainerMapping } from "../hooks/use-tool-container-mapping";
 import {
   INITIAL_AGENT_MODEL_KEY,
   INITIAL_ATTACHMENTS_KEY,
@@ -35,6 +36,7 @@ import {
   saveMessage,
 } from "../lib/server-api";
 import type { CanvasSelectedElement } from "./canvas-editor";
+import type { CanvasApi } from "./canvas/canvas-surface";
 import {
   type BrandKitMentionItem,
   type CanvasImageItem,
@@ -89,6 +91,7 @@ type ChatSidebarProps = {
   onRequestCanvasImages?: () => CanvasImageItem[];
   currentBrandKitId?: string | null;
   selectedCanvasElements?: CanvasSelectedElement[];
+  canvasApi?: CanvasApi | null;
   ws: WebSocketHandle;
 };
 
@@ -108,6 +111,7 @@ export function ChatSidebar({
   onRequestCanvasImages,
   currentBrandKitId,
   selectedCanvasElements,
+  canvasApi,
   ws,
 }: ChatSidebarProps) {
   const breakpoint = useBreakpoint();
@@ -138,6 +142,14 @@ export function ChatSidebar({
 
   // ── Stream event handler (extracted hook, shared between send & reconnect) ──
   const { applyStreamEvent } = useChatStream(updateSessionMessages);
+
+  // ── Tool → canvas container mapping ──
+  const {
+    createToolContainer,
+    completeToolContainer,
+    failAllPending,
+    hasContainer,
+  } = useToolContainerMapping({ canvasApi: canvasApi ?? null });
 
   // ── Mention & attachment state ──
   const [atQuery, setAtQuery] = useState<string | null>(null);
@@ -612,16 +624,40 @@ export function ChatSidebar({
             applyStreamEvent(event, assistantId, currentSessionId);
             onStreamEvent?.(event);
 
+            // Compute backendInserted before tool container lifecycle so
+            // completeToolContainer can skip child nodes for server-side inserts.
             const backendInserted =
               event.type === "tool.completed" &&
               event.output &&
               typeof (event.output as Record<string, unknown>).elementId ===
                 "string";
+
+            // ── Canvas tool container lifecycle ──
+            if (event.type === "tool.started") {
+              createToolContainer(event.toolCallId, event.toolName);
+            } else if (event.type === "tool.completed") {
+              completeToolContainer(
+                event.toolCallId,
+                event.toolName,
+                event.output,
+                event.outputSummary,
+                event.artifacts,
+                backendInserted,
+              );
+            } else if (
+              event.type === "run.failed" ||
+              event.type === "run.canceled"
+            ) {
+              failAllPending();
+            }
+
+            // Fallback artifact insertion — skip when tool container handles content
             if (
               event.type === "tool.completed" &&
               event.artifacts &&
               event.toolName !== "screenshot_canvas" &&
-              !backendInserted
+              !backendInserted &&
+              !hasContainer(event.toolCallId)
             ) {
               for (const artifact of event.artifacts) {
                 if (artifact.type === "image" && onImageGenerated) {

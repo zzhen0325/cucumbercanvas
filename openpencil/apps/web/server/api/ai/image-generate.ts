@@ -1,13 +1,15 @@
 import { defineEventHandler, readBody, setResponseHeaders, createError } from 'h3';
+import { generateVolcengineImage } from '../../utils/volcengine-seedream';
 
 interface ImageGenerateBody {
   prompt: string;
-  provider: 'openai' | 'custom' | 'gemini' | 'replicate';
+  provider: 'openai' | 'custom' | 'gemini' | 'replicate' | 'volcengine';
   model: string;
-  apiKey: string;
+  apiKey?: string;
   baseUrl?: string;
   width?: number;
   height?: number;
+  imageUrls?: string[];
 }
 
 /**
@@ -28,22 +30,35 @@ export default defineEventHandler(async (event) => {
   if (!body?.provider) {
     throw createError({ statusCode: 400, message: 'Missing required field: provider' });
   }
-  if (!body?.apiKey?.trim()) {
+  if (body.provider !== 'volcengine' && !body?.apiKey?.trim()) {
     throw createError({ statusCode: 400, message: 'Missing required field: apiKey' });
   }
 
-  const { prompt, provider, model, apiKey, baseUrl, width, height } = body;
+  const { prompt, provider, model, apiKey, baseUrl, width, height, imageUrls } = body;
+
+  const requiredApiKey = apiKey?.trim() ?? '';
 
   if (provider === 'openai' || provider === 'custom') {
-    return await generateOpenAI({ prompt, model, apiKey, baseUrl, width, height });
+    return await generateOpenAI({ prompt, model, apiKey: requiredApiKey, baseUrl, width, height });
   }
 
   if (provider === 'gemini') {
-    return await generateGemini({ prompt, model, apiKey, baseUrl, width, height });
+    return await generateGemini({ prompt, model, apiKey: requiredApiKey, baseUrl, width, height });
   }
 
   if (provider === 'replicate') {
-    return await generateReplicate({ prompt, model, apiKey, baseUrl, width, height });
+    return await generateReplicate({
+      prompt,
+      model,
+      apiKey: requiredApiKey,
+      baseUrl,
+      width,
+      height,
+    });
+  }
+
+  if (provider === 'volcengine') {
+    return await generateVolcengine({ prompt, model, apiKey, baseUrl, width, height, imageUrls });
   }
 
   throw createError({ statusCode: 400, message: `Unsupported provider: ${provider}` });
@@ -308,4 +323,43 @@ async function generateReplicate(opts: {
     statusCode: 502,
     message: 'Replicate prediction timed out after 120 seconds',
   });
+}
+
+// ---------------------------------------------------------------------------
+// Volcengine Seedream
+// ---------------------------------------------------------------------------
+
+function mapToVolcengineSize(w?: number, h?: number): string {
+  if (!w || !h) return '1024x1024';
+  return `${Math.max(1, Math.round(w))}x${Math.max(1, Math.round(h))}`;
+}
+
+async function generateVolcengine(opts: {
+  prompt: string;
+  model: string;
+  apiKey?: string;
+  baseUrl?: string;
+  width?: number;
+  height?: number;
+  imageUrls?: string[];
+}): Promise<{ url: string }> {
+  const { prompt, model, apiKey, baseUrl, width, height, imageUrls } = opts;
+
+  try {
+    const result = await generateVolcengineImage({
+      prompt,
+      model: model || undefined,
+      accessKeyId: apiKey?.trim() || undefined,
+      baseUrl,
+      size: mapToVolcengineSize(width, height),
+      forceSingle: true,
+      imageUrls,
+    });
+    return { url: result.url };
+  } catch (err) {
+    throw createError({
+      statusCode: 502,
+      message: err instanceof Error ? err.message : `Volcengine request failed: ${String(err)}`,
+    });
+  }
 }

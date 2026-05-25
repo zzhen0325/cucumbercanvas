@@ -1,4 +1,4 @@
-import type { CucumberCanvasDocument } from "./types.js";
+import type { PenDocument } from '@cucumber/pen-types';
 
 export interface CanvasHistoryManagerOptions {
   maxStates?: number;
@@ -6,13 +6,10 @@ export interface CanvasHistoryManagerOptions {
 }
 
 export class CanvasHistoryManager {
-  private undoStack: CucumberCanvasDocument[] = [];
-  private redoStack: CucumberCanvasDocument[] = [];
+  private undoStack: PenDocument[] = [];
+  private redoStack: PenDocument[] = [];
   private readonly maxStates: number;
-  private readonly onChange?: (state: {
-    canUndo: boolean;
-    canRedo: boolean;
-  }) => void;
+  private readonly onChange?: (state: { canUndo: boolean; canRedo: boolean }) => void;
 
   constructor(options?: CanvasHistoryManagerOptions) {
     this.maxStates = options?.maxStates ?? 200;
@@ -27,7 +24,7 @@ export class CanvasHistoryManager {
     return this.redoStack.length > 0;
   }
 
-  push(doc: CucumberCanvasDocument): void {
+  push(doc: PenDocument): void {
     const snapshot = structuredClone(doc);
     const last = this.undoStack[this.undoStack.length - 1];
     if (last && JSON.stringify(last) === JSON.stringify(snapshot)) return;
@@ -36,7 +33,7 @@ export class CanvasHistoryManager {
     this.notify();
   }
 
-  undo(currentDoc: CucumberCanvasDocument): CucumberCanvasDocument | null {
+  undo(currentDoc: PenDocument): PenDocument | null {
     const previous = this.undoStack.pop();
     if (!previous) return null;
     this.redoStack.push(structuredClone(currentDoc));
@@ -44,7 +41,7 @@ export class CanvasHistoryManager {
     return structuredClone(previous);
   }
 
-  redo(currentDoc: CucumberCanvasDocument): CucumberCanvasDocument | null {
+  redo(currentDoc: PenDocument): PenDocument | null {
     const next = this.redoStack.pop();
     if (!next) return null;
     this.undoStack.push(structuredClone(currentDoc));

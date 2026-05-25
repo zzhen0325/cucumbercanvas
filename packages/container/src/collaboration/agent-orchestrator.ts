@@ -1,4 +1,4 @@
-import { TypedEventEmitter } from '@cucumber/engine';
+import { TypedEventEmitter } from '@cucumber/pen-engine';
 import type { ContainerManager } from '../container-manager.js';
 import type { AgentBinding } from '../types.js';
 import type { DataFlowEngine } from '../dataflow/dataflow-engine.js';

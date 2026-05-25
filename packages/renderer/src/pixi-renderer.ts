@@ -1,7 +1,9 @@
 import type { Application, Container, Graphics, Text } from 'pixi.js';
 import type { DesignEngine } from '@cucumber/engine';
-import type { ContainerManager, ContainerNode, ContainerBounds, AgentBinding } from '@cucumber/container';
+import type { ContainerManager, AgentBinding } from '@cucumber/container';
+import type { PenNode } from '@cucumber/pen-types';
 import type { ViewportState } from '@cucumber/pen-types';
+import type { CanvasFill, CanvasStroke } from '@cucumber/canvas-core';
 import type { RenderNode, RendererOptions, ShadowModeOptions } from './types.js';
 import { containerNodeToRenderNode } from './types.js';
 
@@ -101,7 +103,7 @@ export class PixiRenderer {
     }
   }
 
-  private async addContainerVisual(node: ContainerNode): Promise<void> {
+  private async addContainerVisual(node: PenNode): Promise<void> {
     if (!this.app) return;
     const { Container: PixiContainer, Graphics, Text } = await import('pixi.js');
 
@@ -114,26 +116,26 @@ export class PixiRenderer {
 
     const bg = new Graphics();
     bg.label = 'bg';
-    this.drawContainerRect(bg, node.bounds, node.style);
+    this.drawContainerRect(bg, node, node.fill as CanvasFill[], node.stroke as CanvasStroke, node.opacity ?? undefined);
     container.addChild(bg);
 
-    if (node.style?.label) {
+    if (node.name) {
       const label = new Text({
-        text: node.style.label,
+        text: node.name,
         style: {
           fontSize: 12,
           fill: '#cccccc',
           fontFamily: 'Inter, sans-serif',
         },
       });
-      label.position.set(node.bounds.x + 8, node.bounds.y + 6);
+      label.position.set((node.x ?? 0) + 8, (node.y ?? 0) + 6);
       label.label = 'label';
       container.addChild(label);
     }
 
     if (node.agentBinding?.agentId) {
       this.drawAgentBadge(container, node);
-      this.drawAgentGlow(glowGraphics, node.bounds, node.agentBinding);
+      this.drawAgentGlow(glowGraphics, node, node.agentBinding);
     }
 
     container.position.set(0, 0);
@@ -141,7 +143,7 @@ export class PixiRenderer {
     this.containerDisplayObjects.set(node.id, container);
   }
 
-  private async updateContainerVisual(node: ContainerNode): Promise<void> {
+  private async updateContainerVisual(node: PenNode): Promise<void> {
     const container = this.containerDisplayObjects.get(node.id);
     if (!container) {
       await this.addContainerVisual(node);
@@ -155,19 +157,19 @@ export class PixiRenderer {
 
     if (bg) {
       bg.clear();
-      this.drawContainerRect(bg, node.bounds, node.style);
+      this.drawContainerRect(bg, node, node.fill as CanvasFill[], node.stroke as CanvasStroke, node.opacity ?? undefined);
     }
 
     const labelChild = container.children.find(c => c.label === 'label') as Text | undefined;
-    if (labelChild && node.style?.label) {
-      labelChild.text = node.style.label;
-      labelChild.position.set(node.bounds.x + 8, node.bounds.y + 6);
+    if (labelChild && node.name) {
+      labelChild.text = node.name;
+      labelChild.position.set((node.x ?? 0) + 8, (node.y ?? 0) + 6);
     }
 
     if (glow) {
       glow.clear();
       if (node.agentBinding?.agentId) {
-        this.drawAgentGlow(glow, node.bounds, node.agentBinding);
+        this.drawAgentGlow(glow, node, node.agentBinding);
       }
     }
 
@@ -190,46 +192,68 @@ export class PixiRenderer {
 
   private drawContainerRect(
     g: any,
-    bounds: ContainerBounds,
-    style?: ContainerNode['style']
+    node: PenNode,
+    fills?: CanvasFill[],
+    stroke?: CanvasStroke,
+    opacity?: number,
   ): void {
-    const fill = style?.fill ?? '#ffffff0d';
-    const stroke = style?.stroke ?? '#666666';
+    const x = node.x ?? 0;
+    const y = node.y ?? 0;
+    const w = (node as any).width ?? 400;
+    const h = (node as any).height ?? 300;
+    const fill = this.extractSolidColor(fills) ?? '#ffffff0d';
+    const strokeColor = stroke?.fill?.[0] && stroke.fill[0].type === 'solid'
+      ? stroke.fill[0].color
+      : '#666666';
+    const alpha = opacity ?? 1;
 
-    g.roundRect(bounds.x, bounds.y, bounds.width, bounds.height, 8);
-    g.fill({ color: fill, alpha: 0.05 });
-    g.stroke({ color: stroke, width: 2, alpha: 0.8 });
+    g.roundRect(x, y, w, h, 8);
+    g.fill({ color: fill, alpha: 0.05 * alpha });
+    g.stroke({ color: strokeColor, width: 2, alpha: 0.8 * alpha });
 
-    g.rect(bounds.x, bounds.y, bounds.width, 28);
-    g.fill({ color: stroke, alpha: 0.15 });
+    g.rect(x, y, w, 28);
+    g.fill({ color: strokeColor, alpha: 0.15 * alpha });
   }
 
-  private drawAgentGlow(g: any, bounds: ContainerBounds, binding: AgentBinding): void {
+  private extractSolidColor(fills?: CanvasFill[]): string | undefined {
+    if (!fills || fills.length === 0) return undefined;
+    const first = fills[0];
+    if (first?.type === 'solid') return first.color;
+    return undefined;
+  }
+
+  private drawAgentGlow(g: any, node: PenNode, binding: AgentBinding): void {
     const color = binding.color ?? '#4ECDC4';
     const isRunning = binding.status === 'running' || binding.status === 'thinking';
     const alpha = isRunning ? 0.4 + Math.sin(this.animationTime * 3) * 0.2 : 0.25;
+    const x = node.x ?? 0;
+    const y = node.y ?? 0;
+    const w = (node as any).width ?? 400;
+    const h = (node as any).height ?? 300;
 
-    g.roundRect(bounds.x - 3, bounds.y - 3, bounds.width + 6, bounds.height + 6, 10);
+    g.roundRect(x - 3, y - 3, w + 6, h + 6, 10);
     g.stroke({ color, width: 3, alpha });
 
     if (isRunning) {
-      g.roundRect(bounds.x - 6, bounds.y - 6, bounds.width + 12, bounds.height + 12, 12);
+      g.roundRect(x - 6, y - 6, w + 12, h + 12, 12);
       g.stroke({ color, width: 1.5, alpha: alpha * 0.5 });
     }
   }
 
-  private async drawAgentBadge(container: any, node: ContainerNode): Promise<void> {
+  private async drawAgentBadge(container: any, node: PenNode): Promise<void> {
     const { Container: PixiContainer, Graphics, Text } = await import('pixi.js');
     const binding = node.agentBinding!;
-    const bounds = node.bounds;
+    const nx = node.x ?? 0;
+    const ny = node.y ?? 0;
+    const nw = (node as any).width ?? 400;
 
     const badge = new PixiContainer();
     badge.label = 'agent-badge';
 
     const badgeWidth = 80;
     const badgeHeight = 20;
-    const badgeX = bounds.x + bounds.width - badgeWidth - 8;
-    const badgeY = bounds.y + 4;
+    const badgeX = nx + nw - badgeWidth - 8;
+    const badgeY = ny + 4;
 
     const bg = new Graphics();
     bg.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 10);
@@ -287,7 +311,7 @@ export class PixiRenderer {
       const glow = displayObj.children.find(c => c.label === 'glow') as any;
       if (glow) {
         glow.clear();
-        this.drawAgentGlow(glow, node.bounds, node.agentBinding);
+        this.drawAgentGlow(glow, node, node.agentBinding);
       }
     }
   }

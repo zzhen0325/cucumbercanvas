@@ -1,0 +1,25 @@
+{
+  "name": "@cucumber/pen-core",
+  "version": "0.1.0",
+  "description": "Pure document tree operations, layout engine, variables for Cucumber Studio",
+  "license": "MIT",
+  "files": ["src"],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.ts",
+      "import": "./index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cucumber/pen-types": "workspace:*",
+    "nanoid": "^5.1.6",
+    "paper": "^0.12.18"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

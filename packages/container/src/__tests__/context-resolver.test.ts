@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { resolveContext } from '../context-resolver.js';
-import type { ContainerNode } from '../types.js';
+import type { PenNode as ContainerNode } from '../types.js';
 
 function makeContainer(id: string, parentId: string | null, opts?: Partial<ContainerNode>): ContainerNode {
   return {

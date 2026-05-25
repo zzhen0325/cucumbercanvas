@@ -1,23 +1,75 @@
-export const CUCUMBER_CANVAS_SCHEMA_VERSION = "cucumber-canvas-v1" as const;
+// Re-export the canonical document model from pen-types
+export type {
+  PenPage,
+  PenDocument,
+  PenNodeType,
+  SizingBehavior,
+  ContainerRole,
+  InheritPolicy,
+  ContextSlots,
+  IOPort,
+  AgentBinding,
+  ContainerPermissions,
+  PenNodeBase,
+  ContainerProps,
+  FrameNode,
+  GroupNode,
+  RectangleNode,
+  EllipseNode,
+  LineNode,
+  PolygonNode,
+  PenPathHandle,
+  PenPathAnchor,
+  PenPathPointType,
+  PathNode,
+  TextNode,
+  ImageFitMode,
+  ImageNode,
+  IconFontNode,
+  RefNode,
+  VideoEmbedNode,
+  PenNode,
+} from '@cucumber/pen-types';
 
-export type CanvasNodeType =
-  | "container"
-  | "image"
-  | "text"
-  | "rect"
-  | "ellipse"
-  | "polygon"
-  | "path"
-  | "icon"
-  | "line"
-  | "arrow"
-  | "videoEmbed"
-  | "group";
+// Re-export style types
+export type {
+  BlendMode,
+  SolidFill,
+  GradientStop,
+  LinearGradientFill,
+  RadialGradientFill,
+  ImageFill,
+  PenFill,
+  PenStroke,
+  BlurEffect,
+  ShadowEffect,
+  PenEffect,
+  StyledTextSegment,
+} from '@cucumber/pen-types';
 
-export type ContainerRole = "visual" | "task" | "context" | "dataflow";
-export type InheritPolicy = "merge" | "override" | "block";
-export type AgentPermission = "read" | "write" | "spawn";
+import type { PenNode, PenDocument, AgentBinding } from '@cucumber/pen-types';
 
+// ---------------------------------------------------------------------------
+// Backward-compatible type aliases (pre-Phase1 consumers)
+// ---------------------------------------------------------------------------
+
+/** @deprecated Use PenDocument directly */
+export type CucumberCanvasDocument = PenDocument;
+
+/** @deprecated Use PenNode directly */
+export type CanvasNode = PenNode;
+
+/** @deprecated Use PenNode (FrameNode or GroupNode) */
+export type ContainerNode = PenNode;
+
+/** @deprecated Use PenNode */
+export type ConnectorNode = PenNode;
+
+// ---------------------------------------------------------------------------
+// Canvas-level types (not in pen-types)
+// ---------------------------------------------------------------------------
+
+/** Bounding box for spatial queries and selection */
 export interface CanvasBounds {
   x: number;
   y: number;
@@ -26,6 +78,7 @@ export interface CanvasBounds {
   rotation?: number;
 }
 
+/** Viewport state persisted with the document */
 export interface CanvasViewport {
   x: number;
   y: number;
@@ -33,30 +86,130 @@ export interface CanvasViewport {
   backgroundColor: string;
 }
 
-export interface ContextSlots {
-  style?: Record<string, unknown>;
-  tokens?: Record<string, unknown>;
-  rules?: string[];
-  constraints?: Record<string, unknown>;
+/** Asset reference stored alongside the document */
+export interface CanvasAsset {
+  id: string;
+  url: string;
+  mimeType: string;
+  name?: string;
+  width?: number;
+  height?: number;
+  source?: 'upload' | 'generated' | 'canvas-ref';
 }
 
-export type CanvasImportSource = "svg-import" | "figma-paste";
+/** Lightweight node summary for agent context */
+export interface NodeSummary {
+  id: string;
+  type: string;
+  title?: string;
+  bounds: CanvasBounds;
+}
+
+/** Agent context built from container hierarchy */
+export interface AgentContext {
+  agentId: string;
+  containerId: string;
+  containerPath: string[];
+  effectiveContext: import('@cucumber/pen-types').ContextSlots;
+  visibleNodes: NodeSummary[];
+  permissions: ('read' | 'write' | 'spawn')[];
+  siblings: { containerId: string; agentId?: string; status?: string }[];
+}
+
+// ---------------------------------------------------------------------------
+// Canvas Operations (PenDocument-based)
+// ---------------------------------------------------------------------------
+
+export type CanvasOperation =
+  | {
+      type: 'insertNode';
+      node: PenNode;
+      parentId?: string | null;
+      /** @deprecated Use parentId */
+      containerId?: string | null;
+      index?: number;
+      agentId?: string;
+    }
+  | {
+      type: 'updateNode';
+      nodeId: string;
+      updates: Partial<PenNode>;
+      agentId?: string;
+    }
+  | {
+      type: 'deleteNode';
+      nodeId: string;
+      agentId?: string;
+    }
+  | {
+      type: 'setSelection';
+      nodeIds: string[];
+    }
+  | {
+      type: 'moveNode';
+      nodeId: string;
+      newParentId?: string | null;
+      index?: number;
+    }
+  | {
+      type: 'groupNodes';
+      groupId: string;
+      nodeIds: string[];
+      title?: string;
+    }
+  | {
+      type: 'ungroupNode';
+      groupId: string;
+    }
+  | {
+      type: 'alignNodes';
+      nodeIds: string[];
+      alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom';
+    }
+  | {
+      type: 'reorderNode';
+      nodeId: string;
+      direction?: 'forward' | 'backward' | 'front' | 'back';
+      targetParentId?: string | null;
+      targetIndex?: number;
+    }
+  | {
+      type: 'bindAgent';
+      nodeId?: string;
+      binding: AgentBinding;
+      containerId?: string;
+    }
+  | {
+      type: 'createDataFlowEdge';
+      edgeId: string;
+      sourceNodeId: string;
+      sourcePortId: string;
+      targetNodeId: string;
+      targetPortId: string;
+    }
+  | {
+      type: 'removeDataFlowEdge';
+      edgeId: string;
+    };
+
+// ---------------------------------------------------------------------------
+// Import metadata (Figma/SVG)
+// ---------------------------------------------------------------------------
+
+export type CanvasImportSource = 'svg-import' | 'figma-paste';
 
 export type CanvasImportWarningCode =
-  | "unsupported_tag"
-  | "partial_fidelity"
-  | "layout_degraded"
-  | "component_metadata_dropped"
-  | "effects_dropped";
+  | 'unsupported_tag'
+  | 'partial_fidelity'
+  | 'layout_degraded'
+  | 'component_metadata_dropped'
+  | 'effects_dropped';
 
-export type CanvasImportedLayoutMode = "horizontal" | "vertical";
-export type CanvasImportedLayoutAlign = "start" | "center" | "end" | "space_between" | "baseline";
-export type CanvasImportedSizingMode = "fixed" | "fit_content" | "fill_container";
-export type CanvasImportedPositioningMode = "auto" | "absolute";
-export type CanvasImportedPadding =
-  | number
-  | [number, number]
-  | [number, number, number, number];
+export type CanvasImportedLayoutMode = 'horizontal' | 'vertical';
+export type CanvasImportedLayoutAlign = 'start' | 'center' | 'end' | 'space_between' | 'baseline';
+export type CanvasImportedSizingMode = 'fixed' | 'fit_content' | 'fill_container';
+export type CanvasImportedPositioningMode = 'auto' | 'absolute';
+export type CanvasImportedPadding = number | [number, number] | [number, number, number, number];
 
 export interface CanvasImportedAutoLayoutMeta {
   layout?: CanvasImportedLayoutMode;
@@ -66,7 +219,7 @@ export interface CanvasImportedAutoLayoutMeta {
   alignItems?: CanvasImportedLayoutAlign;
   widthMode?: CanvasImportedSizingMode;
   heightMode?: CanvasImportedSizingMode;
-  alignSelf?: "auto" | "start" | "center" | "end" | "stretch" | "baseline";
+  alignSelf?: 'auto' | 'start' | 'center' | 'end' | 'stretch' | 'baseline';
   positioning?: CanvasImportedPositioningMode;
   grow?: number;
   clipContent?: boolean;
@@ -84,183 +237,24 @@ export interface CanvasImportedNodeMeta extends Record<string, unknown> {
   autoLayout?: CanvasImportedAutoLayoutMeta;
 }
 
-export interface AgentBinding {
-  agentId?: string;
-  agentType?: "designer" | "critic" | "composer" | string;
-  role?: "designer" | "developer" | "reviewer" | "assistant";
-  name?: string;
-  color?: string;
-  status?: "idle" | "thinking" | "running" | "blocked" | "completed" | "error";
-  permissions?: AgentPermission[];
-  assignedAt?: number;
-}
+// ---------------------------------------------------------------------------
+// DataFlow types
+// ---------------------------------------------------------------------------
 
-export interface ContainerPermissions {
-  owner?: string;
-  canRead: string[];
-  canWrite: string[];
-  isolationLevel: "strict" | "collaborative" | "open";
-}
-
-export interface CanvasNodeBase {
+export interface DataFlowEdge {
   id: string;
-  type: CanvasNodeType;
-  parentId: string | null;
-  bounds: CanvasBounds;
-  title?: string;
-  locked?: boolean;
-  visible?: boolean;
-  createdByAgentId?: string;
-  runId?: string;
-  sessionId?: string;
-  meta?: Record<string, unknown>;
+  source: { nodeId: string; portId: string };
+  target: { nodeId: string; portId: string };
+  status?: 'idle' | 'flowing' | 'error';
+  transform?: string;
 }
 
-export interface ContainerNode extends CanvasNodeBase {
-  type: "container";
-  role: ContainerRole[];
-  childrenOrder: string[];
-  contextSlots: ContextSlots;
-  inheritPolicy: InheritPolicy;
-  agentBinding?: AgentBinding;
-  permissions?: ContainerPermissions;
-  style?: {
-    fill?: string;
-    stroke?: string;
-    opacity?: number;
-  };
-}
-
-export interface ImageNode extends CanvasNodeBase {
-  type: "image";
-  assetId: string;
-  src: string;
-  alt?: string;
-}
-
-export interface TextNode extends CanvasNodeBase {
-  type: "text";
-  text: string;
-  fontSize: number;
-  fontFamily?: string;
-  color?: string;
-  align?: "left" | "center" | "right";
-}
-
-export interface RectNode extends CanvasNodeBase {
-  type: "rect";
-  fill?: string;
-  stroke?: string;
-  strokeWidth?: number;
-  radius?: number;
-}
-
-export interface EllipseNode extends CanvasNodeBase {
-  type: "ellipse";
-  fill?: string;
-  stroke?: string;
-  strokeWidth?: number;
-}
-
-export interface PolygonNode extends CanvasNodeBase {
-  type: "polygon";
-  points: number;
-  fill?: string;
-  stroke?: string;
-  strokeWidth?: number;
-}
-
-export interface PathNode extends CanvasNodeBase {
-  type: "path";
-  d: string;
-  fill?: string;
-  stroke?: string;
-  strokeWidth?: number;
-}
-
-export interface IconNode extends CanvasNodeBase {
-  type: "icon";
-  icon: "sparkles" | "star" | "check" | string;
-  fill?: string;
-  stroke?: string;
-  strokeWidth?: number;
-}
-
-export type ConnectorAnchor = "tl" | "tr" | "bl" | "br";
-
-export interface ConnectorNode extends CanvasNodeBase {
-  type: "line" | "arrow";
-  stroke?: string;
-  strokeWidth?: number;
-  startAnchor?: ConnectorAnchor;
-  endAnchor?: ConnectorAnchor;
-}
-
-export interface VideoEmbedNode extends CanvasNodeBase {
-  type: "videoEmbed";
-  src: string;
-  poster?: string;
-  mimeType?: string;
-  durationSeconds?: number;
-}
-
-export interface GroupNode extends CanvasNodeBase {
-  type: "group";
-  childrenOrder: string[];
-}
-
-export type CanvasNode =
-  | ContainerNode
-  | ImageNode
-  | TextNode
-  | RectNode
-  | EllipseNode
-  | PolygonNode
-  | PathNode
-  | IconNode
-  | ConnectorNode
-  | VideoEmbedNode
-  | GroupNode;
-
-export interface CanvasAsset {
-  id: string;
-  url: string;
-  mimeType: string;
-  name?: string;
-  width?: number;
-  height?: number;
-  source?: "upload" | "generated" | "canvas-ref";
-}
-
-export interface CucumberCanvasDocument {
-  schemaVersion: typeof CUCUMBER_CANVAS_SCHEMA_VERSION;
-  nodes: Record<string, CanvasNode>;
-  rootNodeIds: string[];
-  assets: Record<string, CanvasAsset>;
-  viewport: CanvasViewport;
-  selection?: string[];
-  updatedAt?: string;
-}
-
-export interface NodeSummary {
-  id: string;
-  type: CanvasNodeType;
-  title?: string;
-  bounds: CanvasBounds;
-}
-
-export interface AgentContext {
-  agentId: string;
-  containerId: string;
-  containerPath: string[];
-  effectiveContext: ContextSlots;
-  visibleNodes: NodeSummary[];
-  permissions: AgentPermission[];
-  siblings: { containerId: string; agentId?: string; status?: string }[];
-}
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 export function isCanvasImportSource(value: unknown): value is CanvasImportSource {
-  return value === "svg-import" || value === "figma-paste";
+  return value === 'svg-import' || value === 'figma-paste';
 }
 
 export function getCanvasImportedNodeMeta(
@@ -272,54 +266,3 @@ export function getCanvasImportedNodeMeta(
   return meta as CanvasImportedNodeMeta;
 }
 
-export type CanvasOperation =
-  | {
-      type: "insertNode";
-      node: CanvasNode;
-      containerId?: string | null;
-      agentId?: string;
-    }
-  | {
-      type: "updateNode";
-      nodeId: string;
-      updates: Partial<CanvasNode>;
-      agentId?: string;
-      containerId?: string | null;
-    }
-  | {
-      type: "deleteNode";
-      nodeId: string;
-      agentId?: string;
-      containerId?: string | null;
-    }
-  | {
-      type: "setSelection";
-      nodeIds: string[];
-    }
-  | {
-      type: "reorderNode";
-      nodeId: string;
-      direction?: "forward" | "backward" | "front" | "back";
-      targetParentId?: string | null;
-      targetIndex?: number;
-    }
-  | {
-      type: "groupNodes";
-      groupId: string;
-      nodeIds: string[];
-      title?: string;
-    }
-  | {
-      type: "ungroupNode";
-      groupId: string;
-    }
-  | {
-      type: "alignNodes";
-      nodeIds: string[];
-      alignment: "left" | "center" | "right" | "top" | "middle" | "bottom";
-    }
-  | {
-      type: "bindAgent";
-      containerId: string;
-      binding: AgentBinding;
-    };

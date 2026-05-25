@@ -96,7 +96,21 @@ export function mapServerMessages(
         }
       }
     }
-    return { id: m.id, role: m.role, contentBlocks: blocks };
+
+    // Deduplicate tool blocks with the same toolCallId — keeps the last
+    // (most complete) occurrence when duplicates slip through upstream.
+    const seenToolIds = new Set<string>();
+    const deduped: ContentBlock[] = [];
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      const block = blocks[i]!;
+      if (block.type === "tool") {
+        if (seenToolIds.has(block.toolCallId)) continue;
+        seenToolIds.add(block.toolCallId);
+      }
+      deduped.unshift(block);
+    }
+
+    return { id: m.id, role: m.role, contentBlocks: deduped };
   });
 }
 

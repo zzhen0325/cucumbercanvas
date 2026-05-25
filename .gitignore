@@ -26,6 +26,7 @@ supabase/.temp/
 *.pem
 .worktrees/
 .superpowers/
+openpencil/.bun/
 
 # debug
 npm-debug.log*

@@ -1,7 +1,7 @@
 import type { ContainerManager } from './container-manager.js';
-import type { ContainerNode } from './types.js';
+import type { PenNode as ContainerNode } from '@cucumber/pen-types';
 import type { AgentContext, AgentMessage, ContainerEvents, NodeSummary, PeerRequest, PeerResponse } from './agent-context.js';
-import { TypedEventEmitter } from '@cucumber/engine';
+import { TypedEventEmitter } from '@cucumber/pen-engine';
 
 export class AgentContextBuilder {
   private containerManager: ContainerManager;

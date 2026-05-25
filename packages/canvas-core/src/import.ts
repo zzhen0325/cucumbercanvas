@@ -1,15 +1,48 @@
-import { cloneCanvasDocument, createCanvasNodeId } from "./document.js";
+import { cloneDocument, createNodeId, findNode } from "./document.js";
+import { applyCanvasOperation } from "./operations.js";
 import { parseFigmaClipboardNative } from "./figma-native.js";
+import type { CanvasEffect, CanvasFill, CanvasStroke } from "./styles.js";
+import type { PenDocument, PenNode } from "@cucumber/pen-types";
 import type {
   CanvasAsset,
   CanvasBounds,
   CanvasImportedAutoLayoutMeta,
   CanvasImportedNodeMeta,
-  CanvasNode,
   CanvasImportSource,
   CanvasImportWarningCode,
-  CucumberCanvasDocument,
 } from "./types.js";
+
+// ---------------------------------------------------------------------------
+// Internal intermediate node representation used during parsing.
+// Converted to PenNode tree at the insertCanvasImportResult boundary.
+// ---------------------------------------------------------------------------
+
+export interface ImportNode {
+  id: string;
+  type: string;
+  parentId: string | null;
+  title?: string;
+  bounds: CanvasBounds;
+  fills?: CanvasFill[];
+  stroke?: CanvasStroke;
+  cornerRadius?: number;
+  opacity?: number;
+  childrenOrder?: string[];
+  text?: string;
+  fontSize?: number;
+  fontFamily?: string;
+  d?: string;
+  points?: number;
+  assetId?: string;
+  src?: string;
+  meta?: Record<string, unknown>;
+  locked?: boolean;
+  visible?: boolean;
+  effects?: CanvasEffect[];
+  alt?: string;
+  fontWeight?: number;
+  textAlign?: 'left' | 'center' | 'right' | 'justify';
+}
 
 export interface CanvasImportWarning {
   code: CanvasImportWarningCode;
@@ -23,7 +56,8 @@ export interface CanvasImportResult {
   sourceLabel: string;
   importSessionId: string;
   rootNodeIds: string[];
-  nodes: CanvasNode[];
+  /** ImportNode[] from SVG/HTML parsers, or PenNode[] from native Figma parser (TODO: unify) */
+  nodes: (ImportNode | PenNode)[];
   assets: CanvasAsset[];
   warnings: CanvasImportWarning[];
 }
@@ -43,11 +77,26 @@ type ParsedStyle = {
   color?: string;
 };
 
+function parsedFillToCanvasFills(parsed: ParsedStyle): CanvasFill[] | undefined {
+  const c = parsed.fill ?? parsed.color;
+  return c ? [{ type: "solid" as const, color: c }] : undefined;
+}
+
+function parsedStrokeToCanvasStroke(parsed: ParsedStyle): CanvasStroke | undefined {
+  const c = parsed.stroke;
+  if (!c) return undefined;
+  return {
+    thickness: parsed.strokeWidth ?? 1,
+    align: "center",
+    fill: [{ type: "solid" as const, color: c }],
+  };
+}
+
 type SvgParseState = {
   importSessionId: string;
   source: "svg" | "figma";
   sourceLabel: string;
-  nodes: CanvasNode[];
+  nodes: ImportNode[];
   assets: CanvasAsset[];
   warnings: CanvasImportWarning[];
   warningKeys: Set<string>;
@@ -283,66 +332,162 @@ export function parseSvgMarkup(
 }
 
 export function insertCanvasImportResult(
-  doc: CucumberCanvasDocument,
+  doc: PenDocument,
   result: CanvasImportResult,
   options?: {
     parentId?: string | null;
     offsetX?: number;
     offsetY?: number;
   },
-): { doc: CucumberCanvasDocument; insertedIds: string[] } {
-  const next = cloneCanvasDocument(doc);
-  const parentId = options?.parentId ?? null;
+): { doc: PenDocument; insertedIds: string[] } {
+  let next = cloneDocument(doc);
+  const targetParentId = options?.parentId ?? null;
   const offsetX = options?.offsetX ?? 0;
   const offsetY = options?.offsetY ?? 0;
 
-  for (const asset of result.assets) {
-    next.assets[asset.id] = structuredClone(asset);
+  // Copy assets into document
+  if (result.assets.length > 0) {
+    const assets = { ...next.assets };
+    for (const asset of result.assets) {
+      assets[asset.id] = structuredClone(asset);
+    }
+    next = { ...next, assets };
   }
 
-  for (const imported of result.nodes) {
-    const isRoot = result.rootNodeIds.includes(imported.id);
-    const importedMeta = (imported.meta ?? {}) as CanvasImportedNodeMeta;
-    const node: CanvasNode = {
-      ...structuredClone(imported),
-      parentId: isRoot ? parentId : imported.parentId,
-      bounds: {
-        ...imported.bounds,
-        x: imported.bounds.x + offsetX,
-        y: imported.bounds.y + offsetY,
-      },
-      meta: {
-        ...importedMeta,
-        source: getImportSourceMeta(result.source).nodeSource,
-        importSessionId: result.importSessionId,
-        importSourceLabel: result.sourceLabel,
-        degradationHints: importedMeta.degradationHints ?? getWarningCodes(result.warnings),
-        warningCount:
-          importedMeta.warningCount ?? (isRoot ? result.warnings.length : undefined),
-      },
-    };
-    next.nodes[node.id] = node;
+  // Detect node format: ImportNode has `bounds`, PenNode has flat x/y
+  const firstNode = result.nodes[0];
+  const isNative = firstNode && !('bounds' in firstNode);
+
+  if (isNative) {
+    // Native Figma path: nodes are already PenNode tree
+    const nativeNodes = result.nodes as PenNode[];
+    for (const rootId of result.rootNodeIds) {
+      const penNode = nativeNodes.find((n) => n.id === rootId);
+      if (!penNode) continue;
+      // Apply offset to root nodes
+      if (offsetX !== 0 || offsetY !== 0) {
+        (penNode as any).x = (penNode.x ?? 0) + offsetX;
+        (penNode as any).y = (penNode.y ?? 0) + offsetY;
+      }
+      next = applyCanvasOperation(next, {
+        type: 'insertNode',
+        node: penNode,
+        parentId: targetParentId,
+      });
+    }
+    return { doc: next, insertedIds: [...result.rootNodeIds] };
   }
 
+  // SVG/HTML path: convert ImportNode flat list → PenNode tree
+  const importNodes = result.nodes as ImportNode[];
+  const nodeMap = new Map<string, PenNode>();
+  for (const imported of importNodes) {
+    const penNode = importNodeToPenNode(imported, offsetX, offsetY, result);
+    nodeMap.set(penNode.id, penNode);
+  }
+
+  // Resolve childrenOrder → children for container nodes
+  for (const imported of importNodes) {
+    if (!imported.childrenOrder || imported.childrenOrder.length === 0) continue;
+    const penNode = nodeMap.get(imported.id);
+    if (!penNode || !('children' in penNode)) continue;
+    const children: PenNode[] = [];
+    for (const childId of imported.childrenOrder) {
+      const child = nodeMap.get(childId);
+      if (child) children.push(child);
+    }
+    (penNode as any).children = children;
+  }
+
+  // Insert root nodes via applyCanvasOperation
+  const insertedIds: string[] = [];
   for (const rootId of result.rootNodeIds) {
-    addChildRef(next, parentId, rootId);
+    const penNode = nodeMap.get(rootId);
+    if (!penNode) continue;
+    next = applyCanvasOperation(next, {
+      type: 'insertNode',
+      node: penNode,
+      parentId: targetParentId,
+    });
+    insertedIds.push(penNode.id);
   }
 
-  next.selection = [...result.rootNodeIds];
-  next.updatedAt = new Date().toISOString();
-  return { doc: next, insertedIds: [...result.rootNodeIds] };
+  return { doc: next, insertedIds };
+}
+
+/** Convert a flat ImportNode to a PenNode with import metadata. */
+function importNodeToPenNode(
+  imported: ImportNode,
+  offsetX: number,
+  offsetY: number,
+  result: CanvasImportResult,
+): PenNode {
+  const isRoot = result.rootNodeIds.includes(imported.id);
+  const importedMeta = (imported.meta ?? {}) as Record<string, unknown>;
+  const meta: Record<string, unknown> = {
+    ...importedMeta,
+    source: getImportSourceMeta(result.source).nodeSource,
+    importSessionId: result.importSessionId,
+    importSourceLabel: result.sourceLabel,
+    degradationHints: importedMeta.degradationHints ?? getWarningCodes(result.warnings),
+    warningCount: importedMeta.warningCount ?? (isRoot ? result.warnings.length : undefined),
+  };
+
+  const base = {
+    id: imported.id,
+    type: imported.type as PenNode['type'],
+    name: imported.title,
+    x: imported.bounds.x + offsetX,
+    y: imported.bounds.y + offsetY,
+    width: imported.bounds.width,
+    height: imported.bounds.height,
+    opacity: imported.opacity,
+    cornerRadius: imported.cornerRadius,
+    fill: imported.fills,
+    stroke: imported.stroke,
+    meta,
+  };
+
+  // Type-specific fields for PenNode union members
+  switch (imported.type) {
+    case 'text':
+      return { ...base, type: 'text' as const, content: imported.text ?? '', fontFamily: imported.fontFamily, fontSize: imported.fontSize } as unknown as PenNode;
+    case 'path':
+      return { ...base, type: 'path' as const, d: imported.d ?? '' } as unknown as PenNode;
+    case 'polygon':
+      return { ...base, type: 'polygon' as const, polygonCount: imported.points ?? 3 } as unknown as PenNode;
+    case 'line':
+      return { ...base, type: 'line' as const } as unknown as PenNode;
+    case 'image':
+      return { ...base, type: 'image' as const, src: imported.src ?? '' } as unknown as PenNode;
+    case 'videoEmbed':
+      return { ...base, type: 'videoEmbed' as const, src: imported.src ?? '' } as unknown as PenNode;
+    default:
+      return base as unknown as PenNode;
+  }
 }
 
 export function getCanvasImportBounds(result: CanvasImportResult): CanvasBounds | null {
   if (result.nodes.length === 0) return null;
-  const minX = Math.min(...result.nodes.map((node) => node.bounds.x));
-  const minY = Math.min(...result.nodes.map((node) => node.bounds.y));
-  const maxX = Math.max(
-    ...result.nodes.map((node) => node.bounds.x + node.bounds.width),
-  );
-  const maxY = Math.max(
-    ...result.nodes.map((node) => node.bounds.y + node.bounds.height),
-  );
+  const nodes = result.nodes;
+  // Handle both ImportNode (has `bounds`) and PenNode (has flat x/y/width/height)
+  const getBounds = (node: ImportNode | PenNode): CanvasBounds => {
+    if ('bounds' in node) {
+      return (node as ImportNode).bounds;
+    }
+    const pen = node as PenNode;
+    return {
+      x: pen.x ?? 0,
+      y: pen.y ?? 0,
+      width: ('width' in pen ? (pen as any).width : undefined) ?? 100,
+      height: ('height' in pen ? (pen as any).height : undefined) ?? 100,
+    };
+  };
+  const boundsList = nodes.map(getBounds);
+  const minX = Math.min(...boundsList.map((b) => b.x));
+  const minY = Math.min(...boundsList.map((b) => b.y));
+  const maxX = Math.max(...boundsList.map((b) => b.x + b.width));
+  const maxY = Math.max(...boundsList.map((b) => b.y + b.height));
   return {
     x: minX,
     y: minY,
@@ -449,15 +594,16 @@ function parseStyledHtmlElement(
   }
 
   if (style.backgroundColor && width > 0 && height > 0) {
-    const rectId = createCanvasNodeId("rect");
+    const rectId = createNodeId("rect");
+    const bgColor = normalizeColor(style.backgroundColor);
     state.nodes.push({
       id: rectId,
       type: "rect",
       parentId,
       title: "Imported block",
       bounds: { x: left, y: top, width, height },
-      fill: normalizeColor(style.backgroundColor),
-      radius: parseCssNumber(style.borderRadius) ?? 0,
+      fills: bgColor ? [{ type: "solid", color: bgColor }] : undefined,
+      cornerRadius: parseCssNumber(style.borderRadius) ?? 0,
       opacity: readOpacity(style.opacity),
       meta: createImportedNodeMeta(state, {
         originNodeType,
@@ -466,13 +612,14 @@ function parseStyledHtmlElement(
         degradationHints,
         autoLayout,
       }),
-    } as CanvasNode);
+    } as ImportNode);
     localNodeIds.push(rectId);
   }
 
   if (directText.length > 0) {
     const fontSize = Math.max(12, parseCssNumber(style.fontSize) ?? 16);
-    const textId = createCanvasNodeId("text");
+    const textId = createNodeId("text");
+    const textColor = normalizeColor(style.color) ?? "#111827";
     state.nodes.push({
       id: textId,
       type: "text",
@@ -481,7 +628,7 @@ function parseStyledHtmlElement(
       text: directText,
       fontSize,
       fontFamily: style.fontFamily,
-      color: normalizeColor(style.color) ?? "#111827",
+      fills: [{ type: "solid", color: textColor }],
       bounds: {
         x: left,
         y: top,
@@ -496,7 +643,7 @@ function parseStyledHtmlElement(
         degradationHints,
         autoLayout,
       }),
-    } as CanvasNode);
+    } as ImportNode);
     localNodeIds.push(textId);
   }
 
@@ -504,7 +651,7 @@ function parseStyledHtmlElement(
     element.children.length > 0 ||
     localNodeIds.length > 1 ||
     (localNodeIds.length === 1 && width > 0 && height > 0);
-  const groupId = needsGroup ? createCanvasNodeId("group") : null;
+  const groupId = needsGroup ? createNodeId("group") : null;
   if (groupId) {
     for (const nodeId of localNodeIds) {
       const node = state.nodes.find((entry) => entry.id === nodeId);
@@ -526,7 +673,7 @@ function parseStyledHtmlElement(
     const bounds = getSelectionBounds(
       groupedIds
         .map((nodeId) => state.nodes.find((node) => node.id === nodeId))
-        .filter((node): node is CanvasNode => Boolean(node)),
+        .filter((node): node is ImportNode => Boolean(node)),
     );
     if (!bounds) {
       return groupedIds;
@@ -565,7 +712,7 @@ function parseSvgElement(
   const style = readElementStyle(element, inherited);
 
   if (tag === "g" || tag === "svg") {
-    const groupId = tag === "g" ? createCanvasNodeId("group") : null;
+    const groupId = tag === "g" ? createNodeId("group") : null;
     const childParentId = groupId ?? parentId;
     const childIds: string[] = [];
     for (const child of Array.from(element.children)) {
@@ -577,7 +724,7 @@ function parseSvgElement(
     const bounds = getSelectionBounds(
       childIds
         .map((childId) => state.nodes.find((node) => node.id === childId))
-        .filter((node): node is CanvasNode => Boolean(node)),
+        .filter((node): node is ImportNode => Boolean(node)),
     );
     if (!bounds) return null;
     state.nodes.push({
@@ -602,7 +749,7 @@ function parseSvgElement(
   });
 
   if (tag === "rect") {
-    const id = createCanvasNodeId("rect");
+    const id = createNodeId("rect");
     state.nodes.push({
       id,
       type: "rect",
@@ -614,18 +761,17 @@ function parseSvgElement(
         width: Math.max(1, readNumber(element, "width")),
         height: Math.max(1, readNumber(element, "height")),
       },
-      fill: style.fill,
-      stroke: style.stroke,
-      strokeWidth: style.strokeWidth,
-      radius: readNumber(element, "rx"),
+      fills: parsedFillToCanvasFills(style),
+      stroke: parsedStrokeToCanvasStroke(style),
+      cornerRadius: readNumber(element, "rx") || undefined,
       opacity,
       meta: commonMeta,
-    } as CanvasNode);
+    } as ImportNode);
     return id;
   }
 
   if (tag === "circle" || tag === "ellipse") {
-    const id = createCanvasNodeId("ellipse");
+    const id = createNodeId("ellipse");
     const cx = readNumber(element, "cx");
     const cy = readNumber(element, "cy");
     const rx = tag === "circle" ? readNumber(element, "r") : readNumber(element, "rx");
@@ -641,12 +787,11 @@ function parseSvgElement(
         width: Math.max(1, rx * 2),
         height: Math.max(1, ry * 2),
       },
-      fill: style.fill,
-      stroke: style.stroke,
-      strokeWidth: style.strokeWidth,
+      fills: parsedFillToCanvasFills(style),
+      stroke: parsedStrokeToCanvasStroke(style),
       opacity,
       meta: commonMeta,
-    } as CanvasNode);
+    } as ImportNode);
     return id;
   }
 
@@ -655,7 +800,7 @@ function parseSvgElement(
     const y1 = readNumber(element, "y1");
     const x2 = readNumber(element, "x2");
     const y2 = readNumber(element, "y2");
-    const id = createCanvasNodeId("line");
+    const id = createNodeId("line");
     state.nodes.push({
       id,
       type: "line",
@@ -667,11 +812,14 @@ function parseSvgElement(
         width: Math.max(1, Math.abs(x2 - x1)),
         height: Math.max(1, Math.abs(y2 - y1)),
       },
-      stroke: style.stroke ?? "#111827",
-      strokeWidth: style.strokeWidth ?? 1,
+      stroke: {
+        thickness: style.strokeWidth ?? 1,
+        align: "center",
+        fill: [{ type: "solid", color: style.stroke ?? "#111827" }],
+      },
       opacity,
       meta: commonMeta,
-    } as CanvasNode);
+    } as ImportNode);
     return id;
   }
 
@@ -681,8 +829,8 @@ function parseSvgElement(
     const bounds = getPointBounds(points);
     const id =
       tag === "polygon"
-        ? createCanvasNodeId("polygon")
-        : createCanvasNodeId("path");
+        ? createNodeId("polygon")
+        : createNodeId("path");
     if (tag === "polygon") {
       state.nodes.push({
         id,
@@ -691,12 +839,11 @@ function parseSvgElement(
         title: element.getAttribute("id") ?? "Polygon",
         bounds,
         points: Math.max(3, points.length),
-        fill: style.fill,
-        stroke: style.stroke,
-        strokeWidth: style.strokeWidth,
+        fills: parsedFillToCanvasFills(style),
+        stroke: parsedStrokeToCanvasStroke(style),
         opacity,
         meta: commonMeta,
-      } as CanvasNode);
+      } as ImportNode);
       return id;
     }
     state.nodes.push({
@@ -706,12 +853,15 @@ function parseSvgElement(
       title: element.getAttribute("id") ?? "Polyline",
       bounds,
       d: pointsToPath(points),
-      fill: "none",
-      stroke: style.stroke ?? "#111827",
-      strokeWidth: style.strokeWidth ?? 1,
+      fills: undefined,
+      stroke: {
+        thickness: style.strokeWidth ?? 1,
+        align: "center",
+        fill: [{ type: "solid", color: style.stroke ?? "#111827" }],
+      },
       opacity,
       meta: commonMeta,
-    } as CanvasNode);
+    } as ImportNode);
     return id;
   }
 
@@ -719,7 +869,7 @@ function parseSvgElement(
     const d = element.getAttribute("d");
     if (!d) return null;
     const bounds = getPathBounds(d);
-    const id = createCanvasNodeId("path");
+    const id = createNodeId("path");
     state.nodes.push({
       id,
       type: "path",
@@ -727,12 +877,11 @@ function parseSvgElement(
       title: element.getAttribute("id") ?? "Path",
       bounds,
       d,
-      fill: style.fill,
-      stroke: style.stroke,
-      strokeWidth: style.strokeWidth,
+      fills: parsedFillToCanvasFills(style),
+      stroke: parsedStrokeToCanvasStroke(style),
       opacity,
       meta: commonMeta,
-    } as CanvasNode);
+    } as ImportNode);
     return id;
   }
 
@@ -741,14 +890,14 @@ function parseSvgElement(
       element.getAttribute("href") ??
       element.getAttributeNS("http://www.w3.org/1999/xlink", "href");
     if (!href) return null;
-    const assetId = createCanvasNodeId("asset");
+    const assetId = createNodeId("asset");
     state.assets.push({
       id: assetId,
       url: href,
       mimeType: inferMimeTypeFromUrl(href),
       source: "upload",
     });
-    const id = createCanvasNodeId("image");
+    const id = createNodeId("image");
     state.nodes.push({
       id,
       type: "image",
@@ -764,7 +913,7 @@ function parseSvgElement(
       },
       opacity,
       meta: commonMeta,
-    } as CanvasNode);
+    } as ImportNode);
     return id;
   }
 
@@ -774,7 +923,8 @@ function parseSvgElement(
     const text = extractSvgTextContent(element);
     if (!text) return null;
     const fontSize = Math.max(8, style.fontSize ?? 16);
-    const id = createCanvasNodeId("text");
+    const id = createNodeId("text");
+    const textColor = style.fill ?? style.color ?? "#111827";
     state.nodes.push({
       id,
       type: "text",
@@ -783,7 +933,7 @@ function parseSvgElement(
       text,
       fontSize,
       fontFamily: style.fontFamily,
-      color: style.fill ?? style.color ?? "#111827",
+      fills: [{ type: "solid", color: textColor }],
       bounds: {
         x,
         y: y - fontSize,
@@ -792,7 +942,7 @@ function parseSvgElement(
       },
       opacity,
       meta: commonMeta,
-    } as CanvasNode);
+    } as ImportNode);
     return id;
   }
 
@@ -972,7 +1122,7 @@ function getPathBounds(d: string): CanvasBounds {
     : { x: 0, y: 0, width: 1, height: 1 };
 }
 
-function getSelectionBounds(nodes: CanvasNode[]): CanvasBounds | null {
+function getSelectionBounds(nodes: ImportNode[]): CanvasBounds | null {
   if (nodes.length === 0) return null;
   const minX = Math.min(...nodes.map((node) => node.bounds.x));
   const minY = Math.min(...nodes.map((node) => node.bounds.y));
@@ -988,25 +1138,6 @@ function getSelectionBounds(nodes: CanvasNode[]): CanvasBounds | null {
     width: Math.max(1, maxX - minX),
     height: Math.max(1, maxY - minY),
   };
-}
-
-function addChildRef(
-  doc: CucumberCanvasDocument,
-  parentId: string | null,
-  nodeId: string,
-): void {
-  if (parentId === null) {
-    if (!doc.rootNodeIds.includes(nodeId)) doc.rootNodeIds.push(nodeId);
-    return;
-  }
-  const parent = doc.nodes[parentId];
-  if (
-    parent &&
-    "childrenOrder" in parent &&
-    !parent.childrenOrder.includes(nodeId)
-  ) {
-    parent.childrenOrder.push(nodeId);
-  }
 }
 
 function inferMimeTypeFromUrl(url: string): string {

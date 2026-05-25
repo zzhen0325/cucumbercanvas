@@ -1,16 +1,28 @@
-import { TypedEventEmitter } from '@cucumber/engine';
-import type { ContainerNode, ContainerBounds, ContainerRole, ContextSlots, AgentBinding, InheritPolicy } from './types.js';
-import { resolveContext } from './context-resolver.js';
-
-let containerIdCounter = 0;
-function generateContainerId(): string {
-  return `container_${Date.now()}_${++containerIdCounter}`;
-}
+import type {
+  PenDocument,
+  PenNode,
+  FrameNode,
+  GroupNode,
+  ContainerRole,
+  ContextSlots,
+  AgentBinding,
+  InheritPolicy,
+} from '@cucumber/pen-types';
+import { TypedEventEmitter } from '@cucumber/pen-engine';
+import {
+  findNodeInTree,
+  findParentInTree,
+  insertNodeInTree,
+  removeNodeFromTree,
+  flattenNodes,
+  generateId,
+} from '@cucumber/pen-core';
+import { resolveContext, getContainerPath } from './context-resolver.js';
 
 export interface ContainerManagerEvents {
-  'container:add': (node: ContainerNode) => void;
+  'container:add': (node: PenNode) => void;
   'container:remove': (id: string) => void;
-  'container:update': (node: ContainerNode) => void;
+  'container:update': (node: PenNode) => void;
   'container:move': (id: string, newParentId: string | null) => void;
   'agent:bound': (containerId: string, binding: AgentBinding) => void;
   'agent:unbound': (containerId: string, agentId: string) => void;
@@ -22,105 +34,153 @@ export interface CreateContainerOptions {
   id?: string;
   parentId?: string | null;
   role?: ContainerRole[];
-  bounds: ContainerBounds;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
   label?: string;
   fill?: string;
-  stroke?: string;
+  fills?: PenNode extends { fills?: infer F } ? F : never;
+  stroke?: PenNode extends { stroke?: infer S } ? S : never;
+  opacity?: number;
 }
 
+export type DocAccessor = () => PenDocument;
+
 export class ContainerManager extends TypedEventEmitter<ContainerManagerEvents> {
-  private containers = new Map<string, ContainerNode>();
+  private getDoc: DocAccessor;
   private contextCache = new Map<string, ContextSlots>();
 
-  getContainer(id: string): ContainerNode | undefined {
-    return this.containers.get(id);
+  constructor(getDoc: DocAccessor) {
+    super();
+    this.getDoc = getDoc;
   }
 
-  getAllContainers(): ContainerNode[] {
-    return [...this.containers.values()];
+  /** Find a node by ID in the current document */
+  getContainer(id: string): PenNode | undefined {
+    const doc = this.getDoc();
+    return findNodeInTree(doc.pages?.[0]?.children ?? doc.children, id);
   }
 
-  getRootContainers(): ContainerNode[] {
-    return [...this.containers.values()].filter(c => c.parentId === null);
+  getAllContainers(): PenNode[] {
+    const doc = this.getDoc();
+    return flattenNodes(doc.pages?.[0]?.children ?? doc.children).filter(
+      (n) => n.type === 'frame' || n.type === 'group',
+    );
   }
 
-  getChildren(parentId: string): ContainerNode[] {
-    return [...this.containers.values()].filter(c => c.parentId === parentId);
+  getRootContainers(): PenNode[] {
+    const doc = this.getDoc();
+    const children = doc.pages?.[0]?.children ?? doc.children;
+    return children.filter((n) => n.type === 'frame' || n.type === 'group');
   }
 
-  createContainer(options: CreateContainerOptions): ContainerNode {
-    const node: ContainerNode = {
-      id: options.id ?? generateContainerId(),
-      type: 'container',
-      parentId: options.parentId ?? null,
-      role: options.role ?? ['visual'],
-      bounds: options.bounds,
+  getChildren(parentId: string): PenNode[] {
+    const parent = this.getContainer(parentId);
+    if (!parent || !('children' in parent) || !Array.isArray(parent.children)) return [];
+    return (parent.children as PenNode[]).filter(
+      (n) => n.type === 'frame' || n.type === 'group',
+    );
+  }
+
+  createContainer(options: CreateContainerOptions): PenNode {
+    const doc = this.getDoc();
+    const node: FrameNode = {
+      id: options.id ?? generateId(),
+      type: 'frame',
+      name: options.label ?? 'Container',
+      x: options.x ?? 0,
+      y: options.y ?? 0,
+      width: options.width ?? 400,
+      height: options.height ?? 300,
+      containerRole: options.role ?? ['visual'],
       contextSlots: {},
       inheritPolicy: 'merge',
       ioPorts: [],
-      style: {
-        fill: options.fill ?? '#ffffff0d',
-        stroke: options.stroke ?? '#666666',
-        opacity: 1,
-        label: options.label ?? 'Container',
-      },
+      fill: options.fills ?? (options.fill ? [{ type: 'solid', color: options.fill }] : [{ type: 'solid', color: '#ffffff0d' }]),
+      stroke: (options.stroke as FrameNode['stroke']) ?? { thickness: 2, fill: [{ type: 'solid', color: '#666666' }] },
+      opacity: options.opacity ?? 1,
     };
 
-    this.containers.set(node.id, node);
+    const parentId = options.parentId ?? null;
+    const children = doc.pages?.[0]?.children ?? doc.children;
+    const newChildren = parentId
+      ? insertNodeInTree(children, parentId, node)
+      : [...children, node];
+
+    if (doc.pages?.[0]) {
+      doc.pages[0].children = newChildren;
+    } else {
+      doc.children = newChildren;
+    }
+
     this.invalidateContextCache(node.id);
     this.emit('container:add', node);
     return node;
   }
 
   removeContainer(id: string): boolean {
-    const container = this.containers.get(id);
-    if (!container) return false;
+    const doc = this.getDoc();
+    const children = doc.pages?.[0]?.children ?? doc.children;
+    const node = findNodeInTree(children, id);
+    if (!node) return false;
 
-    const children = this.getChildren(id);
-    for (const child of children) {
-      child.parentId = container.parentId;
-      this.containers.set(child.id, child);
+    const newChildren = removeNodeFromTree(children, id);
+    if (doc.pages?.[0]) {
+      doc.pages[0].children = newChildren;
+    } else {
+      doc.children = newChildren;
     }
 
-    this.containers.delete(id);
     this.invalidateContextCache(id);
     this.emit('container:remove', id);
     return true;
   }
 
-  updateContainer(id: string, updates: Partial<ContainerNode>): boolean {
-    const container = this.containers.get(id);
-    if (!container) return false;
+  updateContainer(id: string, updates: Partial<PenNode>): boolean {
+    const doc = this.getDoc();
+    const children = doc.pages?.[0]?.children ?? doc.children;
+    const existing = findNodeInTree(children, id);
+    if (!existing) return false;
 
-    const updated = { ...container, ...updates, id: container.id, type: 'container' as const };
-    this.containers.set(id, updated);
+    const updated = { ...existing, ...updates, id: existing.id, type: existing.type } as PenNode;
+    // updateNodeInTree from pen-core handles immutable tree updates
+    const newChildren = updateNodeInList(children, id, updated);
+    if (doc.pages?.[0]) {
+      doc.pages[0].children = newChildren;
+    } else {
+      doc.children = newChildren;
+    }
+
     this.invalidateContextCache(id);
     this.emit('container:update', updated);
     return true;
   }
 
   moveContainer(id: string, newParentId: string | null): boolean {
-    const container = this.containers.get(id);
-    if (!container) return false;
-    if (newParentId === id) return false;
+    const doc = this.getDoc();
+    const children = doc.pages?.[0]?.children ?? doc.children;
+    const node = findNodeInTree(children, id);
+    if (!node || newParentId === id) return false;
 
-    if (newParentId && this.isDescendant(newParentId, id)) {
-      return false;
+    if (newParentId) {
+      const isDesc = isDescendantOf(children, newParentId, id);
+      if (isDesc) return false;
     }
 
-    container.parentId = newParentId;
-    this.containers.set(id, container);
+    const without = removeNodeFromTree(children, id);
+    const newChildren = newParentId
+      ? insertNodeInTree(without, newParentId, node)
+      : [...without, node];
+
+    if (doc.pages?.[0]) {
+      doc.pages[0].children = newChildren;
+    } else {
+      doc.children = newChildren;
+    }
+
     this.invalidateContextCache(id);
     this.emit('container:move', id, newParentId);
-    return true;
-  }
-
-  updateBounds(id: string, bounds: Partial<ContainerBounds>): boolean {
-    const container = this.containers.get(id);
-    if (!container) return false;
-    container.bounds = { ...container.bounds, ...bounds };
-    this.containers.set(id, container);
-    this.emit('container:update', container);
     return true;
   }
 
@@ -128,77 +188,105 @@ export class ContainerManager extends TypedEventEmitter<ContainerManagerEvents> 
     const cached = this.contextCache.get(containerId);
     if (cached) return cached;
 
-    const result = resolveContext(containerId, this.containers);
+    const doc = this.getDoc();
+    const children = doc.pages?.[0]?.children ?? doc.children;
+    const result = resolveContext(containerId, children);
     this.contextCache.set(containerId, result);
     return result;
   }
 
   getContainerPath(containerId: string): string[] {
-    const path: string[] = [];
-    let cur = this.containers.get(containerId);
-    while (cur) {
-      path.unshift(cur.id);
-      cur = cur.parentId ? this.containers.get(cur.parentId) : undefined;
-    }
-    return path;
+    const doc = this.getDoc();
+    const children = doc.pages?.[0]?.children ?? doc.children;
+    return getContainerPath(containerId, children);
   }
 
   bindAgent(containerId: string, binding: AgentBinding): boolean {
-    const container = this.containers.get(containerId);
-    if (!container) return false;
+    const doc = this.getDoc();
+    const children = doc.pages?.[0]?.children ?? doc.children;
+    const existing = findNodeInTree(children, containerId);
+    if (!existing) return false;
 
-    const updated: ContainerNode = {
-      ...container,
-      agentBinding: {
-        ...binding,
-        assignedAt: binding.assignedAt ?? Date.now(),
-      },
-    };
-    this.containers.set(containerId, updated);
+    const updated = {
+      ...existing,
+      agentBinding: { ...binding, assignedAt: binding.assignedAt ?? Date.now() },
+    } as PenNode;
+    const newChildren = updateNodeInList(children, containerId, updated);
+    if (doc.pages?.[0]) {
+      doc.pages[0].children = newChildren;
+    } else {
+      doc.children = newChildren;
+    }
+
     this.emit('agent:bound', containerId, updated.agentBinding!);
     this.emit('container:update', updated);
     return true;
   }
 
   unbindAgent(containerId: string): boolean {
-    const container = this.containers.get(containerId);
-    if (!container || !container.agentBinding?.agentId) return false;
+    const doc = this.getDoc();
+    const children = doc.pages?.[0]?.children ?? doc.children;
+    const existing = findNodeInTree(children, containerId);
+    if (!existing || !existing.agentBinding?.agentId) return false;
 
-    const agentId = container.agentBinding.agentId;
-    const updated: ContainerNode = { ...container, agentBinding: undefined };
-    this.containers.set(containerId, updated);
+    const agentId = existing.agentBinding.agentId;
+    const updated = { ...existing, agentBinding: undefined } as PenNode;
+    const newChildren = updateNodeInList(children, containerId, updated);
+    if (doc.pages?.[0]) {
+      doc.pages[0].children = newChildren;
+    } else {
+      doc.children = newChildren;
+    }
+
     this.emit('agent:unbound', containerId, agentId);
     this.emit('container:update', updated);
     return true;
   }
 
   updateAgentStatus(containerId: string, status: AgentBinding['status']): boolean {
-    const container = this.containers.get(containerId);
-    if (!container || !container.agentBinding) return false;
+    const doc = this.getDoc();
+    const children = doc.pages?.[0]?.children ?? doc.children;
+    const existing = findNodeInTree(children, containerId);
+    if (!existing || !existing.agentBinding) return false;
 
-    const updated: ContainerNode = {
-      ...container,
-      agentBinding: { ...container.agentBinding, status },
-    };
-    this.containers.set(containerId, updated);
-    this.emit('agent:status', containerId, container.agentBinding.agentId!, status);
+    const updated = {
+      ...existing,
+      agentBinding: { ...existing.agentBinding, status },
+    } as PenNode;
+    const newChildren = updateNodeInList(children, containerId, updated);
+    if (doc.pages?.[0]) {
+      doc.pages[0].children = newChildren;
+    } else {
+      doc.children = newChildren;
+    }
+
+    this.emit('agent:status', containerId, existing.agentBinding.agentId!, status);
     this.emit('container:update', updated);
     return true;
   }
 
   updateContextSlots(containerId: string, slots: Partial<ContextSlots>): boolean {
-    const container = this.containers.get(containerId);
-    if (!container) return false;
+    const doc = this.getDoc();
+    const children = doc.pages?.[0]?.children ?? doc.children;
+    const existing = findNodeInTree(children, containerId);
+    if (!existing) return false;
 
+    const currentSlots = existing.contextSlots ?? {};
     const mergedSlots: ContextSlots = {
-      style: { ...(container.contextSlots.style ?? {}), ...(slots.style ?? {}) },
-      tokens: { ...(container.contextSlots.tokens ?? {}), ...(slots.tokens ?? {}) },
-      rules: slots.rules !== undefined ? slots.rules : container.contextSlots.rules,
-      constraints: { ...(container.contextSlots.constraints ?? {}), ...(slots.constraints ?? {}) },
+      style: { ...(currentSlots.style ?? {}), ...(slots.style ?? {}) },
+      tokens: { ...(currentSlots.tokens ?? {}), ...(slots.tokens ?? {}) },
+      rules: slots.rules !== undefined ? slots.rules : currentSlots.rules,
+      constraints: { ...(currentSlots.constraints ?? {}), ...(slots.constraints ?? {}) },
     };
 
-    const updated: ContainerNode = { ...container, contextSlots: mergedSlots };
-    this.containers.set(containerId, updated);
+    const updated = { ...existing, contextSlots: mergedSlots } as PenNode;
+    const newChildren = updateNodeInList(children, containerId, updated);
+    if (doc.pages?.[0]) {
+      doc.pages[0].children = newChildren;
+    } else {
+      doc.children = newChildren;
+    }
+
     this.invalidateContextCache(containerId);
     this.emit('context:change', containerId, mergedSlots);
     this.emit('container:update', updated);
@@ -206,49 +294,61 @@ export class ContainerManager extends TypedEventEmitter<ContainerManagerEvents> 
   }
 
   setInheritPolicy(containerId: string, policy: InheritPolicy): boolean {
-    const container = this.containers.get(containerId);
-    if (!container) return false;
+    const doc = this.getDoc();
+    const children = doc.pages?.[0]?.children ?? doc.children;
+    const existing = findNodeInTree(children, containerId);
+    if (!existing) return false;
 
-    const updated: ContainerNode = { ...container, inheritPolicy: policy };
-    this.containers.set(containerId, updated);
+    const updated = { ...existing, inheritPolicy: policy } as PenNode;
+    const newChildren = updateNodeInList(children, containerId, updated);
+    if (doc.pages?.[0]) {
+      doc.pages[0].children = newChildren;
+    } else {
+      doc.children = newChildren;
+    }
+
     this.invalidateContextCache(containerId);
     this.emit('container:update', updated);
     return true;
   }
 
-  getContainersByAgent(agentId: string): ContainerNode[] {
-    return [...this.containers.values()].filter(
-      c => c.agentBinding?.agentId === agentId
+  getContainersByAgent(agentId: string): PenNode[] {
+    const doc = this.getDoc();
+    return flattenNodes(doc.pages?.[0]?.children ?? doc.children).filter(
+      (n) => n.agentBinding?.agentId === agentId,
     );
-  }
-
-  loadContainers(containers: ContainerNode[]): void {
-    this.containers.clear();
-    this.contextCache.clear();
-    for (const c of containers) {
-      this.containers.set(c.id, c);
-    }
-  }
-
-  serialize(): ContainerNode[] {
-    return [...this.containers.values()];
-  }
-
-  private isDescendant(potentialDescendant: string, ancestorId: string): boolean {
-    let cur = this.containers.get(potentialDescendant);
-    while (cur) {
-      if (cur.parentId === ancestorId) return true;
-      cur = cur.parentId ? this.containers.get(cur.parentId) : undefined;
-    }
-    return false;
   }
 
   private invalidateContextCache(containerId: string): void {
     this.contextCache.delete(containerId);
-    for (const container of this.containers.values()) {
-      if (this.isDescendant(container.id, containerId)) {
-        this.contextCache.delete(container.id);
+    // Invalidate all descendants too
+    const doc = this.getDoc();
+    const children = doc.pages?.[0]?.children ?? doc.children;
+    for (const [id] of this.contextCache) {
+      if (isDescendantOf(children, id, containerId)) {
+        this.contextCache.delete(id);
       }
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Tree mutation helpers (mutable for in-place doc updates)
+// ---------------------------------------------------------------------------
+
+function updateNodeInList(nodes: PenNode[], nodeId: string, updated: PenNode): PenNode[] {
+  return nodes.map((n) => {
+    if (n.id === nodeId) return updated;
+    if ('children' in n && Array.isArray(n.children)) {
+      return { ...n, children: updateNodeInList(n.children as PenNode[], nodeId, updated) } as PenNode;
+    }
+    return n;
+  });
+}
+
+function isDescendantOf(nodes: PenNode[], nodeId: string, ancestorId: string): boolean {
+  const parent = findParentInTree(nodes, nodeId);
+  if (!parent) return false;
+  if (parent.id === ancestorId) return true;
+  return isDescendantOf(nodes, parent.id, ancestorId);
 }

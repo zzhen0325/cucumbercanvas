@@ -12,6 +12,15 @@ import {
   type CanvasSceneElement,
   CanvasSurface,
 } from "./canvas/canvas-surface";
+import dynamic from "next/dynamic";
+
+/** Set to true to use the new Skia/CanvasKit renderer */
+const USE_SKIA_CANVAS = true;
+
+const SkiaCanvas = dynamic(
+  () => import("./canvas/skia-canvas").then((m) => ({ default: m.SkiaCanvas })),
+  { ssr: false },
+);
 import { ErrorBoundary } from "./error-boundary";
 
 export type CanvasSelectedElement = {
@@ -257,12 +266,21 @@ export function CanvasEditor({
       }
     >
       <div className="h-full w-full relative">
-        <CanvasSurface
-          initialContent={initialContent}
-          onApiReady={handleApiReady}
-          onDocumentChange={handleDocumentChange}
-          onSelectionChange={handleSelectionChange}
-        />
+        {USE_SKIA_CANVAS ? (
+          <SkiaCanvas
+            initialContent={initialContent}
+            onApiReady={handleApiReady}
+            onDocumentChange={handleDocumentChange}
+            onSelectionChange={handleSelectionChange}
+          />
+        ) : (
+          <CanvasSurface
+            initialContent={initialContent}
+            onApiReady={handleApiReady}
+            onDocumentChange={handleDocumentChange}
+            onSelectionChange={handleSelectionChange}
+          />
+        )}
       </div>
     </ErrorBoundary>
   );

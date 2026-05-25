@@ -14,7 +14,7 @@ describe('image-service types', () => {
   });
 
   it('MODEL_PLACEHOLDERS covers all providers', () => {
-    const providers: ImageGenProvider[] = ['openai', 'gemini', 'replicate', 'custom'];
+    const providers: ImageGenProvider[] = ['openai', 'gemini', 'replicate', 'custom', 'volcengine'];
     for (const p of providers) {
       expect(MODEL_PLACEHOLDERS[p]).toBeTruthy();
     }

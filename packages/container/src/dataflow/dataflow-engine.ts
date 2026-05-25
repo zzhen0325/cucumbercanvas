@@ -1,8 +1,9 @@
-import { TypedEventEmitter } from '@cucumber/engine';
-import type { IOPort } from '../types.js';
-import type { ContainerManager } from '../container-manager.js';
+import type { PenDocument, IOPort } from '@cucumber/pen-types';
+import { findNodeInTree } from '@cucumber/pen-core';
+import { TypedEventEmitter } from '@cucumber/pen-engine';
 import type { DataFlowEdge, PortPayload, NodeExecutor, ResolvedContext } from './types.js';
 import { isPortCompatible } from './types.js';
+import { resolveContext, getContainerPath } from '../context-resolver.js';
 
 export interface DataFlowEngineEvents {
   'edge:add': (edge: DataFlowEdge) => void;
@@ -14,25 +15,29 @@ export interface DataFlowEngineEvents {
   'cycle:detected': (nodeIds: string[]) => void;
 }
 
+export type DocAccessor = () => PenDocument;
+
 export class DataFlowEngine extends TypedEventEmitter<DataFlowEngineEvents> {
   private edges = new Map<string, DataFlowEdge>();
   private executors = new Map<string, NodeExecutor>();
   private cache = new Map<string, Map<string, PortPayload>>();
   private executing = new Set<string>();
-  private containerManager: ContainerManager;
+  private getDoc: DocAccessor;
 
-  constructor(containerManager: ContainerManager) {
+  constructor(getDoc: DocAccessor) {
     super();
-    this.containerManager = containerManager;
+    this.getDoc = getDoc;
   }
 
   addEdge(edge: Omit<DataFlowEdge, 'status'>): DataFlowEdge | null {
-    const sourceNode = this.containerManager.getContainer(edge.source.nodeId);
-    const targetNode = this.containerManager.getContainer(edge.target.nodeId);
+    const doc = this.getDoc();
+    const children = doc.pages?.[0]?.children ?? doc.children;
+    const sourceNode = findNodeInTree(children, edge.source.nodeId);
+    const targetNode = findNodeInTree(children, edge.target.nodeId);
     if (!sourceNode || !targetNode) return null;
 
-    const sourcePort = sourceNode.ioPorts.find(p => p.id === edge.source.portId);
-    const targetPort = targetNode.ioPorts.find(p => p.id === edge.target.portId);
+    const sourcePort = (sourceNode.ioPorts ?? []).find((p) => p.id === edge.source.portId);
+    const targetPort = (targetNode.ioPorts ?? []).find((p) => p.id === edge.target.portId);
     if (!sourcePort || !targetPort) return null;
     if (sourcePort.direction !== 'output' || targetPort.direction !== 'input') return null;
     if (!isPortCompatible(sourcePort.dataType, targetPort.dataType)) return null;
@@ -119,7 +124,7 @@ export class DataFlowEngine extends TypedEventEmitter<DataFlowEngineEvents> {
         await executor(
           inputPayloads,
           ctx,
-          (portId, payload) => outputPayloads.set(portId, payload)
+          (portId, payload) => outputPayloads.set(portId, payload),
         );
       } else {
         for (const [portId, payload] of Object.entries(inputPayloads)) {
@@ -133,7 +138,6 @@ export class DataFlowEngine extends TypedEventEmitter<DataFlowEngineEvents> {
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       this.emit('node:execute:error', nodeId, error);
-
       for (const edge of this.getEdgesForNode(nodeId).inputs) {
         this.setEdgeStatus(edge.id, 'error');
       }
@@ -153,16 +157,13 @@ export class DataFlowEngine extends TypedEventEmitter<DataFlowEngineEvents> {
     const sorted: string[] = [];
     const visiting = new Set<string>();
 
-    const nodeIds = rootId
-      ? this.getReachableNodes(rootId)
-      : this.getAllNodeIds();
+    const nodeIds = rootId ? this.getReachableNodes(rootId) : this.getAllNodeIds();
 
     const visit = (id: string): void => {
       if (visited.has(id)) return;
       if (visiting.has(id)) {
         throw new Error(`Cycle detected involving node: ${id}`);
       }
-
       visiting.add(id);
       const { inputs } = this.getEdgesForNode(id);
       for (const edge of inputs) {
@@ -176,7 +177,6 @@ export class DataFlowEngine extends TypedEventEmitter<DataFlowEngineEvents> {
     for (const id of nodeIds) {
       visit(id);
     }
-
     return sorted;
   }
 
@@ -218,13 +218,11 @@ export class DataFlowEngine extends TypedEventEmitter<DataFlowEngineEvents> {
   private wouldCreateCycle(newEdge: DataFlowEdge): boolean {
     const visited = new Set<string>();
     const queue = [newEdge.source.nodeId];
-
     while (queue.length > 0) {
       const current = queue.pop()!;
       if (current === newEdge.target.nodeId) return true;
       if (visited.has(current)) continue;
       visited.add(current);
-
       for (const edge of this.edges.values()) {
         if (edge.target.nodeId === current) {
           queue.push(edge.source.nodeId);
@@ -238,34 +236,28 @@ export class DataFlowEngine extends TypedEventEmitter<DataFlowEngineEvents> {
     const path: string[] = [newEdge.target.nodeId];
     const visited = new Set<string>();
     let current = newEdge.source.nodeId;
-
     while (current && !visited.has(current)) {
       path.push(current);
       visited.add(current);
       if (current === newEdge.target.nodeId) break;
-
-      const inEdges = [...this.edges.values()].filter(e => e.target.nodeId === current);
+      const inEdges = [...this.edges.values()].filter((e) => e.target.nodeId === current);
       current = inEdges[0]?.source.nodeId ?? '';
     }
-
     return path;
   }
 
   private getReachableNodes(rootId: string): string[] {
     const reachable = new Set<string>();
     const queue = [rootId];
-
     while (queue.length > 0) {
       const current = queue.pop()!;
       if (reachable.has(current)) continue;
       reachable.add(current);
-
       for (const edge of this.edges.values()) {
         if (edge.source.nodeId === current) queue.push(edge.target.nodeId);
         if (edge.target.nodeId === current) queue.push(edge.source.nodeId);
       }
     }
-
     return [...reachable];
   }
 
@@ -279,18 +271,10 @@ export class DataFlowEngine extends TypedEventEmitter<DataFlowEngineEvents> {
   }
 
   private buildResolvedContext(nodeId: string): ResolvedContext {
-    const container = this.containerManager.getContainer(nodeId);
-    if (!container) {
-      return { containerId: nodeId, containerPath: [nodeId] };
-    }
-
-    const resolvedSlots = this.containerManager.resolveContext(nodeId);
-    const containerPath = this.containerManager.getContainerPath(nodeId);
-
-    return {
-      ...resolvedSlots,
-      containerId: nodeId,
-      containerPath,
-    };
+    const doc = this.getDoc();
+    const children = doc.pages?.[0]?.children ?? doc.children;
+    const resolvedSlots = resolveContext(nodeId, children);
+    const containerPath = getContainerPath(nodeId, children);
+    return { ...resolvedSlots, containerId: nodeId, containerPath };
   }
 }

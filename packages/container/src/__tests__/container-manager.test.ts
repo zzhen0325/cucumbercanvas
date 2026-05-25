@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ContainerManager } from '../container-manager.js';
-import type { ContainerNode } from '../types.js';
+import type { PenNode as ContainerNode } from '../types.js';
 
 describe('ContainerManager', () => {
   it('should create a container', () => {
@@ -12,7 +12,7 @@ describe('ContainerManager', () => {
     expect(c.id).toBeDefined();
     expect(c.type).toBe('container');
     expect(c.bounds.width).toBe(200);
-    expect(c.style?.label).toBe('Test Container');
+    expect(c.title).toBe('Test Container');
   });
 
   it('should get and list containers', () => {

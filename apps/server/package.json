@@ -5,6 +5,7 @@
   "type": "module",
   "dependencies": {
     "@cucumber/canvas-core": "workspace:*",
+    "@cucumber/pen-core": "workspace:*",
     "@cucumber/shared": "workspace:*",
     "@fastify/multipart": "^9.4.0",
     "@fastify/websocket": "^11.2.0",

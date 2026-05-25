@@ -64,6 +64,10 @@ export interface FigmaPaint {
 export interface FigmaEffect {
   type?: "INNER_SHADOW" | "DROP_SHADOW" | "FOREGROUND_BLUR" | "BACKGROUND_BLUR";
   visible?: boolean;
+  radius?: number;
+  spread?: number;
+  offset?: { x?: number; y?: number };
+  color?: FigmaColor;
 }
 
 export interface FigmaFontName {

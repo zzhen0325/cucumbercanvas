@@ -1,175 +1,106 @@
-import { CanvasOperationError } from "./context.js";
-import { cloneCanvasDocument } from "./document.js";
-import { createCanvasNodeId } from "./document.js";
-import type {
-  CanvasAsset,
-  CanvasNode,
-  CucumberCanvasDocument,
-} from "./types.js";
+import type { PenDocument, PenNode } from '@cucumber/pen-types';
+import type { CanvasAsset } from './types.js';
+import { CanvasOperationError } from './context.js';
+import { cloneDocument, createNodeId, findNode, findParent } from './document.js';
+import { applyCanvasOperation } from './operations.js';
 
 export interface CanvasClipboardData {
-  nodes: Record<string, CanvasNode>;
-  rootNodeIds: string[];
-  assets: Record<string, CanvasAsset>;
+  nodes: PenNode[];
+  assets: CanvasAsset[];
+  /** @deprecated Legacy field — subset of nodes considered "roots" */
+  rootNodeIds?: string[];
 }
 
 export interface PasteCanvasClipboardResult {
-  doc: CucumberCanvasDocument;
+  doc: PenDocument;
   pastedIds: string[];
 }
 
-export function copyCanvasSelection(
-  doc: CucumberCanvasDocument,
-  nodeIds: string[],
-): CanvasClipboardData {
-  const selected = getTopLevelSelectedNodeIds(doc, nodeIds);
-  const nodes: Record<string, CanvasNode> = {};
-  const assets: Record<string, CanvasAsset> = {};
+export function copyCanvasSelection(doc: PenDocument, nodeIds: string[]): CanvasClipboardData {
+  const nodes: PenNode[] = [];
+  const assets: CanvasAsset[] = [];
+  const visited = new Set<string>();
 
   const collect = (nodeId: string) => {
-    const node = doc.nodes[nodeId];
+    if (visited.has(nodeId)) return;
+    visited.add(nodeId);
+    const node = findNode(doc, nodeId);
     if (!node) {
-      throw new CanvasOperationError(
-        "node_not_found",
-        `Node ${nodeId} does not exist.`,
-      );
+      throw new CanvasOperationError('node_not_found', `Node ${nodeId} does not exist.`);
     }
-    nodes[nodeId] = structuredClone(node);
-    if (node.type === "image") {
-      const asset = doc.assets[node.assetId];
-      if (asset) assets[asset.id] = structuredClone(asset);
-    }
-    if ("childrenOrder" in node) {
-      for (const childId of node.childrenOrder) collect(childId);
+    nodes.push(structuredClone(node));
+    if ('children' in node && Array.isArray(node.children)) {
+      for (const child of node.children as PenNode[]) {
+        collect(child.id);
+      }
     }
   };
 
-  for (const nodeId of selected) collect(nodeId);
-  return { nodes, rootNodeIds: selected, assets };
+  for (const nodeId of nodeIds) collect(nodeId);
+  return { nodes, assets };
 }
 
 export function duplicateCanvasNodes(
-  doc: CucumberCanvasDocument,
+  doc: PenDocument,
   nodeIds: string[],
   offset = 16,
 ): PasteCanvasClipboardResult {
-  return pasteCanvasClipboard(doc, copyCanvasSelection(doc, nodeIds), {
-    offset,
-    preserveParent: true,
-  });
+  return pasteCanvasClipboard(doc, copyCanvasSelection(doc, nodeIds), { offset });
 }
 
+/**
+ * Paste clipboard nodes into a document.
+ *
+ * clipboard.nodes may contain both parent and child nodes (copyCanvasSelection
+ * collects the full subtree). We only insert "clipboard-root" nodes — those
+ * whose original parent is NOT in the clipboard. Their children are already
+ * nested inside and are recursively re-ID'd via remapNodeTree.
+ */
 export function pasteCanvasClipboard(
-  doc: CucumberCanvasDocument,
+  doc: PenDocument,
   clipboard: CanvasClipboardData,
-  options?: {
-    offset?: number;
-    parentId?: string | null;
-    preserveParent?: boolean;
-  },
+  options?: { offset?: number; parentId?: string | null },
 ): PasteCanvasClipboardResult {
-  const next = cloneCanvasDocument(doc);
+  let next = cloneDocument(doc);
   const offset = options?.offset ?? 16;
-  const idMap = new Map<string, string>();
+  const targetParentId = options?.parentId ?? null;
   const pastedIds: string[] = [];
 
-  for (const asset of Object.values(clipboard.assets)) {
-    next.assets[asset.id] = structuredClone(asset);
+  const clipboardIds = new Set(clipboard.nodes.map((n) => n.id));
+
+  for (const original of clipboard.nodes) {
+    // Skip nodes whose parent is also in the clipboard — they are already
+    // nested inside the parent's children array and will be re-ID'd recursively.
+    const parent = findParent(doc, original.id);
+    if (parent && clipboardIds.has(parent.id)) continue;
+
+    const clone = remapNodeTree(original, offset, 0);
+    pastedIds.push(clone.id);
+    next = applyCanvasOperation(next, {
+      type: 'insertNode',
+      node: clone,
+      parentId: targetParentId,
+    });
   }
 
-  const cloneNode = (oldId: string, parentId: string | null): string => {
-    const original = clipboard.nodes[oldId];
-    if (!original) {
-      throw new CanvasOperationError(
-        "node_not_found",
-        `Clipboard node ${oldId} does not exist.`,
-      );
-    }
-
-    const newId = idMap.get(oldId) ?? createCanvasNodeId(original.type);
-    idMap.set(oldId, newId);
-
-    const clone: CanvasNode = {
-      ...structuredClone(original),
-      id: newId,
-      parentId,
-      bounds: {
-        ...original.bounds,
-        x: original.bounds.x + offset,
-        y: original.bounds.y + offset,
-      },
-      title: original.title ? `${original.title} copy` : original.title,
-    };
-
-    if ("childrenOrder" in clone) {
-      clone.childrenOrder = [];
-    }
-
-    next.nodes[newId] = clone;
-    addChildRef(next, parentId, newId);
-
-    if ("childrenOrder" in original) {
-      const containerClone = next.nodes[newId];
-      if (!containerClone || !("childrenOrder" in containerClone)) return newId;
-      for (const childId of original.childrenOrder) {
-        const childCloneId = cloneNode(childId, newId);
-        if (!containerClone.childrenOrder.includes(childCloneId)) {
-          containerClone.childrenOrder.push(childCloneId);
-        }
-      }
-    }
-
-    return newId;
-  };
-
-  for (const rootId of clipboard.rootNodeIds) {
-    const original = clipboard.nodes[rootId];
-    const parentId =
-      options && "parentId" in options
-        ? (options.parentId ?? null)
-        : options?.preserveParent
-          ? (original?.parentId ?? null)
-          : null;
-    const cloneId = cloneNode(rootId, parentId);
-    pastedIds.push(cloneId);
-  }
-
-  next.selection = pastedIds;
-  next.updatedAt = new Date().toISOString();
   return { doc: next, pastedIds };
 }
 
-function getTopLevelSelectedNodeIds(
-  doc: CucumberCanvasDocument,
-  nodeIds: string[],
-): string[] {
-  const selected = new Set(nodeIds.filter((id) => Boolean(doc.nodes[id])));
-  return nodeIds.filter((nodeId) => {
-    if (!selected.has(nodeId)) return false;
-    let current = doc.nodes[nodeId]?.parentId ?? null;
-    while (current) {
-      if (selected.has(current)) return false;
-      current = doc.nodes[current]?.parentId ?? null;
-    }
-    return true;
-  });
-}
+/** Deep-clone a node tree, assigning new IDs and applying positional offset to the root. */
+function remapNodeTree(node: PenNode, offset: number, depth: number): PenNode {
+  const clone = structuredClone(node) as PenNode;
+  clone.id = createNodeId(node.type);
+  if (depth === 0) {
+    clone.x = (clone.x ?? 0) + offset;
+    clone.y = (clone.y ?? 0) + offset;
+  }
+  clone.name = node.name ? `${node.name} copy` : node.name;
 
-function addChildRef(
-  doc: CucumberCanvasDocument,
-  parentId: string | null,
-  nodeId: string,
-): void {
-  if (parentId === null) {
-    if (!doc.rootNodeIds.includes(nodeId)) doc.rootNodeIds.push(nodeId);
-    return;
+  if ('children' in clone && Array.isArray(clone.children)) {
+    clone.children = (clone.children as PenNode[]).map((child) =>
+      remapNodeTree(child, offset, depth + 1),
+    );
   }
-  const parent = doc.nodes[parentId];
-  if (
-    parent &&
-    "childrenOrder" in parent &&
-    !parent.childrenOrder.includes(nodeId)
-  ) {
-    parent.childrenOrder.push(nodeId);
-  }
+
+  return clone;
 }

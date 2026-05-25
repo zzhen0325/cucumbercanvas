@@ -1,4 +1,4 @@
-import { TypedEventEmitter } from '@cucumber/engine';
+import { TypedEventEmitter } from '@cucumber/pen-engine';
 import type { DataFlowEngine } from '../dataflow/dataflow-engine.js';
 
 export interface BatchExecutorEvents {

@@ -1,4 +1,4 @@
-import { TypedEventEmitter } from '@cucumber/engine';
+import { TypedEventEmitter } from '@cucumber/pen-engine';
 import type { ContainerManager } from '../container-manager.js';
 
 export interface DirtyMarkingEvents {

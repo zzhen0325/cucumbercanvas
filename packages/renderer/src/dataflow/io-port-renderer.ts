@@ -50,7 +50,7 @@ export class IOPortRenderer {
   async syncPortsForContainer(containerNode: ContainerNode): Promise<void> {
     this.removePortsForContainer(containerNode.id);
 
-    for (const port of containerNode.ioPorts) {
+    for (const port of containerNode.ioPorts ?? []) {
       await this.addPortVisual(containerNode, port);
     }
   }
@@ -171,15 +171,19 @@ export class IOPortRenderer {
   }
 
   private getPortPosition(containerNode: ContainerNode, port: IOPort): { x: number; y: number } {
-    const { bounds, ioPorts } = containerNode;
+    const cx = containerNode.x ?? 0;
+    const cy = containerNode.y ?? 0;
+    const cw = (containerNode as any).width ?? 400;
+    const ch = (containerNode as any).height ?? 300;
+    const ioPorts = containerNode.ioPorts ?? [];
     const sameDirPorts = ioPorts.filter(p => p.direction === port.direction);
     const idx = sameDirPorts.indexOf(port);
-    const spacing = bounds.height / (sameDirPorts.length + 1);
+    const spacing = ch / (sameDirPorts.length + 1);
 
     if (port.direction === 'input') {
-      return { x: bounds.x, y: bounds.y + spacing * (idx + 1) };
+      return { x: cx, y: cy + spacing * (idx + 1) };
     }
-    return { x: bounds.x + bounds.width, y: bounds.y + spacing * (idx + 1) };
+    return { x: cx + cw, y: cy + spacing * (idx + 1) };
   }
 
   private getTypeIcon(dataType: IOPort['dataType']): string {

@@ -7,8 +7,7 @@ export type ToolType =
   | 'polygon'
   | 'path'
   | 'text'
-  | 'hand'
-  | 'container';
+  | 'hand';
 
 export interface ViewportState {
   zoom: number;

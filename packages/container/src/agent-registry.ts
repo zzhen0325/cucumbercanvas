@@ -1,4 +1,4 @@
-import { TypedEventEmitter } from '@cucumber/engine';
+import { TypedEventEmitter } from '@cucumber/pen-engine';
 import type { AgentBinding } from './types.js';
 
 const AGENT_COLORS = [

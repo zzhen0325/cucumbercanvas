@@ -1,4 +1,4 @@
-export type ImageGenProvider = 'openai' | 'gemini' | 'replicate' | 'custom';
+export type ImageGenProvider = 'openai' | 'gemini' | 'replicate' | 'custom' | 'volcengine';
 
 export interface ImageGenConfig {
   provider: ImageGenProvider;
@@ -33,6 +33,7 @@ export const MODEL_PLACEHOLDERS: Record<ImageGenProvider, string> = {
   gemini: 'gemini-2.0-flash-preview-image-generation',
   replicate: 'black-forest-labs/flux-1.1-pro',
   custom: 'model-name',
+  volcengine: 'bytedance/seedream-4.6',
 };
 
 export const DEFAULT_IMAGE_GEN_CONFIG: ImageGenConfig = {

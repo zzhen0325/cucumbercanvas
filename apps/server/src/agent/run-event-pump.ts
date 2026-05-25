@@ -59,6 +59,20 @@ export class RunEventPump {
         }
 
         if (event.type === "tool.started") {
+          // Guard against duplicate tool.started events for the same toolCallId
+          // (stream-adapter deduplicates, but defense-in-depth for upstream changes)
+          const alreadyExists = assistantBlocks.some(
+            (block) =>
+              block.type === "tool" &&
+              (block as ToolBlock).toolCallId === event.toolCallId,
+          );
+          if (alreadyExists) {
+            console.warn(
+              "[run-event-pump] duplicate tool.started for:",
+              event.toolCallId,
+            );
+            continue;
+          }
           assistantBlocks.push({
             type: "tool",
             toolCallId: event.toolCallId,
@@ -70,21 +84,30 @@ export class RunEventPump {
         }
 
         if (event.type === "tool.completed") {
-          const blockIndex = assistantBlocks.findIndex(
-            (block) =>
+          // Update all matching blocks in case duplicates slipped through
+          let updated = false;
+          assistantBlocks.forEach((block, idx) => {
+            if (
               block.type === "tool" &&
-              (block as ToolBlock).toolCallId === event.toolCallId,
-          );
-          if (blockIndex >= 0) {
-            assistantBlocks[blockIndex] = {
-              ...(assistantBlocks[blockIndex] as ToolBlock),
-              status: "completed",
-              ...(event.output ? { output: event.output } : {}),
-              ...(event.outputSummary
-                ? { outputSummary: event.outputSummary }
-                : {}),
-              ...(event.artifacts ? { artifacts: event.artifacts } : {}),
-            };
+              (block as ToolBlock).toolCallId === event.toolCallId
+            ) {
+              assistantBlocks[idx] = {
+                ...(block as ToolBlock),
+                status: "completed",
+                ...(event.output ? { output: event.output } : {}),
+                ...(event.outputSummary
+                  ? { outputSummary: event.outputSummary }
+                  : {}),
+                ...(event.artifacts ? { artifacts: event.artifacts } : {}),
+              };
+              updated = true;
+            }
+          });
+          if (!updated) {
+            console.warn(
+              "[run-event-pump] tool.completed for untracked toolCallId:",
+              event.toolCallId,
+            );
           }
         }
       }

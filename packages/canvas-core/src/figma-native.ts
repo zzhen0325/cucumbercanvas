@@ -3,13 +3,14 @@ import { decompress as zstdDecompress } from "fzstd";
 import * as UZIP from "uzip";
 
 import { createCanvasNodeId } from "./document.js";
+import type { CanvasEffect, CanvasFill, CanvasStroke } from "./styles.js";
 import type {
   CanvasAsset,
   CanvasImportedAutoLayoutMeta,
   CanvasImportWarningCode,
-  CanvasNode,
   CanvasImportedNodeMeta,
 } from "./types.js";
+import type { ImportNode } from "./import.js";
 import type {
   FigmaClipboardData,
   FigmaColor,
@@ -30,13 +31,13 @@ export interface FigmaNativeWarning {
 
 export interface FigmaNativeParseResult {
   rootNodeIds: string[];
-  nodes: CanvasNode[];
+  nodes: ImportNode[];
   assets: CanvasAsset[];
   warnings: FigmaNativeWarning[];
 }
 
 type FigmaConvertState = {
-  nodes: CanvasNode[];
+  nodes: ImportNode[];
   assets: CanvasAsset[];
   warnings: FigmaNativeWarning[];
   imageAssetCache: Map<string, { asset: CanvasAsset; url: string }>;
@@ -509,20 +510,20 @@ function convertFigmaGroupLike(
 
   const frameFill = getPrimaryVisiblePaint(figma.fillPaints ?? figma.backgroundPaints);
   if (frameFill && frameFill.type !== "IMAGE" && bounds.width > 0 && bounds.height > 0) {
-    const backgroundId = createCanvasNodeId("rect");
+    const backgroundId = createCanvasNodeId("rectangle");
     state.nodes.push({
       id: backgroundId,
-      type: "rect",
+      type: "rectangle",
       parentId: groupId,
       title: `${figma.name ?? "Frame"} background`,
       bounds,
-      fill: getPaintColor(frameFill),
-      stroke: getPaintColor(getPrimaryVisiblePaint(figma.strokePaints)),
-      strokeWidth: figma.strokeWeight,
-      radius: figma.cornerRadius,
+      fills: getPaintFills([frameFill]),
+      stroke: getPaintStroke(getPrimaryVisiblePaint(figma.strokePaints), figma.strokeWeight),
+      cornerRadius: figma.cornerRadius,
       locked: figma.locked,
       visible: figma.visible,
-      meta: createFigmaMeta(figma, { parentStackMode }),
+      effects: convertFigmaEffects(figma.effects),
+    meta: createFigmaMeta(figma, { parentStackMode }),
     });
     childIds.push(backgroundId);
   }
@@ -553,6 +554,7 @@ function convertFigmaGroupLike(
     childrenOrder: childIds,
     locked: figma.locked,
     visible: figma.visible,
+    effects: convertFigmaEffects(figma.effects),
     meta: createFigmaMeta(figma, { parentStackMode }),
   });
   return groupId;
@@ -611,7 +613,7 @@ function convertFigmaRectangle(
   parentId: string | null,
   decoded: FigmaDecodedFile,
   state: {
-    nodes: CanvasNode[];
+    nodes: ImportNode[];
     assets: CanvasAsset[];
     warnings: FigmaNativeWarning[];
     imageAssetCache: Map<string, { asset: CanvasAsset; url: string }>;
@@ -635,7 +637,8 @@ function convertFigmaRectangle(
         alt: figma.name,
         locked: figma.locked,
         visible: figma.visible,
-        meta: createFigmaMeta(figma, {
+        effects: convertFigmaEffects(figma.effects),
+    meta: createFigmaMeta(figma, {
           degradationHints: ["partial_fidelity"],
           parentStackMode,
         }),
@@ -651,19 +654,19 @@ function convertFigmaRectangle(
     });
   }
 
-  const nodeId = createCanvasNodeId("rect");
+  const nodeId = createCanvasNodeId("rectangle");
   state.nodes.push({
     id: nodeId,
-    type: "rect",
+    type: "rectangle",
     parentId,
     title: figma.name ?? "Imported rectangle",
     bounds: getNodeBounds(figma),
-    fill: getPaintColor(getPrimaryVisiblePaint(figma.fillPaints ?? figma.backgroundPaints)),
-    stroke: getPaintColor(getPrimaryVisiblePaint(figma.strokePaints)),
-    strokeWidth: figma.strokeWeight,
-    radius: figma.cornerRadius,
+    fills: getPaintFills(figma.fillPaints ?? figma.backgroundPaints),
+    stroke: getPaintStroke(getPrimaryVisiblePaint(figma.strokePaints), figma.strokeWeight),
+    cornerRadius: figma.cornerRadius,
     locked: figma.locked,
     visible: figma.visible,
+    effects: convertFigmaEffects(figma.effects),
     meta: createFigmaMeta(figma, { parentStackMode }),
   });
   return nodeId;
@@ -673,7 +676,7 @@ function convertFigmaEllipse(
   figma: FigmaNodeChange,
   parentId: string | null,
   state: {
-    nodes: CanvasNode[];
+    nodes: ImportNode[];
   },
   parentStackMode?: FigmaNodeChange["stackMode"],
 ): string {
@@ -684,11 +687,11 @@ function convertFigmaEllipse(
     parentId,
     title: figma.name ?? "Imported ellipse",
     bounds: getNodeBounds(figma),
-    fill: getPaintColor(getPrimaryVisiblePaint(figma.fillPaints)),
-    stroke: getPaintColor(getPrimaryVisiblePaint(figma.strokePaints)),
-    strokeWidth: figma.strokeWeight,
+    fills: getPaintFills(figma.fillPaints),
+    stroke: getPaintStroke(getPrimaryVisiblePaint(figma.strokePaints), figma.strokeWeight),
     locked: figma.locked,
     visible: figma.visible,
+    effects: convertFigmaEffects(figma.effects),
     meta: createFigmaMeta(figma, { parentStackMode }),
   });
   return nodeId;
@@ -698,7 +701,7 @@ function convertFigmaLine(
   figma: FigmaNodeChange,
   parentId: string | null,
   state: {
-    nodes: CanvasNode[];
+    nodes: ImportNode[];
   },
   parentStackMode?: FigmaNodeChange["stackMode"],
 ): string {
@@ -709,10 +712,10 @@ function convertFigmaLine(
     parentId,
     title: figma.name ?? "Imported line",
     bounds: getNodeBounds(figma),
-    stroke: getPaintColor(getPrimaryVisiblePaint(figma.strokePaints ?? figma.fillPaints)),
-    strokeWidth: figma.strokeWeight,
+    stroke: getPaintStroke(getPrimaryVisiblePaint(figma.strokePaints ?? figma.fillPaints), figma.strokeWeight),
     locked: figma.locked,
     visible: figma.visible,
+    effects: convertFigmaEffects(figma.effects),
     meta: createFigmaMeta(figma, { parentStackMode }),
   });
   return nodeId;
@@ -722,7 +725,7 @@ function convertFigmaText(
   figma: FigmaNodeChange,
   parentId: string | null,
   state: {
-    nodes: CanvasNode[];
+    nodes: ImportNode[];
   },
   parentStackMode?: FigmaNodeChange["stackMode"],
 ): string {
@@ -736,11 +739,13 @@ function convertFigmaText(
     text,
     fontSize: Math.max(12, figma.fontSize ?? 16),
     fontFamily: figma.fontName?.family,
-    color: getPaintColor(getPrimaryVisiblePaint(figma.fillPaints)) ?? "#111827",
-    align: mapTextAlign(figma.textAlignHorizontal),
+    fontWeight: figma.fontName ? extractFontWeight(figma.fontName) : undefined,
+    fills: getPaintFills(figma.fillPaints) ?? [{ type: "solid", color: "#111827" }],
+    textAlign: mapTextAlign(figma.textAlignHorizontal),
     bounds: getNodeBounds(figma),
     locked: figma.locked,
     visible: figma.visible,
+    effects: convertFigmaEffects(figma.effects),
     meta: createFigmaMeta(figma, { parentStackMode }),
   });
   return nodeId;
@@ -764,16 +769,16 @@ function convertFigmaVector(
     });
     state.nodes.push({
       id: pathId,
-      type: "rect",
+      type: "rectangle",
       parentId,
       title: figma.name ?? "Imported vector fallback",
       bounds: getNodeBounds(figma),
-      fill: getPaintColor(getPrimaryVisiblePaint(figma.fillPaints)),
-      stroke: getPaintColor(getPrimaryVisiblePaint(figma.strokePaints)),
-      strokeWidth: figma.strokeWeight,
+      fills: getPaintFills(figma.fillPaints),
+      stroke: getPaintStroke(getPrimaryVisiblePaint(figma.strokePaints), figma.strokeWeight),
       locked: figma.locked,
       visible: figma.visible,
-      meta: createFigmaMeta(figma, {
+      effects: convertFigmaEffects(figma.effects),
+    meta: createFigmaMeta(figma, {
         degradationHints: ["partial_fidelity"],
         parentStackMode,
       }),
@@ -788,11 +793,11 @@ function convertFigmaVector(
     title: figma.name ?? "Imported vector",
     d: path,
     bounds: normalizePathBounds(figma, path),
-    fill: getPaintColor(getPrimaryVisiblePaint(figma.fillPaints)),
-    stroke: getPaintColor(getPrimaryVisiblePaint(figma.strokePaints)),
-    strokeWidth: figma.strokeWeight,
+    fills: getPaintFills(figma.fillPaints),
+    stroke: getPaintStroke(getPrimaryVisiblePaint(figma.strokePaints), figma.strokeWeight),
     locked: figma.locked,
     visible: figma.visible,
+    effects: convertFigmaEffects(figma.effects),
     meta: createFigmaMeta(figma, { parentStackMode }),
   });
   return pathId;
@@ -1322,14 +1327,7 @@ function pushFigmaWarnings(figma: FigmaNodeChange, warnings: FigmaNativeWarning[
     });
   }
 
-  if (figma.effects?.some((effect) => effect.visible !== false)) {
-    warnings.push({
-      code: "effects_dropped",
-      message: `Figma 节点 "${figma.name ?? originNodeType ?? "Unnamed"}" 的高级效果未完整保留。`,
-      originNodeId,
-      originNodeType,
-    });
-  }
+  // Effects are now converted via convertFigmaEffects() — no longer dropped.
 
   if (figma.type === "SYMBOL" || figma.type === "INSTANCE") {
     warnings.push({
@@ -1603,6 +1601,60 @@ function getPaintColor(paint?: FigmaPaint): string | undefined {
   return undefined;
 }
 
+function getPaintFills(paints?: FigmaPaint[]): CanvasFill[] | undefined {
+  if (!paints || paints.length === 0) return undefined;
+  const result: CanvasFill[] = [];
+  for (const paint of paints) {
+    if (paint.visible === false) continue;
+    if (paint.type === "SOLID" && paint.color) {
+      result.push({
+        type: "solid",
+        color: figmaColorToHex(paint.color, paint.opacity),
+      });
+    } else if (paint.type === "GRADIENT_LINEAR" && paint.stops) {
+      result.push({
+        type: "linear_gradient",
+        stops: paint.stops.map((s) => ({
+          offset: s.position ?? 0,
+          color: figmaColorToHex(s.color, paint.opacity),
+        })),
+      });
+    } else if (paint.type === "GRADIENT_RADIAL" && paint.stops) {
+      result.push({
+        type: "radial_gradient",
+        stops: paint.stops.map((s) => ({
+          offset: s.position ?? 0,
+          color: figmaColorToHex(s.color, paint.opacity),
+        })),
+      });
+    }
+  }
+  return result.length > 0 ? result : undefined;
+}
+
+function getPaintStroke(
+  paint?: FigmaPaint,
+  weight?: number,
+): CanvasStroke | undefined {
+  const color = getPaintColor(paint);
+  if (!color && !weight) return undefined;
+  return {
+    thickness: weight ?? 1,
+    align: "center",
+    fill: color ? [{ type: "solid", color }] : undefined,
+  };
+}
+
+function extractFontWeight(fontName: { family?: string; style?: string }): number | undefined {
+  const style = fontName.style ?? "";
+  if (/\b(bold|700|800|900)\b/i.test(style)) return 700;
+  if (/\b(semibold|600)\b/i.test(style)) return 600;
+  if (/\b(medium|500)\b/i.test(style)) return 500;
+  if (/\b(light|300)\b/i.test(style)) return 300;
+  if (/\b(thin|100)\b/i.test(style)) return 100;
+  return undefined;
+}
+
 function figmaColorToHex(color: FigmaColor, opacity?: number): string {
   const r = Math.round(color.r * 255)
     .toString(16)
@@ -1620,6 +1672,45 @@ function figmaColorToHex(color: FigmaColor, opacity?: number): string {
   return `#${r}${g}${b}${Math.round(alpha * 255)
     .toString(16)
     .padStart(2, "0")}`;
+}
+
+/** Convert Figma effects to CanvasEffect[]. Returns undefined if no visible effects. */
+function convertFigmaEffects(effects?: import("./figma-native-types.js").FigmaEffect[]): CanvasEffect[] | undefined {
+  if (!effects || effects.length === 0) return undefined;
+  const mapped: CanvasEffect[] = [];
+  for (const effect of effects) {
+    if (effect.visible === false) continue;
+    switch (effect.type) {
+      case "DROP_SHADOW":
+      case "INNER_SHADOW": {
+        mapped.push({
+          type: "shadow",
+          inner: effect.type === "INNER_SHADOW",
+          offsetX: effect.offset?.x ?? 0,
+          offsetY: effect.offset?.y ?? 0,
+          blur: effect.radius ?? 0,
+          spread: effect.spread ?? 0,
+          color: effect.color ? figmaColorToHex(effect.color) : "#00000040",
+        });
+        break;
+      }
+      case "FOREGROUND_BLUR": {
+        mapped.push({
+          type: "blur",
+          radius: effect.radius ?? 0,
+        });
+        break;
+      }
+      case "BACKGROUND_BLUR": {
+        mapped.push({
+          type: "background_blur",
+          radius: effect.radius ?? 0,
+        });
+        break;
+      }
+    }
+  }
+  return mapped.length > 0 ? mapped : undefined;
 }
 
 function mapTextAlign(

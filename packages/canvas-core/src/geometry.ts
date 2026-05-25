@@ -1,24 +1,16 @@
-import type {
-  CanvasBounds,
-  CanvasNode,
-  CucumberCanvasDocument,
-} from "./types.js";
+import type { PenDocument, PenNode } from '@cucumber/pen-types';
+import type { CanvasBounds } from './types.js';
+import { findNode, flattenNodes, getNodeBounds } from './document.js';
 
 export interface OrderedCanvasNode {
-  node: CanvasNode;
+  node: PenNode;
   depth: number;
 }
 
 export function normalizeBounds(bounds: CanvasBounds): CanvasBounds {
   const x = Math.min(bounds.x, bounds.x + bounds.width);
   const y = Math.min(bounds.y, bounds.y + bounds.height);
-  return {
-    ...bounds,
-    x,
-    y,
-    width: Math.abs(bounds.width),
-    height: Math.abs(bounds.height),
-  };
+  return { ...bounds, x, y, width: Math.abs(bounds.width), height: Math.abs(bounds.height) };
 }
 
 export function boundsIntersect(a: CanvasBounds, b: CanvasBounds): boolean {
@@ -33,58 +25,45 @@ export function boundsIntersect(a: CanvasBounds, b: CanvasBounds): boolean {
 }
 
 export function getBoundsUnion(boundsList: CanvasBounds[]): CanvasBounds {
-  if (boundsList.length === 0) {
-    return { x: 0, y: 0, width: 0, height: 0 };
-  }
+  if (boundsList.length === 0) return { x: 0, y: 0, width: 0, height: 0 };
   const normalized = boundsList.map(normalizeBounds);
-  const minX = Math.min(...normalized.map((bounds) => bounds.x));
-  const minY = Math.min(...normalized.map((bounds) => bounds.y));
-  const maxX = Math.max(...normalized.map((bounds) => bounds.x + bounds.width));
-  const maxY = Math.max(
-    ...normalized.map((bounds) => bounds.y + bounds.height),
-  );
+  const minX = Math.min(...normalized.map((b) => b.x));
+  const minY = Math.min(...normalized.map((b) => b.y));
+  const maxX = Math.max(...normalized.map((b) => b.x + b.width));
+  const maxY = Math.max(...normalized.map((b) => b.y + b.height));
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
-export function getSelectionBounds(
-  doc: CucumberCanvasDocument,
-  nodeIds: string[],
-): CanvasBounds | null {
+export function getSelectionBounds(doc: PenDocument, nodeIds: string[]): CanvasBounds | null {
   const boundsList = nodeIds
-    .map((nodeId) => doc.nodes[nodeId]?.bounds)
-    .filter((bounds): bounds is CanvasBounds => Boolean(bounds));
+    .map((id) => findNode(doc, id))
+    .filter(Boolean)
+    .map((n) => getNodeBounds(n!));
   if (boundsList.length === 0) return null;
   return getBoundsUnion(boundsList);
 }
 
-export function getOrderedCanvasNodes(
-  doc: CucumberCanvasDocument,
-): OrderedCanvasNode[] {
+export function getOrderedCanvasNodes(doc: PenDocument): OrderedCanvasNode[] {
   const result: OrderedCanvasNode[] = [];
-  const visit = (nodeId: string, depth: number) => {
-    const node = doc.nodes[nodeId];
-    if (!node) return;
-    result.push({ node, depth });
-    if ("childrenOrder" in node) {
-      for (const childId of node.childrenOrder) {
-        visit(childId, depth + 1);
+  const walk = (nodes: PenNode[], depth: number) => {
+    for (const node of nodes) {
+      result.push({ node, depth });
+      if ('children' in node && Array.isArray(node.children)) {
+        walk(node.children as PenNode[], depth + 1);
       }
     }
   };
-
-  for (const nodeId of doc.rootNodeIds) {
-    visit(nodeId, 0);
-  }
+  // Get children from active page
+  const children = doc.pages?.[0]?.children ?? doc.children;
+  walk(children, 0);
   return result;
 }
 
 export function getVisibleCanvasNodesInBounds(
-  doc: CucumberCanvasDocument,
+  doc: PenDocument,
   bounds: CanvasBounds,
-): CanvasNode[] {
+): PenNode[] {
   return getOrderedCanvasNodes(doc)
-    .map((entry) => entry.node)
-    .filter(
-      (node) => node.visible !== false && boundsIntersect(node.bounds, bounds),
-    );
+    .map((e) => e.node)
+    .filter((node) => node.visible !== false && boundsIntersect(getNodeBounds(node), bounds));
 }

@@ -1,4 +1,5 @@
-import type { ContainerNode, ContainerBounds } from '@cucumber/container';
+import type { ContainerNode } from '@cucumber/container';
+import type { CanvasFill } from '@cucumber/canvas-core';
 
 export interface RenderNode {
   id: string;
@@ -31,20 +32,29 @@ export interface ShadowModeOptions {
   syncViewport: boolean;
 }
 
+function extractSolidColor(fills?: CanvasFill[]): string | undefined {
+  if (!fills || fills.length === 0) return undefined;
+  const first = fills[0];
+  if (first?.type === 'solid') return first.color;
+  return undefined;
+}
+
 export function containerNodeToRenderNode(container: ContainerNode): RenderNode {
   return {
     id: container.id,
     type: 'container',
-    absX: container.bounds.x,
-    absY: container.bounds.y,
-    absW: container.bounds.width,
-    absH: container.bounds.height,
+    absX: container.x ?? 0,
+    absY: container.y ?? 0,
+    absW: (container as any).width ?? 400,
+    absH: (container as any).height ?? 300,
     rotation: 0,
-    opacity: container.style?.opacity ?? 1,
-    fill: container.style?.fill ?? '#ffffff0d',
-    stroke: container.style?.stroke ?? '#666666',
-    strokeWidth: 2,
+    opacity: typeof container.opacity === 'number' ? container.opacity : 1,
+    fill: extractSolidColor(container.fill as CanvasFill[]) ?? '#ffffff0d',
+    stroke: container.stroke?.fill?.[0] && container.stroke.fill[0].type === 'solid'
+      ? container.stroke.fill[0].color
+      : '#666666',
+    strokeWidth: typeof container.stroke?.thickness === 'number' ? container.stroke.thickness : 2,
     cornerRadius: 8,
-    label: container.style?.label ?? 'Container',
+    label: container.name ?? 'Container',
   };
 }

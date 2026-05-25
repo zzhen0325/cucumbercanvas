@@ -1,4 +1,6 @@
-import type { ContainerNode, ContainerBounds, ContextSlots, IOPort, AgentBinding, ContainerPermissions } from './types.js';
+import type { PenNode as ContainerNode } from '@cucumber/pen-types';
+import type { ContainerBounds } from './types.js';
+import type { ContextSlots, IOPort, AgentBinding, ContainerPermissions } from '@cucumber/pen-types';
 
 export interface NodeSummary {
   id: string;

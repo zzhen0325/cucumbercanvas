@@ -1,0 +1,25 @@
+{
+  "name": "@cucumber/pen-engine",
+  "version": "0.1.0",
+  "description": "Headless design engine for Cucumber Studio — zero framework dependencies",
+  "license": "MIT",
+  "files": ["src"],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cucumber/pen-core": "workspace:*",
+    "@cucumber/pen-types": "workspace:*",
+    "nanoid": "^5.1.6"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}
