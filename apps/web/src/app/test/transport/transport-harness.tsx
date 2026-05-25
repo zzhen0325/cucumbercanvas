@@ -5,12 +5,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { StreamEvent } from "@cucumber/shared";
 import { useSseStream } from "../../../hooks/use-sse-stream";
 import { useWebSocket } from "../../../hooks/use-websocket";
+import { useAuth } from "../../../lib/auth-context";
 
-const ACCESS_TOKEN = "token";
 const CANVAS_ID = "canvas-1";
 const RPC_METHOD = "browser.echo";
 
 export function TransportHarness() {
+  const { loading, session } = useAuth();
+  const accessToken = session?.access_token ?? "";
   const [sseErrors, setSseErrors] = useState<string[]>([]);
   const [sseEvents, setSseEvents] = useState<string[]>([]);
   const [sseOpenCount, setSseOpenCount] = useState(0);
@@ -18,8 +20,8 @@ export function TransportHarness() {
   const [streamActive, setStreamActive] = useState(false);
   const [wsCalls, setWsCalls] = useState<string[]>([]);
   const streamHandleRef = useRef<{ stop: () => void } | null>(null);
-  const { startStream } = useSseStream(ACCESS_TOKEN);
-  const { connected, registerRPC } = useWebSocket(() => ACCESS_TOKEN);
+  const { startStream } = useSseStream(accessToken);
+  const { connected, registerRPC } = useWebSocket(() => accessToken || null);
 
   useEffect(() => {
     return registerRPC(RPC_METHOD, async (params) => {
@@ -45,6 +47,13 @@ export function TransportHarness() {
     setSseEvents([]);
     setSseOpenCount(0);
     setSseReconnectCount(0);
+
+    if (!accessToken) {
+      setSseErrors(["No access token available for the transport harness."]);
+      setStreamActive(false);
+      return null;
+    }
+
     setStreamActive(true);
 
     return startStream({
@@ -65,7 +74,7 @@ export function TransportHarness() {
         setSseReconnectCount((count) => count + 1);
       },
     });
-  }, [startStream, stopStream]);
+  }, [accessToken, startStream, stopStream]);
 
   const handleStartSse = useCallback(() => {
     streamHandleRef.current = startHarnessStream();
@@ -77,7 +86,12 @@ export function TransportHarness() {
     <main style={{ display: "grid", gap: 16, padding: 24 }}>
       <h1>Transport Harness</h1>
       <div style={{ display: "flex", gap: 12 }}>
-        <button data-testid="start-sse" onClick={handleStartSse} type="button">
+        <button
+          data-testid="start-sse"
+          disabled={loading || !accessToken}
+          onClick={handleStartSse}
+          type="button"
+        >
           Start SSE
         </button>
         <button data-testid="stop-sse" onClick={stopStream} type="button">

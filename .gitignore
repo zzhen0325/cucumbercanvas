@@ -5,6 +5,8 @@
 **/node_modules
 /.pnp
 .pnp.js
+.bun/
+**/.bun/
 
 # testing
 /coverage
@@ -14,6 +16,7 @@
 **/.next/
 /out/
 apps/web/out/
+openpencil/out/
 supabase/.temp/
 
 # production
@@ -26,7 +29,6 @@ supabase/.temp/
 *.pem
 .worktrees/
 .superpowers/
-openpencil/.bun/
 
 # debug
 npm-debug.log*
@@ -52,6 +54,7 @@ supabase/supabase/
 
 tmp/
 temp/.claude/worktrees/
+.codegraph/
 
 # internal dev docs & operational secrets (keep locally, exclude from repo)
 .claude/skills/production-debugger/

@@ -1,8 +1,13 @@
-import type { ContentBlock, RunCreateRequest, ToolBlock } from "@cucumber/shared";
+import type {
+  ContentBlock,
+  RunCreateRequest,
+  ToolBlock,
+} from "@cucumber/shared";
 
 import type { ChatService } from "../features/chat/chat-service.js";
 import type { AuthenticatedUser } from "../supabase/user.js";
 import type { CanvasEventBuffer } from "../ws/event-buffer.js";
+import { createRunFailedEvent } from "./run-failure.js";
 import type { AgentRunService } from "./runtime.js";
 
 type StartRunInput = {
@@ -129,16 +134,15 @@ export class RunEventPump {
       }
     } catch (error) {
       console.error("[run-event-pump] stream failed:", error);
-      this.deps.eventBuffer.publish(canvasId, {
-        type: "run.failed",
-        runId: input.runId,
-        error: {
-          code: "run_failed",
-          message:
-            error instanceof Error ? error.message : "Stream failed unexpectedly",
-        },
-        timestamp: new Date().toISOString(),
-      });
+      this.deps.eventBuffer.publish(
+        canvasId,
+        createRunFailedEvent({
+          error,
+          now: () => new Date().toISOString(),
+          runId: input.runId,
+          source: "run-event-pump",
+        }),
+      );
     }
   }
 }

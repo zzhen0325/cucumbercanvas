@@ -35,11 +35,13 @@ describe("registerSseRoutes", () => {
 
       expect(response.status).toBe(200);
       const reader = response.body?.getReader();
-      expect(reader).toBeDefined();
+      if (!reader) throw new Error("Expected SSE response body reader.");
 
       const replayText = await readChunksUntil(
-        reader!,
-        (text) => text.includes("id: 3") && text.includes('"id":"evt-3"'),
+        reader,
+        (text) =>
+          text.includes("id: 3") &&
+          text.includes('"messageId":"message-evt-3"'),
       );
 
       expect(replayText).toContain("retry: 1000");
@@ -49,8 +51,10 @@ describe("registerSseRoutes", () => {
 
       eventBuffer.publish("canvas-1", createStreamEvent("evt-4"));
       const liveText = await readChunksUntil(
-        reader!,
-        (text) => text.includes("id: 4") && text.includes('"id":"evt-4"'),
+        reader,
+        (text) =>
+          text.includes("id: 4") &&
+          text.includes('"messageId":"message-evt-4"'),
       );
       expect(liveText).toContain("id: 4");
     } finally {
@@ -74,11 +78,11 @@ describe("registerSseRoutes", () => {
 
       expect(response.status).toBe(200);
       const reader = response.body?.getReader();
-      expect(reader).toBeDefined();
+      if (!reader) throw new Error("Expected SSE response body reader.");
 
-      await readChunksUntil(reader!, (text) => text.includes("retry: 1000"));
+      await readChunksUntil(reader, (text) => text.includes("retry: 1000"));
 
-      const heartbeatChunkPromise = reader!.read();
+      const heartbeatChunkPromise = reader.read();
       await vi.advanceTimersByTimeAsync(30_000);
       const heartbeatChunk = await heartbeatChunkPromise;
       const heartbeatText = decodeChunk(heartbeatChunk.value);
@@ -131,10 +135,12 @@ async function createHarness() {
 
 function createStreamEvent(id: string) {
   return {
-    id,
-    payload: { text: `event-${id}` },
+    delta: `event-${id}`,
+    messageId: `message-${id}`,
+    runId: `run-${id}`,
+    timestamp: "2026-05-25T00:00:00.000Z",
     type: "message.delta",
-  } as never;
+  } as const;
 }
 
 function decodeChunk(chunk?: Uint8Array) {

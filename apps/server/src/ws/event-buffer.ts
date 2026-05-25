@@ -1,4 +1,4 @@
-import type { StreamEvent } from "@cucumber/shared";
+import { type StreamEvent, streamEventSchema } from "@cucumber/shared";
 
 type BufferedEvent = {
   event: StreamEvent;
@@ -29,6 +29,7 @@ export class CanvasEventBuffer {
   }
 
   publish(canvasId: string, event: StreamEvent): BufferedEvent {
+    const parsedEvent = streamEventSchema.parse(event);
     let buf = this.buffers.get(canvasId);
     if (!buf) {
       buf = [];
@@ -40,7 +41,7 @@ export class CanvasEventBuffer {
     this.seqCounters.set(canvasId, seq);
 
     const entry: BufferedEvent = {
-      event,
+      event: parsedEvent,
       timestamp: Date.now(),
       seq,
     };

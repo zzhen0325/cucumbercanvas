@@ -1,5 +1,5 @@
-import React from "react";
+import { CanvasEngineHarness } from "./canvas-engine-harness";
 
 export default function CanvasEngineTestPage() {
-  return <main style={{ padding: 24 }}>Canvas engine E2E harness is defined in Playwright tests.</main>;
+  return <CanvasEngineHarness />;
 }

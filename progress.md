@@ -1,6 +1,6 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-22 23:23 CST
+Last updated: 2026-05-25 17:33 CST
 
 ## Current Session
 
@@ -43,6 +43,13 @@ Status:
 - Taught the editor to consume imported auto-layout metadata: `@cucumber/canvas-core` now exposes a pure reflow helper that reapplies imported layout hints onto child geometry, while `CanvasSurface` uses it for imported layout roots on bounds changes and the property panel now surfaces/imports those hints with a manual "应用布局" action.
 - Switched agent canvas tooling to the live editor path: opened canvases bind their WebSocket connection with `canvas.bind`, expose document get/set RPC, and `inspect_canvas` / `manipulate_canvas` now require the live editor instead of mutating legacy Excalidraw payloads.
 - Added the production migration path that resets non-`cucumber-canvas-v1` canvas content to the canonical Cucumber canvas document default, matching the decision to drop legacy Excalidraw canvas data.
+- Ported the OpenPencil-style rubber-band vector shape drawing interaction into `CanvasSurface` for rectangle, ellipse, and polygon tools, including in-canvas preview, shift-constrained square drawing, native node insertion, and diagnostic logs.
+- Fixed the canvas toolbar arrow active state and normalized quick-insert shape paint payloads so newly inserted shapes render/edit through the same native fill/stroke schema as dragged shapes.
+- Added e2e coverage for the canvas harness shape tools so native rectangle, ellipse, and polygon drag creation is regression-tested alongside clipboard import coverage.
+- Corrected the active production editor path: `CanvasEditor` currently uses `SkiaCanvas`, so the same OpenPencil-style drag-to-draw interaction is now implemented in the Skia toolbar/runtime as well, with a dedicated `/test/canvas-engine` harness and smoke coverage.
+- Copied the OpenPencil-style bounded screenshot/export capability into the live Cucumber canvas path: `screenshot_canvas` now resolves `full`, `viewport`, and explicit `region` requests into scene-space bounds, returns `actualBounds`, and exports the requested bounding box instead of always sending the whole canvas.
+- Added a shared bounds-aware `canvas-export` helper used by both `SkiaCanvas` and `CanvasSurface`, plus focused coverage for document bounds, export scaling, and explicit bounding-box SVG output.
+- Updated screenshot artifact persistence to preserve SVG screenshots as `image/svg+xml` instead of labeling all canvas captures as PNG.
 
 ## Next Targets
 
@@ -75,6 +82,12 @@ Status:
 - Passed: `pnpm exec playwright test tests/e2e`.
 - Passed: `pnpm --filter @cucumber/canvas-core test -- canvas-core.test.ts`.
 - Passed: `pnpm --filter @cucumber/web typecheck`.
+- Passed: Playwright smoke on a clean `http://localhost:3001/test/canvas-import` dev server drew rectangle, ellipse, and polygon nodes through toolbar selection plus drag gestures.
+- Passed: `pnpm exec playwright test canvas-import.spec.ts` using a temporary Playwright config pointed at the clean `http://localhost:3001` dev server.
+- Passed: `pnpm exec playwright test skia-canvas.spec.ts` using a temporary Playwright config pointed at a clean `http://localhost:3002` dev server.
+- Passed: `pnpm exec biome check apps/web/src/app/test/canvas-engine/page.tsx apps/web/src/app/test/canvas-engine/canvas-engine-harness.tsx tests/e2e/skia-canvas.spec.ts`.
+- Partial: `pnpm exec biome check apps/web/src/components/canvas/canvas-surface.tsx` remains blocked by pre-existing diagnostics in the same file, including explicit `any`, non-null assertions, and SVG title warnings.
+- Note: `http://localhost:3000` was already occupied by a stale/incorrect Next server whose `_next/static` chunks returned 404, so interactive verification used port 3001.
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/use-canvas-clipboard-import.test.tsx`.
 - Passed: `pnpm install --no-frozen-lockfile` after adding native Figma clipboard parser dependencies to `packages/canvas-core`.
 - Passed: targeted diagnostics for `apps/web/src/components/canvas/canvas-surface.tsx`, `apps/web/src/components/canvas-layers-panel.tsx`, `apps/web/src/components/canvas-logo-menu.tsx`, `apps/web/src/components/canvas-editor.tsx`, and new canvas import helper files.
@@ -83,6 +96,13 @@ Status:
 - Passed: targeted diagnostics for `apps/web/src/components/canvas/canvas-surface.tsx` and `packages/canvas-core/src/types.ts`.
 - Passed: targeted diagnostics for `packages/canvas-core/src/import.ts`, `packages/canvas-core/src/types.ts`, `apps/web/src/components/canvas/use-canvas-clipboard-import.ts`, `apps/web/src/components/canvas/canvas-surface.tsx`, `apps/web/src/components/canvas-editor.tsx`, `apps/web/src/app/canvas/page.tsx`, `apps/web/src/components/canvas-logo-menu.tsx`, and new clipboard import tests.
 - Passed: targeted server tests for `manipulate-canvas` and `canvas-element-writer`, plus new canvas-core bounds regression coverage.
+- Passed: `./node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`.
+- Passed: `./node_modules/.bin/tsc -p apps/server/tsconfig.json --noEmit`.
+- Passed: `./node_modules/.bin/tsc -p packages/shared/tsconfig.json --noEmit`.
+- Passed: `PATH=/usr/local/bin:$PATH ../../node_modules/.bin/vitest run test/canvas-export.test.ts` from `apps/web`.
+- Passed: `./node_modules/.bin/biome check apps/web/src/components/canvas/canvas-export.ts apps/web/test/canvas-export.test.ts packages/shared/src/ws-protocol.ts apps/server/src/agent/tools/screenshot-canvas.ts apps/web/src/components/canvas-editor.tsx`.
+- Note: the default Codex Node path could not run Vitest because Rollup's native optional dependency was rejected by macOS code signing; rerunning with `/usr/local/bin/node` first in `PATH` passed.
+- Blocked: `PATH=/usr/local/bin:$PATH ./node_modules/.bin/turbo run build --filter @cucumber/web` could not start because Turbo could not find the package manager binary in this shell (`pnpm` is not on PATH).
 - Failed: `pnpm --filter @cucumber/server typecheck` is still blocked by pre-existing `apps/server/src/http/sse.test.ts` missing the required `webOrigin` option for `registerSseRoutes`.
 - Failed: full `pnpm --filter @cucumber/web test` remains blocked by the pre-existing React 19 / Testing Library `React.act is not a function` issue across legacy web tests; the new clipboard-import focused test passes when run in isolation.
 - Failed: root `pnpm lint` remains blocked by unrelated pre-existing/untracked files, primarily `openpencil/**`, server formatting drift, and existing `apps/server/src/agent/deep-agent.ts` explicit `any` diagnostics.

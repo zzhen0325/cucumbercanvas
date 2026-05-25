@@ -30,7 +30,6 @@ import type {
   AuthenticatedUser,
   UserSupabaseClient,
 } from "../supabase/user.js";
-import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import type { CanvasEventBuffer } from "../ws/event-buffer.js";
 import { createPipelineLogger } from "../ws/logger.js";
@@ -42,6 +41,7 @@ import {
   createDefaultModelSpecifier,
 } from "./deep-agent.js";
 import type { AgentPersistenceService } from "./persistence/index.js";
+import { createRunFailedEvent } from "./run-failure.js";
 import { adaptDeepAgentStream } from "./stream-adapter.js";
 // execute 工具由 deepagents 内置提供（LocalShellBackend 作为 sandbox backend）
 // 不需要自定义代码执行工具
@@ -1067,7 +1067,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 .eq("id", run.canvasId)
                 .single();
               if (canvasData?.content) {
-                canvasSummary = buildCanvasSummaryForContext(canvasData.content);
+                canvasSummary = buildCanvasSummaryForContext(
+                  canvasData.content,
+                );
               }
             } catch {
               // Non-critical — agent can still call inspect_canvas manually
@@ -1312,18 +1314,12 @@ function toFailedEvent(
   now: () => string,
   error: unknown,
 ): StreamEvent {
-  // Log full error detail server-side
-  console.error(`[runtime] Agent run failed for run ${runId}:`, error);
-
-  return {
-    error: {
-      code: "run_failed",
-      message: sanitizeErrorForClient(error),
-    },
+  return createRunFailedEvent({
+    error,
+    now,
     runId,
-    timestamp: now(),
-    type: "run.failed",
-  };
+    source: "runtime",
+  });
 }
 
 async function updatePersistedRunStatus(

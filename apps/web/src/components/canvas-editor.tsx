@@ -1,18 +1,29 @@
 "use client";
 
+import type {
+  CanvasBounds,
+  CucumberCanvasDocument,
+} from "@cucumber/canvas-core";
+import {
+  type CanvasContent,
+  type ScreenshotParams,
+  screenshotParamsSchema,
+} from "@cucumber/shared";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
-
-import type { CucumberCanvasDocument } from "@cucumber/canvas-core";
-import type { CanvasContent } from "@cucumber/shared";
 import type { WebSocketHandle } from "../hooks/use-websocket";
 import { getServerBaseUrl } from "../lib/env";
 import { saveCanvas, uploadThumbnail } from "../lib/server-api";
+import {
+  calculateDocumentBounds,
+  calculateExportSize,
+} from "./canvas/canvas-export";
 import {
   type CanvasApi,
   type CanvasSceneElement,
   CanvasSurface,
 } from "./canvas/canvas-surface";
-import dynamic from "next/dynamic";
+import { ErrorBoundary } from "./error-boundary";
 
 /** Set to true to use the new Skia/CanvasKit renderer */
 const USE_SKIA_CANVAS = true;
@@ -21,7 +32,6 @@ const SkiaCanvas = dynamic(
   () => import("./canvas/skia-canvas").then((m) => ({ default: m.SkiaCanvas })),
   { ssr: false },
 );
-import { ErrorBoundary } from "./error-boundary";
 
 export type CanvasSelectedElement = {
   id: string;
@@ -55,6 +65,24 @@ type CanvasEditorProps = {
 
 const SAVE_DEBOUNCE_MS = 1_200;
 const THUMBNAIL_DEBOUNCE_MS = 10_000;
+
+function resolveScreenshotBounds(
+  api: CanvasApi,
+  params: ScreenshotParams,
+): CanvasBounds {
+  if (params.mode === "region") {
+    if (!params.region) {
+      throw new Error(
+        "screenshot_canvas mode 'region' requires region { x, y, width, height }.",
+      );
+    }
+    return params.region;
+  }
+  if (params.mode === "viewport") {
+    return api.getViewportBounds();
+  }
+  return calculateDocumentBounds(api.getDocument());
+}
 
 export function CanvasEditor({
   canvasId,
@@ -192,13 +220,33 @@ export function CanvasEditor({
     const unregisterScreenshot = ws.registerRPC(
       "canvas.screenshot",
       async (params) => {
-        const { max_dimension = 1024 } = params as { max_dimension?: number };
+        const screenshotParams = screenshotParamsSchema.parse(
+          params,
+        ) as ScreenshotParams;
+        const bounds = resolveScreenshotBounds(api, screenshotParams);
+        const exportSize = calculateExportSize(
+          bounds,
+          screenshotParams.max_dimension,
+        );
         const blob = await api.exportImage({
-          maxWidthOrHeight: max_dimension,
+          bounds,
+          maxWidthOrHeight: screenshotParams.max_dimension,
           mimeType: "image/svg+xml",
         });
         const dataUrl = await blobToDataUrl(blob);
-        return { url: dataUrl, width: max_dimension, height: max_dimension };
+        console.info("[canvas-editor] screenshot exported", {
+          canvasId,
+          mode: screenshotParams.mode,
+          bounds,
+          width: exportSize.width,
+          height: exportSize.height,
+        });
+        return {
+          url: dataUrl,
+          width: exportSize.width,
+          height: exportSize.height,
+          actualBounds: bounds,
+        };
       },
     );
     const unregisterGet = ws.registerRPC("canvas.document.get", async () => ({

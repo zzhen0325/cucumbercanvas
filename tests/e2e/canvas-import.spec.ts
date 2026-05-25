@@ -21,6 +21,50 @@ const NESTED_FIGMA_HTML = `
 `;
 
 test.describe("canvas import harness", () => {
+  test("draws native vector shapes with toolbar drag tools", async ({
+    page,
+  }) => {
+    await page.goto(TEST_PAGE_URL);
+
+    const stage = page.getByTestId("canvas-import-stage");
+    const stageBox = await stage.boundingBox();
+    expect(stageBox).not.toBeNull();
+    if (!stageBox) {
+      throw new Error("Canvas import stage was not measurable.");
+    }
+
+    const drawShape = async (
+      toolName: string,
+      start: { x: number; y: number },
+      end: { x: number; y: number },
+    ) => {
+      await page.getByRole("button", { name: toolName }).click();
+      await page.mouse.move(stageBox.x + start.x, stageBox.y + start.y);
+      await page.mouse.down();
+      await page.mouse.move(stageBox.x + end.x, stageBox.y + end.y, {
+        steps: 8,
+      });
+      await page.mouse.up();
+    };
+
+    await drawShape("矩形工具", { x: 160, y: 160 }, { x: 300, y: 240 });
+    await drawShape("椭圆", { x: 220, y: 300 }, { x: 360, y: 400 });
+    await drawShape("多边形", { x: 420, y: 180 }, { x: 560, y: 300 });
+
+    await expect(page.getByTestId("document-snapshot")).toContainText(
+      '"nodeCount": 3',
+    );
+    await expect(page.getByTestId("document-snapshot")).toContainText(
+      '"type": "rectangle"',
+    );
+    await expect(page.getByTestId("document-snapshot")).toContainText(
+      '"type": "ellipse"',
+    );
+    await expect(page.getByTestId("document-snapshot")).toContainText(
+      '"type": "polygon"',
+    );
+  });
+
   test("handles a real paste event and exposes auto-layout import metadata", async ({
     page,
   }) => {
@@ -45,13 +89,23 @@ test.describe("canvas import harness", () => {
     }, NESTED_FIGMA_HTML);
 
     await expect(page.getByTestId("imported-selection-count")).toHaveText("1");
-    await expect(page.getByTestId("selected-meta")).toContainText('"source": "figma-paste"');
-    await expect(page.getByTestId("selected-meta")).toContainText('"layout": "vertical"');
-    await expect(page.getByTestId("selected-meta")).toContainText('"justifyContent": "center"');
+    await expect(page.getByTestId("selected-meta")).toContainText(
+      '"source": "figma-paste"',
+    );
+    await expect(page.getByTestId("selected-meta")).toContainText(
+      '"layout": "vertical"',
+    );
+    await expect(page.getByTestId("selected-meta")).toContainText(
+      '"justifyContent": "center"',
+    );
     await expect(page.getByTestId("selected-meta")).toContainText(
       '"component_metadata_dropped"',
     );
-    await expect(page.getByTestId("document-snapshot")).toContainText("Nested instance title");
-    await expect(page.getByTestId("document-snapshot")).toContainText('"childrenOrder"');
+    await expect(page.getByTestId("document-snapshot")).toContainText(
+      '"nodeCount": 1',
+    );
+    await expect(page.getByTestId("document-snapshot")).toContainText(
+      '"originNodeId": "99:1"',
+    );
   });
 });

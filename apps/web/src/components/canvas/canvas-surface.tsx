@@ -80,14 +80,19 @@ import {
   getPrimarySelectedContainerId,
   getTopLevelSelectionIds,
 } from "./canvas-selection-helpers";
+import { exportDocumentImage } from "./canvas-export";
 import {
   type ClipboardImportContext,
   readClipboardImportPayload,
   useCanvasClipboardImport,
 } from "./use-canvas-clipboard-import";
 import { useCanvasKeyboardShortcuts } from "./use-canvas-keyboard-shortcuts";
-import { usePenTool, buildPenPathSvg, bakePenAnchorsToPathData, getPenPathBounds } from "./canvas-pen-tool";
-import { executeBooleanOp, setPaperModule, computeLayoutPositions } from "@cucumber/pen-core";
+import { usePenTool, bakePenAnchorsToPathData } from "./canvas-pen-tool";
+import {
+  executeBooleanOp,
+  setPaperModule,
+  computeLayoutPositions,
+} from "@cucumber/pen-core";
 
 export type CanvasChangeListener = (
   elements: CanvasSceneElement[],
@@ -147,7 +152,9 @@ export type CanvasApi = {
   exportImage: (opts?: {
     maxWidthOrHeight?: number;
     mimeType?: string;
+    bounds?: CanvasBounds;
   }) => Promise<Blob>;
+  getViewportBounds: () => CanvasBounds;
   getSceneElements: () => CanvasSceneElement[];
   getFiles: () => Record<string, CanvasFileRecord>;
   getAppState: () => CanvasAppState;
@@ -247,6 +254,12 @@ type DragState =
       connectorType: "line" | "arrow";
     }
   | {
+      kind: "drawShape";
+      shapeType: DrawableShapeTool;
+      startPoint: { x: number; y: number };
+      parentId: string | null;
+    }
+  | {
       kind: "marquee";
       startPoint: { x: number; y: number };
       additive: boolean;
@@ -256,8 +269,14 @@ type DragState =
 const GRID_SIZE = 24;
 const SNAP_THRESHOLD = 6;
 const IMAGE_IMPORT_MAX_SIZE = 600;
+const MIN_DRAW_SIZE = 2;
 type ResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
 type AlignMode = "left" | "center" | "right" | "top" | "middle" | "bottom";
+type DrawableShapeTool = "rectangle" | "ellipse" | "polygon";
+type ShapeDrawPreview = {
+  type: DrawableShapeTool;
+  bounds: CanvasBounds;
+};
 type CanvasTool =
   | "select"
   | "hand"
@@ -303,6 +322,8 @@ export const CanvasSurface = memo(
     const [marqueeBounds, setMarqueeBounds] = useState<CanvasBounds | null>(
       null,
     );
+    const [shapeDrawPreview, setShapeDrawPreview] =
+      useState<ShapeDrawPreview | null>(null);
     const [snapGuides, setSnapGuides] = useState<{
       x?: number;
       y?: number;
@@ -310,9 +331,16 @@ export const CanvasSurface = memo(
     const [activeTool, setActiveTool] = useState<CanvasTool>("select");
     const penTool = usePenTool({
       onCommit: (anchors, closed) => {
-        const parentId = getPrimarySelectedContainerId(docRef.current, selection);
+        const parentId = getPrimarySelectedContainerId(
+          docRef.current,
+          selection,
+        );
         const parentOrigin = parentId
-          ? (() => { const p = findNode(docRef.current, parentId); const b = getNodeBounds(p!); return { x: b.x, y: b.y }; })()
+          ? (() => {
+              const p = findNode(docRef.current, parentId);
+              const b = getNodeBounds(p!);
+              return { x: b.x, y: b.y };
+            })()
           : { x: 0, y: 0 };
         const data = bakePenAnchorsToPathData(anchors, closed, parentOrigin);
         if (!data) return;
@@ -323,8 +351,10 @@ export const CanvasSurface = memo(
             id: pathId,
             type: "path" as const,
             name: "Path",
-            x: data.x, y: data.y,
-            width: data.width, height: data.height,
+            x: data.x,
+            y: data.y,
+            width: data.width,
+            height: data.height,
             d: data.d,
             closed: data.closed,
           } as any as PenNode,
@@ -334,24 +364,30 @@ export const CanvasSurface = memo(
       },
       onCancel: () => {},
     });
-  const [paperReady, setPaperReady] = useState(false);
-  // Lazy-load paper.js for boolean operations (browser only)
-  useEffect(() => {
-    let cancelled = false;
-    import("paper")
-      .then((mod) => {
-        if (cancelled) return;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        setPaperModule((mod as any).default ?? mod);
-        setPaperReady(true);
-      })
-      .catch(() => {
-        // paper.js unavailable — boolean ops will stay disabled
-      });
-    return () => { cancelled = true; };
-  }, []);
-  const [selection, setSelectedIds] = useState<string[]>([]);
-  const [viewport, setViewport] = useState<{ x: number; y: number; zoom: number }>({ x: 0, y: 0, zoom: 1 });
+    const [paperReady, setPaperReady] = useState(false);
+    // Lazy-load paper.js for boolean operations (browser only)
+    useEffect(() => {
+      let cancelled = false;
+      import("paper")
+        .then((mod) => {
+          if (cancelled) return;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          setPaperModule((mod as any).default ?? mod);
+          setPaperReady(true);
+        })
+        .catch(() => {
+          // paper.js unavailable — boolean ops will stay disabled
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, []);
+    const [selection, setSelectedIds] = useState<string[]>([]);
+    const [viewport, setViewport] = useState<{
+      x: number;
+      y: number;
+      zoom: number;
+    }>({ x: 0, y: 0, zoom: 1 });
     const toast = useToast();
 
     docRef.current = doc;
@@ -417,7 +453,7 @@ export const CanvasSurface = memo(
         setSelectedIds(validIds);
         const next = {
           ...docRef.current,
-                    updatedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
         };
         commitDocument(next, {
           captureHistory: options?.captureHistory ?? false,
@@ -452,10 +488,21 @@ export const CanvasSurface = memo(
     );
 
     const createContainer = useCallback(
-      (opts?: { name?: string; x?: number; y?: number; width?: number; height?: number }) => {
+      (opts?: {
+        name?: string;
+        x?: number;
+        y?: number;
+        width?: number;
+        height?: number;
+      }) => {
         const id = createNodeId("frame");
         const bounds = opts
-          ? { x: opts.x ?? 120, y: opts.y ?? 120, width: opts.width ?? 360, height: opts.height ?? 240 }
+          ? {
+              x: opts.x ?? 120,
+              y: opts.y ?? 120,
+              width: opts.width ?? 360,
+              height: opts.height ?? 240,
+            }
           : defaultBounds(docRef.current, "frame");
         const container: PenNode = {
           id,
@@ -475,7 +522,11 @@ export const CanvasSurface = memo(
             isolationLevel: "open",
           },
           fill: [{ type: "solid" as const, color: "rgba(255,255,255,0.78)" }],
-          stroke: { color: "#6c5ce7", thickness: 2, fill: [{ type: "solid" as const, color: "#6c5ce7" }] },
+          stroke: {
+            color: "#6c5ce7",
+            thickness: 2,
+            fill: [{ type: "solid" as const, color: "#6c5ce7" }],
+          },
         } as any as PenNode;
         applyOperation({ type: "insertNode", node: container });
         selectNode(id);
@@ -501,7 +552,10 @@ export const CanvasSurface = memo(
         const id = createNodeId("image");
         const assetId =
           artifact.assetId ?? artifact.jobId ?? createNodeId("asset");
-        const targetContainerId = getPrimarySelectedContainerId(docRef.current, selection);
+        const targetContainerId = getPrimarySelectedContainerId(
+          docRef.current,
+          selection,
+        );
         const bounds = defaultBounds(
           docRef.current,
           "image",
@@ -588,13 +642,22 @@ export const CanvasSurface = memo(
         event: React.PointerEvent<HTMLDivElement>,
       ) => {
         const id = createNodeId("line");
-        const parentId = getPrimarySelectedContainerId(docRef.current, selection);
+        const parentId = getPrimarySelectedContainerId(
+          docRef.current,
+          selection,
+        );
         const node: PenNode = {
           id,
           type: "line",
           name: connectorType === "arrow" ? "Arrow" : "Line",
-          x: point.x, y: point.y, width: 2, height: 2,
-          stroke: { thickness: 3, fill: [{ type: "solid" as const, color: "#111827" }] },
+          x: point.x,
+          y: point.y,
+          width: 2,
+          height: 2,
+          stroke: {
+            thickness: 3,
+            fill: [{ type: "solid" as const, color: "#111827" }],
+          },
         } as any as PenNode;
         applyOperation({ type: "insertNode", node, parentId: parentId });
         selectNode(id);
@@ -607,6 +670,31 @@ export const CanvasSurface = memo(
         event.currentTarget.setPointerCapture(event.pointerId);
       },
       [applyOperation, selectNode],
+    );
+
+    const beginShapeDraw = useCallback(
+      (
+        shapeType: DrawableShapeTool,
+        point: { x: number; y: number },
+        event: React.PointerEvent<HTMLDivElement>,
+      ) => {
+        const parentId = getPrimarySelectedContainerId(
+          docRef.current,
+          selection,
+        );
+        dragRef.current = {
+          kind: "drawShape",
+          shapeType,
+          startPoint: point,
+          parentId,
+        };
+        setShapeDrawPreview({
+          type: shapeType,
+          bounds: { x: point.x, y: point.y, width: 0, height: 0 },
+        });
+        event.currentTarget.setPointerCapture(event.pointerId);
+      },
+      [selection],
     );
 
     const undo = useCallback(() => {
@@ -648,8 +736,10 @@ export const CanvasSurface = memo(
     const copySelection = useCallback(() => {
       if (selection.length === 0) return false;
       clipboardRef.current = copyCanvasSelection(docRef.current, selection);
-          console.info("[canvas-runtime] selection.copied", {
-        count: clipboardRef.current?.rootNodeIds?.length ?? clipboardRef.current?.nodes.length,
+      console.info("[canvas-runtime] selection.copied", {
+        count:
+          clipboardRef.current?.rootNodeIds?.length ??
+          clipboardRef.current?.nodes.length,
       });
       return true;
     }, []);
@@ -681,21 +771,14 @@ export const CanvasSurface = memo(
     }, [commitDocument, onSelectionChange]);
 
     const importFromPayload = useCallback(
-      (
-        payload: ClipboardImportPayload,
-        context?: ClipboardImportContext,
-      ) => {
+      (payload: ClipboardImportPayload, context?: ClipboardImportContext) => {
         const parsed = parseClipboardImport(payload);
         if (!parsed) return [];
         const importBounds = getCanvasImportBounds(parsed);
         const stageRect = stageRef.current?.getBoundingClientRect();
         const viewportCenter = {
-          x:
-            ((stageRect?.width ?? 0) / 2 - viewport.x) /
-            viewport.zoom,
-          y:
-            ((stageRect?.height ?? 0) / 2 - viewport.y) /
-            viewport.zoom,
+          x: ((stageRect?.width ?? 0) / 2 - viewport.x) / viewport.zoom,
+          y: ((stageRect?.height ?? 0) / 2 - viewport.y) / viewport.zoom,
         };
         const offsetX = importBounds
           ? viewportCenter.x - (importBounds.x + importBounds.width / 2)
@@ -774,7 +857,9 @@ export const CanvasSurface = memo(
           console.warn("[canvas-runtime] svg.import.failed", {
             error,
           });
-          toast.error(error instanceof Error ? error.message : "SVG 导入失败。");
+          toast.error(
+            error instanceof Error ? error.message : "SVG 导入失败。",
+          );
           return [];
         }
       },
@@ -926,7 +1011,19 @@ export const CanvasSurface = memo(
           applyOperation({ type: "bindAgent", containerId, binding }),
         setSelection,
         flushPendingSave: async () => undefined,
-        exportImage: (opts) => exportDocumentImage(docRef.current, opts, { backgroundColor: (viewport as any).backgroundColor }),
+        exportImage: (opts) =>
+          exportDocumentImage(docRef.current, opts, {
+            backgroundColor: (viewport as any).backgroundColor,
+          }),
+        getViewportBounds: () => {
+          const rect = stageRef.current?.getBoundingClientRect();
+          return {
+            x: -viewport.x / viewport.zoom,
+            y: -viewport.y / viewport.zoom,
+            width: (rect?.width ?? 1) / viewport.zoom,
+            height: (rect?.height ?? 1) / viewport.zoom,
+          };
+        },
         getSceneElements: () => toSceneElements(docRef.current),
         getFiles: () => toFiles(docRef.current),
         getAppState: () => toAppState(docRef.current, viewport, selection),
@@ -989,7 +1086,10 @@ export const CanvasSurface = memo(
           const id = createNodeId("video");
           const assetId =
             artifact.assetId ?? artifact.jobId ?? createNodeId("asset");
-          const targetContainerId = getPrimarySelectedContainerId(docRef.current, selection);
+          const targetContainerId = getPrimarySelectedContainerId(
+            docRef.current,
+            selection,
+          );
           const videoBounds = defaultBounds(
             docRef.current,
             "videoEmbed",
@@ -999,7 +1099,10 @@ export const CanvasSurface = memo(
             id,
             type: "videoEmbed",
             name: artifact.title ?? "Generated video",
-            x: videoBounds.x, y: videoBounds.y, width: videoBounds.width, height: videoBounds.height,
+            x: videoBounds.x,
+            y: videoBounds.y,
+            width: videoBounds.width,
+            height: videoBounds.height,
             src: artifact.url,
             mimeType: artifact.mimeType,
             durationSeconds: artifact.durationSeconds,
@@ -1163,7 +1266,13 @@ export const CanvasSurface = memo(
           next = applyImportedAutoLayout(next, nodeId);
         }
         // Reflow native auto-layout containers when layout props change
-        const autoLayoutKeys = ["layout", "gap", "padding", "justifyContent", "alignItems"];
+        const autoLayoutKeys = [
+          "layout",
+          "gap",
+          "padding",
+          "justifyContent",
+          "alignItems",
+        ];
         if (autoLayoutKeys.some((k) => k in updates)) {
           const updated = findNode(next, nodeId);
           if (updated && isContainerNode(updated) && "children" in updated) {
@@ -1215,9 +1324,15 @@ export const CanvasSurface = memo(
         id,
         type: "rectangle" as const,
         name: "Rectangle",
-        x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height,
-        fill: "#d3f256",
-        stroke: { thickness: 1, fill: [] },
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+        fill: [{ type: "solid" as const, color: "#d3f256" }],
+        stroke: {
+          thickness: 1,
+          fill: [{ type: "solid" as const, color: "#111827" }],
+        },
         cornerRadius: 12,
       } as any as PenNode;
       applyOperation({ type: "insertNode", node, parentId });
@@ -1230,15 +1345,24 @@ export const CanvasSurface = memo(
         point?: { x: number; y: number },
       ) => {
         const id = createNodeId(type);
-        const parentId = getPrimarySelectedContainerId(docRef.current, selection);
+        const parentId = getPrimarySelectedContainerId(
+          docRef.current,
+          selection,
+        );
         const baseBounds = point
           ? { x: point.x, y: point.y, width: 160, height: 120 }
           : defaultBounds(docRef.current, type, parentId);
         const shared = {
           id,
-          x: baseBounds.x, y: baseBounds.y, width: baseBounds.width, height: baseBounds.height,
-          fill: "#f8fafc",
-          stroke: { thickness: 2, fill: [] },
+          x: baseBounds.x,
+          y: baseBounds.y,
+          width: baseBounds.width,
+          height: baseBounds.height,
+          fill: [{ type: "solid" as const, color: "#f8fafc" }],
+          stroke: {
+            thickness: 2,
+            fill: [{ type: "solid" as const, color: "#111827" }],
+          },
         };
         const node: PenNode =
           type === "ellipse"
@@ -1251,14 +1375,14 @@ export const CanvasSurface = memo(
                     type,
                     name: "Path",
                     d: "M20 90 C55 15, 105 15, 140 90",
-                    fill: "none",
+                    fill: [],
                   } as any as PenNode)
                 : ({
                     ...shared,
                     type,
                     name: "Icon",
                     iconFontName: "sparkles",
-                    fill: "none",
+                    fill: [],
                   } as any as PenNode);
         applyOperation({ type: "insertNode", node, parentId });
         selectNode(id);
@@ -1274,7 +1398,10 @@ export const CanvasSurface = memo(
         id,
         type: "text",
         name: "Text",
-        x: textBounds.x, y: textBounds.y, width: textBounds.width, height: textBounds.height,
+        x: textBounds.x,
+        y: textBounds.y,
+        width: textBounds.width,
+        height: textBounds.height,
         content: "Double click to edit",
         fontSize: 28,
       } as any as PenNode;
@@ -1295,47 +1422,54 @@ export const CanvasSurface = memo(
         );
         if (activeTool === "container" || activeTool === "frame") {
           createContainer({
-            x: point.x, y: point.y, width: 360, height: 240,
+            x: point.x,
+            y: point.y,
+            width: 360,
+            height: 240,
           });
           setActiveTool("select");
           return;
         }
         if (activeTool === "rect" || activeTool === "rectangle") {
-          const rectId = createNodeId("rectangle");
-          applyOperation({ type: "insertNode", node: {
-            id: rectId,
-            type: "rectangle" as const,
-            name: "Rectangle",
-            x: point.x, y: point.y, width: 180, height: 120,
-          } as any as PenNode });
-          selectNode(rectId);
-          setActiveTool("select");
+          beginShapeDraw("rectangle", point, event);
           return;
         }
         if (activeTool === "pen") {
           penTool.onMouseDown(point, viewport.zoom);
           return;
         }
+        if (activeTool === "ellipse" || activeTool === "polygon") {
+          beginShapeDraw(activeTool, point, event);
+          return;
+        }
         if (
-          activeTool === "ellipse" ||
-          activeTool === "polygon" ||
           activeTool === "path" ||
           activeTool === "icon" ||
           activeTool === "icon_font"
         ) {
-          const primitiveType = activeTool === "icon" ? "icon_font" : activeTool;
-          insertPrimitiveNode(primitiveType as "ellipse" | "polygon" | "path" | "icon_font", point);
+          const primitiveType =
+            activeTool === "icon" ? "icon_font" : activeTool;
+          insertPrimitiveNode(
+            primitiveType as "ellipse" | "polygon" | "path" | "icon_font",
+            point,
+          );
           setActiveTool("select");
           return;
         }
         if (activeTool === "text") {
           const id = createNodeId("text");
-          const parentId = getPrimarySelectedContainerId(docRef.current, selection);
+          const parentId = getPrimarySelectedContainerId(
+            docRef.current,
+            selection,
+          );
           const node: PenNode = {
             id,
             type: "text" as const,
             name: "Text",
-            x: point.x, y: point.y, width: 260, height: 80,
+            x: point.x,
+            y: point.y,
+            width: 260,
+            height: 80,
             content: "Double click to edit",
             fontSize: 28,
           } as any as PenNode;
@@ -1371,18 +1505,27 @@ export const CanvasSurface = memo(
       [
         activeTool,
         applyOperation,
+        beginShapeDraw,
         beginConnectorDraw,
         createContainer,
         insertPrimitiveNode,
+        penTool,
         selectNode,
+        selection,
         setSelection,
+        viewport,
       ],
     );
 
     const handlePointerMove = useCallback(
       (event: React.PointerEvent<HTMLDivElement>) => {
         if (activeTool === "pen") {
-          const point = screenToCanvasPoint(event, docRef.current, stageRef.current, viewport);
+          const point = screenToCanvasPoint(
+            event,
+            docRef.current,
+            stageRef.current,
+            viewport,
+          );
           penTool.onMouseMove(point);
           return;
         }
@@ -1401,6 +1544,7 @@ export const CanvasSurface = memo(
             event,
             docRef.current,
             stageRef.current,
+            viewport,
           );
           const bounds = normalizeBounds({
             x: drag.startPoint.x,
@@ -1421,11 +1565,25 @@ export const CanvasSurface = memo(
           );
           return;
         }
+        if (drag.kind === "drawShape") {
+          const point = screenToCanvasPoint(
+            event,
+            docRef.current,
+            stageRef.current,
+            viewport,
+          );
+          setShapeDrawPreview({
+            type: drag.shapeType,
+            bounds: normalizeDrawBounds(drag.startPoint, point, event.shiftKey),
+          });
+          return;
+        }
         if (drag.kind === "drawConnector") {
           const point = screenToCanvasPoint(
             event,
             docRef.current,
             stageRef.current,
+            viewport,
           );
           const next = applyCanvasOperation(docRef.current, {
             type: "updateNode",
@@ -1468,6 +1626,7 @@ export const CanvasSurface = memo(
             event,
             docRef.current,
             stageRef.current,
+            viewport,
           );
           const rotation =
             drag.originRotation +
@@ -1479,7 +1638,10 @@ export const CanvasSurface = memo(
             type: "updateNode",
             nodeId: drag.nodeId,
             updates: {
-              bounds: { ...getNodeBounds(node), rotation: Math.round(rotation) },
+              bounds: {
+                ...getNodeBounds(node),
+                rotation: Math.round(rotation),
+              },
             } as Partial<PenNode>,
           });
           commitDocument(next, { captureHistory: false, notify: false });
@@ -1496,12 +1658,23 @@ export const CanvasSurface = memo(
         );
         const { bounds: nextBounds, guides } = snapBoundsToGrid(resizedBounds);
         setSnapGuides(guides);
-          const next = applyAutoLayoutAwareNodeUpdate(docRef.current, drag.nodeId, {
+        const next = applyAutoLayoutAwareNodeUpdate(
+          docRef.current,
+          drag.nodeId,
+          {
             bounds: nextBounds,
-          } as Partial<PenNode>);
+          } as Partial<PenNode>,
+        );
         commitDocument(next, { captureHistory: false, notify: false });
       },
-      [applyAutoLayoutAwareNodeUpdate, commitDocument, setSelection],
+      [
+        activeTool,
+        applyAutoLayoutAwareNodeUpdate,
+        commitDocument,
+        penTool,
+        setSelection,
+        viewport,
+      ],
     );
 
     const handlePointerUp = useCallback(
@@ -1513,9 +1686,49 @@ export const CanvasSurface = memo(
         const drag = dragRef.current;
         if (dragRef.current?.kind === "drawConnector") {
           const node = findNode(docRef.current, dragRef.current.nodeId);
-          if (node && getNodeBounds(node).width <= 6 && getNodeBounds(node).height <= 6) {
+          if (
+            node &&
+            getNodeBounds(node).width <= 6 &&
+            getNodeBounds(node).height <= 6
+          ) {
             applyOperation({ type: "deleteNode", nodeId: node.id });
             selectNode(null);
+          }
+        }
+        if (drag?.kind === "drawShape") {
+          const point = screenToCanvasPoint(
+            event,
+            docRef.current,
+            stageRef.current,
+            viewport,
+          );
+          const bounds = normalizeDrawBounds(
+            drag.startPoint,
+            point,
+            event.shiftKey,
+          );
+          const shouldCommit =
+            bounds.width >= MIN_DRAW_SIZE && bounds.height >= MIN_DRAW_SIZE;
+          if (shouldCommit) {
+            const node = createDrawableShapeNode(drag.shapeType, bounds);
+            applyOperation({
+              type: "insertNode",
+              node,
+              parentId: drag.parentId,
+            });
+            selectNode(node.id);
+            console.info("[canvas-runtime] shape.drawn", {
+              nodeId: node.id,
+              type: drag.shapeType,
+              parentId: drag.parentId,
+              width: Math.round(bounds.width),
+              height: Math.round(bounds.height),
+            });
+          } else {
+            console.info("[canvas-runtime] shape.draw.cancelled", {
+              type: drag.shapeType,
+              reason: "below_minimum_size",
+            });
           }
         }
         if (
@@ -1528,13 +1741,23 @@ export const CanvasSurface = memo(
         if (drag?.kind === "marquee") {
           setMarqueeBounds(null);
         }
+        if (drag?.kind === "drawShape") {
+          setShapeDrawPreview(null);
+        }
         setSnapGuides(null);
         dragRef.current = null;
         if (event.currentTarget.hasPointerCapture(event.pointerId)) {
           event.currentTarget.releasePointerCapture(event.pointerId);
         }
       },
-      [applyOperation, endHistoryCapture, selectNode],
+      [
+        activeTool,
+        applyOperation,
+        endHistoryCapture,
+        penTool,
+        selectNode,
+        viewport,
+      ],
     );
 
     const handleWheel = useCallback(
@@ -1556,13 +1779,17 @@ export const CanvasSurface = memo(
         className={`relative h-full w-full overflow-hidden text-foreground ${
           activeTool === "hand"
             ? "cursor-grab"
-            : (activeTool === "line" ||
-                activeTool === "arrow" ||
-                activeTool === "ellipse" ||
-                activeTool === "polygon" ||
-                activeTool === "path" ||
-                activeTool === "icon" ||
-                activeTool === "icon_font")
+            : (
+                  activeTool === "rect" ||
+                    activeTool === "rectangle" ||
+                    activeTool === "line" ||
+                    activeTool === "arrow" ||
+                    activeTool === "ellipse" ||
+                    activeTool === "polygon" ||
+                    activeTool === "path" ||
+                    activeTool === "icon" ||
+                    activeTool === "icon_font"
+                )
               ? "cursor-crosshair"
               : "cursor-default"
         }`}
@@ -1594,10 +1821,17 @@ export const CanvasSurface = memo(
           canUngroup={selectedIds.some(
             (nodeId) => findNode(doc, nodeId)?.type === "group",
           )}
-          canBooleanOp={paperReady && selectedIds.length === 2 && selectedIds.every((id) => {
-            const n = findNode(doc, id);
-            return n && ["path", "rectangle", "ellipse", "polygon"].includes(n.type);
-          })}
+          canBooleanOp={
+            paperReady &&
+            selectedIds.length === 2 &&
+            selectedIds.every((id) => {
+              const n = findNode(doc, id);
+              return (
+                n &&
+                ["path", "rectangle", "ellipse", "polygon"].includes(n.type)
+              );
+            })
+          }
           hasSelectedLocked={selectedIds.some((id) => {
             const n = findNode(doc, id);
             return n?.locked === true;
@@ -1622,17 +1856,30 @@ export const CanvasSurface = memo(
             const parent1 = findParent(docRef.current, id1);
             // Delete originals + insert result
             let next = docRef.current;
-            next = applyCanvasOperation(next, { type: "deleteNode", nodeId: id1 });
-            next = applyCanvasOperation(next, { type: "deleteNode", nodeId: id2 });
+            next = applyCanvasOperation(next, {
+              type: "deleteNode",
+              nodeId: id1,
+            });
+            next = applyCanvasOperation(next, {
+              type: "deleteNode",
+              nodeId: id2,
+            });
             const resultId = createNodeId("path");
             next = applyCanvasOperation(next, {
               type: "insertNode",
               node: {
                 id: resultId,
                 type: "path" as const,
-                name: op === "union" ? "Union" : op === "subtract" ? "Subtract" : "Intersect",
-                x: result.x, y: result.y,
-                width: result.width, height: result.height,
+                name:
+                  op === "union"
+                    ? "Union"
+                    : op === "subtract"
+                      ? "Subtract"
+                      : "Intersect",
+                x: result.x,
+                y: result.y,
+                width: result.width,
+                height: result.height,
                 d: result.d,
                 closed: result.closed ?? true,
                 fill: result.fill,
@@ -1664,6 +1911,9 @@ export const CanvasSurface = memo(
             transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
           }}
         >
+          {shapeDrawPreview ? (
+            <ShapeDrawPreviewView preview={shapeDrawPreview} />
+          ) : null}
           {getOrderedCanvasNodes(doc)
             .map((entry) => entry.node)
             .filter((node) => node.visible !== false)
@@ -1689,9 +1939,7 @@ export const CanvasSurface = memo(
                     return;
                   }
                   beginHistoryCapture();
-                  const dragNodeIds = (selection ?? []).includes(
-                    nodeId,
-                  )
+                  const dragNodeIds = (selection ?? []).includes(nodeId)
                     ? (selection ?? [])
                     : [nodeId];
                   dragRef.current = {
@@ -1731,13 +1979,18 @@ export const CanvasSurface = memo(
                   if (!targetNode || targetNode.locked) return;
                   beginHistoryCapture();
                   const center = {
-                    x: getNodeBounds(targetNode).x + getNodeBounds(targetNode).width / 2,
-                    y: getNodeBounds(targetNode).y + getNodeBounds(targetNode).height / 2,
+                    x:
+                      getNodeBounds(targetNode).x +
+                      getNodeBounds(targetNode).width / 2,
+                    y:
+                      getNodeBounds(targetNode).y +
+                      getNodeBounds(targetNode).height / 2,
                   };
                   const point = screenToCanvasPoint(
                     event,
                     docRef.current,
                     stageRef.current,
+                    viewport,
                   );
                   dragRef.current = {
                     kind: "rotate",
@@ -1763,20 +2016,33 @@ export const CanvasSurface = memo(
                 d={
                   penTool.preview.points.length > 1
                     ? (() => {
-                        const parts: string[] = [`M ${penTool.preview.points[0]!.x} ${penTool.preview.points[0]!.y}`];
-                        for (let i = 1; i < penTool.preview.points.length; i++) {
+                        const parts: string[] = [
+                          `M ${penTool.preview.points[0]!.x} ${penTool.preview.points[0]!.y}`,
+                        ];
+                        for (
+                          let i = 1;
+                          i < penTool.preview.points.length;
+                          i++
+                        ) {
                           const prev = penTool.preview.points[i - 1]!;
                           const curr = penTool.preview.points[i]!;
                           if (!prev.handleOut && !curr.handleIn) {
                             parts.push(`L ${curr.x} ${curr.y}`);
                           } else {
-                            parts.push(`C ${prev.x + (prev.handleOut?.x ?? 0)} ${prev.y + (prev.handleOut?.y ?? 0)} ${curr.x + (curr.handleIn?.x ?? 0)} ${curr.y + (curr.handleIn?.y ?? 0)} ${curr.x} ${curr.y}`);
+                            parts.push(
+                              `C ${prev.x + (prev.handleOut?.x ?? 0)} ${prev.y + (prev.handleOut?.y ?? 0)} ${curr.x + (curr.handleIn?.x ?? 0)} ${curr.y + (curr.handleIn?.y ?? 0)} ${curr.x} ${curr.y}`,
+                            );
                           }
                         }
                         // Line from last anchor to cursor
                         if (penTool.preview.cursorPos) {
-                          const last = penTool.preview.points[penTool.preview.points.length - 1]!;
-                          parts.push(`L ${penTool.preview.cursorPos.x} ${penTool.preview.cursorPos.y}`);
+                          const last =
+                            penTool.preview.points[
+                              penTool.preview.points.length - 1
+                            ]!;
+                          parts.push(
+                            `L ${penTool.preview.cursorPos.x} ${penTool.preview.cursorPos.y}`,
+                          );
                         }
                         return parts.join(" ");
                       })()
@@ -1795,50 +2061,79 @@ export const CanvasSurface = memo(
                   {/* Handle-out line */}
                   {pt.handleOut && (
                     <line
-                      x1={pt.x} y1={pt.y}
-                      x2={pt.x + pt.handleOut.x} y2={pt.y + pt.handleOut.y}
-                      stroke="#a5b4fc" strokeWidth={1}
+                      x1={pt.x}
+                      y1={pt.y}
+                      x2={pt.x + pt.handleOut.x}
+                      y2={pt.y + pt.handleOut.y}
+                      stroke="#a5b4fc"
+                      strokeWidth={1}
                     />
                   )}
                   {/* Handle-in line */}
                   {pt.handleIn && (
                     <line
-                      x1={pt.x} y1={pt.y}
-                      x2={pt.x + pt.handleIn.x} y2={pt.y + pt.handleIn.y}
-                      stroke="#a5b4fc" strokeWidth={1}
+                      x1={pt.x}
+                      y1={pt.y}
+                      x2={pt.x + pt.handleIn.x}
+                      y2={pt.y + pt.handleIn.y}
+                      stroke="#a5b4fc"
+                      strokeWidth={1}
                     />
                   )}
                   {/* Handle-out dot */}
                   {pt.handleOut && (
                     <circle
-                      cx={pt.x + pt.handleOut.x} cy={pt.y + pt.handleOut.y}
-                      r={3} fill="#818cf8" stroke="#4f46e5" strokeWidth={1}
+                      cx={pt.x + pt.handleOut.x}
+                      cy={pt.y + pt.handleOut.y}
+                      r={3}
+                      fill="#818cf8"
+                      stroke="#4f46e5"
+                      strokeWidth={1}
                     />
                   )}
                   {/* Handle-in dot */}
                   {pt.handleIn && (
                     <circle
-                      cx={pt.x + pt.handleIn.x} cy={pt.y + pt.handleIn.y}
-                      r={3} fill="#c7d2fe" stroke="#6366f1" strokeWidth={1}
+                      cx={pt.x + pt.handleIn.x}
+                      cy={pt.y + pt.handleIn.y}
+                      r={3}
+                      fill="#c7d2fe"
+                      stroke="#6366f1"
+                      strokeWidth={1}
                     />
                   )}
                   {/* Anchor dot */}
                   <circle
-                    cx={pt.x} cy={pt.y}
+                    cx={pt.x}
+                    cy={pt.y}
                     r={i === 0 ? 5 : 4}
                     fill={i === 0 ? "#4f46e5" : "#6366f1"}
-                    stroke="#fff" strokeWidth={1.5}
+                    stroke="#fff"
+                    strokeWidth={1.5}
                   />
                 </g>
               ))}
               {/* Close-path highlight near start point */}
-              {penTool.preview.points.length >= 3 && penTool.preview.cursorPos && (() => {
-                const first = penTool.preview.points[0]!;
-                const dist = Math.hypot(penTool.preview.cursorPos.x - first.x, penTool.preview.cursorPos.y - first.y);
-                return dist < 12
-                  ? <circle cx={first.x} cy={first.y} r={6} fill="none" stroke="#6366f1" strokeWidth={2} opacity={0.6} />
-                  : null;
-              })()}
+              {penTool.preview.points.length >= 3 &&
+                penTool.preview.cursorPos &&
+                (() => {
+                  const first = penTool.preview.points[0]!;
+                  const dist = Math.hypot(
+                    penTool.preview.cursorPos.x - first.x,
+                    penTool.preview.cursorPos.y - first.y,
+                  );
+                  return dist < 12 ? (
+                    <circle
+                      cx={first.x}
+                      cy={first.y}
+                      r={6}
+                      fill="none"
+                      stroke="#6366f1"
+                      strokeWidth={2}
+                      opacity={0.6}
+                    />
+                  ) : null;
+                })()}
             </svg>
           ) : null}
         </div>
@@ -1888,13 +2183,17 @@ export const CanvasSurface = memo(
               updateNode(selectedNode.id, updates as Partial<PenNode>)
             }
             onApplyImportedAutoLayout={() => {
-              const next = applyImportedAutoLayout(docRef.current, selectedNode.id);
+              const next = applyImportedAutoLayout(
+                docRef.current,
+                selectedNode.id,
+              );
               if (next === docRef.current) {
                 return;
               }
               console.info("[canvas-runtime] imported-auto-layout.applied", {
                 nodeId: selectedNode.id,
-                source: getCanvasImportedNodeMeta((selectedNode as any).meta)?.source,
+                source: getCanvasImportedNodeMeta((selectedNode as any).meta)
+                  ?.source,
               });
               commitDocument(next);
             }}
@@ -1944,7 +2243,9 @@ function CanvasChrome({
   onCreateContainer: () => void;
   onImportImage: () => void;
   onInsertRect: () => void;
-  onInsertPrimitive: (type: "ellipse" | "polygon" | "path" | "icon_font") => void;
+  onInsertPrimitive: (
+    type: "ellipse" | "polygon" | "path" | "icon_font",
+  ) => void;
   onInsertText: () => void;
   onDelete: () => void;
   selectedCount: number;
@@ -2029,9 +2330,10 @@ function CanvasChrome({
       </button>
       <button
         type="button"
-        className={buttonClass}
-        onClick={onInsertRect}
-        title="矩形"
+        className={`${buttonClass} ${activeTool === "rect" || activeTool === "rectangle" ? "bg-muted text-foreground" : ""}`}
+        onClick={() => onToolChange("rectangle")}
+        onDoubleClick={onInsertRect}
+        title="矩形工具"
       >
         <Box className="h-4 w-4" />
       </button>
@@ -2097,7 +2399,7 @@ function CanvasChrome({
       </button>
       <button
         type="button"
-        className={`${buttonClass} ${activeTool === "line" ? "bg-muted text-foreground" : ""}`}
+        className={`${buttonClass} ${activeTool === "arrow" ? "bg-muted text-foreground" : ""}`}
         onClick={() => onToolChange("arrow")}
         title="箭头工具"
       >
@@ -2166,8 +2468,74 @@ function CanvasChrome({
         onClick={onToggleLock}
         title={hasSelectedLocked ? "解锁" : "锁定"}
       >
-        {hasSelectedLocked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+        {hasSelectedLocked ? (
+          <Lock className="h-4 w-4" />
+        ) : (
+          <Unlock className="h-4 w-4" />
+        )}
       </button>
+    </div>
+  );
+}
+
+function ShapeDrawPreviewView({
+  preview,
+}: {
+  preview: ShapeDrawPreview;
+}) {
+  const { bounds, type } = preview;
+  if (bounds.width <= 0 || bounds.height <= 0) {
+    return null;
+  }
+  const style = {
+    left: bounds.x,
+    top: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+  };
+  const strokeColor = "#6366f1";
+  const fillColor = "rgba(99, 102, 241, 0.08)";
+
+  return (
+    <div
+      className="pointer-events-none absolute"
+      style={style}
+      data-canvas-draw-preview={type}
+    >
+      {type === "rectangle" ? (
+        <div
+          className="h-full w-full"
+          style={{
+            backgroundColor: fillColor,
+            border: `1.5px dashed ${strokeColor}`,
+            borderRadius: 8,
+          }}
+        />
+      ) : null}
+      {type === "ellipse" ? (
+        <div
+          className="h-full w-full rounded-full"
+          style={{
+            backgroundColor: fillColor,
+            border: `1.5px dashed ${strokeColor}`,
+          }}
+        />
+      ) : null}
+      {type === "polygon" ? (
+        <svg
+          className="h-full w-full overflow-visible"
+          viewBox={`0 0 ${bounds.width} ${bounds.height}`}
+        >
+          <polygon
+            points={createPolygonPoints(3, bounds.width, bounds.height)}
+            fill={fillColor}
+            stroke={strokeColor}
+            strokeDasharray="5 3"
+            strokeWidth={1.5}
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+      ) : null}
     </div>
   );
 }
@@ -2237,8 +2605,16 @@ function CanvasNodeView({
           {/* Auto layout padding indicator for containers */}
           {(() => {
             const n = node as any;
-            if ((n.type === "frame" || n.type === "group") && (n.layout === "vertical" || n.layout === "horizontal")) {
-              const pad = typeof n.padding === "number" ? n.padding : Array.isArray(n.padding) ? n.padding[0] ?? 0 : 0;
+            if (
+              (n.type === "frame" || n.type === "group") &&
+              (n.layout === "vertical" || n.layout === "horizontal")
+            ) {
+              const pad =
+                typeof n.padding === "number"
+                  ? n.padding
+                  : Array.isArray(n.padding)
+                    ? (n.padding[0] ?? 0)
+                    : 0;
               if (pad > 0) {
                 const w = getNodeBounds(node).width;
                 const h = getNodeBounds(node).height;
@@ -2314,7 +2690,9 @@ function renderNodeContent(
   selected: boolean,
   onUpdate: (nodeId: string, updates: Partial<PenNode>) => void,
 ) {
-  const importedAutoLayout = getCanvasImportedNodeMeta((node as any).meta)?.autoLayout;
+  const importedAutoLayout = getCanvasImportedNodeMeta(
+    (node as any).meta,
+  )?.autoLayout;
   const ring = selected
     ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
     : "";
@@ -2325,7 +2703,8 @@ function renderNodeContent(
           className={`relative h-full w-full rounded-lg border-2 bg-card/70 shadow-subtle backdrop-blur ${ring}`}
           style={{
             borderColor: (node as any).stroke?.color ?? "#6c5ce7",
-            backgroundColor: (node as any).fill?.[0]?.color ?? "rgba(255,255,255,.78)",
+            backgroundColor:
+              (node as any).fill?.[0]?.color ?? "rgba(255,255,255,.78)",
             opacity: (node as any).opacity ?? 1,
             overflow: importedAutoLayout?.clipContent ? "hidden" : undefined,
           }}
@@ -2398,8 +2777,8 @@ function renderNodeContent(
           className={`h-full w-full shadow-subtle ${ring}`}
           style={{
             borderRadius: (node as any).cornerRadius ?? 8,
-            backgroundColor: ((node as any).fill?.[0]?.color) ?? "#d3f256",
-            border: `${(node as any).stroke?.thickness ?? 1}px solid ${((node as any).stroke?.fill?.[0]?.color) ?? "#111827"}`,
+            backgroundColor: (node as any).fill?.[0]?.color ?? "#d3f256",
+            border: `${(node as any).stroke?.thickness ?? 1}px solid ${(node as any).stroke?.fill?.[0]?.color ?? "#111827"}`,
           }}
         />
       );
@@ -2408,8 +2787,8 @@ function renderNodeContent(
         <div
           className={`h-full w-full rounded-full shadow-subtle ${ring}`}
           style={{
-            backgroundColor: ((node as any).fill?.[0]?.color) ?? "#f8fafc",
-            border: `${(node as any).stroke?.thickness ?? 2}px solid ${((node as any).stroke?.fill?.[0]?.color) ?? "#111827"}`,
+            backgroundColor: (node as any).fill?.[0]?.color ?? "#f8fafc",
+            border: `${(node as any).stroke?.thickness ?? 2}px solid ${(node as any).stroke?.fill?.[0]?.color ?? "#111827"}`,
           }}
         />
       );
@@ -2497,7 +2876,9 @@ function CanvasPropertyPanel({
         id={titleInputId}
         className="mb-3 h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
         value={node.name ?? ""}
-        onChange={(event) => onUpdate({ name: event.currentTarget.value } as Partial<PenNode>)}
+        onChange={(event) =>
+          onUpdate({ name: event.currentTarget.value } as Partial<PenNode>)
+        }
       />
 
       <div className="mb-3 grid grid-cols-2 gap-2">
@@ -2580,7 +2961,9 @@ function CanvasPropertyPanel({
               label="Rad"
               min={0}
               value={(node as any).cornerRadius ?? 0}
-              onChange={(cornerRadius) => onUpdate({ cornerRadius } as any as Partial<PenNode>)}
+              onChange={(cornerRadius) =>
+                onUpdate({ cornerRadius } as any as Partial<PenNode>)
+              }
             />
           ) : null}
         </div>
@@ -2635,11 +3018,16 @@ function CanvasPropertyPanel({
           <textarea
             id={rulesInputId}
             className="mb-3 h-20 w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring"
-            value={((node.contextSlots?.rules) ?? []).join("\n")}
+            value={(node.contextSlots?.rules ?? []).join("\n")}
             onChange={(event) =>
               onUpdate({
                 contextSlots: {
-                  ...(node.contextSlots ?? { rules: [], style: {}, tokens: {}, constraints: {} }),
+                  ...(node.contextSlots ?? {
+                    rules: [],
+                    style: {},
+                    tokens: {},
+                    constraints: {},
+                  }),
                   rules: event.currentTarget.value.split("\n").filter(Boolean),
                 },
               } as Partial<PenNode>)
@@ -2684,7 +3072,8 @@ function CanvasPropertyPanel({
             <div>
               <p className="text-xs font-medium text-foreground">导入布局</p>
               <p className="text-[11px] text-muted-foreground">
-                {importedMeta?.importSourceLabel ?? "导入内容"} 的 auto-layout metadata
+                {importedMeta?.importSourceLabel ?? "导入内容"} 的 auto-layout
+                metadata
               </p>
             </div>
             {canApplyImportedAutoLayout ? (
@@ -2866,11 +3255,18 @@ function formatImportedAutoLayoutEntries(
     ["自身对齐", autoLayout.alignSelf],
     ["定位", autoLayout.positioning],
     ["Grow", autoLayout.grow],
-    ["裁切", autoLayout.clipContent === undefined ? undefined : autoLayout.clipContent ? "开启" : "关闭"],
+    [
+      "裁切",
+      autoLayout.clipContent === undefined
+        ? undefined
+        : autoLayout.clipContent
+          ? "开启"
+          : "关闭",
+    ],
   ];
-  return entries.filter((entry): entry is [string, string] => entry[1] !== undefined).map(
-    ([label, value]) => [label, String(value)],
-  );
+  return entries
+    .filter((entry): entry is [string, string] => entry[1] !== undefined)
+    .map(([label, value]) => [label, String(value)]);
 }
 
 function formatImportedPadding(
@@ -2925,7 +3321,11 @@ function toSceneElements(doc: CucumberCanvasDocument): CanvasSceneElement[] {
   );
 }
 
-function toSceneElement(node: PenNode, depth = 0, doc?: CucumberCanvasDocument): CanvasSceneElement {
+function toSceneElement(
+  node: PenNode,
+  depth = 0,
+  doc?: CucumberCanvasDocument,
+): CanvasSceneElement {
   const importMeta = getCanvasImportedNodeMeta((node as any).meta);
   const parentNode = doc ? findParent(doc, node.id) : undefined;
   return {
@@ -2937,7 +3337,12 @@ function toSceneElement(node: PenNode, depth = 0, doc?: CucumberCanvasDocument):
     height: getNodeBounds(node).height,
     isDeleted: false,
     fileId: node.type === "image" ? (node as any).assetId : undefined,
-    text: node.type === "text" ? (typeof node.content === "string" ? node.content : "") : undefined,
+    text:
+      node.type === "text"
+        ? typeof node.content === "string"
+          ? node.content
+          : ""
+        : undefined,
     locked: node.locked === true,
     visible: node.visible !== false,
     depth,
@@ -2999,21 +3404,81 @@ function defaultBounds(
 ): CanvasBounds {
   const parent = parentId ? findNode(doc, parentId) : undefined;
   const nodeCount = flattenNodes(doc).length;
-  const baseX = parent
-    ? getNodeBounds(parent).x + 32
-    : 120 + nodeCount * 28;
-  const baseY = parent
-    ? getNodeBounds(parent).y + 48
-    : 120 + nodeCount * 22;
-  if (type === "frame")
-    return { x: baseX, y: baseY, width: 360, height: 240 };
+  const baseX = parent ? getNodeBounds(parent).x + 32 : 120 + nodeCount * 28;
+  const baseY = parent ? getNodeBounds(parent).y + 48 : 120 + nodeCount * 22;
+  if (type === "frame") return { x: baseX, y: baseY, width: 360, height: 240 };
   if (type === "text") return { x: baseX, y: baseY, width: 260, height: 80 };
   if (type === "image") return { x: baseX, y: baseY, width: 320, height: 220 };
-  if (type === "line")
-    return { x: baseX, y: baseY, width: 220, height: 120 };
+  if (type === "line") return { x: baseX, y: baseY, width: 220, height: 120 };
   if (type === "videoEmbed")
     return { x: baseX, y: baseY, width: 360, height: 220 };
   return { x: baseX, y: baseY, width: 180, height: 120 };
+}
+
+function normalizeDrawBounds(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  forceSquare: boolean,
+): CanvasBounds {
+  let width = end.x - start.x;
+  let height = end.y - start.y;
+  if (forceSquare) {
+    const size = Math.max(Math.abs(width), Math.abs(height));
+    width = Math.sign(width || 1) * size;
+    height = Math.sign(height || 1) * size;
+  }
+  return normalizeBounds({
+    x: start.x,
+    y: start.y,
+    width,
+    height,
+  });
+}
+
+function createDrawableShapeNode(
+  type: DrawableShapeTool,
+  bounds: CanvasBounds,
+): PenNode {
+  const id = createNodeId(type);
+  const shared = {
+    id,
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    fill: [
+      {
+        type: "solid" as const,
+        color: type === "rectangle" ? "#d3f256" : "#f8fafc",
+      },
+    ],
+    stroke: {
+      thickness: type === "rectangle" ? 1 : 2,
+      fill: [{ type: "solid" as const, color: "#111827" }],
+    },
+  };
+
+  if (type === "rectangle") {
+    return {
+      ...shared,
+      type,
+      name: "Rectangle",
+      cornerRadius: 8,
+    } as PenNode;
+  }
+  if (type === "ellipse") {
+    return {
+      ...shared,
+      type,
+      name: "Ellipse",
+    } as PenNode;
+  }
+  return {
+    ...shared,
+    type,
+    name: "Polygon",
+    polygonCount: 3,
+  } as PenNode;
 }
 
 function screenToCanvasPoint(
@@ -3036,14 +3501,15 @@ function SelectionOutline() {
   );
 }
 
-function renderPolygon(
-  node: PenNode,
-  selected: boolean,
-) {
+function renderPolygon(node: PenNode, selected: boolean) {
   const width = Math.max(getNodeBounds(node).width, 1);
   const height = Math.max(getNodeBounds(node).height, 1);
   const n = node as any;
-  const points = createPolygonPoints(n.polygonCount ?? n.points ?? 3, width, height);
+  const points = createPolygonPoints(
+    n.polygonCount ?? n.points ?? 3,
+    width,
+    height,
+  );
   return (
     <div className="relative h-full w-full">
       <svg
@@ -3064,10 +3530,7 @@ function renderPolygon(
   );
 }
 
-function renderPath(
-  node: PenNode,
-  selected: boolean,
-) {
+function renderPath(node: PenNode, selected: boolean) {
   const width = Math.max(getNodeBounds(node).width, 1);
   const height = Math.max(getNodeBounds(node).height, 1);
   const n = node as any;
@@ -3093,10 +3556,7 @@ function renderPath(
   );
 }
 
-function renderIconNode(
-  node: PenNode,
-  selected: boolean,
-) {
+function renderIconNode(node: PenNode, selected: boolean) {
   const n = node as any;
   const strokeColor = n.stroke?.fill?.[0]?.color ?? "#111827";
   return (
@@ -3192,7 +3652,9 @@ function renderConnector(node: PenNode, selected: boolean) {
           stroke={strokeColor}
           strokeWidth={n.stroke?.thickness ?? 3}
           strokeLinecap="round"
-          markerEnd={n._connectorType === "arrow" ? `url(#${markerId})` : undefined}
+          markerEnd={
+            n._connectorType === "arrow" ? `url(#${markerId})` : undefined
+          }
         />
       </svg>
       {selected ? <SelectionOutline /> : null}
@@ -3228,7 +3690,10 @@ function createConnectorGeometry(
   const height = Math.max(Math.abs(endPoint.y - startPoint.y), 2);
 
   return {
-    x: minX, y: minY, width, height,
+    x: minX,
+    y: minY,
+    width,
+    height,
     startAnchor: resolveConnectorAnchor(
       startPoint.x - minX,
       startPoint.y - minY,
@@ -3393,122 +3858,4 @@ async function readImageFile(file: File): Promise<{
   );
 
   return { dataUrl, ...dimensions };
-}
-
-async function exportDocumentImage(
-  doc: CucumberCanvasDocument,
-  opts?: { maxWidthOrHeight?: number; mimeType?: string },
-  canvasViewport?: { backgroundColor?: string },
-): Promise<Blob> {
-  const bounds = calculateDocumentBounds(doc);
-  const max = opts?.maxWidthOrHeight ?? 1024;
-  const scale = Math.min(1, max / Math.max(bounds.width, bounds.height, 1));
-  const svg = renderDocumentSvg(doc, bounds, scale, canvasViewport);
-  return new Blob([svg], { type: opts?.mimeType ?? "image/svg+xml" });
-}
-
-function calculateDocumentBounds(doc: CucumberCanvasDocument): CanvasBounds {
-  const nodes = flattenNodes(doc);
-  if (nodes.length === 0) return { x: 0, y: 0, width: 800, height: 600 };
-  const minX = Math.min(...nodes.map((node) => getNodeBounds(node).x));
-  const minY = Math.min(...nodes.map((node) => getNodeBounds(node).y));
-  const maxX = Math.max(
-    ...nodes.map((node) => getNodeBounds(node).x + getNodeBounds(node).width),
-  );
-  const maxY = Math.max(
-    ...nodes.map((node) => getNodeBounds(node).y + getNodeBounds(node).height),
-  );
-  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-}
-
-function renderDocumentSvg(
-  doc: CucumberCanvasDocument,
-  bounds: CanvasBounds,
-  scale: number,
-  canvasViewport?: { backgroundColor?: string },
-): string {
-  const width = Math.max(1, Math.round(bounds.width * scale));
-  const height = Math.max(1, Math.round(bounds.height * scale));
-  const nodes = flattenNodes(doc)
-    .map((node) => {
-      const x = (getNodeBounds(node).x - bounds.x) * scale;
-      const y = (getNodeBounds(node).y - bounds.y) * scale;
-      const w = getNodeBounds(node).width * scale;
-      const h = getNodeBounds(node).height * scale;
-      const n = node as any;
-      const transform = getNodeBounds(node).rotation
-        ? ` transform="rotate(${getNodeBounds(node).rotation} ${x + w / 2} ${y + h / 2})"`
-        : "";
-      if (node.type === "text") {
-        const fontSize = (n.fontSize ?? 16) * scale;
-        const textContent = typeof n.content === "string" ? n.content : "";
-        return `<text x="${x}" y="${y + fontSize}" font-size="${fontSize}" fill="${escapeAttr(n.color ?? "#111827")}"${transform}>${escapeText(textContent)}</text>`;
-      }
-      if (node.type === "image") {
-        return `<image href="${escapeAttr(node.src)}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid slice"${transform} />`;
-      }
-      if (node.type === "line") {
-        const startAnchor = n.startAnchor ?? "tl";
-        const endAnchor = n.endAnchor ?? "br";
-        const start = anchorToPoint(startAnchor, w, h);
-        const end = anchorToPoint(endAnchor, w, h);
-        const markerId = `svg-marker-${escapeAttr(node.id)}`;
-        const strokeColor = n.stroke?.fill?.[0]?.color ?? "#111827";
-        const defs = n._connectorType === "arrow"
-          ? `<defs><marker id="${markerId}" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="${escapeAttr(strokeColor)}" /></marker></defs>`
-          : "";
-        return `${defs}<line x1="${x + start.x}" y1="${y + start.y}" x2="${x + end.x}" y2="${y + end.y}" stroke="${escapeAttr(strokeColor)}" stroke-width="${n.stroke?.thickness ?? 3}" stroke-linecap="round"${n._connectorType === "arrow" ? ` marker-end="url(#${markerId})"` : ""}${transform} />`;
-      }
-      if (node.type === "ellipse") {
-        const fillColor = n.fill?.[0]?.color ?? "#f8fafc";
-        const strokeColor = n.stroke?.fill?.[0]?.color ?? "#111827";
-        return `<ellipse cx="${x + w / 2}" cy="${y + h / 2}" rx="${w / 2}" ry="${h / 2}" fill="${escapeAttr(fillColor)}" stroke="${escapeAttr(strokeColor)}" stroke-width="${n.stroke?.thickness ?? 2}"${transform} />`;
-      }
-      if (node.type === "polygon") {
-        const fillColor = n.fill?.[0]?.color ?? "#f8fafc";
-        const strokeColor = n.stroke?.fill?.[0]?.color ?? "#111827";
-        const polyCount = n.polygonCount ?? n.points ?? 3;
-        return `<polygon points="${createPolygonPoints(polyCount, w, h)
-          .split(" ")
-          .map((point) => {
-            const [px, py] = point.split(",").map(Number);
-            return `${x + (px ?? 0)},${y + (py ?? 0)}`;
-          })
-          .join(
-            " ",
-          )}" fill="${escapeAttr(fillColor)}" stroke="${escapeAttr(strokeColor)}" stroke-width="${n.stroke?.thickness ?? 2}"${transform} />`;
-      }
-      if (node.type === "path") {
-        return `<svg x="${x}" y="${y}" width="${w}" height="${h}" viewBox="0 0 ${getNodeBounds(node).width} ${getNodeBounds(node).height}" overflow="visible"${transform}><path d="${escapeAttr(n.d)}" fill="${escapeAttr(n.fill?.[0]?.color ?? "none")}" stroke="${escapeAttr(n.stroke?.fill?.[0]?.color ?? "#111827")}" stroke-width="${n.stroke?.thickness ?? 3}" stroke-linecap="round" stroke-linejoin="round" /></svg>`;
-      }
-      if (node.type === "icon_font") {
-        return `<svg x="${x}" y="${y}" width="${w}" height="${h}" viewBox="0 0 24 24"${transform}><path d="M12 3 10.3 8.3 5 10l5.3 1.7L12 17l1.7-5.3L19 10l-5.3-1.7L12 3Z" fill="${escapeAttr(n.fill?.[0]?.color ?? "none")}" stroke="${escapeAttr(n.stroke?.fill?.[0]?.color ?? "#111827")}" stroke-width="${n.stroke?.thickness ?? 1.8}" stroke-linejoin="round" /></svg>`;
-      }
-      const fill =
-        node.type === "frame"
-          ? (n.fill?.[0]?.color ?? "rgba(255,255,255,.78)")
-          : node.type === "rectangle"
-            ? (n.fill?.[0]?.color ?? "#d3f256")
-            : "#111827";
-      const stroke =
-        node.type === "frame"
-          ? (n.stroke?.color ?? "#6c5ce7")
-          : node.type === "rectangle"
-            ? (n.stroke?.fill?.[0]?.color ?? "#111827")
-            : "none";
-      return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="${escapeAttr(fill)}" stroke="${escapeAttr(stroke)}" stroke-width="2"${transform} />`;
-    })
-    .join("");
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="${escapeAttr(canvasViewport?.backgroundColor ?? '#f0f0f0')}"/>${nodes}</svg>`;
-}
-
-function escapeText(value: string): string {
-  return value.replace(
-    /[&<>]/g,
-    (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[ch] ?? ch,
-  );
-}
-
-function escapeAttr(value: string): string {
-  return escapeText(value).replace(/"/g, "&quot;");
 }

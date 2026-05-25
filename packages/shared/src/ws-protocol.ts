@@ -49,6 +49,14 @@ export const screenshotResultSchema = z.object({
   url: z.string().min(1),
   width: z.number(),
   height: z.number(),
+  actualBounds: z
+    .object({
+      x: z.number(),
+      y: z.number(),
+      width: z.number(),
+      height: z.number(),
+    })
+    .optional(),
 });
 
 export type ScreenshotParams = z.infer<typeof screenshotParamsSchema>;

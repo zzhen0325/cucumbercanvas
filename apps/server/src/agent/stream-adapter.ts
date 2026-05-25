@@ -12,7 +12,7 @@ import {
 import { imageArtifactSchema, videoArtifactSchema } from "@cucumber/shared";
 import type { StreamEvent, ToolArtifact } from "@cucumber/shared";
 
-import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
+import { createRunFailedEvent } from "./run-failure.js";
 
 /**
  * Shape of a LangChain v2 stream event from `streamEvents()`.
@@ -234,8 +234,13 @@ export async function* adaptDeepAgentStream(
         // suppress its artifacts because the parent will re-emit them.
         const isNestedInSubAgent =
           INNER_SUB_AGENT_TOOLS.has(toolName) && activeSubAgentRuns.size > 0;
-        const extractedArtifacts = isNestedInSubAgent ? undefined : extractArtifacts(output);
-        const extractedOutput = extractOutput(output, (extractedArtifacts?.length ?? 0) > 0);
+        const extractedArtifacts = isNestedInSubAgent
+          ? undefined
+          : extractArtifacts(output);
+        const extractedOutput = extractOutput(
+          output,
+          (extractedArtifacts?.length ?? 0) > 0,
+        );
         yield {
           output: extractedOutput,
           outputSummary: summarizeOutput(output),
@@ -259,7 +264,6 @@ export async function* adaptDeepAgentStream(
             timestamp: now(),
           } satisfies StreamEvent;
         }
-        continue;
       }
     }
   } catch (error) {
@@ -268,21 +272,12 @@ export async function* adaptDeepAgentStream(
       return;
     }
 
-    // Log full error detail server-side
-    console.error(
-      `[stream-adapter] Stream error for run ${options.runId}:`,
+    yield createRunFailedEvent({
       error,
-    );
-
-    yield {
-      error: {
-        code: "run_failed",
-        message: sanitizeErrorForClient(error),
-      },
+      now,
       runId: options.runId,
-      timestamp: now(),
-      type: "run.failed",
-    };
+      source: "stream-adapter",
+    });
     return;
   }
 
@@ -311,12 +306,24 @@ function unwrapCommandOutput(
 ): Record<string, unknown> {
   if (record.lg_name !== "Command") return record;
   try {
-    const messages = (record.update as any)?.messages;
+    const update =
+      record.update && typeof record.update === "object"
+        ? (record.update as { messages?: unknown })
+        : null;
+    const messages = update?.messages;
     if (!Array.isArray(messages) || messages.length === 0) return record;
-    const content = messages[0]?.kwargs?.content ?? messages[0]?.content;
+    const firstMessage =
+      messages[0] && typeof messages[0] === "object"
+        ? (messages[0] as {
+            content?: unknown;
+            kwargs?: { content?: unknown };
+          })
+        : null;
+    const content = firstMessage?.kwargs?.content ?? firstMessage?.content;
     if (typeof content !== "string") return record;
     const inner = JSON.parse(content);
-    if (inner && typeof inner === "object") return inner as Record<string, unknown>;
+    if (inner && typeof inner === "object")
+      return inner as Record<string, unknown>;
   } catch {
     // fall through
   }
@@ -394,12 +401,16 @@ function extractArtifacts(output: unknown): ToolArtifact[] | undefined {
 
   // New format: sub-agent structured response with url + placement
   if (typeof record.url === "string" && record.url.length > 0) {
+    const placement =
+      record.placement && typeof record.placement === "object"
+        ? (record.placement as { height?: unknown; width?: unknown })
+        : null;
     const candidate: Record<string, unknown> = {
       type: "image" as const,
       url: record.url,
       mimeType: (record.mimeType as string) ?? "image/png",
-      width: (record.placement as any)?.width ?? 512,
-      height: (record.placement as any)?.height ?? 512,
+      width: typeof placement?.width === "number" ? placement.width : 512,
+      height: typeof placement?.height === "number" ? placement.height : 512,
     };
     if (typeof record.title === "string" && record.title.length > 0) {
       candidate.title = record.title;

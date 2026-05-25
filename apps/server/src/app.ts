@@ -346,6 +346,18 @@ function evaluateCors(request: FastifyRequest, webOrigin: string): CorsResult {
     };
   }
 
+  if (
+    isLoopbackHost(request.headers.host) &&
+    isEquivalentLoopbackOrigin(origin, webOrigin)
+  ) {
+    return {
+      allowed: true,
+      allowOrigin: origin,
+      isBrowserRequest: true,
+      isPreflight,
+    };
+  }
+
   if (origin === "null" && isLoopbackHost(request.headers.host)) {
     return {
       allowed: true,
@@ -377,7 +389,38 @@ function isLoopbackHost(host: string | undefined) {
   }
 
   const [hostname] = host.split(":");
+  if (!hostname) return false;
+  return isLoopbackHostname(hostname);
+}
+
+function isEquivalentLoopbackOrigin(origin: string, webOrigin: string) {
+  try {
+    const originUrl = new URL(origin);
+    const webOriginUrl = new URL(webOrigin);
+
+    return (
+      originUrl.protocol === webOriginUrl.protocol &&
+      getEffectivePort(originUrl) === getEffectivePort(webOriginUrl) &&
+      isLoopbackHostname(originUrl.hostname) &&
+      isLoopbackHostname(webOriginUrl.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function getEffectivePort(url: URL) {
+  if (url.port) return url.port;
+  if (url.protocol === "https:") return "443";
+  if (url.protocol === "http:") return "80";
+  return "";
+}
+
+function isLoopbackHostname(hostname: string) {
   return (
-    hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1"
+    hostname === "127.0.0.1" ||
+    hostname === "localhost" ||
+    hostname === "::1" ||
+    hostname === "[::1]"
   );
 }

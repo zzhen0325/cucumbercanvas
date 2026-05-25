@@ -30,11 +30,14 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
   const applyStreamEvent = useCallback(
     (event: StreamEvent, assistantId: string, sessionId: string) => {
       if (!assistantId || !sessionId) {
-        console.warn("[chat-stream] applyStreamEvent called with missing ids:", {
-          assistantId,
-          sessionId,
-          eventType: event.type,
-        });
+        console.warn(
+          "[chat-stream] applyStreamEvent called with missing ids:",
+          {
+            assistantId,
+            sessionId,
+            eventType: event.type,
+          },
+        );
         return;
       }
 
@@ -98,7 +101,10 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
                 (b) => b.type === "tool" && b.toolCallId === event.toolCallId,
               );
               if (alreadyExists) {
-                console.warn("[chat-stream] duplicate tool.started for:", event.toolCallId);
+                console.warn(
+                  "[chat-stream] duplicate tool.started for:",
+                  event.toolCallId,
+                );
                 return m;
               }
               const newBlock: ToolBlock = {
@@ -144,15 +150,24 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
           );
           break;
 
-        case "run.failed":
-          console.error("[chat-stream] run.failed:", event.error);
+        case "run.failed": {
+          const failureMessage = getRunFailureMessage(event.error);
+          console.warn(
+            "[chat-stream] run.failed:",
+            failureMessage,
+            event.error,
+          );
           update((prev) =>
             prev.map((m) => {
               if (m.id !== assistantId) return m;
               // Mark all running tool blocks as completed so spinners stop
               const blocks = m.contentBlocks.map((block) =>
                 block.type === "tool" && block.status === "running"
-                  ? { ...block, status: "completed" as const, outputSummary: "\u5904\u7406\u5931\u8d25" }
+                  ? {
+                      ...block,
+                      status: "completed" as const,
+                      outputSummary: failureMessage,
+                    }
                   : block,
               );
               const hasText = blocks.some((b) => b.type === "text");
@@ -164,13 +179,14 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
                       ...blocks,
                       {
                         type: "text" as const,
-                        text: "\u62b1\u6b49\uff0c\u5904\u7406\u8fc7\u7a0b\u4e2d\u9047\u5230\u95ee\u9898\uff0c\u8bf7\u91cd\u8bd5\u3002",
+                        text: failureMessage,
                       },
                     ],
               };
             }),
           );
           break;
+        }
 
         case "run.canceled":
           // Clean up running tool blocks when a run is aborted.
@@ -203,4 +219,22 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
   );
 
   return { applyStreamEvent };
+}
+
+function getRunFailureMessage(error: unknown): string {
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof (error as { message: unknown }).message === "string" &&
+    (error as { message: string }).message.trim().length > 0
+  ) {
+    return (error as { message: string }).message.trim();
+  }
+
+  if (typeof error === "string" && error.trim().length > 0) {
+    return error.trim();
+  }
+
+  return "处理失败：服务端没有返回失败原因，请查看服务端日志定位具体原因。";
 }
