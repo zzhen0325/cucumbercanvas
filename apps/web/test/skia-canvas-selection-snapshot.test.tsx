@@ -1,5 +1,4 @@
 import type { CucumberCanvasDocument } from "@cucumber/canvas-core";
-import type { PenNode } from "@cucumber/pen-types";
 import { act, render, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -47,7 +46,7 @@ const initialDocument: CucumberCanvasDocument = {
 };
 
 describe("SkiaCanvas selection snapshots", () => {
-  it("emits a coherent onChange snapshot after selecting a newly committed node", async () => {
+  it("emits coherent onChange snapshots when a canvas action creates and selects a node", async () => {
     const originalResizeObserver = globalThis.ResizeObserver;
     globalThis.ResizeObserver =
       MockResizeObserver as unknown as typeof ResizeObserver;
@@ -84,30 +83,33 @@ describe("SkiaCanvas selection snapshots", () => {
         },
       );
 
-      const node: PenNode = {
-        id: "node-created-then-selected",
-        type: "rectangle",
-        name: "Created then selected",
-        x: 10,
-        y: 20,
-        width: 120,
-        height: 80,
-        fill: [{ type: "solid", color: "#d3f256" }],
-      } as PenNode;
+      let createdNodeId = "";
 
       await act(async () => {
-        readyApi.insertNode(node);
-        readyApi.setSelection([node.id]);
+        createdNodeId = readyApi.createContainer({
+          name: "Created then selected",
+          x: 10,
+          y: 20,
+          width: 120,
+          height: 80,
+        }).id;
       });
 
       await waitFor(() => {
-        expect(snapshots.at(-1)?.selectedIds).toContain(node.id);
+        expect(snapshots.at(-1)?.selectedIds).toContain(createdNodeId);
       });
 
       expect(snapshots.at(-1)).toEqual({
-        elementIds: [node.id],
-        selectedIds: [node.id],
+        elementIds: [createdNodeId],
+        selectedIds: [createdNodeId],
       });
+      expect(
+        snapshots.filter(
+          (snapshot) =>
+            snapshot.elementIds.includes(createdNodeId) &&
+            !snapshot.selectedIds.includes(createdNodeId),
+        ),
+      ).toEqual([]);
 
       unsubscribe?.();
     } finally {

@@ -526,7 +526,11 @@ export const SkiaCanvas = memo(
     const commitDocument = useCallback(
       (
         next: PenDocument,
-        opts?: { captureHistory?: boolean; notify?: boolean },
+        opts?: {
+          captureHistory?: boolean;
+          notify?: boolean;
+          selection?: string[];
+        },
       ) => {
         const normalized = normalizeCanvasPages(next);
         const previousActivePageId = activePageIdRef.current;
@@ -535,9 +539,13 @@ export const SkiaCanvas = memo(
           normalized,
           previousActivePageId,
         );
+        const requestedSelection =
+          opts && "selection" in opts
+            ? (opts.selection ?? [])
+            : getDocumentSelection(normalized, selectedIds);
         const nextSelection = filterSelectionForActivePage(
           normalized,
-          getDocumentSelection(normalized, selectedIds),
+          requestedSelection,
           nextActivePageId,
         );
         const committed = {
@@ -588,7 +596,10 @@ export const SkiaCanvas = memo(
     // -----------------------------------------------------------------------
 
     const setSelection = useCallback(
-      (nodeIds: string[], opts?: { notifySelection?: boolean }) => {
+      (
+        nodeIds: string[],
+        opts?: { notifyScene?: boolean; notifySelection?: boolean },
+      ) => {
         const activePageId = activePageIdRef.current;
         const validIds = nodeIds.filter((id) =>
           Boolean(findNode(docRef.current, id, activePageId)),
@@ -601,7 +612,9 @@ export const SkiaCanvas = memo(
         docRef.current = next;
         setDoc(next);
         setEditorOverlay({ selectedIds: validIds });
-        notifySceneListeners(next, activePageId, validIds);
+        if (opts?.notifyScene !== false) {
+          notifySceneListeners(next, activePageId, validIds);
+        }
         if (opts?.notifySelection !== false) {
           onSelectionChange?.(
             validIds
@@ -644,8 +657,8 @@ export const SkiaCanvas = memo(
           node,
           activePageId: activePageIdRef.current,
         });
-        commitDocument(next);
-        setSelection([node.id]);
+        commitDocument(next, { selection: [node.id] });
+        setSelection([node.id], { notifyScene: false });
         setActiveTool("select");
         suppressNextClickRef.current = true;
         console.info("[skia-canvas] pen.path.created", {
@@ -1088,8 +1101,8 @@ export const SkiaCanvas = memo(
                 node,
                 activePageId: activePageIdRef.current,
               });
-              commitDocument(next);
-              setSelection([node.id]);
+              commitDocument(next, { selection: [node.id] });
+              setSelection([node.id], { notifyScene: false });
               console.info("[skia-canvas] shape.drawn", {
                 nodeId: node.id,
                 type: drag.shapeType,
@@ -1245,8 +1258,8 @@ export const SkiaCanvas = memo(
           node: container,
           activePageId: activePageIdRef.current,
         });
-        commitDocument(next);
-        setSelection([id]);
+        commitDocument(next, { selection: [id] });
+        setSelection([id], { notifyScene: false });
         console.info("[skia-canvas] container.created", { containerId: id });
         return container;
       },
@@ -1301,8 +1314,8 @@ export const SkiaCanvas = memo(
           node,
           activePageId: activePageIdRef.current,
         });
-        commitDocument(next);
-        setSelection([id]);
+        commitDocument(next, { selection: [id] });
+        setSelection([id], { notifyScene: false });
       },
       [commitDocument, setSelection],
     );
@@ -1351,8 +1364,8 @@ export const SkiaCanvas = memo(
           activePageId,
         });
       }
-      commitDocument(next);
-      setSelection([]);
+      commitDocument(next, { selection: [] });
+      setSelection([], { notifyScene: false });
       console.info("[skia-canvas] selection.deleted", { count: ids.length });
     }, [commitDocument, selectedIds, setSelection]);
 
@@ -1374,8 +1387,8 @@ export const SkiaCanvas = memo(
         parentId,
         offset: 18,
       });
-      commitDocument(result.doc);
-      setSelection(result.pastedIds);
+      commitDocument(result.doc, { selection: result.pastedIds });
+      setSelection(result.pastedIds, { notifyScene: false });
       notifySelectionForDoc(result.doc, result.pastedIds);
       console.info("[skia-canvas] clipboard.pasted", {
         count: result.pastedIds.length,
@@ -1427,8 +1440,8 @@ export const SkiaCanvas = memo(
           offsetX,
           offsetY,
         });
-        commitDocument(inserted.doc);
-        setSelection(inserted.insertedIds);
+        commitDocument(inserted.doc, { selection: inserted.insertedIds });
+        setSelection(inserted.insertedIds, { notifyScene: false });
         notifySelectionForDoc(inserted.doc, inserted.insertedIds);
         if (parsed.warnings.length > 0) {
           toast.toast(
@@ -1522,8 +1535,8 @@ export const SkiaCanvas = memo(
         activePageId,
       );
       const result = duplicateCanvasNodes(docRef.current, topSelection, 18);
-      commitDocument(result.doc);
-      setSelection(result.pastedIds);
+      commitDocument(result.doc, { selection: result.pastedIds });
+      setSelection(result.pastedIds, { notifyScene: false });
       notifySelectionForDoc(result.doc, result.pastedIds);
       console.info("[skia-canvas] selection.duplicated", {
         count: result.pastedIds.length,
@@ -1590,8 +1603,8 @@ export const SkiaCanvas = memo(
             activePageId: activePageIdRef.current,
           },
         );
-        commitDocument(next);
-        setSelection([id]);
+        commitDocument(next, { selection: [id] });
+        setSelection([id], { notifyScene: false });
         console.info("[skia-canvas] image.inserted", {
           nodeId: id,
           assetId,
@@ -1612,8 +1625,8 @@ export const SkiaCanvas = memo(
           }
           const activePageId = resolveActivePageId(docRef.current, pageId);
           const next = { ...docRef.current, activePageId, selection: [] };
-          commitDocument(next);
-          setSelection([]);
+          commitDocument(next, { selection: [] });
+          setSelection([], { notifyScene: false });
           console.info("[skia-canvas] page.active.changed", {
             pageId: activePageId,
           });
@@ -1688,11 +1701,8 @@ export const SkiaCanvas = memo(
           getDocumentSelection(docRef.current, selectedIds),
           activePageId,
         );
-        commitDocument({
-          ...result.document,
-          selection: nextSelection,
-        } as CanvasRuntimeDocument);
-        setSelection(nextSelection);
+        commitDocument(result.document, { selection: nextSelection });
+        setSelection(nextSelection, { notifyScene: false });
         console.info("[skia-canvas] page.deleted", {
           deletedPageId: pageId,
           activePageId: result.page.id,
@@ -1815,8 +1825,8 @@ export const SkiaCanvas = memo(
             ...next,
             selection: nextSelection,
           } as CanvasRuntimeDocument;
-          commitDocument(nextWithSelection);
-          setSelection(nextSelection);
+          commitDocument(nextWithSelection, { selection: nextSelection });
+          setSelection(nextSelection, { notifyScene: false });
           console.info("[skia-canvas] boolean-operation.applied", {
             operation,
             activePageId,
@@ -2021,8 +2031,8 @@ export const SkiaCanvas = memo(
               nodeIds: topSelection,
               activePageId: activePageIdRef.current,
             });
-            commitDocument(next);
-            setSelection([groupId]);
+            commitDocument(next, { selection: [groupId] });
+            setSelection([groupId], { notifyScene: false });
             console.info("[skia-canvas] selection.grouped", {
               groupId,
               count: topSelection.length,
@@ -2062,8 +2072,8 @@ export const SkiaCanvas = memo(
               console.warn("[skia-canvas] selection.ungroup.failed", e);
             }
           }
-          commitDocument(docRef.current);
-          setSelection(ungrouped);
+          commitDocument(docRef.current, { selection: ungrouped });
+          setSelection(ungrouped, { notifyScene: false });
           return ungrouped;
         },
         alignSelection: (alignment) => {
@@ -2249,8 +2259,8 @@ export const SkiaCanvas = memo(
             node,
             activePageId: activePageIdRef.current,
           });
-          commitDocument(next);
-          setSelection([id]);
+          commitDocument(next, { selection: [id] });
+          setSelection([id], { notifyScene: false });
         },
       }),
       [
