@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-26T00:00:00+08:00",
+  "updatedAt": "2026-05-26T15:42:00+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -41,13 +41,15 @@
       "status": "active",
       "priority": "P0",
       "owner": "agent-engineering",
-      "summary": "Deep Agents/LangChain runtime with SSE streaming, MCP-compatible typed tools, live editor canvas document access, persistence, and workspace skill execution.",
+      "summary": "Deep Agents/LangChain runtime with SSE streaming, MCP-compatible typed tools, live editor canvas document access, OpenPencil-compatible batch canvas read/write, Figma import, style/variable, and design-as-code codegen route tools with assembled file outputs plus direct selection export to React/HTML, persistence, and workspace skill execution.",
       "artifacts": [
         "apps/server/src/agent/deep-agent.ts",
         "apps/server/src/agent/runtime.ts",
         "apps/server/src/agent/tools/index.ts",
         "apps/server/src/features/canvas/live-canvas-service.ts",
         "apps/server/src/mcp/server.ts",
+        "apps/server/src/mcp/tools/open-pencil-canvas.ts",
+        "apps/server/src/mcp/tools/open-pencil-canvas.test.ts",
         "apps/server/src/mcp/deepagents-bridge.ts",
         "apps/server/src/agent/workspace-skills.ts"
       ]
@@ -101,7 +103,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "product-engineering",
-      "summary": "Canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit behind a standalone CanvasApi contract, and the P2 import/edit path combines warning-rich SVG/Figma fallback metadata with native-first Figma clipboard binary decode, instance overrides, auto-layout metadata, robust paste event handling, PenNode property editing, path drag creation, and runnable Playwright smoke coverage.",
+      "summary": "Canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit behind a standalone CanvasApi contract, and the P2 import/edit/export path combines warning-rich SVG/Figma fallback metadata with native-first Figma clipboard binary decode, instance overrides, auto-layout metadata, robust paste event handling, richer PenNode typography/component/ref/variable property editing, direct React/HTML selection export, path drag creation, and runnable Playwright smoke coverage.",
       "artifacts": [
         "packages/canvas-core",
         "packages/canvas-core/src/clipboard.ts",

@@ -49,6 +49,18 @@ Cucumber Studio 是 AI 原生无限画布。画布不是先存在的空白空间
 | distribute | 均匀分布 | horizontal/vertical |
 | reorder | 图层排序 | front/back |
 
+## OpenPencil 风格画布工具
+当用户要求复杂结构化画布编辑、批量复制/替换/移动节点、按层级读取节点、查找空白区域或排查布局问题时，优先使用 OpenPencil 兼容工具：
+- batch_get：按节点 ID、type、name、reusable 搜索或读取画布树，可控制 readDepth/searchDepth
+- batch_design：用 OpenPencil DSL 一次完成复杂编辑，支持 I/C/U/R/M/D 和同批 binding，例如 \`card=I(null,{type:"frame",name:"Card",width:320,height:180})\`
+- snapshot_layout：查看层级、尺寸和 clipped 等布局问题
+- find_empty_space：在已有内容上下左右找新容器摆放区域
+- import_figma_clipboard：把 Figma clipboard HTML 导入为可编辑节点，优先走 native fig-kiwi 解析
+- search_all_unique_properties / replace_all_matching_properties：批量盘点或替换颜色、字体、字号、圆角、间距等样式
+- get_variables / set_variables / set_themes：读取或写入设计变量和主题轴；绑定变量时使用 \`$variableName\`
+- read_nodes / codegen_plan / codegen_submit_chunk / codegen_assemble / codegen_export / codegen_clean：用于设计转代码的分块读取、计划、提交、组装，以及把当前选区直接导出为 React/HTML
+这些工具直接作用于当前 live canvas；用于大批量结构化编辑时比多次 manipulate_canvas 更稳定。
+
 ## 强制规则
 1. **形状内文字 = label 参数**，不要 add_shape + add_text 分开建
 2. **箭头 = element binding**，不要用坐标手动画。先建形状拿 createdIds，再建箭头绑定

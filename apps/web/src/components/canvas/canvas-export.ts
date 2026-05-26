@@ -122,12 +122,12 @@ function renderDocumentSvg(
       }
       if (node.type === "ellipse") {
         const fillColor = n.fill?.[0]?.color ?? "#f8fafc";
-        const strokeColor = n.stroke?.fill?.[0]?.color ?? "#111827";
-        return `<ellipse cx="${x + w / 2}" cy="${y + h / 2}" rx="${w / 2}" ry="${h / 2}" fill="${escapeAttr(fillColor)}" stroke="${escapeAttr(strokeColor)}" stroke-width="${n.stroke?.thickness ?? 2}"${transform} />`;
+        const strokeColor = n.stroke?.fill?.[0]?.color ?? "none";
+        return `<ellipse cx="${x + w / 2}" cy="${y + h / 2}" rx="${w / 2}" ry="${h / 2}" fill="${escapeAttr(fillColor)}" stroke="${escapeAttr(strokeColor)}" stroke-width="${n.stroke?.thickness ?? 0}"${transform} />`;
       }
       if (node.type === "polygon") {
         const fillColor = n.fill?.[0]?.color ?? "#f8fafc";
-        const strokeColor = n.stroke?.fill?.[0]?.color ?? "#111827";
+        const strokeColor = n.stroke?.fill?.[0]?.color ?? "none";
         const polyCount = n.polygonCount ?? n.points ?? 3;
         return `<polygon points="${createPolygonPoints(polyCount, w, h)
           .split(" ")
@@ -137,13 +137,13 @@ function renderDocumentSvg(
           })
           .join(
             " ",
-          )}" fill="${escapeAttr(fillColor)}" stroke="${escapeAttr(strokeColor)}" stroke-width="${n.stroke?.thickness ?? 2}"${transform} />`;
+          )}" fill="${escapeAttr(fillColor)}" stroke="${escapeAttr(strokeColor)}" stroke-width="${n.stroke?.thickness ?? 0}"${transform} />`;
       }
       if (node.type === "path") {
-        return `<svg x="${x}" y="${y}" width="${w}" height="${h}" viewBox="0 0 ${nodeBounds.width} ${nodeBounds.height}" overflow="visible"${transform}><path d="${escapeAttr(n.d ?? "")}" fill="${escapeAttr(n.fill?.[0]?.color ?? "none")}" stroke="${escapeAttr(n.stroke?.fill?.[0]?.color ?? "#111827")}" stroke-width="${n.stroke?.thickness ?? 3}" stroke-linecap="round" stroke-linejoin="round" /></svg>`;
+        return `<svg x="${x}" y="${y}" width="${w}" height="${h}" viewBox="0 0 ${nodeBounds.width} ${nodeBounds.height}" overflow="visible"${transform}><path d="${escapeAttr(n.d ?? "")}" fill="${escapeAttr(n.fill?.[0]?.color ?? "none")}" stroke="${escapeAttr(n.stroke?.fill?.[0]?.color ?? "none")}" stroke-width="${n.stroke?.thickness ?? 0}" stroke-linecap="round" stroke-linejoin="round" /></svg>`;
       }
       if (node.type === "icon_font") {
-        return `<svg x="${x}" y="${y}" width="${w}" height="${h}" viewBox="0 0 24 24"${transform}><path d="M12 3 10.3 8.3 5 10l5.3 1.7L12 17l1.7-5.3L19 10l-5.3-1.7L12 3Z" fill="${escapeAttr(n.fill?.[0]?.color ?? "none")}" stroke="${escapeAttr(n.stroke?.fill?.[0]?.color ?? "#111827")}" stroke-width="${n.stroke?.thickness ?? 1.8}" stroke-linejoin="round" /></svg>`;
+        return `<svg x="${x}" y="${y}" width="${w}" height="${h}" viewBox="0 0 24 24"${transform}><path d="M12 3 10.3 8.3 5 10l5.3 1.7L12 17l1.7-5.3L19 10l-5.3-1.7L12 3Z" fill="${escapeAttr(n.fill?.[0]?.color ?? "none")}" stroke="${escapeAttr(n.stroke?.fill?.[0]?.color ?? "#64748B")}" stroke-width="${n.stroke?.thickness ?? 2}" stroke-linejoin="round" /></svg>`;
       }
       const fill =
         node.type === "frame"
@@ -155,9 +155,9 @@ function renderDocumentSvg(
         node.type === "frame"
           ? (n.stroke?.color ?? "#6c5ce7")
           : node.type === "rectangle"
-            ? (n.stroke?.fill?.[0]?.color ?? "#111827")
+            ? (n.stroke?.fill?.[0]?.color ?? "none")
             : "none";
-      return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="${escapeAttr(fill)}" stroke="${escapeAttr(stroke)}" stroke-width="2"${transform} />`;
+      return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="${escapeAttr(fill)}" stroke="${escapeAttr(stroke)}" stroke-width="${n.stroke?.thickness ?? 0}"${transform} />`;
     })
     .join("");
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="${escapeAttr(canvasViewport?.backgroundColor ?? "#f0f0f0")}"/>${nodes}</svg>`;
@@ -165,14 +165,23 @@ function renderDocumentSvg(
 
 function createPolygonPoints(points: number, width: number, height: number) {
   const count = Math.max(3, Math.round(points));
-  const centerX = width / 2;
-  const centerY = height / 2;
-  const radiusX = width / 2 - 2;
-  const radiusY = height / 2 - 2;
-  return Array.from({ length: count }, (_, index) => {
+  const raw = Array.from({ length: count }, (_, index) => {
     const angle = -Math.PI / 2 + (index * Math.PI * 2) / count;
-    return `${centerX + Math.cos(angle) * radiusX},${centerY + Math.sin(angle) * radiusY}`;
-  }).join(" ");
+    return { x: Math.cos(angle), y: Math.sin(angle) };
+  });
+  const minX = Math.min(...raw.map((point) => point.x));
+  const maxX = Math.max(...raw.map((point) => point.x));
+  const minY = Math.min(...raw.map((point) => point.y));
+  const maxY = Math.max(...raw.map((point) => point.y));
+  const rawW = Math.max(maxX - minX, 1);
+  const rawH = Math.max(maxY - minY, 1);
+  return raw
+    .map((point) => {
+      const x = ((point.x - minX) / rawW) * width;
+      const y = ((point.y - minY) / rawH) * height;
+      return `${x},${y}`;
+    })
+    .join(" ");
 }
 
 function anchorToPoint(

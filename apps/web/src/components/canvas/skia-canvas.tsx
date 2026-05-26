@@ -185,6 +185,9 @@ type ShapeDrawPreview = {
 };
 
 const MIN_DRAW_SIZE = 2;
+const CANVAS_SELECTION_COLOR = "#37BFF9";
+const DEFAULT_RECT_FILL = "#d3f256";
+const DEFAULT_SHAPE_FILL = "#f8fafc";
 
 type CanvasRuntimeDocument = PenDocument & {
   assets?: Record<string, CanvasAsset>;
@@ -248,6 +251,14 @@ export const SkiaCanvas = memo(
     const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
     const [shapeDrawPreview, setShapeDrawPreview] =
       useState<ShapeDrawPreview | null>(null);
+    const [marqueePreview, setMarqueePreview] = useState<CanvasBounds | null>(
+      null,
+    );
+    const [canvasViewport, setCanvasViewport] = useState<{
+      zoom: number;
+      panX: number;
+      panY: number;
+    } | null>(null);
     const suppressNextClickRef = useRef(false);
 
     // Space-held → temporary hand tool
@@ -351,6 +362,7 @@ export const SkiaCanvas = memo(
       renderer.init(canvas);
       renderer.setDocument(docRef.current);
       renderer.zoomToFit(64);
+      setCanvasViewport(renderer.getViewport());
       rendererRef.current = renderer;
 
       console.info("[skia-canvas] PenRenderer initialized");
@@ -491,6 +503,7 @@ export const SkiaCanvas = memo(
         const sx = event.clientX - rect.left;
         const sy = event.clientY - rect.top;
         renderer.zoomToPoint(sx, sy, newZoom);
+        setCanvasViewport(renderer.getViewport());
       },
       [],
     );
@@ -574,6 +587,7 @@ export const SkiaCanvas = memo(
             startY: screenY,
             originSelection: [...selectedIds],
           };
+          setMarqueePreview(null);
           event.currentTarget.setPointerCapture(event.pointerId);
           return;
         }
@@ -624,6 +638,7 @@ export const SkiaCanvas = memo(
           const dy = event.clientY - drag.startY;
           const vp = renderer.getViewport();
           renderer.setViewport(vp.zoom, drag.originX + dx, drag.originY + dy);
+          setCanvasViewport(renderer.getViewport());
           return;
         }
 
@@ -643,6 +658,7 @@ export const SkiaCanvas = memo(
             renderer.getViewport(),
           );
           const bounds = normalizeDrawBounds(start, end, false);
+          setMarqueePreview(bounds);
           const hitIds = getVisibleCanvasNodesInBounds(
             docRef.current as CucumberCanvasDocument,
             bounds,
@@ -800,6 +816,15 @@ export const SkiaCanvas = memo(
             nodeCount: drag.kind === "move" ? drag.nodeIds.length : 1,
           });
         }
+        if (drag?.kind === "marquee") {
+          setMarqueePreview(null);
+          suppressNextClickRef.current = true;
+          console.info("[skia-canvas] selection.marquee.committed", {
+            selectedCount: (
+              (docRef.current as CanvasRuntimeDocument).selection ?? []
+            ).length,
+          });
+        }
         dragRef.current = null;
         if (event.currentTarget.hasPointerCapture(event.pointerId)) {
           event.currentTarget.releasePointerCapture(event.pointerId);
@@ -902,11 +927,7 @@ export const SkiaCanvas = memo(
               type: "rectangle" as const,
               name: "Rectangle",
               cornerRadius: 12,
-              fill: [{ type: "solid" as const, color: "#d3f256" }],
-              stroke: {
-                thickness: 2,
-                fill: [{ type: "solid" as const, color: "#111827" }],
-              },
+              fill: [{ type: "solid" as const, color: DEFAULT_RECT_FILL }],
             } as unknown as PenNode;
             break;
           case "ellipse":
@@ -914,11 +935,7 @@ export const SkiaCanvas = memo(
               ...shared,
               type: "ellipse" as const,
               name: "Ellipse",
-              fill: [{ type: "solid" as const, color: "#f8fafc" }],
-              stroke: {
-                thickness: 2,
-                fill: [{ type: "solid" as const, color: "#111827" }],
-              },
+              fill: [{ type: "solid" as const, color: DEFAULT_SHAPE_FILL }],
             } as unknown as PenNode;
             break;
           case "text":
@@ -936,7 +953,7 @@ export const SkiaCanvas = memo(
               ...shared,
               type: "rectangle" as const,
               name: shapeType,
-              fill: [{ type: "solid" as const, color: "#d3f256" }],
+              fill: [{ type: "solid" as const, color: DEFAULT_RECT_FILL }],
             } as unknown as PenNode;
         }
 
@@ -1202,6 +1219,9 @@ export const SkiaCanvas = memo(
             commitDocument(next, { captureHistory: false });
             rendererRef.current?.setDocument(next);
             rendererRef.current?.zoomToFit(64);
+            if (rendererRef.current) {
+              setCanvasViewport(rendererRef.current.getViewport());
+            }
           },
           createContainer,
           insertNode: (node, containerId) => {
@@ -1282,6 +1302,9 @@ export const SkiaCanvas = memo(
                   state.scrollX,
                   state.scrollY,
                 );
+                if (rendererRef.current) {
+                  setCanvasViewport(rendererRef.current.getViewport());
+                }
               }
             }
           },
@@ -1315,6 +1338,9 @@ export const SkiaCanvas = memo(
           },
           scrollToContent: () => {
             rendererRef.current?.zoomToFit(64);
+            if (rendererRef.current) {
+              setCanvasViewport(rendererRef.current.getViewport());
+            }
           },
           undo: () => {
             if (historyIndex < 0) return;
@@ -1722,6 +1748,7 @@ export const SkiaCanvas = memo(
       commitDocument(next, { captureHistory: false });
       rendererRef.current.setDocument(next);
       rendererRef.current.zoomToFit(64);
+      setCanvasViewport(rendererRef.current.getViewport());
     }, [ckReady]);
 
     // -----------------------------------------------------------------------
@@ -1753,7 +1780,6 @@ export const SkiaCanvas = memo(
         : effectiveTool === "select"
           ? "cursor-default"
           : "cursor-crosshair";
-    const selectionViewport = rendererRef.current?.getViewport();
     const selectedNodes = selectedIds
       .map((id) => findNode(doc, id))
       .filter((node): node is PenNode => Boolean(node));
@@ -1773,17 +1799,24 @@ export const SkiaCanvas = memo(
         {/* CanvasKit canvas container */}
         <div ref={canvasContainerRef} className="absolute inset-0" />
 
-        {shapeDrawPreview && rendererRef.current ? (
+        {shapeDrawPreview && canvasViewport ? (
           <SkiaShapeDrawPreview
             preview={shapeDrawPreview}
-            viewport={rendererRef.current.getViewport()}
+            viewport={canvasViewport}
           />
         ) : null}
 
-        {selectionViewport ? (
+        {marqueePreview && canvasViewport ? (
+          <SkiaMarqueePreview
+            bounds={marqueePreview}
+            viewport={canvasViewport}
+          />
+        ) : null}
+
+        {canvasViewport ? (
           <SkiaSelectionOverlay
             nodes={selectedNodes}
-            viewport={selectionViewport}
+            viewport={canvasViewport}
             onResizeStart={beginResize}
             onRotateStart={beginRotate}
           />
@@ -1814,6 +1847,13 @@ export const SkiaCanvas = memo(
                 <CanvasPropertyPanel
                   node={selectedNode}
                   context={ctx}
+                  variables={doc.variables}
+                  onVariablesChange={(variables) => {
+                    commitDocument({
+                      ...docRef.current,
+                      variables,
+                    });
+                  }}
                   onUpdate={(updates) => {
                     api.updateNode(selectedNodeId, updates);
                   }}
@@ -1855,8 +1895,8 @@ function SkiaShapeDrawPreview({
     width: bounds.width * viewport.zoom,
     height: bounds.height * viewport.zoom,
   };
-  const strokeColor = "#6366f1";
-  const fillColor = "rgba(99, 102, 241, 0.08)";
+  const strokeColor = CANVAS_SELECTION_COLOR;
+  const fillColor = type === "rect" ? DEFAULT_RECT_FILL : DEFAULT_SHAPE_FILL;
 
   return (
     <div
@@ -1870,7 +1910,8 @@ function SkiaShapeDrawPreview({
           style={{
             backgroundColor: fillColor,
             border: `1.5px dashed ${strokeColor}`,
-            borderRadius: 8,
+            borderRadius: 8 * viewport.zoom,
+            opacity: 0.72,
           }}
         />
       ) : null}
@@ -1880,6 +1921,7 @@ function SkiaShapeDrawPreview({
           style={{
             backgroundColor: fillColor,
             border: `1.5px dashed ${strokeColor}`,
+            opacity: 0.72,
           }}
         />
       ) : null}
@@ -1895,6 +1937,7 @@ function SkiaShapeDrawPreview({
             stroke={strokeColor}
             strokeDasharray="5 3"
             strokeWidth={1.5}
+            opacity={0.72}
             vectorEffect="non-scaling-stroke"
           />
         </svg>
@@ -1917,6 +1960,30 @@ function SkiaShapeDrawPreview({
         </svg>
       ) : null}
     </div>
+  );
+}
+
+function SkiaMarqueePreview({
+  bounds,
+  viewport,
+}: {
+  bounds: CanvasBounds;
+  viewport: { zoom: number; panX: number; panY: number };
+}) {
+  if (bounds.width <= 0 || bounds.height <= 0) return null;
+  return (
+    <div
+      className="pointer-events-none absolute z-10"
+      data-canvas-marquee-preview="true"
+      style={{
+        left: bounds.x * viewport.zoom + viewport.panX,
+        top: bounds.y * viewport.zoom + viewport.panY,
+        width: bounds.width * viewport.zoom,
+        height: bounds.height * viewport.zoom,
+        backgroundColor: "rgba(55, 191, 249, 0.08)",
+        border: `1px solid ${CANVAS_SELECTION_COLOR}`,
+      }}
+    />
   );
 }
 
@@ -1955,25 +2022,32 @@ function SkiaSelectionOverlay({
         return (
           <div
             key={node.id}
-            className="pointer-events-none absolute border border-primary"
+            className="pointer-events-none absolute border"
             data-canvas-selection-overlay={node.id}
-            style={style}
+            style={{ ...style, borderColor: CANVAS_SELECTION_COLOR }}
           >
             {RESIZE_HANDLES.map((handle) => (
               <button
                 key={handle}
                 type="button"
                 aria-label={`Resize ${handle}`}
-                className={`pointer-events-auto absolute h-2.5 w-2.5 rounded-full border border-primary bg-background shadow-sm ${resizeHandleClass(handle)}`}
+                className={`pointer-events-auto absolute h-2.5 w-2.5 rounded-full border bg-background shadow-sm ${resizeHandleClass(handle)}`}
+                style={{ borderColor: CANVAS_SELECTION_COLOR }}
                 onPointerDown={(event) => onResizeStart(node.id, handle, event)}
               />
             ))}
             <button
               type="button"
               aria-label="Rotate selection"
-              className="pointer-events-auto absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 -translate-y-7 rounded-full border border-primary bg-background shadow-sm before:absolute before:left-1/2 before:top-full before:h-4 before:w-px before:-translate-x-1/2 before:bg-primary"
+              className="pointer-events-auto absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 -translate-y-7 rounded-full border bg-background shadow-sm"
+              style={{ borderColor: CANVAS_SELECTION_COLOR }}
               onPointerDown={(event) => onRotateStart(node.id, event)}
-            />
+            >
+              <span
+                className="pointer-events-none absolute left-1/2 top-full h-4 w-px -translate-x-1/2"
+                style={{ backgroundColor: CANVAS_SELECTION_COLOR }}
+              />
+            </button>
           </div>
         );
       })}
@@ -1986,15 +2060,14 @@ function SkiaSelectionOverlay({
 // ---------------------------------------------------------------------------
 
 import {
-  Box,
   Circle,
-  Frame,
   Hand,
   MousePointer2,
   PenTool,
   Plus,
   Redo2,
   Sparkles,
+  Square,
   Trash2,
   Triangle,
   Type,
@@ -2083,7 +2156,7 @@ function SkiaToolbar({
         onClick={() => onToolChange("rect")}
         title="矩形"
       >
-        <Box className="h-4 w-4" />
+        <Square className="h-4 w-4" />
       </button>
       <button
         type="button"
@@ -2267,13 +2340,9 @@ function createDrawableShapeNode(
     fill: [
       {
         type: "solid" as const,
-        color: type === "rect" ? "#d3f256" : "#f8fafc",
+        color: type === "rect" ? DEFAULT_RECT_FILL : DEFAULT_SHAPE_FILL,
       },
     ],
-    stroke: {
-      thickness: type === "rect" ? 1 : 2,
-      fill: [{ type: "solid" as const, color: "#111827" }],
-    },
   };
 
   if (type === "rect") {
@@ -2314,21 +2383,31 @@ function createDrawableShapeNode(
 }
 
 function createPolygonPreviewPoints(width: number, height: number): string {
-  const centerX = width / 2;
-  const centerY = height / 2;
-  const radiusX = Math.max(width / 2 - 1, 1);
-  const radiusY = Math.max(height / 2 - 1, 1);
-  return Array.from({ length: 3 }, (_, index) => {
+  const count = 3;
+  const raw = Array.from({ length: count }, (_, index) => {
     const angle = -Math.PI / 2 + (index * Math.PI * 2) / 3;
-    return `${centerX + Math.cos(angle) * radiusX},${centerY + Math.sin(angle) * radiusY}`;
-  }).join(" ");
+    return { x: Math.cos(angle), y: Math.sin(angle) };
+  });
+  const minX = Math.min(...raw.map((point) => point.x));
+  const maxX = Math.max(...raw.map((point) => point.x));
+  const minY = Math.min(...raw.map((point) => point.y));
+  const maxY = Math.max(...raw.map((point) => point.y));
+  const rawW = Math.max(maxX - minX, 1);
+  const rawH = Math.max(maxY - minY, 1);
+  return raw
+    .map((point) => {
+      const x = ((point.x - minX) / rawW) * width;
+      const y = ((point.y - minY) / rawH) * height;
+      return `${x},${y}`;
+    })
+    .join(" ");
 }
 
 function createPathPreviewD(width: number, height: number): string {
   const w = Math.max(width, 1);
   const h = Math.max(height, 1);
   return [
-    `M 1 ${Math.max(h - 1, 1)}`,
-    `C ${w * 0.32} ${h * 0.16}, ${w * 0.68} ${h * 0.84}, ${Math.max(w - 1, 1)} 1`,
+    `M 0 ${h}`,
+    `C ${w * 0.32} ${h * 0.16}, ${w * 0.68} ${h * 0.84}, ${w} 0`,
   ].join(" ");
 }

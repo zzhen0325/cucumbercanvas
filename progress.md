@@ -1,6 +1,6 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-26 00:00 CST
+Last updated: 2026-05-26 15:42 CST
 
 ## Current Session
 
@@ -57,6 +57,10 @@ Status:
 - Tightened the Skia editor interaction chain after the render/layout review: Figma/system paste now lets native paste events carry HTML payloads when the internal canvas clipboard is empty, imported `rect` nodes normalize to renderable `rectangle` nodes, and single-quoted Figma clipboard attributes are decoded.
 - Fixed selected-node editing ergonomics in the Skia path by keeping property-panel and toolbar events from bubbling into canvas hit-testing, binding the panel directly to PenNode fields, and making the path/pen tool create a visible path from the same drag bounds used by its preview.
 - Added focused keyboard shortcut coverage for paste behavior, plus targeted Figma clipboard extraction/import regression checks.
+- Added the first OpenPencil-compatible live canvas agent tool slice: `batch_design`, `batch_get`, `snapshot_layout`, and `find_empty_space` are now registered as MCP tools, operate through `LiveCanvasService`, and let the main Agent perform DSL-style batch editing/reading against the current Cucumber `PenDocument` without changing the durable canvas schema.
+- Continued the OpenPencil migration with Figma/style/codegen parity slices: the live MCP tool set now includes `import_figma_clipboard`, OpenPencil-style `read_nodes`, variables/theme tools, recursive style search/replace, and in-memory codegen plan/submit/assemble/clean routes, while the Skia property panel can bind selected node colors to document variables.
+- Advanced codegen assembly from protocol-only state to concrete design-as-code file output: `codegen_assemble` now returns framework-specific files for React (`App.tsx`, component files, CSS), HTML (`index.html`, CSS), and generic framework fallbacks, and the property panel now includes typography controls plus reusable component/ref metadata and inline color variable creation/binding.
+- Added a dedicated `codegen_export` MCP tool so the Agent can export the current live canvas selection, or explicit node IDs, directly into React (`.tsx` + CSS) or static HTML (`index.html` + CSS) design-as-code files with diagnostic logging.
 
 ## Next Targets
 
@@ -67,7 +71,7 @@ Status:
 5. Expand deterministic browser/e2e coverage for system paste from SVG/Figma clipboard content, including nested component instances, the compatibility summary, and the fallback path now that the shared test webServer is healthy again.
 6. Decide whether to harden `apps/web/next.config.ts` for local multi-lockfile setups with `outputFileTracingRoot` / `allowedDevOrigins`, or keep those as known non-blocking dev warnings for now.
 7. Continue P1 canvas parity with richer path/icon editing, reference guides, advanced snapping, shape-specific handles, and more complete property controls.
-8. Build the next P2 layers on top of the new import provenance metadata: reusable components/ref, variables/design tokens, and design-as-code export.
+8. Build the next P2 layers on top of the new import provenance metadata: richer reusable component/ref editing, variables/design tokens, and export-to-project handoff flows.
 9. Replace the current DOM runtime internals with a dedicated editor adapter if needed, keeping `CanvasApi` stable.
 10. Decide whether `@excalidraw/excalidraw` can be removed after dependent panels and legacy helpers no longer import it.
 
@@ -124,3 +128,17 @@ Status:
 - Failed: `pnpm --filter @cucumber/server typecheck` is still blocked by pre-existing `apps/server/src/http/sse.test.ts` missing the required `webOrigin` option for `registerSseRoutes`.
 - Failed: full `pnpm --filter @cucumber/web test` remains blocked by the pre-existing React 19 / Testing Library `React.act is not a function` issue across legacy web tests; the new clipboard-import focused test passes when run in isolation.
 - Failed: root `pnpm lint` remains blocked by unrelated pre-existing/untracked files, primarily `openpencil/**`, server formatting drift, and existing `apps/server/src/agent/deep-agent.ts` explicit `any` diagnostics.
+- Passed: `./node_modules/.bin/tsc -p apps/server/tsconfig.json --noEmit`.
+- Passed: `PATH="/Users/bytedance/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" ../../node_modules/.bin/vitest run src/mcp/tools/open-pencil-canvas.test.ts --passWithNoTests` from `apps/server`.
+- Passed: `./node_modules/.bin/biome check apps/server/src/mcp/tools/open-pencil-canvas.ts apps/server/src/mcp/tools/open-pencil-canvas.test.ts apps/server/src/mcp/server.ts apps/server/src/agent/prompts/cucumber-main.ts`.
+- Passed: `./node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`.
+- Passed: `PATH="/Users/bytedance/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" ../../node_modules/.bin/vitest run src/mcp/tools/open-pencil-canvas.test.ts --passWithNoTests` from `apps/server` after adding style/variable/codegen coverage.
+- Passed: `./node_modules/.bin/biome check apps/server/src/mcp/tools/open-pencil-canvas.ts apps/server/src/mcp/tools/open-pencil-canvas.test.ts apps/server/src/mcp/server.ts apps/server/src/agent/prompts/cucumber-main.ts apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx apps/web/src/components/canvas/skia-canvas.tsx progress.md feature_list.json`.
+- Passed: `./node_modules/.bin/tsc -p apps/server/tsconfig.json --noEmit`.
+- Passed: `./node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`.
+- Passed: `PATH="/Users/bytedance/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" ../../node_modules/.bin/vitest run src/mcp/tools/open-pencil-canvas.test.ts --passWithNoTests` from `apps/server` after adding codegen file assembly coverage.
+- Passed: `./node_modules/.bin/tsc -p apps/server/tsconfig.json --noEmit`.
+- Passed: `./node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`.
+- Passed: `PATH="/Users/bytedance/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" ../../node_modules/.bin/vitest run src/mcp/tools/open-pencil-canvas.test.ts --passWithNoTests` from `apps/server` after adding `codegen_export` selection/export coverage.
+- Passed: `./node_modules/.bin/biome check --write apps/server/src/mcp/tools/open-pencil-canvas.ts apps/server/src/mcp/tools/open-pencil-canvas.test.ts apps/server/src/agent/prompts/cucumber-main.ts apps/server/src/mcp/server.ts apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx apps/web/src/components/canvas/skia-canvas.tsx progress.md feature_list.json`.
+- Passed: final no-write `./node_modules/.bin/biome check apps/server/src/mcp/tools/open-pencil-canvas.ts apps/server/src/mcp/tools/open-pencil-canvas.test.ts apps/server/src/agent/prompts/cucumber-main.ts apps/server/src/mcp/server.ts apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx apps/web/src/components/canvas/skia-canvas.tsx progress.md feature_list.json`.

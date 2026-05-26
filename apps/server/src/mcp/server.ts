@@ -1,19 +1,29 @@
 import type { BackendFactory, BackendProtocol } from "deepagents";
 
-import type { LiveCanvasService } from "../features/canvas/live-canvas-service.js";
-import type { ConnectionManager } from "../ws/connection-manager.js";
-import type { PersistImageFn, SubmitImageJobFn } from "../agent/tools/image-generate.js";
+import type {
+  PersistImageFn,
+  SubmitImageJobFn,
+} from "../agent/tools/image-generate.js";
 import type { SubmitVideoJobFn } from "../agent/tools/video-generate.js";
+import type { LiveCanvasService } from "../features/canvas/live-canvas-service.js";
+import type { UserSupabaseClient } from "../supabase/user.js";
+import type { ConnectionManager } from "../ws/connection-manager.js";
 import { createGenerateImageMcpTool } from "./tools/generate-image.js";
 import { createGenerateVideoMcpTool } from "./tools/generate-video.js";
 import { createInspectCanvasMcpTool } from "./tools/inspect-canvas.js";
 import { createManipulateCanvasMcpTool } from "./tools/manipulate-canvas.js";
+import { createOpenPencilCanvasMcpTools } from "./tools/open-pencil-canvas.js";
 import { createPersistSandboxFileMcpTool } from "./tools/persist-sandbox-file.js";
 import { createProjectSearchMcpTool } from "./tools/project-search.js";
-import type { CucumberMcpTool, McpListedTool, McpToolCallResult, McpToolContext } from "./types.js";
+import type {
+  CucumberMcpTool,
+  McpListedTool,
+  McpToolCallResult,
+  McpToolContext,
+} from "./types.js";
 
 export type CreateCucumberMcpServerDeps = {
-  createUserClient: (accessToken: string) => any;
+  createUserClient: (accessToken: string) => unknown;
   brandKitId?: string | null;
   connectionManager?: ConnectionManager;
   liveCanvasService?: LiveCanvasService;
@@ -38,10 +48,23 @@ export function createCucumberMcpServer(
   backend: BackendProtocol | BackendFactory,
   deps: CreateCucumberMcpServerDeps,
 ): CucumberMcpServer {
+  const createUserClient = deps.createUserClient as (
+    accessToken: string,
+  ) => UserSupabaseClient;
   return createInMemoryMcpServer([
     createProjectSearchMcpTool(backend),
-    createInspectCanvasMcpTool(deps),
-    createManipulateCanvasMcpTool(deps),
+    createInspectCanvasMcpTool({ createUserClient }),
+    createManipulateCanvasMcpTool({
+      createUserClient,
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    ...createOpenPencilCanvasMcpTools({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
     createGenerateImageMcpTool({
       ...(deps.persistImage ? { persistImage: deps.persistImage } : {}),
       ...(deps.submitImageJob ? { submitImageJob: deps.submitImageJob } : {}),
@@ -50,7 +73,7 @@ export function createCucumberMcpServer(
       ...(deps.submitVideoJob ? { submitVideoJob: deps.submitVideoJob } : {}),
     }),
     createPersistSandboxFileMcpTool({
-      createUserClient: deps.createUserClient,
+      createUserClient,
       ...(deps.sandboxDir ? { sandboxDir: deps.sandboxDir } : {}),
     }),
   ]);
