@@ -127,7 +127,7 @@ function CanvasPageContent() {
   useEffect(() => {
     if (selectedCanvasElements.length === 0) return;
     const imported = selectedCanvasElements.filter((element) =>
-      ["svg-import", "figma-paste"].includes(
+      ["svg-import", "figma-paste", "image-paste"].includes(
         String(
           (element as CanvasSelectedElement & { source?: string }).source ?? "",
         ),

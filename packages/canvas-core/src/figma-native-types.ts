@@ -45,6 +45,7 @@ export type FigmaPaintType =
 
 export interface FigmaImage {
   hash?: Uint8Array;
+  name?: string;
   dataBlob?: number;
 }
 
@@ -82,6 +83,8 @@ export interface FigmaNumber {
 
 export interface FigmaTextData {
   characters?: string;
+  characterStyleIDs?: number[];
+  styleOverrideTable?: FigmaNodeChange[];
 }
 
 export interface FigmaGuidPath {
@@ -148,14 +151,23 @@ export interface FigmaNodeChange {
   strokeAlign?: "CENTER" | "INSIDE" | "OUTSIDE";
   strokeCap?: string;
   strokeJoin?: "MITER" | "BEVEL" | "ROUND";
+  dashPattern?: number[];
+  borderStrokeWeightsIndependent?: boolean;
+  borderTopWeight?: number;
+  borderRightWeight?: number;
+  borderBottomWeight?: number;
+  borderLeftWeight?: number;
   effects?: FigmaEffect[];
   cornerRadius?: number;
   fontSize?: number;
   fontName?: FigmaFontName;
   textAlignHorizontal?: "LEFT" | "CENTER" | "RIGHT" | "JUSTIFIED";
+  textAlignVertical?: "TOP" | "CENTER" | "BOTTOM";
   lineHeight?: FigmaNumber;
   letterSpacing?: FigmaNumber;
   textAutoResize?: "NONE" | "WIDTH_AND_HEIGHT" | "HEIGHT";
+  textDecoration?: "NONE" | "UNDERLINE" | "STRIKETHROUGH";
+  textCase?: "ORIGINAL" | "UPPER" | "LOWER" | "TITLE";
   textData?: FigmaTextData;
   stackMode?: "NONE" | "HORIZONTAL" | "VERTICAL";
   stackSpacing?: number;

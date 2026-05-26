@@ -2,7 +2,12 @@ import type { PenDocument, PenNode } from "@cucumber/pen-types";
 import { cloneDocument, createNodeId, findNode } from "./document.js";
 import { parseFigmaClipboardNative } from "./figma-native.js";
 import { applyCanvasOperation } from "./operations.js";
-import type { CanvasEffect, CanvasFill, CanvasStroke } from "./styles.js";
+import type {
+  CanvasEffect,
+  CanvasFill,
+  CanvasStroke,
+  StyledTextSegment,
+} from "./styles.js";
 import type {
   CanvasAsset,
   CanvasBounds,
@@ -28,7 +33,7 @@ export interface ImportNode {
   cornerRadius?: number;
   opacity?: number;
   childrenOrder?: string[];
-  text?: string;
+  text?: string | StyledTextSegment[];
   fontSize?: number;
   fontFamily?: string;
   d?: string;
@@ -46,6 +51,8 @@ export interface ImportNode {
   letterSpacing?: number;
   lineHeight?: number;
   textAlignVertical?: "top" | "middle" | "bottom";
+  underline?: boolean;
+  strikethrough?: boolean;
   textGrowth?: "auto" | "fixed-width" | "fixed-width-height";
   layout?: "none" | "vertical" | "horizontal";
   gap?: number;
@@ -70,7 +77,7 @@ export interface CanvasImportWarning {
 }
 
 export interface CanvasImportResult {
-  source: "svg" | "figma";
+  source: "svg" | "figma" | "image";
   sourceLabel: string;
   importSessionId: string;
   rootNodeIds: string[];
@@ -84,13 +91,30 @@ export interface ClipboardImportPayload {
   html?: string;
   text?: string;
   svg?: string;
-  items?: Array<{ type: string; text: string }>;
+  items?: Array<{ type: string; text?: string }>;
+  files?: ClipboardImportFile[];
+}
+
+export interface ClipboardImportFile {
+  type: string;
+  name?: string;
+  dataUrl?: string;
+  arrayBuffer?: ArrayBuffer;
+  width?: number;
+  height?: number;
 }
 
 type ParsedStyle = {
   fill?: string;
   stroke?: string;
   strokeWidth?: number;
+  fillOpacity?: number;
+  strokeOpacity?: number;
+  strokeDasharray?: number[];
+  strokeDashoffset?: number;
+  strokeLinecap?: CanvasStroke["cap"];
+  strokeLinejoin?: CanvasStroke["join"];
+  strokeMiterlimit?: number;
   opacity?: number;
   fontSize?: number;
   fontFamily?: string;
@@ -104,7 +128,15 @@ function parsedFillToCanvasFills(
   const c = parsed.fill ?? parsed.color;
   const paintServer = c ? resolvePaintServer(c, state) : undefined;
   if (paintServer) return [paintServer];
-  return c ? [{ type: "solid" as const, color: c }] : undefined;
+  return c
+    ? [
+        {
+          type: "solid" as const,
+          color: c,
+          opacity: parsed.fillOpacity,
+        },
+      ]
+    : undefined;
 }
 
 function parsedStrokeToCanvasStroke(
@@ -117,13 +149,25 @@ function parsedStrokeToCanvasStroke(
   return {
     thickness: parsed.strokeWidth ?? 1,
     align: "center",
-    fill: paintServer ? [paintServer] : [{ type: "solid" as const, color: c }],
+    fill: paintServer
+      ? [paintServer]
+      : [
+          {
+            type: "solid" as const,
+            color: c,
+            opacity: parsed.strokeOpacity,
+          },
+        ],
+    cap: parsed.strokeLinecap,
+    join: parsed.strokeLinejoin,
+    dashPattern: parsed.strokeDasharray,
+    dashOffset: parsed.strokeDashoffset,
   };
 }
 
 type SvgParseState = {
   importSessionId: string;
-  source: "svg" | "figma";
+  source: "svg" | "figma" | "image";
   sourceLabel: string;
   nodes: ImportNode[];
   assets: CanvasAsset[];
@@ -131,7 +175,20 @@ type SvgParseState = {
   warningKeys: Set<string>;
   cssRules: Array<{ selector: string; style: Record<string, string> }>;
   paintServers: Map<string, CanvasFill>;
+  definitionElements: Map<string, Element>;
+  clipPaths: Map<string, SvgClipDefinition>;
+  filters: Map<string, CanvasEffect[]>;
 };
+
+type SvgClipDefinition =
+  | {
+      type: "rect";
+      bounds: CanvasBounds;
+      cornerRadius?: number;
+    }
+  | {
+      type: "complex";
+    };
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -139,13 +196,17 @@ function createImportSessionId(): string {
   return `import_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function getImportSourceMeta(source: "svg" | "figma"): {
+function getImportSourceMeta(source: "svg" | "figma" | "image"): {
   sourceLabel: string;
   nodeSource: CanvasImportSource;
 } {
-  return source === "figma"
-    ? { sourceLabel: "Figma", nodeSource: "figma-paste" }
-    : { sourceLabel: "SVG", nodeSource: "svg-import" };
+  if (source === "figma") {
+    return { sourceLabel: "Figma", nodeSource: "figma-paste" };
+  }
+  if (source === "image") {
+    return { sourceLabel: "Image", nodeSource: "image-paste" };
+  }
+  return { sourceLabel: "SVG", nodeSource: "svg-import" };
 }
 
 function pushImportWarning(
@@ -300,17 +361,23 @@ export function parseClipboardImport(
 ): CanvasImportResult | null {
   const html =
     payload.html ??
-    payload.items?.find((item) => item.type === "text/html")?.text;
+    payload.items?.find((item) => item.type === "text/html" && item.text)?.text;
   const svg =
     payload.svg ??
-    payload.items?.find((item) => item.type === "image/svg+xml")?.text ??
-    payload.items?.find((item) => item.type === "text/svg")?.text;
+    payload.items?.find((item) => item.type === "image/svg+xml" && item.text)
+      ?.text ??
+    payload.items?.find((item) => item.type === "text/svg" && item.text)?.text;
   const text =
     payload.text ??
-    payload.items?.find((item) => item.type === "text/plain")?.text;
+    payload.items?.find((item) => item.type === "text/plain" && item.text)
+      ?.text;
   const figmaHtml =
     html ??
-    payload.items?.find((item) => isLikelyFigmaClipboardHtml(item.text))?.text;
+    payload.items?.find(
+      (item) => item.text && isLikelyFigmaClipboardHtml(item.text),
+    )?.text;
+  const rasterFile = payload.files?.find(isRasterClipboardFile);
+  let figmaNativeDecodeError: string | undefined;
 
   if (figmaHtml && isLikelyFigmaClipboardHtml(figmaHtml)) {
     try {
@@ -326,14 +393,17 @@ export function parseClipboardImport(
           warnings: nativeResult.warnings,
         };
       }
-    } catch {
-      // Fall through to the existing HTML/SVG fallback path when native decode fails.
+    } catch (error) {
+      figmaNativeDecodeError =
+        error instanceof Error ? error.message : String(error);
+      // Keep walking the explicit MIME priority list before falling back to lossy HTML parsing.
     }
-    const figmaResult = parseFigmaClipboardHtml(figmaHtml);
-    if (figmaResult) return figmaResult;
   }
   if (svg && isLikelySvgMarkup(svg)) {
     return parseSvgMarkup(svg, { source: "svg" });
+  }
+  if (rasterFile) {
+    return parseRasterClipboardFile(rasterFile);
   }
   if (html && isLikelySvgMarkup(html)) {
     return parseSvgMarkup(html, { source: "svg" });
@@ -341,7 +411,86 @@ export function parseClipboardImport(
   if (text && isLikelySvgMarkup(text)) {
     return parseSvgMarkup(text, { source: "svg" });
   }
+  if (figmaHtml && isLikelyFigmaClipboardHtml(figmaHtml)) {
+    const figmaResult = parseFigmaClipboardHtml(figmaHtml);
+    if (figmaResult && figmaNativeDecodeError) {
+      figmaResult.warnings.unshift({
+        code: "partial_fidelity",
+        message: `Figma 原生剪贴板数据未能解码，已继续使用 HTML/SVG fallback。原因：${figmaNativeDecodeError}`,
+      });
+    }
+    if (figmaResult) return figmaResult;
+  }
   return null;
+}
+
+function isRasterClipboardFile(file: ClipboardImportFile): boolean {
+  return /^(image\/png|image\/jpe?g|image\/webp|image\/gif)$/i.test(file.type);
+}
+
+function parseRasterClipboardFile(
+  file: ClipboardImportFile,
+): CanvasImportResult {
+  if (!file.dataUrl) {
+    throw new Error(
+      `剪贴板图片 ${file.name ?? file.type} 缺少可导入的数据内容。`,
+    );
+  }
+
+  const importSessionId = createImportSessionId();
+  const assetId = createNodeId("asset");
+  const imageId = createNodeId("image");
+  const width = Math.max(1, file.width ?? 320);
+  const height = Math.max(1, file.height ?? 240);
+  const state: SvgParseState = {
+    importSessionId,
+    source: "image",
+    sourceLabel: "Image",
+    nodes: [],
+    assets: [],
+    warnings: [],
+    warningKeys: new Set<string>(),
+    cssRules: [],
+    paintServers: new Map<string, CanvasFill>(),
+    definitionElements: new Map<string, Element>(),
+    clipPaths: new Map<string, SvgClipDefinition>(),
+    filters: new Map<string, CanvasEffect[]>(),
+  };
+
+  return {
+    source: "image",
+    sourceLabel: "Image",
+    importSessionId,
+    rootNodeIds: [imageId],
+    assets: [
+      {
+        id: assetId,
+        url: file.dataUrl,
+        mimeType: file.type,
+        name: file.name,
+        width: file.width,
+        height: file.height,
+        source: "upload",
+      },
+    ],
+    nodes: [
+      {
+        id: imageId,
+        type: "image",
+        parentId: null,
+        title: file.name ?? "Pasted image",
+        bounds: { x: 0, y: 0, width, height },
+        assetId,
+        src: file.dataUrl,
+        alt: file.name,
+        meta: createImportedNodeMeta(state, {
+          originNodeType: file.type,
+          originNodeId: file.name,
+        }),
+      },
+    ],
+    warnings: [],
+  };
 }
 
 export function parseSvgMarkup(
@@ -369,6 +518,9 @@ export function parseSvgMarkup(
     warningKeys: new Set<string>(),
     cssRules: [],
     paintServers: new Map<string, CanvasFill>(),
+    definitionElements: new Map<string, Element>(),
+    clipPaths: new Map<string, SvgClipDefinition>(),
+    filters: new Map<string, CanvasEffect[]>(),
   };
   collectSvgDefinitions(svg, state);
   const inherited = readElementStyle(svg, {}, state);
@@ -519,6 +671,9 @@ function importNodeToPenNode(
   };
 
   const bounds = getImportNodeBounds(imported);
+  const executableLayout = getExecutableAutoLayoutProps(
+    importedMeta.autoLayout as CanvasImportedAutoLayoutMeta | undefined,
+  );
   const base = {
     id: imported.id,
     type: normalizeImportedNodeType(imported.type) as PenNode["type"],
@@ -526,8 +681,9 @@ function importNodeToPenNode(
     x: bounds.x + offsetX,
     y: bounds.y + offsetY,
     rotation: bounds.rotation,
-    width: bounds.width,
-    height: bounds.height,
+    width: executableLayout.width ?? bounds.width,
+    height: executableLayout.height ?? bounds.height,
+    role: executableLayout.role,
     opacity: imported.opacity,
     visible: imported.visible,
     locked: imported.locked,
@@ -553,13 +709,15 @@ function importNodeToPenNode(
         lineHeight: imported.lineHeight,
         textAlign: imported.textAlign,
         textAlignVertical: imported.textAlignVertical,
+        underline: imported.underline,
+        strikethrough: imported.strikethrough,
         textGrowth: imported.textGrowth,
       } as unknown as PenNode;
     case "frame":
       return {
         ...base,
         type: "frame" as const,
-        layout: imported.layout,
+        layout: imported.layout ?? executableLayout.layout,
         gap: imported.gap,
         padding: imported.padding,
         justifyContent: imported.justifyContent,
@@ -571,7 +729,7 @@ function importNodeToPenNode(
       return {
         ...base,
         type: "group" as const,
-        layout: imported.layout,
+        layout: imported.layout ?? executableLayout.layout,
         gap: imported.gap,
         padding: imported.padding,
         justifyContent: imported.justifyContent,
@@ -616,6 +774,33 @@ function importNodeToPenNode(
     default:
       return base as unknown as PenNode;
   }
+}
+
+function getExecutableAutoLayoutProps(
+  autoLayout: CanvasImportedAutoLayoutMeta | undefined,
+): {
+  width?: "fit_content" | "fill_container";
+  height?: "fit_content" | "fill_container";
+  layout?: "vertical" | "horizontal";
+  role?: "overlay";
+} {
+  if (!autoLayout) {
+    return {};
+  }
+  return {
+    width:
+      autoLayout.widthMode === "fit_content" ||
+      autoLayout.widthMode === "fill_container"
+        ? autoLayout.widthMode
+        : undefined,
+    height:
+      autoLayout.heightMode === "fit_content" ||
+      autoLayout.heightMode === "fill_container"
+        ? autoLayout.heightMode
+        : undefined,
+    layout: autoLayout.layout,
+    role: autoLayout.positioning === "absolute" ? "overlay" : undefined,
+  };
 }
 
 function normalizeImportedNodeType(type: string): string {
@@ -698,6 +883,9 @@ function parseFigmaClipboardHtml(html: string): CanvasImportResult | null {
     warningKeys: new Set<string>(),
     cssRules: [],
     paintServers: new Map<string, CanvasFill>(),
+    definitionElements: new Map<string, Element>(),
+    clipPaths: new Map<string, SvgClipDefinition>(),
+    filters: new Map<string, CanvasEffect[]>(),
   };
   const roots: string[] = [];
   const elements = Array.from(doc.body.children);
@@ -896,22 +1084,53 @@ function parseSvgElement(
     inheritedTransform,
     parseSvgTransform(element.getAttribute("transform")),
   );
-  if (
-    element.hasAttribute("clip-path") ||
-    element.hasAttribute("mask") ||
-    element.hasAttribute("filter")
-  ) {
+  const clipDefinition = resolveSvgClipDefinition(element, state, transform);
+  const effects = resolveSvgFilterEffects(element, state);
+
+  if (tag === "use") {
+    const href = readSvgHref(element);
+    const referenced = href ? state.definitionElements.get(href) : undefined;
+    if (!referenced) {
+      pushImportWarning(state, {
+        code: "partial_fidelity",
+        message: "检测到 SVG <use> 引用，但未找到对应 defs 节点，已跳过。",
+        originNodeId: element.getAttribute("id") ?? undefined,
+        originNodeType: tag,
+      });
+      return null;
+    }
+    const useTransform = multiplySvgTransform(transform, {
+      ...IDENTITY_TRANSFORM,
+      e: readNumber(element, "x"),
+      f: readNumber(element, "y"),
+    });
+    return parseSvgElement(referenced, parentId, style, state, useTransform);
+  }
+
+  if (element.hasAttribute("mask")) {
     pushImportWarning(state, {
       code: "partial_fidelity",
       message:
-        "检测到 SVG clip/mask/filter 效果，当前导入会保留可编辑几何并降级高级裁剪或滤镜。",
+        "检测到 SVG mask 效果，当前渲染器暂未支持 mask，已保留可编辑几何并记录降级。",
+      originNodeId: element.getAttribute("id") ?? undefined,
+      originNodeType: tag,
+    });
+  }
+  if (clipDefinition && tag !== "g" && tag !== "svg") {
+    pushImportWarning(state, {
+      code: "partial_fidelity",
+      message:
+        "检测到非容器 SVG clipPath，当前仅对 group/svg 简单 rect 裁剪映射为 frame clipContent。",
       originNodeId: element.getAttribute("id") ?? undefined,
       originNodeType: tag,
     });
   }
 
   if (tag === "g" || tag === "svg") {
-    const groupId = tag === "g" ? createNodeId("group") : null;
+    const groupId =
+      tag === "g"
+        ? createNodeId(clipDefinition?.type === "rect" ? "frame" : "group")
+        : null;
     const childParentId = groupId ?? parentId;
     const childIds: string[] = [];
     for (const child of Array.from(element.children)) {
@@ -926,19 +1145,27 @@ function parseSvgElement(
     }
     if (!groupId) return null;
     if (childIds.length === 0) return null;
-    const bounds = getSelectionBounds(
+    const childBounds = getSelectionBounds(
       childIds
         .map((childId) => state.nodes.find((node) => node.id === childId))
         .filter((node): node is ImportNode => Boolean(node)),
     );
+    const bounds =
+      clipDefinition?.type === "rect" ? clipDefinition.bounds : childBounds;
     if (!bounds) return null;
     state.nodes.push({
       id: groupId,
-      type: "group",
+      type: clipDefinition?.type === "rect" ? "frame" : "group",
       parentId,
       title: element.getAttribute("id") ?? "Imported group",
       bounds,
       childrenOrder: childIds,
+      cornerRadius:
+        clipDefinition?.type === "rect"
+          ? clipDefinition.cornerRadius
+          : undefined,
+      clipContent: clipDefinition?.type === "rect" ? true : undefined,
+      effects,
       meta: createImportedNodeMeta(state, {
         originNodeType: tag,
         originNodeId: element.getAttribute("id") ?? undefined,
@@ -975,6 +1202,7 @@ function parseSvgElement(
       stroke: parsedStrokeToCanvasStroke(style, state),
       cornerRadius: readNumber(element, "rx") || undefined,
       opacity,
+      effects,
       meta: commonMeta,
     } as ImportNode);
     return id;
@@ -1007,6 +1235,7 @@ function parseSvgElement(
       fills: parsedFillToCanvasFills(style, state),
       stroke: parsedStrokeToCanvasStroke(style, state),
       opacity,
+      effects,
       meta: commonMeta,
     } as ImportNode);
     return id;
@@ -1037,10 +1266,15 @@ function parseSvgElement(
         fill: parsedStrokeToCanvasStroke(style, state)?.fill ?? [
           { type: "solid", color: style.stroke ?? "#111827" },
         ],
+        cap: style.strokeLinecap,
+        join: style.strokeLinejoin,
+        dashPattern: style.strokeDasharray,
+        dashOffset: style.strokeDashoffset,
       },
       x2: p2.x,
       y2: p2.y,
       opacity,
+      effects,
       meta: commonMeta,
     } as ImportNode);
     return id;
@@ -1066,6 +1300,7 @@ function parseSvgElement(
         fills: parsedFillToCanvasFills(style, state),
         stroke: parsedStrokeToCanvasStroke(style, state),
         opacity,
+        effects,
         meta: commonMeta,
       } as ImportNode);
       return id;
@@ -1082,8 +1317,13 @@ function parseSvgElement(
         thickness: style.strokeWidth ?? 1,
         align: "center",
         fill: [{ type: "solid", color: style.stroke ?? "#111827" }],
+        cap: style.strokeLinecap,
+        join: style.strokeLinejoin,
+        dashPattern: style.strokeDasharray,
+        dashOffset: style.strokeDashoffset,
       },
       opacity,
+      effects,
       meta: commonMeta,
     } as ImportNode);
     return id;
@@ -1106,6 +1346,7 @@ function parseSvgElement(
       fills: parsedFillToCanvasFills(style, state),
       stroke: parsedStrokeToCanvasStroke(style, state),
       opacity,
+      effects,
       meta: commonMeta,
     } as ImportNode);
     return id;
@@ -1143,6 +1384,7 @@ function parseSvgElement(
         ),
       },
       opacity,
+      effects,
       meta: commonMeta,
     } as ImportNode);
     return id;
@@ -1155,7 +1397,6 @@ function parseSvgElement(
     if (!text) return null;
     const fontSize = Math.max(8, style.fontSize ?? 16);
     const id = createNodeId("text");
-    const textColor = style.fill ?? style.color ?? "#111827";
     state.nodes.push({
       id,
       type: "text",
@@ -1164,7 +1405,9 @@ function parseSvgElement(
       text,
       fontSize,
       fontFamily: style.fontFamily,
-      fills: [{ type: "solid", color: textColor }],
+      fills: parsedFillToCanvasFills(style, state) ?? [
+        { type: "solid", color: "#111827" },
+      ],
       bounds: {
         ...transformBounds(
           {
@@ -1177,6 +1420,7 @@ function parseSvgElement(
         ),
       },
       opacity,
+      effects,
       meta: commonMeta,
     } as ImportNode);
     return id;
@@ -1216,6 +1460,34 @@ function readElementStyle(
       readOptionalNumber(element.getAttribute("stroke-width")) ??
       parseCssNumber(merged.strokeWidth) ??
       inherited.strokeWidth,
+    fillOpacity:
+      readOpacity(element.getAttribute("fill-opacity")) ??
+      readOpacity(merged.fillOpacity) ??
+      inherited.fillOpacity,
+    strokeOpacity:
+      readOpacity(element.getAttribute("stroke-opacity")) ??
+      readOpacity(merged.strokeOpacity) ??
+      inherited.strokeOpacity,
+    strokeDasharray:
+      readSvgDashArray(element.getAttribute("stroke-dasharray")) ??
+      readSvgDashArray(merged.strokeDasharray) ??
+      inherited.strokeDasharray,
+    strokeDashoffset:
+      readOptionalNumber(element.getAttribute("stroke-dashoffset")) ??
+      parseCssNumber(merged.strokeDashoffset) ??
+      inherited.strokeDashoffset,
+    strokeLinecap:
+      mapSvgStrokeCap(
+        element.getAttribute("stroke-linecap") ?? merged.strokeLinecap,
+      ) ?? inherited.strokeLinecap,
+    strokeLinejoin:
+      mapSvgStrokeJoin(
+        element.getAttribute("stroke-linejoin") ?? merged.strokeLinejoin,
+      ) ?? inherited.strokeLinejoin,
+    strokeMiterlimit:
+      readOptionalNumber(element.getAttribute("stroke-miterlimit")) ??
+      parseCssNumber(merged.strokeMiterlimit) ??
+      inherited.strokeMiterlimit,
     opacity:
       readOpacity(element.getAttribute("opacity")) ??
       readOpacity(merged.opacity) ??
@@ -1236,6 +1508,28 @@ function collectSvgDefinitions(svg: Element, state: SvgParseState): void {
     state.cssRules.push(...parseCssRules(styleElement.textContent ?? ""));
   }
 
+  for (const element of Array.from(svg.querySelectorAll("[id]"))) {
+    const id = element.getAttribute("id");
+    if (id) {
+      state.definitionElements.set(id, element);
+    }
+  }
+
+  for (const clipPath of Array.from(svg.querySelectorAll("clipPath"))) {
+    const id = clipPath.getAttribute("id");
+    if (!id) continue;
+    state.clipPaths.set(id, readSvgClipPathDefinition(clipPath));
+  }
+
+  for (const filter of Array.from(svg.querySelectorAll("filter"))) {
+    const id = filter.getAttribute("id");
+    if (!id) continue;
+    const effects = readSvgFilterDefinition(filter, state);
+    if (effects.length > 0) {
+      state.filters.set(id, effects);
+    }
+  }
+
   for (const gradient of Array.from(
     svg.querySelectorAll("linearGradient, radialGradient"),
   )) {
@@ -1248,6 +1542,9 @@ function collectSvgDefinitions(svg: Element, state: SvgParseState): void {
           stop.getAttribute("stop-color") ?? style.stopColor,
         );
         if (!color) return null;
+        const opacity = readOpacity(
+          stop.getAttribute("stop-opacity") ?? style.stopOpacity,
+        );
         const rawOffset = stop.getAttribute("offset");
         const parsedOffset = rawOffset?.endsWith("%")
           ? Number.parseFloat(rawOffset) / 100
@@ -1258,7 +1555,8 @@ function collectSvgDefinitions(svg: Element, state: SvgParseState): void {
             : all.length <= 1
               ? 0
               : index / (all.length - 1),
-          color,
+          color:
+            opacity === undefined ? color : applyColorOpacity(color, opacity),
         };
       })
       .filter((stop): stop is { offset: number; color: string } =>
@@ -1268,9 +1566,9 @@ function collectSvgDefinitions(svg: Element, state: SvgParseState): void {
     if (gradient.tagName.toLowerCase() === "radialgradient") {
       state.paintServers.set(id, {
         type: "radial_gradient",
-        cx: parseCssNumber(gradient.getAttribute("cx") ?? undefined),
-        cy: parseCssNumber(gradient.getAttribute("cy") ?? undefined),
-        radius: parseCssNumber(gradient.getAttribute("r") ?? undefined),
+        cx: parseSvgUnitFraction(gradient.getAttribute("cx"), 0.5),
+        cy: parseSvgUnitFraction(gradient.getAttribute("cy"), 0.5),
+        radius: parseSvgUnitFraction(gradient.getAttribute("r"), 0.5),
         stops,
       });
     } else {
@@ -1283,10 +1581,8 @@ function collectSvgDefinitions(svg: Element, state: SvgParseState): void {
   }
 }
 
-function parseCssRules(
-  css: string,
-): Array<{ selector: string; style: Record<string, string> }> {
-  const rules: Array<{ selector: string; style: Record<string, string> }> = [];
+function parseCssRules(css: string): SvgParseState["cssRules"] {
+  const rules: SvgParseState["cssRules"] = [];
   const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, "");
   for (const match of withoutComments.matchAll(/([^{}]+)\{([^{}]+)\}/g)) {
     const selectors = (match[1] ?? "")
@@ -1295,7 +1591,7 @@ function parseCssRules(
       .filter(Boolean);
     const style = parseStyleAttribute(match[2] ?? null);
     for (const selector of selectors) {
-      if (/^[.#]?[A-Za-z0-9_-]+$/.test(selector)) {
+      if (isSupportedSvgSelector(selector)) {
         rules.push({ selector, style });
       }
     }
@@ -1307,25 +1603,84 @@ function getMatchedSvgStyle(
   element: Element,
   rules: Array<{ selector: string; style: Record<string, string> }>,
 ): Record<string, string> {
-  const matched: Record<string, string> = {};
-  const tag = element.tagName.toLowerCase();
-  const id = element.getAttribute("id");
-  const classes = new Set(
-    (element.getAttribute("class") ?? "")
-      .split(/\s+/)
-      .map((value) => value.trim())
-      .filter(Boolean),
-  );
-  for (const rule of rules) {
-    if (
-      rule.selector === tag ||
-      (id && rule.selector === `#${id}`) ||
-      (rule.selector.startsWith(".") && classes.has(rule.selector.slice(1)))
-    ) {
-      Object.assign(matched, rule.style);
+  const matched = new Map<
+    string,
+    { specificity: number; order: number; value: string }
+  >();
+  rules.forEach((rule, order) => {
+    if (!matchesSvgSelector(element, rule.selector)) {
+      return;
     }
+    const specificity = getSvgSelectorSpecificity(rule.selector);
+    for (const [key, value] of Object.entries(rule.style)) {
+      const existing = matched.get(key);
+      if (
+        !existing ||
+        specificity > existing.specificity ||
+        (specificity === existing.specificity && order >= existing.order)
+      ) {
+        matched.set(key, { specificity, order, value });
+      }
+    }
+  });
+  return Object.fromEntries(
+    Array.from(matched.entries()).map(([key, entry]) => [key, entry.value]),
+  );
+}
+
+function isSupportedSvgSelector(selector: string): boolean {
+  return selector
+    .split(/\s+/)
+    .every((part) =>
+      /^[A-Za-z][A-Za-z0-9_-]*$|^#[A-Za-z0-9_-]+$|^\.[A-Za-z0-9_-]+$/.test(
+        part,
+      ),
+    );
+}
+
+function matchesSvgSelector(element: Element, selector: string): boolean {
+  const parts = selector.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return false;
+  let current: Element | null = element;
+  for (let index = parts.length - 1; index >= 0; index -= 1) {
+    const part = parts[index];
+    if (!part) return false;
+    if (index === parts.length - 1) {
+      if (!current || !matchesSvgSimpleSelector(current, part)) return false;
+      current = current.parentElement;
+      continue;
+    }
+    while (current && !matchesSvgSimpleSelector(current, part)) {
+      current = current.parentElement;
+    }
+    if (!current) return false;
+    current = current.parentElement;
   }
-  return matched;
+  return true;
+}
+
+function matchesSvgSimpleSelector(
+  element: Element | null,
+  selector: string,
+): boolean {
+  if (!element) return false;
+  if (selector.startsWith("#")) {
+    return element.getAttribute("id") === selector.slice(1);
+  }
+  if (selector.startsWith(".")) {
+    return (element.getAttribute("class") ?? "")
+      .split(/\s+/)
+      .includes(selector.slice(1));
+  }
+  return element.tagName.toLowerCase() === selector.toLowerCase();
+}
+
+function getSvgSelectorSpecificity(selector: string): number {
+  return selector.split(/\s+/).reduce((sum, part) => {
+    if (part.startsWith("#")) return sum + 100;
+    if (part.startsWith(".")) return sum + 10;
+    return sum + 1;
+  }, 0);
 }
 
 function resolvePaintServer(
@@ -1337,6 +1692,121 @@ function resolvePaintServer(
   return state?.paintServers.get(match[1]);
 }
 
+function resolveSvgClipDefinition(
+  element: Element,
+  state: SvgParseState,
+  transform: SvgTransform,
+): SvgClipDefinition | undefined {
+  const raw = element.getAttribute("clip-path");
+  if (!raw) return undefined;
+  const id = readUrlReferenceId(raw);
+  const clip = id ? state.clipPaths.get(id) : undefined;
+  if (!clip || clip.type === "complex") {
+    pushImportWarning(state, {
+      code: "partial_fidelity",
+      message:
+        "检测到 SVG clipPath，当前仅完整支持简单 rect 裁剪，复杂裁剪已降级为可编辑几何。",
+      originNodeId: element.getAttribute("id") ?? undefined,
+      originNodeType: element.tagName.toLowerCase(),
+    });
+    return undefined;
+  }
+  return {
+    ...clip,
+    bounds: transformBounds(clip.bounds, transform),
+  };
+}
+
+function resolveSvgFilterEffects(
+  element: Element,
+  state: SvgParseState,
+): CanvasEffect[] | undefined {
+  const raw = element.getAttribute("filter");
+  if (!raw) return undefined;
+  const id = readUrlReferenceId(raw);
+  const effects = id ? state.filters.get(id) : undefined;
+  if (!effects || effects.length === 0) {
+    pushImportWarning(state, {
+      code: "effects_dropped",
+      message:
+        "检测到 SVG filter，当前仅支持 drop-shadow 与 blur，复杂滤镜已降级。",
+      originNodeId: element.getAttribute("id") ?? undefined,
+      originNodeType: element.tagName.toLowerCase(),
+    });
+    return undefined;
+  }
+  return effects;
+}
+
+function readSvgClipPathDefinition(clipPath: Element): SvgClipDefinition {
+  const children = Array.from(clipPath.children).filter(
+    (child) => child.tagName.toLowerCase() !== "title",
+  );
+  if (children.length !== 1) {
+    return { type: "complex" };
+  }
+  const child = children[0];
+  if (!child || child.tagName.toLowerCase() !== "rect") {
+    return { type: "complex" };
+  }
+  return {
+    type: "rect",
+    bounds: {
+      x: readNumber(child, "x"),
+      y: readNumber(child, "y"),
+      width: Math.max(1, readNumber(child, "width")),
+      height: Math.max(1, readNumber(child, "height")),
+    },
+    cornerRadius: readNumber(child, "rx") || undefined,
+  };
+}
+
+function readSvgFilterDefinition(
+  filter: Element,
+  state: SvgParseState,
+): CanvasEffect[] {
+  const effects: CanvasEffect[] = [];
+  for (const child of Array.from(filter.children)) {
+    const tag = child.tagName.toLowerCase();
+    if (tag === "fedropshadow") {
+      effects.push({
+        type: "shadow",
+        offsetX: readOptionalNumber(child.getAttribute("dx")) ?? 0,
+        offsetY: readOptionalNumber(child.getAttribute("dy")) ?? 0,
+        blur: readOptionalNumber(child.getAttribute("stdDeviation")) ?? 0,
+        spread: 0,
+        color: normalizeColor(child.getAttribute("flood-color")) ?? "#00000040",
+      });
+      continue;
+    }
+    if (tag === "fegaussianblur") {
+      effects.push({
+        type: "blur",
+        radius: readOptionalNumber(child.getAttribute("stdDeviation")) ?? 0,
+      });
+      continue;
+    }
+    pushImportWarning(state, {
+      code: "effects_dropped",
+      message: `暂未支持 SVG filter 节点 <${tag}>，已跳过该滤镜片段。`,
+      originNodeId: filter.getAttribute("id") ?? undefined,
+      originNodeType: "filter",
+    });
+  }
+  return effects;
+}
+
+function readUrlReferenceId(value: string): string | undefined {
+  return value.match(/^url\(["']?#([^"')]+)["']?\)$/i)?.[1];
+}
+
+function readSvgHref(element: Element): string | undefined {
+  const raw =
+    element.getAttribute("href") ??
+    element.getAttributeNS("http://www.w3.org/1999/xlink", "href");
+  return raw?.startsWith("#") ? raw.slice(1) : undefined;
+}
+
 function readLinearGradientAngle(element: Element): number | undefined {
   const x1 = parseCssNumber(element.getAttribute("x1") ?? undefined);
   const y1 = parseCssNumber(element.getAttribute("y1") ?? undefined);
@@ -1346,7 +1816,10 @@ function readLinearGradientAngle(element: Element): number | undefined {
     return undefined;
   }
   const radians = Math.atan2((y2 ?? 0) - (y1 ?? 0), (x2 ?? 0) - (x1 ?? 0));
-  return Math.round(90 + (radians * 180) / Math.PI);
+  const transformRotation = readSvgTransformRotation(
+    parseSvgTransform(element.getAttribute("gradientTransform")),
+  );
+  return Math.round(90 + (radians * 180) / Math.PI + transformRotation);
 }
 
 function parseStyleAttribute(raw: string | null): Record<string, string> {
@@ -1493,6 +1966,10 @@ function multiplySvgTransform(
   };
 }
 
+function readSvgTransformRotation(transform: SvgTransform): number {
+  return (Math.atan2(transform.b, transform.a) * 180) / Math.PI;
+}
+
 function transformPoint(
   point: { x: number; y: number },
   transform: SvgTransform,
@@ -1546,6 +2023,58 @@ function parseCssNumber(value: string | undefined): number | undefined {
   return Number.isFinite(numeric) ? numeric : undefined;
 }
 
+function parseSvgUnitFraction(
+  value: string | null,
+  fallback: number,
+): number | undefined {
+  if (!value) return fallback;
+  const numeric = Number.parseFloat(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return value.trim().endsWith("%") ? numeric / 100 : numeric;
+}
+
+function readSvgDashArray(
+  value: string | undefined | null,
+): number[] | undefined {
+  if (!value || value.trim() === "none") return undefined;
+  const values = value
+    .trim()
+    .split(/[\s,]+/)
+    .map((entry) => Number.parseFloat(entry))
+    .filter((entry) => Number.isFinite(entry) && entry >= 0);
+  return values.length > 0 ? values : undefined;
+}
+
+function mapSvgStrokeCap(
+  value: string | undefined | null,
+): CanvasStroke["cap"] {
+  switch (value) {
+    case "butt":
+      return "none";
+    case "round":
+      return "round";
+    case "square":
+      return "square";
+    default:
+      return undefined;
+  }
+}
+
+function mapSvgStrokeJoin(
+  value: string | undefined | null,
+): CanvasStroke["join"] {
+  switch (value) {
+    case "miter":
+      return "miter";
+    case "round":
+      return "round";
+    case "bevel":
+      return "bevel";
+    default:
+      return undefined;
+  }
+}
+
 function readOpacity(value: string | undefined | null): number | undefined {
   if (!value) return undefined;
   const numeric = Number.parseFloat(value);
@@ -1558,6 +2087,21 @@ function normalizeColor(value: string | undefined | null): string | undefined {
   const normalized = value.trim();
   if (!normalized || normalized === "none" || normalized === "transparent") {
     return undefined;
+  }
+  return normalized;
+}
+
+function applyColorOpacity(color: string, opacity: number): string {
+  const normalized = color.trim();
+  if (/^#[0-9a-f]{3}$/i.test(normalized)) {
+    const [, r, g, b] = normalized;
+    return applyColorOpacity(`#${r}${r}${g}${g}${b}${b}`, opacity);
+  }
+  if (/^#[0-9a-f]{6}$/i.test(normalized)) {
+    const alpha = Math.round(Math.max(0, Math.min(1, opacity)) * 255)
+      .toString(16)
+      .padStart(2, "0");
+    return `${normalized}${alpha}`;
   }
   return normalized;
 }

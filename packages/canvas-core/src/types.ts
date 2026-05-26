@@ -196,7 +196,7 @@ export type CanvasOperation =
 // Import metadata (Figma/SVG)
 // ---------------------------------------------------------------------------
 
-export type CanvasImportSource = 'svg-import' | 'figma-paste';
+export type CanvasImportSource = 'svg-import' | 'figma-paste' | 'image-paste';
 
 export type CanvasImportWarningCode =
   | 'unsupported_tag'
@@ -254,7 +254,7 @@ export interface DataFlowEdge {
 // ---------------------------------------------------------------------------
 
 export function isCanvasImportSource(value: unknown): value is CanvasImportSource {
-  return value === 'svg-import' || value === 'figma-paste';
+  return value === 'svg-import' || value === 'figma-paste' || value === 'image-paste';
 }
 
 export function getCanvasImportedNodeMeta(
@@ -265,4 +265,3 @@ export function getCanvasImportedNodeMeta(
   }
   return meta as CanvasImportedNodeMeta;
 }
-

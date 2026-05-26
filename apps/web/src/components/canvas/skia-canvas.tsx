@@ -5,8 +5,10 @@ import {
   type CanvasAsset,
   type CanvasBounds,
   type CanvasClipboardData,
+  type CanvasImportResult,
   type ClipboardImportPayload,
   type CucumberCanvasDocument,
+  type ImportNode,
   applyCanvasOperation,
   copyCanvasSelection,
   createNodeId,
@@ -98,6 +100,53 @@ function toSceneElement(node: PenNode): CanvasSceneElement {
     depth: 0,
     customData: meta,
   };
+}
+
+function getClipboardImportStrategy(result: CanvasImportResult): string {
+  if (result.source !== "figma") return result.source;
+  const usedNative = result.nodes.some((node) => {
+    const meta = (node as { meta?: Record<string, unknown> }).meta;
+    return meta?.originNodeType === "figma-native";
+  });
+  return usedNative ? "figma-native" : "figma-html-fallback";
+}
+
+function summarizeImportedNodes(result: CanvasImportResult) {
+  return result.nodes.slice(0, 20).map((node) => {
+    const record = node as Partial<ImportNode> &
+      Partial<PenNode> & {
+        fill?: Array<{ type?: string }>;
+        fills?: Array<{ type?: string }>;
+        childrenOrder?: string[];
+        children?: PenNode[];
+      };
+    const bounds =
+      record.bounds ??
+      ({
+        x: record.x ?? 0,
+        y: record.y ?? 0,
+        width:
+          typeof (record as Record<string, unknown>).width === "number"
+            ? (record as Record<string, number>).width
+            : undefined,
+        height:
+          typeof (record as Record<string, unknown>).height === "number"
+            ? (record as Record<string, number>).height
+            : undefined,
+      } as Record<string, unknown>);
+    const fills = record.fills ?? record.fill;
+    const meta = record.meta as Record<string, unknown> | undefined;
+    return {
+      id: record.id,
+      type: record.type,
+      title: record.title ?? record.name,
+      bounds,
+      fillTypes: fills?.map((fill) => fill.type ?? "unknown"),
+      hasStroke: Boolean(record.stroke),
+      childCount: record.childrenOrder?.length ?? record.children?.length ?? 0,
+      autoLayout: meta?.autoLayout,
+    };
+  });
 }
 
 function toSceneElements(doc: PenDocument): CanvasSceneElement[] {
@@ -1211,7 +1260,20 @@ export const SkiaCanvas = memo(
     const importFromPayload = useCallback(
       (payload: ClipboardImportPayload, context?: ClipboardImportContext) => {
         const parsed = parseClipboardImport(payload);
-        if (!parsed) return [];
+        if (!parsed) {
+          console.info("[skia-canvas] clipboard.import.ignored", {
+            trigger: context?.trigger ?? "unknown",
+            mimeTypes: context?.mimeTypes ?? [],
+            itemTypes: context?.itemTypes ?? [],
+            fileTypes: context?.fileTypes ?? [],
+            hasHtml: Boolean(payload.html),
+            hasText: Boolean(payload.text),
+            hasSvg: Boolean(payload.svg),
+            itemCount: payload.items?.length ?? 0,
+            fileCount: payload.files?.length ?? 0,
+          });
+          return [];
+        }
         const importBounds = getCanvasImportBounds(parsed);
         const rect = canvasContainerRef.current?.getBoundingClientRect();
         const viewport = rendererRef.current?.getViewport() ?? {
@@ -1252,10 +1314,22 @@ export const SkiaCanvas = memo(
         console.info("[skia-canvas] clipboard.imported", {
           trigger: context?.trigger ?? "unknown",
           mimeTypes: context?.mimeTypes ?? [],
+          itemTypes: context?.itemTypes ?? [],
+          fileTypes: context?.fileTypes ?? [],
           source: parsed.source,
+          strategy: getClipboardImportStrategy(parsed),
           importSessionId: parsed.importSessionId,
+          rootCount: parsed.rootNodeIds.length,
+          assetCount: parsed.assets.length,
           insertedCount: inserted.insertedIds.length,
           warningCount: parsed.warnings.length,
+          warnings: parsed.warnings.map((warning) => ({
+            code: warning.code,
+            message: warning.message,
+            originNodeType: warning.originNodeType,
+            originNodeId: warning.originNodeId,
+          })),
+          nodeSummary: summarizeImportedNodes(parsed),
         });
         return inserted.insertedIds;
       },
@@ -1264,7 +1338,15 @@ export const SkiaCanvas = memo(
 
     const pasteFromSystemClipboard = useCallback(async () => {
       const { payload, context } = await readClipboardImportPayload();
-      if (!payload.html && !payload.text) return [];
+      if (
+        !payload.html &&
+        !payload.text &&
+        !payload.svg &&
+        !payload.items?.length &&
+        !payload.files?.length
+      ) {
+        return [];
+      }
       try {
         return importFromPayload(payload, context);
       } catch (error) {

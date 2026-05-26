@@ -1,6 +1,6 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-26 18:17 CST
+Last updated: 2026-05-26 19:26 CST
 
 ## Current Session
 
@@ -61,6 +61,10 @@ Status:
 - Added the first OpenPencil-compatible live canvas agent tool slice: `batch_design`, `batch_get`, `snapshot_layout`, and `find_empty_space` are now registered as MCP tools, operate through `LiveCanvasService`, and let the main Agent perform DSL-style batch editing/reading against the current Cucumber `PenDocument` without changing the durable canvas schema.
 - Continued the OpenPencil migration with Figma/style/codegen parity slices: the live MCP tool set now includes `import_figma_clipboard`, OpenPencil-style `read_nodes`, variables/theme tools, recursive style search/replace, and in-memory codegen plan/submit/assemble/clean routes, while the Skia property panel can bind selected node colors to document variables.
 - Hardened Figma/system paste fidelity by capturing all readable clipboard MIME text, preferring native Figma/SVG payloads when present, mapping Figma auto-layout directly onto PenNode layout props, and extending the SVG fallback to preserve transforms, style rules, gradient defs, masks/clip warnings, text style, effects, and line endpoints.
+- Extended the import fidelity pass to clipboard file/blob capture and raster image paste assets, OpenPencil-aligned Figma stroke/fill/text/image-fill mapping, executable PenNode sizing for imported auto-layout, SVG specificity/descendant style resolution, `<use>` expansion, simple clipPath frames, and filter-to-effect mapping with explicit warnings for unsupported mask/filter/clip cases.
+- Corrected the live paste fallback priority so invalid/unsupported Figma native buffers no longer immediately return the lossy Figma HTML parser before explicit `image/svg+xml` or raster MIME payloads, and added clipboard MIME diagnostics for browser-side paste troubleshooting.
+- Changed HTML-only paste events to opportunistically merge Clipboard API MIME data during the same user paste action, so Figma/browser clipboard paths that expose richer SVG/image/blob payloads through `navigator.clipboard.read()` are no longer limited to the paste event's `text/html` / `text/plain` surface.
+- Expanded runtime paste diagnostics to show the concrete Figma import strategy (`figma-native` vs `figma-html-fallback`), warnings, asset/root counts, and a sanitized node summary for debugging fidelity regressions from real user clipboard payloads.
 - Advanced codegen assembly from protocol-only state to concrete design-as-code file output: `codegen_assemble` now returns framework-specific files for React (`App.tsx`, component files, CSS), HTML (`index.html`, CSS), and generic framework fallbacks, and the property panel now includes typography controls plus reusable component/ref metadata and inline color variable creation/binding.
 - Added a dedicated `codegen_export` MCP tool so the Agent can export the current live canvas selection, or explicit node IDs, directly into React (`.tsx` + CSS) or static HTML (`index.html` + CSS) design-as-code files with diagnostic logging.
 
@@ -164,3 +168,23 @@ Status:
 - Passed: `pnpm --filter @cucumber/web build`.
 - Failed: root `pnpm typecheck` remains blocked by unrelated existing `packages/pen-core/__tests__` NodeNext extension, implicit-any, and possibly-undefined diagnostics.
 - Failed: root `pnpm lint` remains blocked by unrelated existing diagnostics in `openpencil/**`, server formatting drift, `vercel.json`, and `apps/server/src/agent/deep-agent.ts`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm --filter @cucumber/web typecheck` (Next emitted the existing multi-lockfile workspace-root warning).
+- Passed: `pnpm exec biome check packages/canvas-core/src/import.ts packages/canvas-core/src/figma-native.ts apps/web/src/components/canvas/use-canvas-clipboard-import.ts`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/use-canvas-clipboard-import.test.tsx`.
+- Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/canvas-core.test.ts --testNamePattern "figma|svg|clipboard|layout"`; SVG parser cases are skipped in the default non-DOM environment.
+- Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/canvas-core.test.ts --environment jsdom --testNamePattern "SVG|raster|auto-layout|clipboard|layout"`.
+- Passed: `pnpm --filter @cucumber/web build` (Next emitted the existing multi-lockfile workspace-root warning and metadataBase warning).
+- Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/canvas-core.test.ts --environment jsdom --testNamePattern "SVG MIME|Figma native decode"`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/use-canvas-clipboard-import.test.tsx`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm --filter @cucumber/web typecheck` (Next emitted the existing multi-lockfile workspace-root warning).
+- Passed: `pnpm exec biome check packages/canvas-core/src/import.ts apps/web/src/components/canvas/use-canvas-clipboard-import.ts apps/web/src/components/canvas/skia-canvas.tsx apps/web/test/use-canvas-clipboard-import.test.tsx`.
+- Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/canvas-core.test.ts --environment jsdom --testNamePattern "figma|svg|clipboard|layout"`.
+- Note: including `packages/canvas-core/src/__tests__/canvas-core.test.ts` in Biome still reports existing `any` / non-null assertion diagnostics in that test file; those were not changed as part of the paste fallback fix.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/use-canvas-clipboard-import.test.tsx`.
+- Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/canvas-core.test.ts --environment jsdom --testNamePattern "SVG MIME|Figma native decode"`.
+- Passed: `pnpm exec biome check packages/canvas-core/src/import.ts packages/canvas-core/src/figma-native.ts apps/web/src/components/canvas/use-canvas-clipboard-import.ts apps/web/src/components/canvas/skia-canvas.tsx apps/web/test/use-canvas-clipboard-import.test.tsx`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm --filter @cucumber/web typecheck` (Next emitted the existing multi-lockfile workspace-root warning).
+- Passed: `pnpm --filter @cucumber/web build` (Next emitted the existing multi-lockfile workspace-root warning and metadataBase warning).

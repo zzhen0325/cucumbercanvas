@@ -26,6 +26,13 @@ import {
 
 const parserCapableIt = typeof DOMParser === "undefined" ? it.skip : it;
 
+function importedNodeTitle(
+  node: CanvasImportResult["nodes"][number],
+): string | undefined {
+  const titled = node as { title?: string; name?: string };
+  return titled.title ?? titled.name;
+}
+
 function makeContainer(id: string, _parentId: string | null = null): PenNode {
   return {
     id,
@@ -549,12 +556,14 @@ describe("cucumber canvas core", () => {
     },
   );
 
-  parserCapableIt("parses SVG clipboard MIME items with style, defs, and transform", () => {
-    const result = parseClipboardImport({
-      items: [
-        {
-          type: "image/svg+xml",
-          text: `
+  parserCapableIt(
+    "parses SVG clipboard MIME items with style, defs, and transform",
+    () => {
+      const result = parseClipboardImport({
+        items: [
+          {
+            type: "image/svg+xml",
+            text: `
             <svg width="200" height="100" viewBox="0 0 100 50">
               <defs>
                 <linearGradient id="g"><stop offset="0%" stop-color="#ff0000"/><stop offset="100%" stop-color="#0000ff"/></linearGradient>
@@ -563,27 +572,211 @@ describe("cucumber canvas core", () => {
               <rect class="hero" x="10" y="10" width="30" height="20" transform="translate(5 0)" />
             </svg>
           `,
+          },
+        ],
+      });
+
+      expect(result?.source).toBe("svg");
+      const rect = result?.nodes.find((node) => node.type === "rect") as
+        | {
+            bounds?: { x: number; y: number; width: number; height: number };
+            fills?: Array<{ type: string }>;
+            stroke?: { thickness?: number };
+          }
+        | undefined;
+      expect(rect?.bounds).toMatchObject({
+        x: 30,
+        y: 20,
+        width: 60,
+        height: 40,
+      });
+      expect(rect?.fills?.[0]).toMatchObject({ type: "linear_gradient" });
+      expect(rect?.stroke?.thickness).toBe(2);
+    },
+  );
+
+  it("parses raster clipboard files into image assets", () => {
+    const result = parseClipboardImport({
+      files: [
+        {
+          type: "image/png",
+          name: "paste.png",
+          dataUrl: "data:image/png;base64,AQID",
+          width: 32,
+          height: 24,
         },
       ],
     });
 
-    expect(result?.source).toBe("svg");
-    const rect = result?.nodes.find((node) => node.type === "rect") as
+    expect(result?.source).toBe("image");
+    expect(result?.assets[0]).toMatchObject({
+      mimeType: "image/png",
+      name: "paste.png",
+      width: 32,
+      height: 24,
+    });
+    const image = result?.nodes[0] as
       | {
-          bounds?: { x: number; y: number; width: number; height: number };
-          fills?: Array<{ type: string }>;
-          stroke?: { thickness?: number };
+          type?: string;
+          bounds?: { width: number; height: number };
+          src?: string;
         }
       | undefined;
-    expect(rect?.bounds).toMatchObject({
-      x: 30,
-      y: 20,
-      width: 60,
-      height: 40,
+    expect(image).toMatchObject({
+      type: "image",
+      bounds: { width: 32, height: 24 },
+      src: "data:image/png;base64,AQID",
     });
-    expect(rect?.fills?.[0]).toMatchObject({ type: "linear_gradient" });
-    expect(rect?.stroke?.thickness).toBe(2);
   });
+
+  parserCapableIt(
+    "prefers explicit SVG MIME over HTML inline SVG fallback",
+    () => {
+      const result = parseClipboardImport({
+        html: '<svg width="20" height="20"><rect id="html" width="20" height="20"/></svg>',
+        items: [
+          {
+            type: "image/svg+xml",
+            text: '<svg width="10" height="10"><circle id="mime" cx="5" cy="5" r="5"/></svg>',
+          },
+        ],
+      });
+
+      expect(
+        result?.nodes.some((node) => importedNodeTitle(node) === "mime"),
+      ).toBe(true);
+      expect(
+        result?.nodes.some((node) => importedNodeTitle(node) === "html"),
+      ).toBe(false);
+    },
+  );
+
+  parserCapableIt(
+    "prefers explicit SVG MIME when Figma native decode falls back",
+    () => {
+      const result = parseClipboardImport({
+        html: `
+          <div data-metadata="invalid" data-buffer="invalid" style="position:absolute;left:12px;top:16px;width:120px;height:56px">
+            Figma html fallback
+          </div>
+        `,
+        items: [
+          {
+            type: "image/svg+xml",
+            text: '<svg width="10" height="10"><circle id="figma-svg-mime" cx="5" cy="5" r="5"/></svg>',
+          },
+        ],
+      });
+
+      expect(result?.source).toBe("svg");
+      expect(
+        result?.nodes.some(
+          (node) => importedNodeTitle(node) === "figma-svg-mime",
+        ),
+      ).toBe(true);
+      expect(
+        result?.nodes.some(
+          (node) => importedNodeTitle(node) === "Figma html fallback",
+        ),
+      ).toBe(false);
+    },
+  );
+
+  parserCapableIt(
+    "applies SVG descendant selector specificity and stroke attributes",
+    () => {
+      const result = parseClipboardImport({
+        svg: `
+        <svg width="100" height="60">
+          <style>
+            rect { fill: #ff0000; }
+            .wrapper .target { fill: #00ff00; stroke: #111111; stroke-width: 3; }
+            #hero { stroke: #222222; }
+          </style>
+          <g class="wrapper">
+            <rect id="hero" class="target" x="4" y="6" width="40" height="20" fill-opacity="0.5" stroke-dasharray="4 2" stroke-linecap="round" stroke-linejoin="miter" />
+          </g>
+        </svg>
+      `,
+      });
+
+      const rect = result?.nodes.find(
+        (node) => importedNodeTitle(node) === "hero",
+      ) as
+        | {
+            fills?: Array<{ type: string; color?: string; opacity?: number }>;
+            stroke?: {
+              fill?: Array<{ color?: string }>;
+              thickness?: number;
+              dashPattern?: number[];
+              cap?: string;
+              join?: string;
+            };
+          }
+        | undefined;
+
+      expect(rect?.fills?.[0]).toMatchObject({
+        type: "solid",
+        color: "#00ff00",
+        opacity: 0.5,
+      });
+      expect(rect?.stroke).toMatchObject({
+        thickness: 3,
+        dashPattern: [4, 2],
+        cap: "round",
+        join: "miter",
+      });
+      expect(rect?.stroke?.fill?.[0]?.color).toBe("#222222");
+    },
+  );
+
+  parserCapableIt(
+    "expands SVG use and maps simple clipPath/filter definitions",
+    () => {
+      const result = parseClipboardImport({
+        svg: `
+        <svg width="120" height="80">
+          <defs>
+            <rect id="reused" x="8" y="8" width="50" height="30" fill="#3366ff" />
+            <clipPath id="clip"><rect x="0" y="0" width="60" height="40" rx="6" /></clipPath>
+            <filter id="shadow"><feDropShadow dx="2" dy="3" stdDeviation="4" flood-color="#000000" /></filter>
+          </defs>
+          <g id="clipped" clip-path="url(#clip)" filter="url(#shadow)">
+            <use href="#reused" x="4" y="5" />
+          </g>
+        </svg>
+      `,
+      });
+
+      const frame = result?.nodes.find(
+        (node) => importedNodeTitle(node) === "clipped",
+      ) as
+        | {
+            type?: string;
+            clipContent?: boolean;
+            cornerRadius?: number;
+            effects?: Array<{
+              type?: string;
+              offsetX?: number;
+              offsetY?: number;
+              blur?: number;
+            }>;
+            childrenOrder?: string[];
+          }
+        | undefined;
+      const reused = result?.nodes.find(
+        (node) => importedNodeTitle(node) === "reused",
+      );
+
+      expect(frame).toMatchObject({
+        type: "frame",
+        clipContent: true,
+        cornerRadius: 6,
+        effects: [{ type: "shadow", offsetX: 2, offsetY: 3, blur: 4 }],
+      });
+      expect(frame?.childrenOrder).toContain(reused?.id);
+    },
+  );
 
   it("preserves imported frame layout, effects, and text style during insertion", () => {
     const result: CanvasImportResult = {
@@ -674,6 +867,82 @@ describe("cucumber canvas core", () => {
       textAlign: "center",
       textGrowth: "fixed-width",
     });
+  });
+
+  it("materializes imported auto-layout sizing onto executable PenNode fields", () => {
+    const result: CanvasImportResult = {
+      source: "figma",
+      sourceLabel: "Figma",
+      importSessionId: "import-layout-props",
+      rootNodeIds: ["frame-fit"],
+      nodes: [
+        {
+          id: "frame-fit",
+          type: "frame",
+          parentId: null,
+          title: "Fit frame",
+          bounds: { x: 0, y: 0, width: 240, height: 120 },
+          layout: "horizontal",
+          gap: 8,
+          childrenOrder: ["child-fill", "child-absolute"],
+          meta: {
+            source: "figma-paste",
+            autoLayout: {
+              layout: "horizontal",
+              widthMode: "fit_content",
+              heightMode: "fixed",
+            },
+          },
+        },
+        {
+          id: "child-fill",
+          type: "text",
+          parentId: "frame-fit",
+          text: "Fill child",
+          bounds: { x: 0, y: 0, width: 80, height: 24 },
+          meta: {
+            source: "figma-paste",
+            autoLayout: {
+              widthMode: "fill_container",
+              heightMode: "fixed",
+            },
+          },
+        },
+        {
+          id: "child-absolute",
+          type: "rectangle",
+          parentId: "frame-fit",
+          bounds: { x: 16, y: 16, width: 20, height: 20 },
+          meta: {
+            source: "figma-paste",
+            autoLayout: {
+              positioning: "absolute",
+            },
+          },
+        },
+      ],
+      assets: [],
+      warnings: [],
+    };
+
+    const inserted = insertCanvasImportResult(createEmptyDocument(), result);
+    const frame = findNode(inserted.doc, "frame-fit") as
+      | (PenNode & { width?: string; layout?: string })
+      | undefined;
+    const childFill = findNode(inserted.doc, "child-fill") as
+      | (PenNode & { width?: string })
+      | undefined;
+    const childAbsolute = findNode(inserted.doc, "child-absolute") as
+      | (PenNode & { role?: string })
+      | undefined;
+
+    expect(frame).toMatchObject({
+      type: "frame",
+      width: "fit_content",
+      layout: "horizontal",
+    });
+    expect(childFill?.width).toBe("fill_container");
+    expect(childAbsolute?.role).toBe("overlay");
   });
 
   it("merges missing symbol props into an instance node", () => {
@@ -849,7 +1118,7 @@ describe("cucumber canvas core", () => {
 
     const next = applyImportedAutoLayout(doc, "root");
 
-    expect(getNodeBounds(findNode(next, "name")!)).toMatchObject({
+    expect(getNodeBounds(findNode(next, "title")!)).toMatchObject({
       x: 26,
       y: 85,
       width: 268,
