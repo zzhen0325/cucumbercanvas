@@ -77,6 +77,7 @@ import {
   getPrimarySelectedContainerId,
   getTopLevelSelectionIds,
 } from "./canvas-selection-helpers";
+import { CanvasPageTabs } from "./page-tabs";
 import { CanvasPropertyPanel } from "./property-panel/canvas-property-panel";
 import {
   type ClipboardImportContext,
@@ -2443,6 +2444,19 @@ export const SkiaCanvas = memo(
           onUndo={api.undo}
           onRedo={api.redo}
         />
+
+        <div className="absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100%-2rem)] -translate-x-1/2 justify-center">
+          <CanvasPageTabs
+            pages={api.getPages()}
+            activePageId={activePageId}
+            onAddPage={api.addPage}
+            onDeletePage={api.deletePage}
+            onDuplicatePage={api.duplicatePage}
+            onRenamePage={api.renamePage}
+            onReorderPage={api.reorderPage}
+            onSetActivePage={api.setActivePage}
+          />
+        </div>
 
         {/* Property panel */}
         {selectedIds.length === 1 && selectedIds[0]
