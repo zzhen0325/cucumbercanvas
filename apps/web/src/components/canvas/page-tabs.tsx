@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, Plus, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,8 @@ function stopCanvasPropagation(
 function PageTab({
   page,
   active,
+  canMoveLeft,
+  canMoveRight,
   canDelete,
   onDeletePage,
   onDuplicatePage,
@@ -40,6 +42,8 @@ function PageTab({
 }: {
   page: PenPage;
   active: boolean;
+  canMoveLeft: boolean;
+  canMoveRight: boolean;
   canDelete: boolean;
   onDeletePage: (pageId: string) => void;
   onDuplicatePage: (pageId: string) => void;
@@ -78,7 +82,7 @@ function PageTab({
   return (
     <div
       className={cn(
-        "group/page flex h-8 min-w-0 items-center gap-0.5 rounded-md border px-1 transition-colors",
+        "group/page flex h-8 shrink-0 items-center gap-0.5 rounded-md border px-1 transition-colors",
         active
           ? "border-primary/30 bg-primary/10 text-foreground shadow-sm"
           : "border-transparent bg-transparent text-muted-foreground hover:bg-muted/80 hover:text-foreground",
@@ -144,19 +148,21 @@ function PageTab({
       ) : null}
       <button
         type="button"
-        className="sr-only"
         aria-label={`Move ${page.name} left`}
+        className="flex size-6 items-center justify-center rounded-md text-muted-foreground opacity-70 outline-none transition-colors hover:bg-background hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-30"
+        disabled={!canMoveLeft}
         onClick={() => onReorderPage(page.id, "left")}
       >
-        Move left
+        <ChevronLeft className="size-3" />
       </button>
       <button
         type="button"
-        className="sr-only"
         aria-label={`Move ${page.name} right`}
+        className="flex size-6 items-center justify-center rounded-md text-muted-foreground opacity-70 outline-none transition-colors hover:bg-background hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-30"
+        disabled={!canMoveRight}
         onClick={() => onReorderPage(page.id, "right")}
       >
-        Move right
+        <ChevronRight className="size-3" />
       </button>
     </div>
   );
@@ -185,12 +191,14 @@ export function CanvasPageTabs({
       onPointerUp={stopCanvasPropagation}
       onWheel={stopCanvasPropagation}
     >
-      <div className="flex min-w-0 items-center gap-1">
-        {pages.map((page) => (
+      <div className="flex min-w-max items-center gap-1">
+        {pages.map((page, index) => (
           <PageTab
             key={page.id}
             page={page}
             active={page.id === activePageId}
+            canMoveLeft={index > 0}
+            canMoveRight={index < pages.length - 1}
             canDelete={pages.length > 1}
             onDeletePage={onDeletePage}
             onDuplicatePage={onDuplicatePage}
