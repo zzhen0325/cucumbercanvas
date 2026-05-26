@@ -96,4 +96,26 @@ describe("useCanvasKeyboardShortcuts paste handling", () => {
     expect(options.pasteClipboard).toHaveBeenCalledOnce();
     expect(event.defaultPrevented).toBe(true);
   });
+
+  it("switches tools from single-key canvas shortcuts", async () => {
+    const options = createOptions();
+    await mountHook(options);
+
+    for (const key of ["v", "t", "h", "r", "o", "f", "p"]) {
+      const event = new KeyboardEvent("keydown", {
+        key,
+        bubbles: true,
+        cancelable: true,
+      });
+      document.dispatchEvent(event);
+    }
+
+    expect(options.setActiveTool).toHaveBeenNthCalledWith(1, "select");
+    expect(options.setActiveTool).toHaveBeenNthCalledWith(2, "text");
+    expect(options.setActiveTool).toHaveBeenNthCalledWith(3, "hand");
+    expect(options.setActiveTool).toHaveBeenNthCalledWith(4, "rect");
+    expect(options.setActiveTool).toHaveBeenNthCalledWith(5, "ellipse");
+    expect(options.setActiveTool).toHaveBeenNthCalledWith(6, "container");
+    expect(options.setActiveTool).toHaveBeenNthCalledWith(7, "pen");
+  });
 });

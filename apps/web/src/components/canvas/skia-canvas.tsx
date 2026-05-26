@@ -62,6 +62,7 @@ import {
 } from "react";
 
 import { useToast } from "@/components/toast";
+import { CanvasBooleanToolbar } from "./boolean-toolbar";
 import type {
   AlignMode,
   CanvasApi,
@@ -77,6 +78,7 @@ import {
   getPrimarySelectedContainerId,
   getTopLevelSelectionIds,
 } from "./canvas-selection-helpers";
+import { CanvasEditorToolbar } from "./editor-toolbar";
 import { CanvasPageTabs } from "./page-tabs";
 import { CanvasPropertyPanel } from "./property-panel/canvas-property-panel";
 import {
@@ -2368,6 +2370,48 @@ export const SkiaCanvas = memo(
       },
     });
 
+    const handleImportImage = useCallback(() => {
+      console.info("[skia-canvas] toolbar.import-image.requested", {
+        activePageId: activePageIdRef.current,
+      });
+      toast.toast(
+        "Use paste or drag-and-drop to import images on this canvas.",
+      );
+    }, [toast]);
+
+    const handleImportSvg = useCallback(async () => {
+      const importedIds = await pasteFromSystemClipboard();
+      if (importedIds.length === 0) {
+        console.info("[skia-canvas] toolbar.import-svg.empty", {
+          activePageId: activePageIdRef.current,
+        });
+        toast.toast(
+          "Copy SVG markup or a supported clipboard payload before importing SVG.",
+        );
+        return;
+      }
+      console.info("[skia-canvas] toolbar.import-svg.imported", {
+        activePageId: activePageIdRef.current,
+        count: importedIds.length,
+      });
+    }, [pasteFromSystemClipboard, toast]);
+
+    const selectedActivePageNodes = useMemo(
+      () =>
+        selectedIds
+          .map((id) => findNode(doc, id, activePageId))
+          .filter(isPenNode),
+      [activePageId, doc, selectedIds],
+    );
+
+    const booleanRejectionReason = useMemo(() => {
+      if (selectedIds.length < 2) return null;
+      if (selectedActivePageNodes.length !== selectedIds.length) {
+        return "One or more selected nodes are no longer available on the active page.";
+      }
+      return getBooleanOpRejectionReason(selectedActivePageNodes);
+    }, [selectedActivePageNodes, selectedIds.length]);
+
     // -----------------------------------------------------------------------
     // Initial document sync
     // -----------------------------------------------------------------------
@@ -2432,17 +2476,25 @@ export const SkiaCanvas = memo(
         {/* CanvasKit canvas container */}
         <div ref={canvasContainerRef} className="absolute inset-0" />
 
-        {/* Toolbar overlay */}
-        <SkiaToolbar
+        {/* Toolbar overlays */}
+        <CanvasEditorToolbar
           activeTool={activeTool}
-          onToolChange={setActiveTool}
-          onCreateContainer={() => createContainer()}
-          onDelete={() => api.deleteSelection()}
-          selectedCount={selectedIds.length}
-          canUndo={api.canUndo()}
           canRedo={api.canRedo()}
-          onUndo={api.undo}
+          canUndo={api.canUndo()}
+          onCreateContainer={() => createContainer()}
+          onDelete={api.deleteSelection}
+          onImportImage={handleImportImage}
+          onImportSvg={handleImportSvg}
           onRedo={api.redo}
+          onToolChange={setActiveTool}
+          onUndo={api.undo}
+          selectedCount={selectedIds.length}
+        />
+
+        <CanvasBooleanToolbar
+          onBooleanOperation={api.applyBooleanOperation}
+          rejectionReason={booleanRejectionReason}
+          visible={selectedIds.length >= 2}
         />
 
         <div className="absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100%-2rem)] -translate-x-1/2 justify-center">
@@ -2500,162 +2552,6 @@ export const SkiaCanvas = memo(
     );
   }),
 );
-
-// ---------------------------------------------------------------------------
-// Toolbar
-// ---------------------------------------------------------------------------
-
-import {
-  Circle,
-  Hand,
-  MousePointer2,
-  PenTool,
-  Plus,
-  Redo2,
-  Sparkles,
-  Square,
-  Trash2,
-  Triangle,
-  Type,
-  Undo2,
-} from "lucide-react";
-
-function SkiaToolbar({
-  activeTool,
-  onToolChange,
-  onCreateContainer,
-  onDelete,
-  selectedCount,
-  canUndo,
-  canRedo,
-  onUndo,
-  onRedo,
-}: {
-  activeTool: CanvasTool;
-  onToolChange: (tool: CanvasTool) => void;
-  onCreateContainer: () => void;
-  onDelete: () => void;
-  selectedCount: number;
-  canUndo: boolean;
-  canRedo: boolean;
-  onUndo: () => void;
-  onRedo: () => void;
-}) {
-  const btn =
-    "flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground";
-  return (
-    <div
-      className="absolute left-1/2 top-4 z-20 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card/90 px-1.5 py-1.5 shadow-card backdrop-blur"
-      onPointerDown={(e) => e.stopPropagation()}
-      onPointerUp={(e) => e.stopPropagation()}
-      onClick={(e) => e.stopPropagation()}
-      onKeyDown={(e) => e.stopPropagation()}
-    >
-      <button
-        type="button"
-        className={`${btn} ${activeTool === "select" ? "bg-muted text-foreground" : ""}`}
-        onClick={() => onToolChange("select")}
-        title="选择"
-      >
-        <MousePointer2 className="h-4 w-4" />
-      </button>
-      <button
-        type="button"
-        className={`${btn} ${activeTool === "hand" ? "bg-muted text-foreground" : ""}`}
-        onClick={() => onToolChange("hand")}
-        title="抓手"
-      >
-        <Hand className="h-4 w-4" />
-      </button>
-      <span className="mx-1 h-4 w-px bg-border" />
-      <button
-        type="button"
-        className={btn}
-        disabled={!canUndo}
-        onClick={onUndo}
-        title="撤销"
-      >
-        <Undo2 className="h-4 w-4" />
-      </button>
-      <button
-        type="button"
-        className={btn}
-        disabled={!canRedo}
-        onClick={onRedo}
-        title="重做"
-      >
-        <Redo2 className="h-4 w-4" />
-      </button>
-      <span className="mx-1 h-4 w-px bg-border" />
-      <button
-        type="button"
-        className={btn}
-        onClick={onCreateContainer}
-        title="新建容器"
-      >
-        <Plus className="h-4 w-4" />
-      </button>
-      <span className="mx-1 h-4 w-px bg-border" />
-      <button
-        type="button"
-        className={`${btn} ${activeTool === "rect" ? "bg-muted text-foreground" : ""}`}
-        onClick={() => onToolChange("rect")}
-        title="矩形"
-      >
-        <Square className="h-4 w-4" />
-      </button>
-      <button
-        type="button"
-        className={`${btn} ${activeTool === "ellipse" ? "bg-muted text-foreground" : ""}`}
-        onClick={() => onToolChange("ellipse")}
-        title="椭圆"
-      >
-        <Circle className="h-4 w-4" />
-      </button>
-      <button
-        type="button"
-        className={`${btn} ${activeTool === "polygon" ? "bg-muted text-foreground" : ""}`}
-        onClick={() => onToolChange("polygon")}
-        title="多边形"
-      >
-        <Triangle className="h-4 w-4" />
-      </button>
-      <button
-        type="button"
-        className={`${btn} ${activeTool === "path" ? "bg-muted text-foreground" : ""}`}
-        onClick={() => onToolChange("path")}
-        title="路径"
-      >
-        <PenTool className="h-4 w-4" />
-      </button>
-      <button
-        type="button"
-        className={`${btn} ${activeTool === "icon" ? "bg-muted text-foreground" : ""}`}
-        onClick={() => onToolChange("icon")}
-        title="图标"
-      >
-        <Sparkles className="h-4 w-4" />
-      </button>
-      <button
-        type="button"
-        className={`${btn} ${activeTool === "text" ? "bg-muted text-foreground" : ""}`}
-        onClick={() => onToolChange("text")}
-        title="文字"
-      >
-        <Type className="h-4 w-4" />
-      </button>
-      <button
-        type="button"
-        className={btn}
-        disabled={selectedCount === 0}
-        onClick={onDelete}
-        title="删除"
-      >
-        <Trash2 className="h-4 w-4" />
-      </button>
-    </div>
-  );
-}
 
 function isDrawableShapeTool(tool: CanvasTool): tool is DrawableShapeTool {
   return tool === "rect" || tool === "ellipse" || tool === "polygon";

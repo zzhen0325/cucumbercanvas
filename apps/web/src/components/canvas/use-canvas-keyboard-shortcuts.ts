@@ -1,6 +1,13 @@
 import { useEffect } from "react";
 
-type CanvasToolShortcut = "select" | "text" | "hand" | "rect" | "pen";
+type CanvasToolShortcut =
+  | "select"
+  | "text"
+  | "hand"
+  | "rect"
+  | "ellipse"
+  | "container"
+  | "pen";
 
 export function useCanvasKeyboardShortcuts(options: {
   undo: () => void;
@@ -114,11 +121,19 @@ export function useCanvasKeyboardShortcuts(options: {
       }
 
       if (!isMod && !event.altKey) {
-        if (key === "v") options.setActiveTool("select");
-        if (key === "t") options.setActiveTool("text");
-        if (key === "h") options.setActiveTool("hand");
-        if (key === "r") options.setActiveTool("rect");
-        if (key === "p") options.setActiveTool("pen");
+        const toolShortcuts: Record<string, CanvasToolShortcut> = {
+          v: "select",
+          t: "text",
+          h: "hand",
+          r: "rect",
+          o: "ellipse",
+          f: "container",
+          p: "pen",
+        };
+        const nextTool = toolShortcuts[key];
+        if (nextTool) {
+          options.setActiveTool(nextTool);
+        }
       }
     };
 
