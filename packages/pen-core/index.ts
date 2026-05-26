@@ -137,7 +137,13 @@ export {
 } from './path-anchors.js';
 
 // Boolean operations
-export { type BooleanOpType, canBooleanOp, executeBooleanOp, setPaperModule } from './boolean-ops.js';
+export {
+  type BooleanOpType,
+  canBooleanOp,
+  executeBooleanOp,
+  getBooleanOpRejectionReason,
+  setPaperModule,
+} from './boolean-ops.js';
 
 // Font utilities
 export { cssFontFamily } from './font-utils.js';

@@ -1,7 +1,7 @@
 import { nanoid } from 'nanoid';
 import type { PenNode, PathNode } from '@cucumber/pen-types';
 
-export type BooleanOpType = 'union' | 'subtract' | 'intersect';
+export type BooleanOpType = 'union' | 'subtract' | 'intersect' | 'exclude';
 
 // ---------------------------------------------------------------------------
 // Paper.js scope — headless (no canvas needed)
@@ -23,6 +23,7 @@ interface PaperPathItem {
   unite: (path: PaperPathItem) => PaperPathItem;
   subtract: (path: PaperPathItem) => PaperPathItem;
   intersect: (path: PaperPathItem) => PaperPathItem;
+  exclude: (path: PaperPathItem) => PaperPathItem;
   remove: () => void;
 }
 
@@ -200,10 +201,22 @@ function nodeToLocalPath(node: PenNode): string | null {
 
 /** Types that can participate in boolean operations. */
 const BOOLEAN_TYPES = new Set(['rectangle', 'ellipse', 'polygon', 'path', 'line', 'frame']);
+const BOOLEAN_TYPE_LABELS = 'rectangles, ellipses, polygons, paths, lines, and frames';
+
+export function getBooleanOpRejectionReason(nodes: PenNode[]): string | null {
+  if (nodes.length < 2) {
+    return 'Select at least two shape or path nodes before running a boolean operation.';
+  }
+
+  if (nodes.some((n) => !BOOLEAN_TYPES.has(n.type))) {
+    return `Boolean operations support ${BOOLEAN_TYPE_LABELS}. Remove text, images, groups, or other unsupported selections before trying again.`;
+  }
+
+  return null;
+}
 
 export function canBooleanOp(nodes: PenNode[]): boolean {
-  if (nodes.length < 2) return false;
-  return nodes.every((n) => BOOLEAN_TYPES.has(n.type));
+  return getBooleanOpRejectionReason(nodes) === null;
 }
 
 /**
@@ -264,6 +277,9 @@ export function executeBooleanOp(nodes: PenNode[], operation: BooleanOpType): Pa
       case 'intersect':
         result = result!.intersect(p);
         break;
+      case 'exclude':
+        result = result!.exclude(p);
+        break;
     }
   }
 
@@ -291,6 +307,7 @@ export function executeBooleanOp(nodes: PenNode[], operation: BooleanOpType): Pa
     union: 'Union',
     subtract: 'Subtract',
     intersect: 'Intersect',
+    exclude: 'Exclude',
   };
 
   // Inherit style from first operand
