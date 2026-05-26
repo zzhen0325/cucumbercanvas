@@ -3,8 +3,10 @@ import {
   CanvasPageOperationError,
   DEFAULT_CANVAS_PAGE_ID,
   assertUniqueCanvasPageIds,
+  createDefaultCanvasPage,
+  resolveActivePageId,
 } from './pages.js';
-import type { CanvasBounds, CanvasViewport } from './types.js';
+import type { CanvasBounds, CanvasDocumentState, CanvasViewport } from './types.js';
 
 let idCounter = 0;
 
@@ -16,48 +18,40 @@ export function createNodeId(prefix = 'node'): string {
 /** @deprecated Use createNodeId */
 export const createCanvasNodeId = createNodeId;
 
-export function createEmptyDocument(name?: string): PenDocument {
-  const defaultPage: PenPage = {
-    id: DEFAULT_CANVAS_PAGE_ID,
-    name: 'Page 1',
-    children: [],
-  };
+export function createCanvasDocument(name?: string): CanvasDocumentState {
+  const defaultPage = createDefaultCanvasPage();
   return {
     version: 'cucumber-canvas-v1',
     name: name ?? 'Untitled',
+    activePageId: DEFAULT_CANVAS_PAGE_ID,
     pages: [defaultPage],
     children: [],
     viewport: defaultViewport(),
-  } as PenDocument;
+  };
+}
+
+export function createEmptyDocument(name?: string): PenDocument {
+  return createCanvasDocument(name);
 }
 
 export function getActivePage(doc: PenDocument, activePageId?: string | null): PenPage {
-  const requestedPageId = normalizeOptionalPageId(activePageId);
   if (doc.pages && doc.pages.length > 0) {
     assertUniqueCanvasPageIds(doc.pages);
-    if (requestedPageId) {
-      const page = doc.pages.find((candidate) => candidate.id === requestedPageId);
-      if (!page) {
-        throw new CanvasPageOperationError(
-          'page_not_found',
-          `Page ${requestedPageId} does not exist.`,
-        );
-      }
+    const resolvedPageId = resolveActivePageId(doc, activePageId);
+    const page = doc.pages.find((candidate) => candidate.id === resolvedPageId);
+    if (page) {
       return page;
     }
-    const firstPage = doc.pages[0];
-    if (!firstPage) {
-      throw new CanvasPageOperationError(
-        'invalid_page_operation',
-        'Canvas document must contain at least one page.',
-      );
-    }
-    return firstPage;
-  }
-  if (requestedPageId) {
     throw new CanvasPageOperationError(
       'page_not_found',
-      `Page ${requestedPageId} does not exist.`,
+      `Page ${resolvedPageId} does not exist.`,
+    );
+  }
+  const resolvedPageId = resolveActivePageId(doc, activePageId);
+  if (resolvedPageId !== DEFAULT_CANVAS_PAGE_ID) {
+    throw new CanvasPageOperationError(
+      'page_not_found',
+      `Page ${resolvedPageId} does not exist.`,
     );
   }
   return { id: DEFAULT_CANVAS_PAGE_ID, name: 'Page 1', children: doc.children };
@@ -84,6 +78,18 @@ export function setActiveChildren(
     };
   }
   return { ...doc, children };
+}
+
+export function appendActivePageChildren(
+  doc: PenDocument,
+  children: PenNode[],
+  activePageId?: string | null,
+): PenDocument {
+  return setActiveChildren(
+    doc,
+    [...getActiveChildren(doc, activePageId), ...children],
+    activePageId,
+  );
 }
 
 /** BFS search for a node by ID in the document tree */
@@ -209,10 +215,4 @@ export const cloneCanvasDocument = cloneDocument;
 
 export function defaultViewport(): CanvasViewport {
   return { x: 0, y: 0, zoom: 1, backgroundColor: '#ffffff' };
-}
-
-function normalizeOptionalPageId(pageId: string | null | undefined): string | null {
-  if (pageId === undefined || pageId === null) return null;
-  const trimmed = pageId.trim();
-  return trimmed.length > 0 ? trimmed : null;
 }

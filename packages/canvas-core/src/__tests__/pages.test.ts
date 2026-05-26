@@ -3,11 +3,14 @@ import { describe, expect, it } from "vitest";
 import {
   CanvasPageOperationError,
   addCanvasPage,
+  appendActivePageChildren,
   applyCanvasOperation,
+  createDefaultCanvasPage,
   deleteCanvasPage,
   duplicateCanvasPage,
   findNode,
   getActiveChildren,
+  getCanvasPage,
   getCanvasPages,
   normalizeCanvasPages,
   renameCanvasPage,
@@ -81,6 +84,57 @@ describe("canvas page helpers", () => {
     expect(next.children).toEqual([]);
   });
 
+  it("uses the persisted active page when operation metadata has no override", () => {
+    const doc: PenDocument = {
+      version: "cucumber-canvas-v1",
+      activePageId: "page-b",
+      children: [],
+      pages: [
+        { id: "page-a", name: "A", children: [rect("a")] },
+        { id: "page-b", name: "B", children: [rect("b")] },
+      ],
+    };
+
+    const next = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: rect("b2", 20),
+    });
+
+    expect(getActiveChildren(next, "page-a").map((node) => node.id)).toEqual([
+      "a",
+    ]);
+    expect(getActiveChildren(next, "page-b").map((node) => node.id)).toEqual([
+      "b",
+      "b2",
+    ]);
+  });
+
+  it("lets operation metadata override the persisted active page", () => {
+    const doc: PenDocument = {
+      version: "cucumber-canvas-v1",
+      activePageId: "page-b",
+      children: [],
+      pages: [
+        { id: "page-a", name: "A", children: [rect("a")] },
+        { id: "page-b", name: "B", children: [rect("b")] },
+      ],
+    };
+
+    const next = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: rect("a2", 20),
+      activePageId: "page-a",
+    });
+
+    expect(getActiveChildren(next, "page-a").map((node) => node.id)).toEqual([
+      "a",
+      "a2",
+    ]);
+    expect(getActiveChildren(next, "page-b").map((node) => node.id)).toEqual([
+      "b",
+    ]);
+  });
+
   it("rejects stale active page IDs without mutating the first page", () => {
     const doc: PenDocument = normalizeCanvasPages({
       version: "cucumber-canvas-v1",
@@ -133,7 +187,54 @@ describe("canvas page helpers", () => {
     expect(() => resolveActivePageId(legacy, "page-default")).toThrow(
       "Page page-default does not exist.",
     );
+    expect(() => getCanvasPage(legacy, "page-default")).toThrow(
+      "Page page-default does not exist.",
+    );
     expect(legacy.children.map((node) => node.id)).toEqual(["legacy"]);
+  });
+
+  it("rejects a legacy children-only document with persisted explicit default active page", () => {
+    const legacy: PenDocument = {
+      version: "cucumber-canvas-v1",
+      activePageId: "page-default",
+      children: [rect("legacy")],
+    };
+
+    expect(() =>
+      applyCanvasOperation(legacy, {
+        type: "insertNode",
+        node: rect("target"),
+      }),
+    ).toThrow("Page page-default does not exist.");
+  });
+
+  it("creates default pages and appends children to the active page", () => {
+    const defaultPage = createDefaultCanvasPage([rect("seed")]);
+    expect(defaultPage).toMatchObject({
+      id: "page-default",
+      name: "Page 1",
+    });
+    expect(defaultPage.children.map((node) => node.id)).toEqual(["seed"]);
+
+    const doc: PenDocument = {
+      version: "cucumber-canvas-v1",
+      activePageId: "page-b",
+      children: [],
+      pages: [
+        { id: "page-a", name: "A", children: [rect("a")] },
+        { id: "page-b", name: "B", children: [rect("b")] },
+      ],
+    };
+
+    const next = appendActivePageChildren(doc, [rect("b2")]);
+
+    expect(getActiveChildren(next, "page-a").map((node) => node.id)).toEqual([
+      "a",
+    ]);
+    expect(getActiveChildren(next, "page-b").map((node) => node.id)).toEqual([
+      "b",
+      "b2",
+    ]);
   });
 
   it("validates stale active page IDs for selection operations", () => {

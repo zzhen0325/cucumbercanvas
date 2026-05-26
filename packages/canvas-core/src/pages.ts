@@ -1,4 +1,5 @@
 import type { PenDocument, PenNode, PenPage } from '@cucumber/pen-types';
+import type { CanvasPage } from './types.js';
 import { createNodeId } from './document.js';
 
 export const DEFAULT_CANVAS_PAGE_ID = 'page-default';
@@ -15,7 +16,15 @@ export class CanvasPageOperationError extends Error {
 
 export interface CanvasPageMutationResult {
   document: PenDocument;
-  page: PenPage;
+  page: CanvasPage;
+}
+
+export function createDefaultCanvasPage(children: PenNode[] = []): CanvasPage {
+  return {
+    id: DEFAULT_CANVAS_PAGE_ID,
+    name: 'Page 1',
+    children: structuredClone(children),
+  };
 }
 
 export function normalizeCanvasPages(doc: PenDocument): PenDocument {
@@ -37,23 +46,18 @@ export function normalizeCanvasPages(doc: PenDocument): PenDocument {
 
   return {
     ...doc,
-    pages: [
-      {
-        id: DEFAULT_CANVAS_PAGE_ID,
-        name: 'Page 1',
-        children: doc.children ?? [],
-      },
-    ],
+    pages: [createDefaultCanvasPage(doc.children ?? [])],
     children: [],
   };
 }
 
-export function getCanvasPages(doc: PenDocument): PenPage[] {
+export function getCanvasPages(doc: PenDocument): CanvasPage[] {
   return getNormalizedPages(normalizeCanvasPages(doc));
 }
 
 export function resolveActivePageId(doc: PenDocument, activePageId?: string | null): string {
-  const requestedPageId = normalizeOptionalPageId(activePageId);
+  const requestedPageId =
+    normalizeOptionalPageId(activePageId) ?? normalizeOptionalPageId(doc.activePageId);
   if (!doc.pages || doc.pages.length === 0) {
     if (!requestedPageId) {
       return DEFAULT_CANVAS_PAGE_ID;
@@ -77,10 +81,10 @@ export function resolveActivePageId(doc: PenDocument, activePageId?: string | nu
   );
 }
 
-export function getCanvasPage(doc: PenDocument, pageId?: string | null): PenPage {
+export function getCanvasPage(doc: PenDocument, pageId?: string | null): CanvasPage {
+  const resolvedPageId = resolveActivePageId(doc, pageId);
   const normalized = normalizeCanvasPages(doc);
   const pages = getNormalizedPages(normalized);
-  const resolvedPageId = resolveActivePageId(normalized, pageId);
   return getPageOrThrow(pages, resolvedPageId);
 }
 
@@ -90,7 +94,7 @@ export function addCanvasPage(
 ): CanvasPageMutationResult {
   const normalized = normalizeCanvasPages(doc);
   const pages = getNormalizedPages(normalized);
-  const page: PenPage = {
+  const page: CanvasPage = {
     id: options?.id ?? createNodeId('page'),
     name: normalizePageName(options?.name ?? `Page ${pages.length + 1}`),
     children: options?.children ? structuredClone(options.children) : [],
@@ -130,7 +134,7 @@ export function duplicateCanvasPage(doc: PenDocument, pageId: string): CanvasPag
   const pages = getNormalizedPages(normalized);
   const page = getExistingPage(normalized, pageId);
   const pageIndex = pages.findIndex((candidate) => candidate.id === pageId);
-  const duplicatedPage: PenPage = {
+  const duplicatedPage: CanvasPage = {
     id: createNodeId('page'),
     name: `${page.name} copy`,
     children: page.children.map((node) => cloneNodeTreeWithNewIds(node)),
@@ -194,7 +198,7 @@ export function reorderCanvasPage(
   };
 }
 
-function getExistingPage(doc: PenDocument, pageId: string): PenPage {
+function getExistingPage(doc: PenDocument, pageId: string): CanvasPage {
   const page = getCanvasPages(doc).find((candidate) => candidate.id === pageId);
   if (!page) {
     throw new CanvasPageOperationError('page_not_found', `Page ${pageId} does not exist.`);
@@ -202,7 +206,7 @@ function getExistingPage(doc: PenDocument, pageId: string): PenPage {
   return page;
 }
 
-function getNormalizedPages(doc: PenDocument): PenPage[] {
+function getNormalizedPages(doc: PenDocument): CanvasPage[] {
   if (!doc.pages || doc.pages.length === 0) {
     throw new CanvasPageOperationError(
       'invalid_page_operation',
@@ -212,7 +216,7 @@ function getNormalizedPages(doc: PenDocument): PenPage[] {
   return doc.pages;
 }
 
-function getPageAt(pages: readonly PenPage[], index: number): PenPage {
+function getPageAt(pages: readonly CanvasPage[], index: number): CanvasPage {
   const page = pages[index];
   if (!page) {
     throw new CanvasPageOperationError(
@@ -237,7 +241,7 @@ export function assertUniqueCanvasPageIds(pages: readonly PenPage[]): void {
   }
 }
 
-function getPageOrThrow(pages: readonly PenPage[], pageId: string): PenPage {
+function getPageOrThrow(pages: readonly CanvasPage[], pageId: string): CanvasPage {
   const page = pages.find((candidate) => candidate.id === pageId);
   if (!page) {
     throw new CanvasPageOperationError('page_not_found', `Page ${pageId} does not exist.`);

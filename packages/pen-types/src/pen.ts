@@ -17,6 +17,7 @@ export interface PenDocument {
   themes?: Record<string, string[]>;
   variables?: Record<string, VariableDefinition>;
   pages?: PenPage[];
+  activePageId?: string;
   children: PenNode[];
   /** Cucumber extension: canvas-scoped assets (images, videos) */
   assets?: Record<string, { id: string; url: string; mimeType: string; name?: string; width?: number; height?: number; source?: string }>;

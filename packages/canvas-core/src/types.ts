@@ -48,6 +48,7 @@ export type {
 } from '@cucumber/pen-types';
 
 import type { AgentBinding, PenDocument, PenNode } from '@cucumber/pen-types';
+import type { PenPage } from '@cucumber/pen-types';
 
 // ---------------------------------------------------------------------------
 // Backward-compatible type aliases (pre-Phase1 consumers)
@@ -55,6 +56,16 @@ import type { AgentBinding, PenDocument, PenNode } from '@cucumber/pen-types';
 
 /** @deprecated Use PenDocument directly */
 export type CucumberCanvasDocument = PenDocument;
+
+export type CanvasPage = PenPage;
+
+export interface PageAwareCanvasDocument extends PenDocument {
+  pages: CanvasPage[];
+  activePageId: string;
+  viewport: CanvasViewport;
+}
+
+export type CanvasDocumentState = PageAwareCanvasDocument;
 
 /** @deprecated Use PenNode directly */
 export type CanvasNode = PenNode;

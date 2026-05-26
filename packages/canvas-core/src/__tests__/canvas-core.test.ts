@@ -9,6 +9,7 @@ import {
   applyImportedAutoLayout,
   applyInstanceOverrides,
   buildAgentContext,
+  createCanvasDocument,
   createEmptyDocument,
   createNodeId,
   duplicateCanvasNodes,
@@ -59,8 +60,21 @@ describe("cucumber canvas core", () => {
   it("serializes an empty Cucumber document baseline", () => {
     const doc = createEmptyDocument();
     expect(doc.version).toBe("cucumber-canvas-v1");
+    expect(doc.activePageId).toBe("page-default");
+    expect(doc.pages?.[0]?.id).toBe("page-default");
     expect(doc.children).toEqual([]);
     expect((doc as any).viewport.zoom).toBe(1);
+  });
+
+  it("creates page-aware canvas documents with the default active page", () => {
+    const doc = createCanvasDocument("New canvas");
+
+    expect(doc.name).toBe("New canvas");
+    expect(doc.activePageId).toBe("page-default");
+    expect(doc.pages).toEqual([
+      { id: "page-default", name: "Page 1", children: [] },
+    ]);
+    expect(doc.children).toEqual([]);
   });
 
   it("resolves inherited context through container parents", () => {
