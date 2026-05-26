@@ -1793,7 +1793,11 @@ export const SkiaCanvas = memo(
         },
         getSceneElements: () => toSceneElements(docRef.current),
         getFiles: () => toFiles(docRef.current),
-        getAppState: () => toAppState(docRef.current, selectedIds),
+        getAppState: () =>
+          toAppState(
+            docRef.current,
+            getDocumentSelection(docRef.current, selectedIds),
+          ),
         updateScene: (scene) => {
           if (scene.appState) {
             const state = scene.appState;
