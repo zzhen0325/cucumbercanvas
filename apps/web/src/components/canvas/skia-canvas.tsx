@@ -25,6 +25,7 @@ import {
 } from "@cucumber/canvas-core";
 import { createEmptyDocument, getActiveChildren } from "@cucumber/canvas-core";
 import {
+  type EditorOverlayState,
   PenRenderer,
   loadCanvasKit,
   screenToScene,
@@ -52,6 +53,7 @@ import type {
   CanvasSceneElement,
 } from "./canvas-api";
 import { exportDocumentImage } from "./canvas-export";
+import { bakePenAnchorsToPathData, usePenTool } from "./canvas-pen-tool";
 import {
   getPrimarySelectedContainerId,
   getTopLevelSelectionIds,
@@ -176,13 +178,8 @@ type CanvasTool =
   | "line"
   | "arrow";
 
-type DrawableShapeTool = "rect" | "ellipse" | "polygon" | "path";
+type DrawableShapeTool = "rect" | "ellipse" | "polygon";
 type ResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-
-type ShapeDrawPreview = {
-  type: DrawableShapeTool;
-  bounds: CanvasBounds;
-};
 
 const MIN_DRAW_SIZE = 2;
 const CANVAS_SELECTION_COLOR = "#37BFF9";
@@ -248,17 +245,13 @@ export const SkiaCanvas = memo(
     const [historyIndex, setHistoryIndex] = useState(-1);
     const [activeTool, setActiveTool] = useState<CanvasTool>("select");
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
-    const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
-    const [shapeDrawPreview, setShapeDrawPreview] =
-      useState<ShapeDrawPreview | null>(null);
-    const [marqueePreview, setMarqueePreview] = useState<CanvasBounds | null>(
-      null,
-    );
-    const [canvasViewport, setCanvasViewport] = useState<{
-      zoom: number;
-      panX: number;
-      panY: number;
-    } | null>(null);
+    const editorOverlayRef = useRef<EditorOverlayState>({
+      selectedIds: [],
+      selectionColor: CANVAS_SELECTION_COLOR,
+      marquee: null,
+      shapePreview: null,
+      penPreview: null,
+    });
     const suppressNextClickRef = useRef(false);
 
     // Space-held → temporary hand tool
@@ -304,6 +297,9 @@ export const SkiaCanvas = memo(
           startPoint: { x: number; y: number };
         }
       | {
+          kind: "pen";
+        }
+      | {
           kind: "marquee";
           startX: number;
           startY: number;
@@ -312,6 +308,20 @@ export const SkiaCanvas = memo(
     const dragRef = useRef<DragState | null>(null);
     const clipboardRef = useRef<CanvasClipboardData | null>(null);
     const toast = useToast();
+
+    const setEditorOverlay = useCallback(
+      (overlay: Partial<EditorOverlayState>) => {
+        editorOverlayRef.current = {
+          ...editorOverlayRef.current,
+          ...overlay,
+          selectedIds:
+            overlay.selectedIds ?? editorOverlayRef.current.selectedIds,
+          selectionColor: CANVAS_SELECTION_COLOR,
+        };
+        rendererRef.current?.setEditorOverlays(editorOverlayRef.current);
+      },
+      [],
+    );
 
     // -----------------------------------------------------------------------
     // CanvasKit init
@@ -362,8 +372,8 @@ export const SkiaCanvas = memo(
       renderer.init(canvas);
       renderer.setDocument(docRef.current);
       renderer.zoomToFit(64);
-      setCanvasViewport(renderer.getViewport());
       rendererRef.current = renderer;
+      renderer.setEditorOverlays(editorOverlayRef.current);
 
       console.info("[skia-canvas] PenRenderer initialized");
 
@@ -439,6 +449,7 @@ export const SkiaCanvas = memo(
         } as PenDocument & { selection: string[] };
         docRef.current = next;
         setDoc(next);
+        setEditorOverlay({ selectedIds: validIds });
         if (opts?.notifySelection !== false) {
           onSelectionChange?.(
             validIds
@@ -448,8 +459,61 @@ export const SkiaCanvas = memo(
           );
         }
       },
-      [onSelectionChange],
+      [onSelectionChange, setEditorOverlay],
     );
+
+    const penTool = usePenTool({
+      onCommit: (anchors, closed) => {
+        const pathPatch = bakePenAnchorsToPathData(anchors, closed, {
+          x: 0,
+          y: 0,
+        });
+        if (!pathPatch) {
+          console.info("[skia-canvas] pen.draw.cancelled", {
+            reason: "empty_path",
+            anchorCount: anchors.length,
+          });
+          setActiveTool("select");
+          return;
+        }
+        const node: PenNode = {
+          id: createNodeId("path"),
+          type: "path",
+          name: "Path",
+          ...pathPatch,
+          fill: [{ type: "solid", color: "transparent" }],
+          stroke: {
+            thickness: 2,
+            fill: [{ type: "solid", color: "#111827" }],
+          },
+        } as PenNode;
+        const next = applyCanvasOperation(docRef.current, {
+          type: "insertNode",
+          node,
+        });
+        commitDocument(next);
+        setSelection([node.id]);
+        setActiveTool("select");
+        suppressNextClickRef.current = true;
+        console.info("[skia-canvas] pen.path.created", {
+          nodeId: node.id,
+          closed,
+          anchorCount: anchors.length,
+          width: Math.round(pathPatch.width),
+          height: Math.round(pathPatch.height),
+        });
+      },
+      onCancel: () => {
+        setActiveTool("select");
+        console.info("[skia-canvas] pen.draw.cancelled", {
+          reason: "user_cancelled",
+        });
+      },
+    });
+
+    useEffect(() => {
+      setEditorOverlay({ penPreview: penTool.preview });
+    }, [penTool.preview, setEditorOverlay]);
 
     // -----------------------------------------------------------------------
     // Hit testing (click to select)
@@ -463,12 +527,7 @@ export const SkiaCanvas = memo(
         }
         const renderer = rendererRef.current;
         if (!renderer) return;
-        const rect = canvasContainerRef.current?.getBoundingClientRect();
-        if (!rect) return;
-
-        const screenX = event.clientX - rect.left;
-        const screenY = event.clientY - rect.top;
-        const hit = renderer.hitTest(screenX, screenY);
+        const hit = renderer.hitTest(event.clientX, event.clientY);
 
         if (event.shiftKey) {
           if (!hit) return;
@@ -494,16 +553,11 @@ export const SkiaCanvas = memo(
         const renderer = rendererRef.current;
         if (!renderer) return;
         const vp = renderer.getViewport();
-        const rect = canvasContainerRef.current?.getBoundingClientRect();
-        if (!rect) return;
         const newZoom = Math.min(
           3,
           Math.max(0.25, vp.zoom - event.deltaY * 0.001),
         );
-        const sx = event.clientX - rect.left;
-        const sy = event.clientY - rect.top;
-        renderer.zoomToPoint(sx, sy, newZoom);
-        setCanvasViewport(renderer.getViewport());
+        renderer.zoomToPoint(event.clientX, event.clientY, newZoom);
       },
       [],
     );
@@ -553,9 +607,51 @@ export const SkiaCanvas = memo(
         // Marquee selection
         const screenX = event.clientX - rect.left;
         const screenY = event.clientY - rect.top;
-        const hit = renderer.hitTest(screenX, screenY);
+        const hit = renderer.hitTest(event.clientX, event.clientY);
 
         if (tool === "select") {
+          const controlHit = renderer.hitTestSelectionControl(
+            event.clientX,
+            event.clientY,
+          );
+          if (controlHit) {
+            const node = findNode(docRef.current, controlHit.nodeId);
+            if (!node || node.locked) return;
+            const bounds = getNodeBounds(node);
+            if (controlHit.type === "resize") {
+              dragRef.current = {
+                kind: "resize",
+                nodeId: controlHit.nodeId,
+                handle: controlHit.handle,
+                startX: event.clientX,
+                startY: event.clientY,
+                origin: bounds,
+                preserveAspectRatio: event.shiftKey,
+              };
+            } else {
+              const center = {
+                x: bounds.x + bounds.width / 2,
+                y: bounds.y + bounds.height / 2,
+              };
+              const start = screenToScene(
+                event.clientX,
+                event.clientY,
+                rect,
+                renderer.getViewport(),
+              );
+              dragRef.current = {
+                kind: "rotate",
+                nodeId: controlHit.nodeId,
+                center,
+                originRotation: bounds.rotation ?? 0,
+                startAngle: pointToAngle(center, start),
+              };
+            }
+            suppressNextClickRef.current = true;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            return;
+          }
+
           if (hit && !event.shiftKey) {
             // Start move if clicking on selected node
             if (selectedIds.includes(hit.id)) {
@@ -587,7 +683,7 @@ export const SkiaCanvas = memo(
             startY: screenY,
             originSelection: [...selectedIds],
           };
-          setMarqueePreview(null);
+          setEditorOverlay({ marquee: null });
           event.currentTarget.setPointerCapture(event.pointerId);
           return;
         }
@@ -604,11 +700,31 @@ export const SkiaCanvas = memo(
             shapeType: tool,
             startPoint: scene,
           };
-          setShapeDrawPreview({
-            type: tool,
-            bounds: { x: scene.x, y: scene.y, width: 0, height: 0 },
+          setEditorOverlay({
+            shapePreview: {
+              type: tool,
+              bounds: { x: scene.x, y: scene.y, width: 0, height: 0 },
+              fillColor:
+                tool === "rect" ? DEFAULT_RECT_FILL : DEFAULT_SHAPE_FILL,
+            },
           });
           event.currentTarget.setPointerCapture(event.pointerId);
+          return;
+        }
+
+        if (tool === "path") {
+          const viewport = renderer.getViewport();
+          const scene = screenToScene(
+            event.clientX,
+            event.clientY,
+            rect,
+            viewport,
+          );
+          if (penTool.onMouseDown(scene, viewport.zoom)) {
+            dragRef.current = { kind: "pen" };
+            suppressNextClickRef.current = true;
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }
           return;
         }
 
@@ -624,7 +740,7 @@ export const SkiaCanvas = memo(
           setActiveTool("select");
         }
       },
-      [effectiveTool, selectedIds, setSelection],
+      [effectiveTool, penTool, selectedIds, setEditorOverlay, setSelection],
     );
 
     const handlePointerMove = useCallback(
@@ -638,7 +754,6 @@ export const SkiaCanvas = memo(
           const dy = event.clientY - drag.startY;
           const vp = renderer.getViewport();
           renderer.setViewport(vp.zoom, drag.originX + dx, drag.originY + dy);
-          setCanvasViewport(renderer.getViewport());
           return;
         }
 
@@ -658,7 +773,7 @@ export const SkiaCanvas = memo(
             renderer.getViewport(),
           );
           const bounds = normalizeDrawBounds(start, end, false);
-          setMarqueePreview(bounds);
+          setEditorOverlay({ marquee: bounds });
           const hitIds = getVisibleCanvasNodesInBounds(
             docRef.current as CucumberCanvasDocument,
             bounds,
@@ -679,10 +794,33 @@ export const SkiaCanvas = memo(
             rect,
             renderer.getViewport(),
           );
-          setShapeDrawPreview({
-            type: drag.shapeType,
-            bounds: normalizeDrawBounds(drag.startPoint, scene, event.shiftKey),
+          setEditorOverlay({
+            shapePreview: {
+              type: drag.shapeType,
+              bounds: normalizeDrawBounds(
+                drag.startPoint,
+                scene,
+                event.shiftKey,
+              ),
+              fillColor:
+                drag.shapeType === "rect"
+                  ? DEFAULT_RECT_FILL
+                  : DEFAULT_SHAPE_FILL,
+            },
           });
+          return;
+        }
+
+        if (drag.kind === "pen") {
+          const rect = canvasContainerRef.current?.getBoundingClientRect();
+          if (!rect) return;
+          const scene = screenToScene(
+            event.clientX,
+            event.clientY,
+            rect,
+            renderer.getViewport(),
+          );
+          penTool.onMouseMove(scene);
           return;
         }
 
@@ -756,7 +894,7 @@ export const SkiaCanvas = memo(
           renderer.setDocument(next);
         }
       },
-      [setSelection],
+      [penTool, setEditorOverlay, setSelection],
     );
 
     const handlePointerUp = useCallback(
@@ -801,8 +939,12 @@ export const SkiaCanvas = memo(
               });
             }
           }
-          setShapeDrawPreview(null);
+          setEditorOverlay({ shapePreview: null });
           setActiveTool("select");
+          suppressNextClickRef.current = true;
+        }
+        if (drag?.kind === "pen") {
+          penTool.onMouseUp();
           suppressNextClickRef.current = true;
         }
         if (
@@ -817,7 +959,7 @@ export const SkiaCanvas = memo(
           });
         }
         if (drag?.kind === "marquee") {
-          setMarqueePreview(null);
+          setEditorOverlay({ marquee: null });
           suppressNextClickRef.current = true;
           console.info("[skia-canvas] selection.marquee.committed", {
             selectedCount: (
@@ -830,7 +972,25 @@ export const SkiaCanvas = memo(
           event.currentTarget.releasePointerCapture(event.pointerId);
         }
       },
-      [commitDocument, onDocumentChange, setSelection],
+      [
+        commitDocument,
+        onDocumentChange,
+        penTool,
+        setEditorOverlay,
+        setSelection,
+      ],
+    );
+
+    const handleDoubleClick = useCallback(
+      (event: React.MouseEvent<HTMLDivElement>) => {
+        if (effectiveTool !== "path") return;
+        if (penTool.onDblClick()) {
+          event.preventDefault();
+          event.stopPropagation();
+          suppressNextClickRef.current = true;
+        }
+      },
+      [effectiveTool, penTool],
     );
 
     // -----------------------------------------------------------------------
@@ -856,6 +1016,20 @@ export const SkiaCanvas = memo(
         window.removeEventListener("keyup", onKeyUp);
       };
     }, [activeTool]);
+
+    useEffect(() => {
+      const onKeyDown = (e: KeyboardEvent) => {
+        if (effectiveTool !== "path") return;
+        const target = e.target as HTMLElement;
+        if (target.closest("input, textarea, [contenteditable]")) return;
+        if (penTool.onKeyDown(e.key)) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      };
+      window.addEventListener("keydown", onKeyDown);
+      return () => window.removeEventListener("keydown", onKeyDown);
+    }, [effectiveTool, penTool]);
 
     // -----------------------------------------------------------------------
     // CanvasApi
@@ -1219,9 +1393,6 @@ export const SkiaCanvas = memo(
             commitDocument(next, { captureHistory: false });
             rendererRef.current?.setDocument(next);
             rendererRef.current?.zoomToFit(64);
-            if (rendererRef.current) {
-              setCanvasViewport(rendererRef.current.getViewport());
-            }
           },
           createContainer,
           insertNode: (node, containerId) => {
@@ -1302,9 +1473,6 @@ export const SkiaCanvas = memo(
                   state.scrollX,
                   state.scrollY,
                 );
-                if (rendererRef.current) {
-                  setCanvasViewport(rendererRef.current.getViewport());
-                }
               }
             }
           },
@@ -1338,9 +1506,6 @@ export const SkiaCanvas = memo(
           },
           scrollToContent: () => {
             rendererRef.current?.zoomToFit(64);
-            if (rendererRef.current) {
-              setCanvasViewport(rendererRef.current.getViewport());
-            }
           },
           undo: () => {
             if (historyIndex < 0) return;
@@ -1682,61 +1847,6 @@ export const SkiaCanvas = memo(
       },
     });
 
-    const beginResize = useCallback(
-      (
-        nodeId: string,
-        handle: ResizeHandle,
-        event: React.PointerEvent<HTMLButtonElement>,
-      ) => {
-        const node = findNode(docRef.current, nodeId);
-        if (!node || node.locked) return;
-        event.preventDefault();
-        event.stopPropagation();
-        dragRef.current = {
-          kind: "resize",
-          nodeId,
-          handle,
-          startX: event.clientX,
-          startY: event.clientY,
-          origin: getNodeBounds(node),
-          preserveAspectRatio: event.shiftKey,
-        };
-        event.currentTarget.setPointerCapture(event.pointerId);
-      },
-      [],
-    );
-
-    const beginRotate = useCallback(
-      (nodeId: string, event: React.PointerEvent<HTMLButtonElement>) => {
-        const node = findNode(docRef.current, nodeId);
-        const renderer = rendererRef.current;
-        const rect = canvasContainerRef.current?.getBoundingClientRect();
-        if (!node || node.locked || !renderer || !rect) return;
-        event.preventDefault();
-        event.stopPropagation();
-        const bounds = getNodeBounds(node);
-        const center = {
-          x: bounds.x + bounds.width / 2,
-          y: bounds.y + bounds.height / 2,
-        };
-        const start = screenToScene(
-          event.clientX,
-          event.clientY,
-          rect,
-          renderer.getViewport(),
-        );
-        dragRef.current = {
-          kind: "rotate",
-          nodeId,
-          center,
-          originRotation: bounds.rotation ?? 0,
-          startAngle: pointToAngle(center, start),
-        };
-        event.currentTarget.setPointerCapture(event.pointerId);
-      },
-      [],
-    );
-
     // -----------------------------------------------------------------------
     // Initial document sync
     // -----------------------------------------------------------------------
@@ -1748,7 +1858,7 @@ export const SkiaCanvas = memo(
       commitDocument(next, { captureHistory: false });
       rendererRef.current.setDocument(next);
       rendererRef.current.zoomToFit(64);
-      setCanvasViewport(rendererRef.current.getViewport());
+      rendererRef.current.setEditorOverlays(editorOverlayRef.current);
     }, [ckReady]);
 
     // -----------------------------------------------------------------------
@@ -1780,9 +1890,6 @@ export const SkiaCanvas = memo(
         : effectiveTool === "select"
           ? "cursor-default"
           : "cursor-crosshair";
-    const selectedNodes = selectedIds
-      .map((id) => findNode(doc, id))
-      .filter((node): node is PenNode => Boolean(node));
 
     return (
       <div
@@ -1795,32 +1902,10 @@ export const SkiaCanvas = memo(
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
+        onDoubleClick={handleDoubleClick}
       >
         {/* CanvasKit canvas container */}
         <div ref={canvasContainerRef} className="absolute inset-0" />
-
-        {shapeDrawPreview && canvasViewport ? (
-          <SkiaShapeDrawPreview
-            preview={shapeDrawPreview}
-            viewport={canvasViewport}
-          />
-        ) : null}
-
-        {marqueePreview && canvasViewport ? (
-          <SkiaMarqueePreview
-            bounds={marqueePreview}
-            viewport={canvasViewport}
-          />
-        ) : null}
-
-        {canvasViewport ? (
-          <SkiaSelectionOverlay
-            nodes={selectedNodes}
-            viewport={canvasViewport}
-            onResizeStart={beginResize}
-            onRotateStart={beginRotate}
-          />
-        ) : null}
 
         {/* Toolbar overlay */}
         <SkiaToolbar
@@ -1877,183 +1962,6 @@ export const SkiaCanvas = memo(
     );
   }),
 );
-
-function SkiaShapeDrawPreview({
-  preview,
-  viewport,
-}: {
-  preview: ShapeDrawPreview;
-  viewport: { zoom: number; panX: number; panY: number };
-}) {
-  const { bounds, type } = preview;
-  if (bounds.width <= 0 || bounds.height <= 0) {
-    return null;
-  }
-  const style = {
-    left: bounds.x * viewport.zoom + viewport.panX,
-    top: bounds.y * viewport.zoom + viewport.panY,
-    width: bounds.width * viewport.zoom,
-    height: bounds.height * viewport.zoom,
-  };
-  const strokeColor = CANVAS_SELECTION_COLOR;
-  const fillColor = type === "rect" ? DEFAULT_RECT_FILL : DEFAULT_SHAPE_FILL;
-
-  return (
-    <div
-      className="pointer-events-none absolute z-10"
-      data-canvas-draw-preview={type}
-      style={style}
-    >
-      {type === "rect" ? (
-        <div
-          className="h-full w-full"
-          style={{
-            backgroundColor: fillColor,
-            border: `1.5px dashed ${strokeColor}`,
-            borderRadius: 8 * viewport.zoom,
-            opacity: 0.72,
-          }}
-        />
-      ) : null}
-      {type === "ellipse" ? (
-        <div
-          className="h-full w-full rounded-full"
-          style={{
-            backgroundColor: fillColor,
-            border: `1.5px dashed ${strokeColor}`,
-            opacity: 0.72,
-          }}
-        />
-      ) : null}
-      {type === "polygon" ? (
-        <svg
-          aria-hidden="true"
-          className="h-full w-full overflow-visible"
-          viewBox={`0 0 ${style.width} ${style.height}`}
-        >
-          <polygon
-            points={createPolygonPreviewPoints(style.width, style.height)}
-            fill={fillColor}
-            stroke={strokeColor}
-            strokeDasharray="5 3"
-            strokeWidth={1.5}
-            opacity={0.72}
-            vectorEffect="non-scaling-stroke"
-          />
-        </svg>
-      ) : null}
-      {type === "path" ? (
-        <svg
-          aria-hidden="true"
-          className="h-full w-full overflow-visible"
-          viewBox={`0 0 ${style.width} ${style.height}`}
-        >
-          <path
-            d={createPathPreviewD(style.width, style.height)}
-            fill="none"
-            stroke={strokeColor}
-            strokeDasharray="5 3"
-            strokeLinecap="round"
-            strokeWidth={1.5}
-            vectorEffect="non-scaling-stroke"
-          />
-        </svg>
-      ) : null}
-    </div>
-  );
-}
-
-function SkiaMarqueePreview({
-  bounds,
-  viewport,
-}: {
-  bounds: CanvasBounds;
-  viewport: { zoom: number; panX: number; panY: number };
-}) {
-  if (bounds.width <= 0 || bounds.height <= 0) return null;
-  return (
-    <div
-      className="pointer-events-none absolute z-10"
-      data-canvas-marquee-preview="true"
-      style={{
-        left: bounds.x * viewport.zoom + viewport.panX,
-        top: bounds.y * viewport.zoom + viewport.panY,
-        width: bounds.width * viewport.zoom,
-        height: bounds.height * viewport.zoom,
-        backgroundColor: "rgba(55, 191, 249, 0.08)",
-        border: `1px solid ${CANVAS_SELECTION_COLOR}`,
-      }}
-    />
-  );
-}
-
-function SkiaSelectionOverlay({
-  nodes,
-  viewport,
-  onResizeStart,
-  onRotateStart,
-}: {
-  nodes: PenNode[];
-  viewport: { zoom: number; panX: number; panY: number };
-  onResizeStart: (
-    nodeId: string,
-    handle: ResizeHandle,
-    event: React.PointerEvent<HTMLButtonElement>,
-  ) => void;
-  onRotateStart: (
-    nodeId: string,
-    event: React.PointerEvent<HTMLButtonElement>,
-  ) => void;
-}) {
-  if (nodes.length === 0) return null;
-
-  return (
-    <div className="pointer-events-none absolute inset-0 z-10">
-      {nodes.map((node) => {
-        const bounds = getNodeBounds(node);
-        const rotation = bounds.rotation ?? 0;
-        const style = {
-          left: bounds.x * viewport.zoom + viewport.panX,
-          top: bounds.y * viewport.zoom + viewport.panY,
-          width: bounds.width * viewport.zoom,
-          height: bounds.height * viewport.zoom,
-          transform: `rotate(${rotation}deg)`,
-        };
-        return (
-          <div
-            key={node.id}
-            className="pointer-events-none absolute border"
-            data-canvas-selection-overlay={node.id}
-            style={{ ...style, borderColor: CANVAS_SELECTION_COLOR }}
-          >
-            {RESIZE_HANDLES.map((handle) => (
-              <button
-                key={handle}
-                type="button"
-                aria-label={`Resize ${handle}`}
-                className={`pointer-events-auto absolute h-2.5 w-2.5 rounded-full border bg-background shadow-sm ${resizeHandleClass(handle)}`}
-                style={{ borderColor: CANVAS_SELECTION_COLOR }}
-                onPointerDown={(event) => onResizeStart(node.id, handle, event)}
-              />
-            ))}
-            <button
-              type="button"
-              aria-label="Rotate selection"
-              className="pointer-events-auto absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 -translate-y-7 rounded-full border bg-background shadow-sm"
-              style={{ borderColor: CANVAS_SELECTION_COLOR }}
-              onPointerDown={(event) => onRotateStart(node.id, event)}
-            >
-              <span
-                className="pointer-events-none absolute left-1/2 top-full h-4 w-px -translate-x-1/2"
-                style={{ backgroundColor: CANVAS_SELECTION_COLOR }}
-              />
-            </button>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Toolbar
@@ -2212,37 +2120,7 @@ function SkiaToolbar({
 }
 
 function isDrawableShapeTool(tool: CanvasTool): tool is DrawableShapeTool {
-  return (
-    tool === "rect" ||
-    tool === "ellipse" ||
-    tool === "polygon" ||
-    tool === "path"
-  );
-}
-
-const RESIZE_HANDLES: ResizeHandle[] = [
-  "n",
-  "ne",
-  "e",
-  "se",
-  "s",
-  "sw",
-  "w",
-  "nw",
-];
-
-function resizeHandleClass(handle: ResizeHandle): string {
-  const position: Record<ResizeHandle, string> = {
-    n: "left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 cursor-ns-resize",
-    ne: "right-0 top-0 translate-x-1/2 -translate-y-1/2 cursor-nesw-resize",
-    e: "right-0 top-1/2 translate-x-1/2 -translate-y-1/2 cursor-ew-resize",
-    se: "bottom-0 right-0 translate-x-1/2 translate-y-1/2 cursor-nwse-resize",
-    s: "bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 cursor-ns-resize",
-    sw: "bottom-0 left-0 -translate-x-1/2 translate-y-1/2 cursor-nesw-resize",
-    w: "left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize",
-    nw: "left-0 top-0 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize",
-  };
-  return position[handle];
+  return tool === "rect" || tool === "ellipse" || tool === "polygon";
 }
 
 function normalizeDrawBounds(
@@ -2360,54 +2238,10 @@ function createDrawableShapeNode(
       name: "Ellipse",
     } as PenNode;
   }
-  if (type === "path") {
-    return {
-      ...shared,
-      type: "path",
-      name: "Path",
-      d: createPathPreviewD(bounds.width, bounds.height),
-      fill: [],
-      stroke: {
-        thickness: 2,
-        fill: [{ type: "solid" as const, color: "#111827" }],
-      },
-      closed: false,
-    } as PenNode;
-  }
   return {
     ...shared,
     type: "polygon",
     name: "Polygon",
     polygonCount: 3,
   } as PenNode;
-}
-
-function createPolygonPreviewPoints(width: number, height: number): string {
-  const count = 3;
-  const raw = Array.from({ length: count }, (_, index) => {
-    const angle = -Math.PI / 2 + (index * Math.PI * 2) / 3;
-    return { x: Math.cos(angle), y: Math.sin(angle) };
-  });
-  const minX = Math.min(...raw.map((point) => point.x));
-  const maxX = Math.max(...raw.map((point) => point.x));
-  const minY = Math.min(...raw.map((point) => point.y));
-  const maxY = Math.max(...raw.map((point) => point.y));
-  const rawW = Math.max(maxX - minX, 1);
-  const rawH = Math.max(maxY - minY, 1);
-  return raw
-    .map((point) => {
-      const x = ((point.x - minX) / rawW) * width;
-      const y = ((point.y - minY) / rawH) * height;
-      return `${x},${y}`;
-    })
-    .join(" ");
-}
-
-function createPathPreviewD(width: number, height: number): string {
-  const w = Math.max(width, 1);
-  const h = Math.max(height, 1);
-  return [
-    `M 0 ${h}`,
-    `C ${w * 0.32} ${h * 0.16}, ${w * 0.68} ${h * 0.84}, ${w} 0`,
-  ].join(" ");
 }

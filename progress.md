@@ -1,6 +1,6 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-26 15:42 CST
+Last updated: 2026-05-26 16:51 CST
 
 ## Current Session
 
@@ -56,6 +56,7 @@ Status:
 - Updated screenshot artifact persistence to preserve SVG screenshots as `image/svg+xml` instead of labeling all canvas captures as PNG.
 - Tightened the Skia editor interaction chain after the render/layout review: Figma/system paste now lets native paste events carry HTML payloads when the internal canvas clipboard is empty, imported `rect` nodes normalize to renderable `rectangle` nodes, and single-quoted Figma clipboard attributes are decoded.
 - Fixed selected-node editing ergonomics in the Skia path by keeping property-panel and toolbar events from bubbling into canvas hit-testing, binding the panel directly to PenNode fields, and making the path/pen tool create a visible path from the same drag bounds used by its preview.
+- Moved Skia canvas editing overlays out of React DOM and into the shared CanvasKit renderer: selection bounds, resize/rotate handles, marquee selection, shape drag previews, and pen previews now draw in the same render pass as canvas content, while resize/rotate hit-testing runs through renderer scene coordinates.
 - Added focused keyboard shortcut coverage for paste behavior, plus targeted Figma clipboard extraction/import regression checks.
 - Added the first OpenPencil-compatible live canvas agent tool slice: `batch_design`, `batch_get`, `snapshot_layout`, and `find_empty_space` are now registered as MCP tools, operate through `LiveCanvasService`, and let the main Agent perform DSL-style batch editing/reading against the current Cucumber `PenDocument` without changing the durable canvas schema.
 - Continued the OpenPencil migration with Figma/style/codegen parity slices: the live MCP tool set now includes `import_figma_clipboard`, OpenPencil-style `read_nodes`, variables/theme tools, recursive style search/replace, and in-memory codegen plan/submit/assemble/clean routes, while the Skia property panel can bind selected node colors to document variables.
@@ -142,3 +143,10 @@ Status:
 - Passed: `PATH="/Users/bytedance/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" ../../node_modules/.bin/vitest run src/mcp/tools/open-pencil-canvas.test.ts --passWithNoTests` from `apps/server` after adding `codegen_export` selection/export coverage.
 - Passed: `./node_modules/.bin/biome check --write apps/server/src/mcp/tools/open-pencil-canvas.ts apps/server/src/mcp/tools/open-pencil-canvas.test.ts apps/server/src/agent/prompts/cucumber-main.ts apps/server/src/mcp/server.ts apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx apps/web/src/components/canvas/skia-canvas.tsx progress.md feature_list.json`.
 - Passed: final no-write `./node_modules/.bin/biome check apps/server/src/mcp/tools/open-pencil-canvas.ts apps/server/src/mcp/tools/open-pencil-canvas.test.ts apps/server/src/agent/prompts/cucumber-main.ts apps/server/src/mcp/server.ts apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx apps/web/src/components/canvas/skia-canvas.tsx progress.md feature_list.json`.
+- Passed: `pnpm exec biome check apps/web/src/components/canvas/skia-canvas.tsx packages/pen-renderer/src/renderer.ts packages/pen-renderer/src/types.ts packages/pen-renderer/src/index.ts`.
+- Passed: `pnpm --filter @cucumber/web typecheck`.
+- Passed: `pnpm --filter @cucumber/pen-renderer typecheck`.
+- Passed: `pnpm --filter @cucumber/web test -- canvas-export use-canvas-keyboard-shortcuts`.
+- Passed: `pnpm --filter @cucumber/web build`.
+- Failed: root `pnpm typecheck` remains blocked by unrelated existing `packages/pen-core/__tests__` NodeNext extension, implicit-any, and possibly-undefined diagnostics.
+- Failed: root `pnpm lint` remains blocked by unrelated existing diagnostics in `openpencil/**`, server formatting drift, `vercel.json`, and `apps/server/src/agent/deep-agent.ts`.

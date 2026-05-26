@@ -1,6 +1,6 @@
-import type { PenNode } from '@cucumber/pen-types';
+import type { PenNode, PenPathAnchor } from "@cucumber/pen-types";
 
-export type { ViewportState } from '@cucumber/pen-types';
+export type { ViewportState } from "@cucumber/pen-types";
 
 export interface RenderNode {
   node: PenNode;
@@ -12,9 +12,9 @@ export interface RenderNode {
 }
 
 /** Injectable icon lookup function for resolving icon names to SVG path data. */
-export interface IconLookupFn {
-  (name: string): { d: string; iconId: string; style: 'stroke' | 'fill' } | null;
-}
+export type IconLookupFn = (
+  name: string,
+) => { d: string; iconId: string; style: "stroke" | "fill" } | null;
 
 export interface PenRendererOptions {
   /** URL pattern for CanvasKit WASM files. Default: '/canvaskit/' */
@@ -34,3 +34,44 @@ export interface PenRendererOptions {
   /** Default fonts to preload. Default: ['Inter', 'Noto Sans SC'] */
   defaultFonts?: string[];
 }
+
+export type ResizeHandleDirection =
+  | "n"
+  | "ne"
+  | "e"
+  | "se"
+  | "s"
+  | "sw"
+  | "w"
+  | "nw";
+
+export interface EditorMarqueeOverlay {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface EditorShapeOverlay {
+  type: "rect" | "ellipse" | "polygon";
+  bounds: EditorMarqueeOverlay;
+  fillColor: string;
+}
+
+export interface EditorPenPreviewOverlay {
+  points: PenPathAnchor[];
+  cursorPos: { x: number; y: number } | null;
+  isDraggingHandle: boolean;
+}
+
+export interface EditorOverlayState {
+  selectedIds: string[];
+  selectionColor?: string;
+  marquee?: EditorMarqueeOverlay | null;
+  shapePreview?: EditorShapeOverlay | null;
+  penPreview?: EditorPenPreviewOverlay | null;
+}
+
+export type SelectionControlHit =
+  | { type: "resize"; nodeId: string; handle: ResizeHandleDirection }
+  | { type: "rotate"; nodeId: string };

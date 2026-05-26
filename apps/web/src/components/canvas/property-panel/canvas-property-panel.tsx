@@ -155,6 +155,22 @@ function isCssColorLike(color: string): boolean {
   );
 }
 
+function toHexColor(color: string): string {
+  if (/^#[0-9a-fA-F]{6}/.test(color)) return color.slice(0, 7);
+  const rgb = color.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+  if (!rgb) return "#111827";
+  const [, r = "0", g = "0", b = "0"] = rgb;
+  return `#${[r, g, b]
+    .map((channel) =>
+      clamp(Number(channel), 0, 255).toString(16).padStart(2, "0"),
+    )
+    .join("")}`;
+}
+
+function isHexColor(value: string): boolean {
+  return /^#[0-9a-fA-F]{6}$/.test(value);
+}
+
 function solidFillOpacity(fill?: CanvasFill): number {
   if (fill?.type !== "solid" || typeof fill.opacity !== "number") return 100;
   return Math.round(fill.opacity * 100);
@@ -366,8 +382,13 @@ function ColorPickerPopover({
   onChange: (color: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [hexInput, setHexInput] = useState(color);
   const containerRef = useRef<HTMLDivElement>(null);
-  const pickerColor = isCssColorLike(color) ? color : "#111827";
+  const pickerColor = isCssColorLike(color) ? toHexColor(color) : "#111827";
+
+  useEffect(() => {
+    setHexInput(isCssColorLike(color) ? toHexColor(color) : color);
+  }, [color]);
 
   useEffect(() => {
     if (!open) return;
@@ -384,11 +405,36 @@ function ColorPickerPopover({
   }, [open]);
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative z-20">
       <ColorSwatch color={color} onClick={() => setOpen(!open)} />
       {open ? (
-        <div className="absolute left-0 top-9 z-50 rounded-xl border border-border bg-card p-2 shadow-card">
+        <div
+          className="absolute left-0 top-9 z-50 w-52 rounded-xl border border-border bg-card p-2 shadow-card"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
           <HexColorPicker color={pickerColor} onChange={onChange} />
+          <div className="mt-2 flex h-8 items-center gap-2 rounded-lg border border-border bg-background px-2">
+            <input
+              type="color"
+              className="h-5 w-6 cursor-pointer rounded bg-transparent p-0"
+              value={pickerColor}
+              onChange={(event) => onChange(event.currentTarget.value)}
+              aria-label="选择颜色"
+            />
+            <input
+              className="min-w-0 flex-1 bg-transparent font-mono text-xs uppercase text-foreground outline-none"
+              value={hexInput}
+              onChange={(event) => {
+                const next = event.currentTarget.value;
+                setHexInput(next);
+                if (isHexColor(next)) onChange(next);
+              }}
+              onBlur={() => {
+                if (!isHexColor(hexInput)) setHexInput(pickerColor);
+              }}
+              placeholder="#111827"
+            />
+          </div>
         </div>
       ) : null}
     </div>
@@ -409,7 +455,7 @@ function PaintRow({
   onRemove: () => void;
 }) {
   return (
-    <div className="grid grid-cols-[1fr_3rem_auto] items-center overflow-hidden rounded-lg bg-muted/60">
+    <div className="grid grid-cols-[1fr_3rem_auto] items-center overflow-visible rounded-lg bg-muted/60">
       <div className="flex min-w-0 items-center gap-2 px-3">
         <ColorPickerPopover color={color} onChange={onColorChange} />
         <span className="truncate text-sm font-medium text-foreground">

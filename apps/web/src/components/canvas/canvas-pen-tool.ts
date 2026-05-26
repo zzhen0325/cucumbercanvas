@@ -1,5 +1,9 @@
-import { useCallback, useRef, useState } from "react";
 import type { PenPathAnchor } from "@cucumber/canvas-core";
+import {
+  anchorsToPathData,
+  getPathBoundsFromAnchors,
+} from "@cucumber/pen-core";
+import { useCallback, useRef, useState } from "react";
 
 export type PenAnchor = PenPathAnchor;
 
@@ -37,7 +41,11 @@ export function usePenTool(callbacks: PenToolCallback) {
       setPreview(null);
     } else {
       setPreview({
-        points: pointsRef.current.map((p) => ({ ...p, handleIn: p.handleIn ? { ...p.handleIn } : null, handleOut: p.handleOut ? { ...p.handleOut } : null })),
+        points: pointsRef.current.map((p) => ({
+          ...p,
+          handleIn: p.handleIn ? { ...p.handleIn } : null,
+          handleOut: p.handleOut ? { ...p.handleOut } : null,
+        })),
         cursorPos: cursorPosRef.current ? { ...cursorPosRef.current } : null,
         isDraggingHandle: draggingHandleRef.current,
       });
@@ -83,7 +91,13 @@ export function usePenTool(callbacks: PenToolCallback) {
         // First click — start a new path
         activeRef.current = true;
         pointsRef.current = [
-          { x: scene.x, y: scene.y, handleIn: null, handleOut: null, pointType: "corner" },
+          {
+            x: scene.x,
+            y: scene.y,
+            handleIn: null,
+            handleOut: null,
+            pointType: "corner",
+          },
         ];
         draggingHandleRef.current = true;
         cursorPosRef.current = scene;
@@ -93,7 +107,8 @@ export function usePenTool(callbacks: PenToolCallback) {
 
       // Check if clicking near the first point to close the path
       if (pointsRef.current.length >= 3) {
-        const first = pointsRef.current[0]!;
+        const first = pointsRef.current[0];
+        if (!first) return false;
         const threshold = PEN_CLOSE_HIT_THRESHOLD;
         if (Math.hypot(scene.x - first.x, scene.y - first.y) < threshold) {
           finalize(true);
@@ -104,7 +119,13 @@ export function usePenTool(callbacks: PenToolCallback) {
       // Add a new anchor point
       pointsRef.current = [
         ...pointsRef.current,
-        { x: scene.x, y: scene.y, handleIn: null, handleOut: null, pointType: "corner" },
+        {
+          x: scene.x,
+          y: scene.y,
+          handleIn: null,
+          handleOut: null,
+          pointType: "corner",
+        },
       ];
       draggingHandleRef.current = true;
       syncPreview();
@@ -119,19 +140,32 @@ export function usePenTool(callbacks: PenToolCallback) {
 
       if (draggingHandleRef.current) {
         const lastIdx = pointsRef.current.length - 1;
-        const pt = pointsRef.current[lastIdx]!;
+        const pt = pointsRef.current[lastIdx];
+        if (!pt) return false;
         const dx = scene.x - pt.x;
         const dy = scene.y - pt.y;
         if (Math.hypot(dx, dy) > PEN_MIN_DRAG) {
           pointsRef.current = pointsRef.current.map((p, i) =>
             i === lastIdx
-              ? { ...p, handleOut: { x: dx, y: dy }, handleIn: { x: -dx, y: -dy }, pointType: "mirrored" as const }
+              ? {
+                  ...p,
+                  handleOut: { x: dx, y: dy },
+                  handleIn: { x: -dx, y: -dy },
+                  pointType: "mirrored" as const,
+                }
               : p,
           );
         } else {
           // Not dragged far enough, remain corner
           pointsRef.current = pointsRef.current.map((p, i) =>
-            i === lastIdx ? { ...p, handleOut: null, handleIn: null, pointType: "corner" as const } : p,
+            i === lastIdx
+              ? {
+                  ...p,
+                  handleOut: null,
+                  handleIn: null,
+                  pointType: "corner" as const,
+                }
+              : p,
           );
         }
       }
@@ -204,11 +238,13 @@ export function usePenTool(callbacks: PenToolCallback) {
 export function buildPenPathSvg(points: PenAnchor[], closed: boolean): string {
   if (points.length === 0) return "";
   const parts: string[] = [];
-  const first = points[0]!;
+  const first = points[0];
+  if (!first) return "";
   parts.push(`M ${first.x} ${first.y}`);
   for (let i = 1; i < points.length; i++) {
-    const prev = points[i - 1]!;
-    const curr = points[i]!;
+    const prev = points[i - 1];
+    const curr = points[i];
+    if (!prev || !curr) continue;
     if (!prev.handleOut && !curr.handleIn) {
       parts.push(`L ${curr.x} ${curr.y}`);
     } else {
@@ -220,7 +256,8 @@ export function buildPenPathSvg(points: PenAnchor[], closed: boolean): string {
     }
   }
   if (closed && points.length > 1) {
-    const last = points[points.length - 1]!;
+    const last = points[points.length - 1];
+    if (!last) return parts.join(" ");
     if (!last.handleOut && !first.handleIn) {
       parts.push(`L ${first.x} ${first.y}`);
     } else {
@@ -240,30 +277,16 @@ export function buildPenPathSvg(points: PenAnchor[], closed: boolean): string {
  */
 export function getPenPathBounds(
   anchors: PenAnchor[],
+  closed = false,
 ): { x: number; y: number; width: number; height: number } {
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const a of anchors) {
-    minX = Math.min(minX, a.x);
-    minY = Math.min(minY, a.y);
-    maxX = Math.max(maxX, a.x);
-    maxY = Math.max(maxY, a.y);
-  }
-  return {
-    x: minX === Infinity ? 0 : minX,
-    y: minY === Infinity ? 0 : minY,
-    width: Math.max(1, maxX - minX),
-    height: Math.max(1, maxY - minY),
-  };
+  return getPathBoundsFromAnchors(anchors, closed);
 }
 
 /**
  * Convert pen anchors to a path node's data (document coordinates relative to parent).
  */
 export function bakePenAnchorsToPathData(
-  sceneAnchors: PenAnchor[],
+  anchors: PenAnchor[],
   closed: boolean,
   parentSceneOrigin: { x: number; y: number },
 ): {
@@ -275,13 +298,12 @@ export function bakePenAnchorsToPathData(
   anchors: PenAnchor[];
   closed: boolean;
 } | null {
-  if (sceneAnchors.length < 2) return null;
+  if (anchors.length < 2) return null;
 
-  const sceneBounds = getPenPathBounds(sceneAnchors);
-  if (sceneBounds.width < 1 && sceneBounds.height < 1) return null;
+  const sceneBounds = getPathBoundsFromAnchors(anchors, closed);
+  if (sceneBounds.width < 0.001 && sceneBounds.height < 0.001) return null;
 
-  // Normalize anchors relative to bounds origin
-  const normalizedAnchors = sceneAnchors.map((a) => ({
+  const normalizedAnchors = anchors.map((a) => ({
     ...a,
     x: a.x - sceneBounds.x,
     y: a.y - sceneBounds.y,
@@ -293,7 +315,7 @@ export function bakePenAnchorsToPathData(
     width: Math.max(sceneBounds.width, 48),
     height: Math.max(sceneBounds.height, 48),
     closed,
-    d: buildPenPathSvg(normalizedAnchors, closed),
+    d: anchorsToPathData(normalizedAnchors, closed),
     anchors: normalizedAnchors,
   };
 }

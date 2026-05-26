@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-26T15:42:00+08:00",
+  "updatedAt": "2026-05-26T16:51:00+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -103,7 +103,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "product-engineering",
-      "summary": "Canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit behind a standalone CanvasApi contract, and the P2 import/edit/export path combines warning-rich SVG/Figma fallback metadata with native-first Figma clipboard binary decode, instance overrides, auto-layout metadata, robust paste event handling, richer PenNode typography/component/ref/variable property editing, direct React/HTML selection export, path drag creation, and runnable Playwright smoke coverage.",
+      "summary": "Canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit behind a standalone CanvasApi contract, and the P2 import/edit/export path combines warning-rich SVG/Figma fallback metadata with native-first Figma clipboard binary decode, instance overrides, auto-layout metadata, robust paste event handling, renderer-native selection/marquee/pen overlays with scene-coordinate hit-testing, richer PenNode typography/component/ref/variable property editing, direct React/HTML selection export, path drag creation, and runnable Playwright smoke coverage.",
       "artifacts": [
         "packages/canvas-core",
         "packages/canvas-core/src/clipboard.ts",
@@ -121,6 +121,8 @@
         "apps/web/src/components/canvas/use-canvas-clipboard-import.ts",
         "apps/web/src/components/canvas/canvas-selection-helpers.ts",
         "apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx",
+        "packages/pen-renderer/src/renderer.ts",
+        "packages/pen-renderer/src/types.ts",
         "apps/web/src/components/canvas-layers-panel.tsx",
         "apps/web/src/components/canvas-logo-menu.tsx",
         "apps/web/src/components/canvas-editor.tsx",
