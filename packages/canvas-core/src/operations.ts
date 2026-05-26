@@ -48,6 +48,7 @@ export function applyCanvasOperation(
       break;
     }
     case 'setSelection': {
+      getActiveChildren(next, activePageId);
       break;
     }
     case 'moveNode': {

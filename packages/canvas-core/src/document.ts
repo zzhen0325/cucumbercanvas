@@ -28,8 +28,8 @@ export function createEmptyDocument(name?: string): PenDocument {
 }
 
 export function getActivePage(doc: PenDocument, activePageId?: string | null): PenPage {
+  const requestedPageId = normalizeOptionalPageId(activePageId);
   if (doc.pages && doc.pages.length > 0) {
-    const requestedPageId = normalizeOptionalPageId(activePageId);
     if (requestedPageId) {
       const page = doc.pages.find((candidate) => candidate.id === requestedPageId);
       if (!page) {
@@ -41,6 +41,12 @@ export function getActivePage(doc: PenDocument, activePageId?: string | null): P
       return page;
     }
     return doc.pages[0]!;
+  }
+  if (requestedPageId && requestedPageId !== DEFAULT_CANVAS_PAGE_ID) {
+    throw new CanvasPageOperationError(
+      'page_not_found',
+      `Page ${requestedPageId} does not exist.`,
+    );
   }
   return { id: DEFAULT_CANVAS_PAGE_ID, name: 'Page 1', children: doc.children };
 }

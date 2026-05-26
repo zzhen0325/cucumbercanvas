@@ -106,6 +106,38 @@ describe("canvas page helpers", () => {
     ]);
   });
 
+  it("rejects stale active page IDs on legacy children-only documents without mutating root children", () => {
+    const legacy: PenDocument = {
+      version: "cucumber-canvas-v1",
+      children: [rect("legacy")],
+    };
+
+    expect(() =>
+      applyCanvasOperation(legacy, {
+        type: "insertNode",
+        node: rect("typo-target"),
+        activePageId: "missing",
+      }),
+    ).toThrow("Page missing does not exist.");
+
+    expect(legacy.children.map((node) => node.id)).toEqual(["legacy"]);
+  });
+
+  it("validates stale active page IDs for selection operations", () => {
+    const doc = normalizeCanvasPages({
+      version: "cucumber-canvas-v1",
+      children: [rect("root")],
+    });
+
+    expect(() =>
+      applyCanvasOperation(doc, {
+        type: "setSelection",
+        nodeIds: [],
+        activePageId: "missing",
+      }),
+    ).toThrow("Page missing does not exist.");
+  });
+
   it("adds, renames, duplicates, reorders, and deletes pages without deleting the final page", () => {
     let doc = normalizeCanvasPages({
       version: "cucumber-canvas-v1",
