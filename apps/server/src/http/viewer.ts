@@ -16,6 +16,7 @@ import type {
   RequestAuthenticator,
   UserSupabaseClient,
 } from "../supabase/user.js";
+import { sendAuthVerificationUnavailable } from "./auth-verification-error.js";
 
 export async function registerViewerRoutes(
   app: FastifyInstance,
@@ -71,9 +72,7 @@ export async function registerViewerRoutes(
 
       const viewer = await options.viewerService.ensureViewer(user);
 
-      return reply
-        .code(200)
-        .send(viewerResponseSchema.parse(viewer));
+      return reply.code(200).send(viewerResponseSchema.parse(viewer));
     } catch (error) {
       return sendApplicationError(
         error,
@@ -164,6 +163,10 @@ function sendApplicationError(
   fallbackCode: "application_error" | "bootstrap_failed",
   fallbackMessage: string,
 ) {
+  if (sendAuthVerificationUnavailable(error, reply)) {
+    return;
+  }
+
   if (error instanceof BootstrapError) {
     return reply.code(error.statusCode).send(
       applicationErrorResponseSchema.parse({

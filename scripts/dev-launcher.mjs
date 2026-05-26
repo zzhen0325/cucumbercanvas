@@ -9,17 +9,44 @@
  */
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 
 const supportsProcessGroups = process.platform !== "win32";
 const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const rootDir = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
 
 const children = [];
 let shuttingDown = false;
 let remainingChildren = 0;
 let shutdownExitCode = 0;
 let forceKillTimer = null;
+
+loadRootEnv();
+
+function loadRootEnv() {
+  const envPath = path.join(rootDir, ".env.local");
+
+  try {
+    loadEnvFile(envPath);
+    console.log(`[root-dev-launcher] loaded ${envPath}`);
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) {
+      return;
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[root-dev-launcher] failed to load ${envPath}: ${message}`);
+  }
+}
 
 function spawnChild(name, cwd, args) {
   const child = spawn(pnpmCommand, args, {
@@ -76,7 +103,9 @@ function shutdown(reason, exitCode = 0, childSignal = "SIGTERM") {
 
   shuttingDown = true;
   shutdownExitCode = exitCode;
-  console.log(`\n[root-dev-launcher] received ${reason}, shutting down web and server...`);
+  console.log(
+    `\n[root-dev-launcher] received ${reason}, shutting down web and server...`,
+  );
 
   for (const child of children) {
     killChildTree(child, childSignal);

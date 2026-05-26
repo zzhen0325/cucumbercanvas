@@ -119,7 +119,20 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerAllProviders(env);
 
   const app = Fastify({
-    logger: { level: "info" },
+    logger: {
+      level: "info",
+      serializers: {
+        req(request) {
+          return {
+            method: request.method,
+            url: redactSensitiveUrl(request.url),
+            host: request.headers.host,
+            remoteAddress: request.ip,
+            remotePort: request.socket.remotePort,
+          };
+        },
+      },
+    },
   });
   void app.register(multipart, {
     limits: { fileSize: 10 * 1024 * 1024 },
@@ -377,6 +390,18 @@ function evaluateCors(request: FastifyRequest, webOrigin: string): CorsResult {
 
 function resolveAllowedHeaders(requestHeaders: string | undefined) {
   return requestHeaders?.trim() || "Content-Type";
+}
+
+function redactSensitiveUrl(url: string): string {
+  try {
+    const parsed = new URL(url, "http://localhost");
+    if (parsed.searchParams.has("token")) {
+      parsed.searchParams.set("token", "<redacted>");
+    }
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return url.replace(/([?&]token=)[^&]+/i, "$1<redacted>");
+  }
 }
 
 function isLoopbackHost(host: string | undefined) {

@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   transpilePackages: [
     "@cucumber/canvas-core",
     "@cucumber/pen-core",
+    "@cucumber/pen-figma",
     "@cucumber/pen-engine",
     "@cucumber/pen-renderer",
     "@cucumber/pen-types",

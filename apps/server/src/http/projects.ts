@@ -10,10 +10,11 @@ import {
 } from "@cucumber/shared";
 
 import {
-  ProjectServiceError,
   type ProjectService,
+  ProjectServiceError,
 } from "../features/projects/project-service.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
+import { sendAuthVerificationUnavailable } from "./auth-verification-error.js";
 
 export async function registerProjectRoutes(
   app: FastifyInstance,
@@ -61,7 +62,9 @@ export async function registerProjectRoutes(
       }
 
       const projects = await options.projectService.listProjects(user);
-      return reply.code(200).send(projectListResponseSchema.parse({ projects }));
+      return reply
+        .code(200)
+        .send(projectListResponseSchema.parse({ projects }));
     } catch (error) {
       return sendProjectError(error, reply, "project_query_failed");
     }
@@ -214,6 +217,10 @@ function sendProjectError(
     | "project_query_failed"
     | "project_update_failed",
 ) {
+  if (sendAuthVerificationUnavailable(error, reply)) {
+    return;
+  }
+
   if (error instanceof ProjectServiceError) {
     return reply.code(error.statusCode).send(
       applicationErrorResponseSchema.parse({

@@ -251,6 +251,9 @@ importers:
 
   packages/canvas-core:
     dependencies:
+      '@cucumber/pen-figma':
+        specifier: workspace:*
+        version: link:../pen-figma
       fzstd:
         specifier: ^0.1.1
         version: 0.1.1
@@ -272,6 +275,31 @@ importers:
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.19)(jiti@2.7.0)(jsdom@26.1.0)(lightningcss@1.32.0)(msw@2.14.6(@types/node@22.19.19)(typescript@5.9.3))(tsx@4.22.1)(yaml@2.9.0)
 
   packages/config: {}
+
+  packages/pen-figma:
+    dependencies:
+      '@cucumber/pen-types':
+        specifier: workspace:*
+        version: link:../pen-types
+      fzstd:
+        specifier: ^0.1.1
+        version: 0.1.1
+      kiwi-schema:
+        specifier: ^0.5.0
+        version: 0.5.0
+      uzip:
+        specifier: ^0.20201231.0
+        version: 0.20201231.0
+    devDependencies:
+      '@types/uzip':
+        specifier: ^0.20201231.2
+        version: 0.20201231.2
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.7
+        version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.19)(jiti@2.7.0)(jsdom@26.1.0)(lightningcss@1.32.0)(msw@2.14.6(@types/node@22.19.19)(typescript@5.9.3))(tsx@4.22.1)(yaml@2.9.0)
 
   packages/pen-core:
     dependencies:

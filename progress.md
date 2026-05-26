@@ -1,6 +1,6 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-26 19:26 CST
+Last updated: 2026-05-27 00:23 CST
 
 ## Current Session
 
@@ -65,6 +65,7 @@ Status:
 - Corrected the live paste fallback priority so invalid/unsupported Figma native buffers no longer immediately return the lossy Figma HTML parser before explicit `image/svg+xml` or raster MIME payloads, and added clipboard MIME diagnostics for browser-side paste troubleshooting.
 - Changed HTML-only paste events to opportunistically merge Clipboard API MIME data during the same user paste action, so Figma/browser clipboard paths that expose richer SVG/image/blob payloads through `navigator.clipboard.read()` are no longer limited to the paste event's `text/html` / `text/plain` surface.
 - Expanded runtime paste diagnostics to show the concrete Figma import strategy (`figma-native` vs `figma-html-fallback`), warnings, asset/root counts, and a sanitized node summary for debugging fidelity regressions from real user clipboard payloads.
+- Restored high-fidelity Figma paste around OpenPencil's full `pen-figma` module: added `@cucumber/pen-figma` as a vendored workspace package, routed native clipboard decode through its parser/converters, recursively attaches Cucumber import metadata, registers data URL image assets, and offsets full native PenNode trees on insertion so nested geometry stays aligned.
 - Advanced codegen assembly from protocol-only state to concrete design-as-code file output: `codegen_assemble` now returns framework-specific files for React (`App.tsx`, component files, CSS), HTML (`index.html`, CSS), and generic framework fallbacks, and the property panel now includes typography controls plus reusable component/ref metadata and inline color variable creation/binding.
 - Added a dedicated `codegen_export` MCP tool so the Agent can export the current live canvas selection, or explicit node IDs, directly into React (`.tsx` + CSS) or static HTML (`index.html` + CSS) design-as-code files with diagnostic logging.
 
@@ -73,7 +74,7 @@ Status:
 1. Add deterministic browser/e2e smoke coverage for create container, bind Agent, insert generated content, refresh restore, and basic tool interactions.
 2. Add an Agent-output smoke scenario that verifies a visual prompt creates durable, containerized canvas results instead of leaving the canvas as an unstructured artifact dump.
 3. Design the selected-result Agent overlay and quick-action contract for image upscale, outpaint, local edit, and variant generation.
-4. Continue P2.2 by deepening native Figma clipboard decode for stronger image/style parity and more robust nested virtual-GUID matching heuristics on top of the new recursive instance path mapping and auto-layout metadata.
+4. Continue P2.2 by collecting real Figma clipboard fixtures for native `pen-figma` regression coverage, especially nested instances, image fills, text style hints, and vector boolean edge cases.
 5. Expand deterministic browser/e2e coverage for system paste from SVG/Figma clipboard content, including nested component instances, the compatibility summary, and the fallback path now that the shared test webServer is healthy again.
 6. Decide whether to harden `apps/web/next.config.ts` for local multi-lockfile setups with `outputFileTracingRoot` / `allowedDevOrigins`, or keep those as known non-blocking dev warnings for now.
 7. Continue P1 canvas parity with richer path/icon editing, reference guides, advanced snapping, shape-specific handles, and more complete property controls.
@@ -175,6 +176,13 @@ Status:
 - Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/canvas-core.test.ts --testNamePattern "figma|svg|clipboard|layout"`; SVG parser cases are skipped in the default non-DOM environment.
 - Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/canvas-core.test.ts --environment jsdom --testNamePattern "SVG|raster|auto-layout|clipboard|layout"`.
 - Passed: `pnpm --filter @cucumber/web build` (Next emitted the existing multi-lockfile workspace-root warning and metadataBase warning).
+- Passed: `pnpm --filter @cucumber/pen-figma typecheck`.
+- Passed: `pnpm --filter @cucumber/pen-figma test`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/canvas-core.test.ts src/__tests__/figma-native-adapter.test.ts --environment jsdom --testNamePattern "figma|clipboard|layout|image|pen-figma"`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/use-canvas-clipboard-import.test.tsx`.
+- Passed: `pnpm exec biome check packages/pen-figma packages/canvas-core/src/import.ts packages/canvas-core/src/figma-native.ts packages/canvas-core/src/__tests__/figma-native-adapter.test.ts apps/web/next.config.ts apps/web/tsconfig.json tsconfig.base.json packages/canvas-core/package.json pnpm-lock.yaml biome.json`.
+- Blocked: `pnpm install` / `pnpm install --offline --lockfile-only` were rejected by the current no-approval execution policy, so workspace lockfile entries for `@cucumber/pen-figma` were updated manually and local verification used ignored node_modules symlinks.
 - Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/canvas-core.test.ts --environment jsdom --testNamePattern "SVG MIME|Figma native decode"`.
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/use-canvas-clipboard-import.test.tsx`.
 - Passed: `pnpm --filter @cucumber/canvas-core typecheck`.

@@ -9,10 +9,11 @@ import {
 } from "@cucumber/shared";
 
 import {
-  CanvasServiceError,
   type CanvasService,
+  CanvasServiceError,
 } from "../features/canvas/canvas-service.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
+import { sendAuthVerificationUnavailable } from "./auth-verification-error.js";
 
 export async function registerCanvasRoutes(
   app: FastifyInstance,
@@ -31,9 +32,7 @@ export async function registerCanvasRoutes(
           user,
           request.params.canvasId,
         );
-        return reply
-          .code(200)
-          .send(canvasGetResponseSchema.parse({ canvas }));
+        return reply.code(200).send(canvasGetResponseSchema.parse({ canvas }));
       } catch (error) {
         return sendCanvasError(error, reply);
       }
@@ -84,6 +83,10 @@ function sendUnauthorized(reply: FastifyReply) {
 }
 
 function sendCanvasError(error: unknown, reply: FastifyReply) {
+  if (sendAuthVerificationUnavailable(error, reply)) {
+    return;
+  }
+
   if (error instanceof CanvasServiceError) {
     return reply.code(error.statusCode).send(
       applicationErrorResponseSchema.parse({

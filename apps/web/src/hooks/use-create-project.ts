@@ -1,13 +1,20 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import type {
+  ImageGenerationPreference,
+  VideoGenerationPreference,
+} from "@cucumber/shared";
 import { useRouter } from "next/navigation";
-import type { ImageGenerationPreference, VideoGenerationPreference } from "@cucumber/shared";
+import { useCallback, useRef, useState } from "react";
 
+import { useToast } from "@/components/toast";
 import type { ReadyAttachment } from "@/hooks/use-image-attachments";
 import { useAuth } from "@/lib/auth-context";
-import { useToast } from "@/components/toast";
-import { ApiAuthError, createProject } from "@/lib/server-api";
+import {
+  ApiApplicationError,
+  ApiAuthError,
+  createProject,
+} from "@/lib/server-api";
 
 /** sessionStorage key used to pass attachments from Home → Canvas auto-send. */
 export const INITIAL_ATTACHMENTS_KEY = "cucumber:initial-attachments";
@@ -124,7 +131,11 @@ export function useCreateProject() {
           routerRef.current.replace("/login");
           return;
         }
-        toastError("项目创建失败");
+        if (err instanceof ApiApplicationError) {
+          toastError(`项目创建失败：${err.message}`);
+        } else {
+          toastError("项目创建失败：请检查网络连接或稍后再试。");
+        }
         setCreating(false);
       }
     },

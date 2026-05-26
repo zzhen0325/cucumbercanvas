@@ -4,7 +4,7 @@
 model = "gpt-5.5"
 model_reasoning_effort = "high"
 approval_policy = "on-request"
-sandbox_mode = "workspace-write"
+sandbox_mode = "danger-full-access"
 personality = "pragmatic"
 
 [features]

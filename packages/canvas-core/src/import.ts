@@ -383,12 +383,22 @@ export function parseClipboardImport(
     try {
       const nativeResult = parseFigmaClipboardNative(figmaHtml);
       if (nativeResult) {
+        const importSessionId = createImportSessionId();
+        const nodes = nativeResult.nodes.map((node) =>
+          isNativePenNode(node)
+            ? attachImportMetaToPenNodeTree(
+                node,
+                importSessionId,
+                nativeResult.warnings,
+              )
+            : node,
+        );
         return {
           source: "figma",
           sourceLabel: "Figma",
-          importSessionId: createImportSessionId(),
+          importSessionId,
           rootNodeIds: nativeResult.rootNodeIds,
-          nodes: nativeResult.nodes,
+          nodes,
           assets: nativeResult.assets,
           warnings: nativeResult.warnings,
         };
@@ -594,14 +604,7 @@ export function insertCanvasImportResult(
     for (const rootId of result.rootNodeIds) {
       const penNode = nativeNodes.find((n) => n.id === rootId);
       if (!penNode) continue;
-      const nodeWithOffset =
-        offsetX !== 0 || offsetY !== 0
-          ? {
-              ...penNode,
-              x: (penNode.x ?? 0) + offsetX,
-              y: (penNode.y ?? 0) + offsetY,
-            }
-          : penNode;
+      const nodeWithOffset = offsetPenNodeRoot(penNode, offsetX, offsetY);
       next = applyCanvasOperation(next, {
         type: "insertNode",
         node: nodeWithOffset,
@@ -647,6 +650,64 @@ export function insertCanvasImportResult(
   }
 
   return { doc: next, insertedIds };
+}
+
+function isNativePenNode(node: ImportNode | PenNode): node is PenNode {
+  return (
+    !("bounds" in node) && !("title" in node) && !("childrenOrder" in node)
+  );
+}
+
+function attachImportMetaToPenNodeTree(
+  node: PenNode,
+  importSessionId: string,
+  warnings: CanvasImportWarning[],
+): PenNode {
+  const record = node as PenNode & {
+    meta?: Record<string, unknown>;
+    children?: PenNode[];
+  };
+  const meta = {
+    ...(record.meta ?? {}),
+    source: "figma-paste",
+    originNodeType: record.meta?.originNodeType ?? "figma-native",
+    importSessionId,
+    importSourceLabel: "Figma",
+    degradationHints:
+      record.meta?.degradationHints ?? getWarningCodes(warnings),
+    warningCount: record.meta?.warningCount ?? (warnings.length || undefined),
+  };
+  return {
+    ...node,
+    meta,
+    ...("children" in node && Array.isArray(record.children)
+      ? {
+          children: record.children.map((child) =>
+            attachImportMetaToPenNodeTree(child, importSessionId, warnings),
+          ),
+        }
+      : {}),
+  } as unknown as PenNode;
+}
+
+function offsetPenNodeRoot(
+  node: PenNode,
+  offsetX: number,
+  offsetY: number,
+): PenNode {
+  const record = node as PenNode & {
+    x2?: number;
+    y2?: number;
+  };
+  // Native PenNode children are parent-relative. Moving descendants here would
+  // be applied a second time by the renderer and can clip Figma frame contents.
+  return {
+    ...node,
+    x: (node.x ?? 0) + offsetX,
+    y: (node.y ?? 0) + offsetY,
+    ...(record.x2 !== undefined ? { x2: record.x2 + offsetX } : {}),
+    ...(record.y2 !== undefined ? { y2: record.y2 + offsetY } : {}),
+  } as PenNode;
 }
 
 /** Convert a flat ImportNode to a PenNode with import metadata. */

@@ -9,10 +9,11 @@ import {
 
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import {
-  SettingsServiceError,
   type SettingsService,
+  SettingsServiceError,
 } from "../features/settings/settings-service.js";
 import type { RequestAuthenticator } from "../supabase/user.js";
+import { sendAuthVerificationUnavailable } from "./auth-verification-error.js";
 
 export async function registerSettingsRoutes(
   app: FastifyInstance,
@@ -75,6 +76,10 @@ function sendUnauthorized(reply: FastifyReply) {
 }
 
 function sendSettingsError(error: unknown, reply: FastifyReply) {
+  if (sendAuthVerificationUnavailable(error, reply)) {
+    return;
+  }
+
   if (error instanceof SettingsServiceError) {
     return reply.code(error.statusCode).send(
       applicationErrorResponseSchema.parse({

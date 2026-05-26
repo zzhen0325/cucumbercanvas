@@ -1,3 +1,5 @@
+import { figmaClipboardToNodes } from "@cucumber/pen-figma";
+import type { PenNode } from "@cucumber/pen-types";
 import { decompress as zstdDecompress } from "fzstd";
 import { ByteBuffer, compileSchema, decodeBinarySchema } from "kiwi-schema";
 import * as UZIP from "uzip";
@@ -38,7 +40,7 @@ export interface FigmaNativeWarning {
 
 export interface FigmaNativeParseResult {
   rootNodeIds: string[];
-  nodes: ImportNode[];
+  nodes: (ImportNode | PenNode)[];
   assets: CanvasAsset[];
   warnings: FigmaNativeWarning[];
 }
@@ -142,6 +144,31 @@ export function parseFigmaClipboardNative(
     return null;
   }
 
+  try {
+    const openPencilResult = figmaClipboardToNodes(clipboardData.buffer, html);
+    if (openPencilResult.nodes.length > 0) {
+      console.info("[figma-native] clipboard decoded with pen-figma", {
+        nodeCount: openPencilResult.nodes.length,
+        warningCount: openPencilResult.warnings.length,
+      });
+
+      return {
+        rootNodeIds: openPencilResult.nodes.map((node) => node.id),
+        nodes: openPencilResult.nodes,
+        assets: collectImageAssets(openPencilResult.nodes),
+        warnings: openPencilResult.warnings.map((message) => ({
+          code: "partial_fidelity",
+          message,
+        })),
+      };
+    }
+  } catch (error) {
+    console.warn("[figma-native] pen-figma clipboard decode failed", {
+      error,
+    });
+  }
+
+  // Legacy Cucumber-native converter retained as a diagnostic fallback.
   const decoded = parseFigFile(clipboardData.buffer);
   const warnings: FigmaNativeWarning[] = [];
   resolveStyleReferences(decoded.nodeChanges);
@@ -182,6 +209,48 @@ export function parseFigmaClipboardNative(
     assets: state.assets,
     warnings: dedupeWarnings(warnings),
   };
+}
+
+function collectImageAssets(nodes: PenNode[]): CanvasAsset[] {
+  const assets: CanvasAsset[] = [];
+  const seen = new Set<string>();
+  const visit = (node: PenNode): void => {
+    const imageUrl = node.type === "image" ? node.src : undefined;
+    if (imageUrl && isDataImageUrl(imageUrl) && !seen.has(imageUrl)) {
+      seen.add(imageUrl);
+      assets.push({
+        id: createCanvasNodeId("asset"),
+        url: imageUrl,
+        mimeType: imageUrl.slice(5, imageUrl.indexOf(";")) || "image/png",
+        source: "upload",
+      });
+    }
+    const fills = "fill" in node ? node.fill : undefined;
+    for (const fill of fills ?? []) {
+      if (
+        fill.type === "image" &&
+        isDataImageUrl(fill.url) &&
+        !seen.has(fill.url)
+      ) {
+        seen.add(fill.url);
+        assets.push({
+          id: createCanvasNodeId("asset"),
+          url: fill.url,
+          mimeType: fill.url.slice(5, fill.url.indexOf(";")) || "image/png",
+          source: "upload",
+        });
+      }
+    }
+    if ("children" in node && Array.isArray(node.children)) {
+      for (const child of node.children) visit(child);
+    }
+  };
+  for (const node of nodes) visit(node);
+  return assets;
+}
+
+function isDataImageUrl(value: string): boolean {
+  return /^data:image\/[a-z0-9.+-]+;base64,/i.test(value);
 }
 
 function decodeBase64ToBytes(input: string): Uint8Array {

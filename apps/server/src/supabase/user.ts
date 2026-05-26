@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { type SupabaseClient, createClient } from "@supabase/supabase-js";
 import type { FastifyRequest } from "fastify";
 import { importJWK, jwtVerify } from "jose";
 
@@ -20,6 +20,16 @@ export type RequestAuthenticator = {
     request: Pick<FastifyRequest, "headers">,
   ): Promise<AuthenticatedUser | null>;
 };
+
+export class AuthVerificationUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super(
+      "Authentication service is temporarily unavailable. Check the Supabase URL, local CA trust, or configure CUCUMBER_SUPABASE_JWT_SECRET for local JWT verification.",
+      { cause },
+    );
+    this.name = "AuthVerificationUnavailableError";
+  }
+}
 
 // Dev auth bypass token — must match the frontend.
 const DEV_ACCESS_TOKEN = "dev-skip-auth-token";
@@ -65,7 +75,9 @@ function setCachedAuth(token: string, user: AuthenticatedUser): void {
 // --- Authenticator factory ---
 
 // Parse JWK JSON string into a CryptoKey at startup (async init)
-let jwtPublicKeyPromise: Promise<Awaited<ReturnType<typeof importJWK>> | Uint8Array> | null = null;
+let jwtPublicKeyPromise: Promise<
+  Awaited<ReturnType<typeof importJWK>> | Uint8Array
+> | null = null;
 
 function initJwtKey(
   env: Pick<ServerEnv, "supabaseJwtSecret">,
@@ -144,7 +156,20 @@ export function createSupabaseRequestAuthenticator(
         const client = createUserClient(accessToken);
         const { data, error } = await client.auth.getUser();
 
-        if (error || !data.user || !data.user.email) return null;
+        if (error) {
+          if (isRemoteAuthVerificationFailure(error)) {
+            console.warn("[auth] remote Supabase user verification failed", {
+              errorName: error.name,
+              message: error.message,
+              status: getErrorStatus(error),
+            });
+            throw new AuthVerificationUnavailableError(error);
+          }
+
+          return null;
+        }
+
+        if (!data.user || !data.user.email) return null;
 
         const user: AuthenticatedUser = {
           accessToken,
@@ -183,12 +208,16 @@ export function createUserSupabaseClientFactory(
       accessToken === DEV_ACCESS_TOKEN &&
       env.supabaseServiceRoleKey
     ) {
-      return createClient<Database>(env.supabaseUrl, env.supabaseServiceRoleKey, {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
+      return createClient<Database>(
+        env.supabaseUrl,
+        env.supabaseServiceRoleKey,
+        {
+          auth: {
+            autoRefreshToken: false,
+            persistSession: false,
+          },
         },
-      });
+      );
     }
 
     return createClient<Database>(env.supabaseUrl, env.supabaseAnonKey, {
@@ -223,4 +252,23 @@ function readBearerToken(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isRemoteAuthVerificationFailure(error: Error): boolean {
+  const status = getErrorStatus(error);
+  const message = error.message.toLowerCase();
+
+  return (
+    error.name === "AuthRetryableFetchError" ||
+    (typeof status === "number" && status >= 500) ||
+    message.includes("fetch failed") ||
+    message.includes("network") ||
+    message.includes("certificate") ||
+    message.includes("issuer certificate")
+  );
+}
+
+function getErrorStatus(error: Error): number | undefined {
+  const maybeStatus = (error as { status?: unknown }).status;
+  return typeof maybeStatus === "number" ? maybeStatus : undefined;
 }
