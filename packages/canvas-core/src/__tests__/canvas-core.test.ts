@@ -15,6 +15,7 @@ import {
   extractFigmaClipboardData,
   findNode,
   findParent,
+  getActiveChildren,
   getFigmaAutoLayoutMeta,
   getNodeBounds,
   getVisibleCanvasNodesInBounds,
@@ -218,7 +219,7 @@ describe("cucumber canvas core", () => {
       direction: "front",
     });
 
-    expect(doc.children).toEqual(["b", "a"]);
+    expect(getActiveChildren(doc).map((node) => node.id)).toEqual(["b", "a"]);
   });
 
   it("hit-tests visible nodes inside marquee bounds", () => {
@@ -281,7 +282,7 @@ describe("cucumber canvas core", () => {
       nodeIds: ["a", "b"],
     });
 
-    expect(doc.children).toEqual(["group-1"]);
+    expect(getActiveChildren(doc).map((node) => node.id)).toEqual(["group-1"]);
     expect(getNodeBounds(findNode(doc, "group-1")!)).toEqual({
       x: 20,
       y: 30,
@@ -295,7 +296,7 @@ describe("cucumber canvas core", () => {
       groupId: "group-1",
     });
 
-    expect(doc.children).toEqual(["a", "b"]);
+    expect(getActiveChildren(doc).map((node) => node.id)).toEqual(["a", "b"]);
     expect(getNodeBounds(findNode(doc, "a")!)).toEqual(getNodeBounds(a));
     expect(findParent(doc, "b")).toBeUndefined();
   });
@@ -368,7 +369,11 @@ describe("cucumber canvas core", () => {
       targetIndex: 1,
     });
 
-    expect(doc.children).toEqual(["a", "c", "b"]);
+    expect(getActiveChildren(doc).map((node) => node.id)).toEqual([
+      "a",
+      "c",
+      "b",
+    ]);
   });
 
   it("inserts imported nodes into the target parent and selects the roots", () => {

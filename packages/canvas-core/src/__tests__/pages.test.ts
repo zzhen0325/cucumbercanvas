@@ -66,6 +66,7 @@ describe("canvas page helpers", () => {
       "b",
       "b2",
     ]);
+    expect(next.children).toEqual([]);
   });
 
   it("adds, renames, duplicates, reorders, and deletes pages without deleting the final page", () => {

@@ -54,7 +54,7 @@ export function setActiveChildren(
     return {
       ...doc,
       pages,
-      children: pages[0]!.children.map((node) => node.id) as unknown as PenNode[],
+      children: [],
     };
   }
   return { ...doc, children };
