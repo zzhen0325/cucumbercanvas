@@ -14,6 +14,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import type {
   CanvasApi,
+  CanvasAppState,
   CanvasFileRecord,
   CanvasSceneElement,
 } from "./canvas/canvas-api";
@@ -178,7 +179,8 @@ const LayerRow = memo(function LayerRow({
     setDraftTitle(elLabel(el));
   }, [el]);
   const handleClick = useCallback(
-    (event?: React.MouseEvent) => onSelect(el.id, Boolean(event?.shiftKey || event?.metaKey)),
+    (event?: React.MouseEvent) =>
+      onSelect(el.id, Boolean(event?.shiftKey || event?.metaKey)),
     [onSelect, el.id],
   );
   const depth = el.depth ?? 0;
@@ -222,6 +224,7 @@ const LayerRow = memo(function LayerRow({
           <input
             className="h-7 min-w-0 flex-1 rounded border border-border bg-background px-2 text-[11px] text-foreground outline-none"
             value={draftTitle}
+            // biome-ignore lint/a11y/noAutofocus: Existing inline rename flow should focus the draft input immediately.
             autoFocus
             onClick={(event) => event.stopPropagation()}
             onChange={(event) => setDraftTitle(event.currentTarget.value)}
@@ -390,16 +393,32 @@ export function CanvasLayersPanel({
   const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
   const [collapsedIds, setCollapsedIds] = useState<Record<string, boolean>>({});
   const dragIdRef = useRef<string | null>(null);
+  const orderedElementsRef = useRef<CanvasSceneElement[]>([]);
 
   /* -- Refresh elements on open + subscribe to changes -- */
+  const applySceneSnapshot = useCallback(
+    (
+      nextElements: CanvasSceneElement[],
+      appState: CanvasAppState,
+      nextFiles: Record<string, CanvasFileRecord>,
+    ) => {
+      const activeElements = nextElements.filter((el) => !el.isDeleted);
+      orderedElementsRef.current = activeElements;
+      setElements([...activeElements].reverse());
+      setFiles(nextFiles);
+      setSelectedIds(appState.selectedElementIds ?? {});
+    },
+    [],
+  );
+
   const refreshElements = useCallback(() => {
     if (!canvasApi) return;
-    const all = canvasApi.getSceneElements();
-    setElements(all.filter((el) => !el.isDeleted).reverse());
-    setFiles(canvasApi.getFiles() ?? {});
-    const state = canvasApi.getAppState();
-    setSelectedIds(state.selectedElementIds ?? {});
-  }, [canvasApi]);
+    applySceneSnapshot(
+      canvasApi.getSceneElements(),
+      canvasApi.getAppState(),
+      canvasApi.getFiles() ?? {},
+    );
+  }, [applySceneSnapshot, canvasApi]);
 
   // Throttle refresh to avoid hammering React state on every drag frame.
   // 100ms gives smooth UI without excessive re-renders during drawing.
@@ -408,15 +427,17 @@ export function CanvasLayersPanel({
     // Initial refresh is immediate
     refreshElements();
 
-    const throttledRefresh = throttle(refreshElements, 100);
-    const unsubscribe = canvasApi.onChange(() => {
-      throttledRefresh();
-    });
+    const throttledRefresh = throttle(applySceneSnapshot, 100);
+    const unsubscribe = canvasApi.onChange(
+      (nextElements, appState, nextFiles) => {
+        throttledRefresh(nextElements, appState, nextFiles);
+      },
+    );
     return () => {
       throttledRefresh.cancel();
       if (typeof unsubscribe === "function") unsubscribe();
     };
-  }, [open, canvasApi, refreshElements]);
+  }, [open, canvasApi, applySceneSnapshot, refreshElements]);
 
   /* -- Escape to close -- */
   useEffect(() => {
@@ -470,7 +491,8 @@ export function CanvasLayersPanel({
 
   const renameElement = useCallback(
     (id: string, title: string) => {
-      canvasApi?.updateNode(id, { name: title } as any);
+      const updates: Parameters<CanvasApi["updateNode"]>[1] = { name: title };
+      canvasApi?.updateNode(id, updates);
     },
     [canvasApi],
   );
@@ -511,15 +533,15 @@ export function CanvasLayersPanel({
       const draggedId = dragIdRef.current;
       dragIdRef.current = null;
       if (!canvasApi || !draggedId || draggedId === targetId) return;
-      const ordered = canvasApi.getSceneElements().filter((el) => !el.isDeleted);
+      const ordered = orderedElementsRef.current;
       const target = ordered.find((el) => el.id === targetId);
       if (!target) return;
       const targetParentId =
         (target.customData?.containerId as string | null | undefined) ?? null;
       const siblings = ordered.filter(
         (el) =>
-          ((el.customData?.containerId as string | null | undefined) ?? null) ===
-          targetParentId,
+          ((el.customData?.containerId as string | null | undefined) ??
+            null) === targetParentId,
       );
       const targetIndex = siblings.findIndex((el) => el.id === targetId);
       if (targetIndex < 0) return;
@@ -528,13 +550,16 @@ export function CanvasLayersPanel({
     [canvasApi],
   );
 
-  const childrenByParent = elements.reduce<Record<string, number>>((acc, el) => {
-    const parentId =
-      (el.customData?.containerId as string | null | undefined) ?? null;
-    const key = parentId ?? "__root__";
-    acc[key] = (acc[key] ?? 0) + 1;
-    return acc;
-  }, {});
+  const childrenByParent = elements.reduce<Record<string, number>>(
+    (acc, el) => {
+      const parentId =
+        (el.customData?.containerId as string | null | undefined) ?? null;
+      const key = parentId ?? "__root__";
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    },
+    {},
+  );
   const visibleElements = elements.filter((el) => {
     let parentId =
       (el.customData?.containerId as string | null | undefined) ?? null;

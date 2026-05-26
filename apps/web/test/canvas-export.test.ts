@@ -41,6 +41,46 @@ const doc: CucumberCanvasDocument = {
   ],
 };
 
+const multiPageDoc: CucumberCanvasDocument = {
+  version: "cucumber-canvas-v1",
+  activePageId: "page-a",
+  children: [],
+  pages: [
+    {
+      id: "page-a",
+      name: "Page A",
+      children: [
+        {
+          id: "page-a-text",
+          type: "text",
+          x: 10,
+          y: 20,
+          width: 120,
+          height: 40,
+          content: "Page A only",
+          fontSize: 16,
+        },
+      ],
+    },
+    {
+      id: "page-b",
+      name: "Page B",
+      children: [
+        {
+          id: "page-b-text",
+          type: "text",
+          x: 300,
+          y: 400,
+          width: 160,
+          height: 50,
+          content: "Page B only",
+          fontSize: 20,
+        },
+      ],
+    },
+  ],
+};
+
 describe("canvas export", () => {
   it("computes visible document bounds from node geometry", () => {
     expect(calculateDocumentBounds(doc)).toEqual({
@@ -69,5 +109,40 @@ describe("canvas export", () => {
     expect(svg).toContain('width="300" height="120"');
     expect(svg).toContain('x="0" y="0" width="300" height="120"');
     expect(svg).toContain('x="600" y="300" width="100" height="90"');
+  });
+
+  it("calculates bounds from only the requested active page", () => {
+    expect(calculateDocumentBounds(multiPageDoc, "page-b")).toEqual({
+      x: 300,
+      y: 400,
+      width: 160,
+      height: 50,
+    });
+  });
+
+  it("exports only active page content when activePageId is provided", async () => {
+    const blob = await exportDocumentImage(multiPageDoc, {
+      activePageId: "page-b",
+      mimeType: "image/svg+xml",
+    });
+    const svg = await readBlobText(blob);
+
+    expect(svg).toContain("Page B only");
+    expect(svg).not.toContain("Page A only");
+    expect(svg).toContain('width="160" height="50"');
+  });
+
+  it("keeps explicit bounds while rendering only requested active page", async () => {
+    const blob = await exportDocumentImage(multiPageDoc, {
+      activePageId: "page-b",
+      bounds: { x: 0, y: 0, width: 500, height: 500 },
+      mimeType: "image/svg+xml",
+    });
+    const svg = await readBlobText(blob);
+
+    expect(svg).toContain('width="500" height="500"');
+    expect(svg).toContain('x="300" y="420"');
+    expect(svg).toContain("Page B only");
+    expect(svg).not.toContain("Page A only");
   });
 });

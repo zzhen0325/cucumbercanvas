@@ -10,6 +10,7 @@ export type CanvasExportOptions = {
   maxWidthOrHeight?: number;
   mimeType?: string;
   bounds?: CanvasBounds;
+  activePageId?: string | null;
 };
 
 export type CanvasExportSize = {
@@ -38,8 +39,11 @@ type ExportableNode = {
 
 export function calculateDocumentBounds(
   doc: CucumberCanvasDocument,
+  activePageId?: string | null,
 ): CanvasBounds {
-  const nodes = flattenNodes(doc).filter((node) => node.visible !== false);
+  const nodes = flattenNodes(doc, activePageId).filter(
+    (node) => node.visible !== false,
+  );
   if (nodes.length === 0) return { x: 0, y: 0, width: 800, height: 600 };
   const minX = Math.min(...nodes.map((node) => getNodeBounds(node).x));
   const minY = Math.min(...nodes.map((node) => getNodeBounds(node).y));
@@ -73,9 +77,17 @@ export async function exportDocumentImage(
   opts?: CanvasExportOptions,
   canvasViewport?: { backgroundColor?: string },
 ): Promise<Blob> {
-  const bounds = normalizeBounds(opts?.bounds ?? calculateDocumentBounds(doc));
+  const bounds = normalizeBounds(
+    opts?.bounds ?? calculateDocumentBounds(doc, opts?.activePageId),
+  );
   const { scale } = calculateExportSize(bounds, opts?.maxWidthOrHeight);
-  const svg = renderDocumentSvg(doc, bounds, scale, canvasViewport);
+  const svg = renderDocumentSvg(
+    doc,
+    bounds,
+    scale,
+    canvasViewport,
+    opts?.activePageId,
+  );
   return new Blob([svg], { type: opts?.mimeType ?? "image/svg+xml" });
 }
 
@@ -84,10 +96,11 @@ function renderDocumentSvg(
   bounds: CanvasBounds,
   scale: number,
   canvasViewport?: { backgroundColor?: string },
+  activePageId?: string | null,
 ): string {
   const width = Math.max(1, Math.round(bounds.width * scale));
   const height = Math.max(1, Math.round(bounds.height * scale));
-  const nodes = flattenNodes(doc)
+  const nodes = flattenNodes(doc, activePageId)
     .filter((node) => node.visible !== false)
     .map((node) => {
       const nodeBounds = getNodeBounds(node);
