@@ -42,7 +42,7 @@ export function getActivePage(doc: PenDocument, activePageId?: string | null): P
     }
     return doc.pages[0]!;
   }
-  if (requestedPageId && requestedPageId !== DEFAULT_CANVAS_PAGE_ID) {
+  if (requestedPageId) {
     throw new CanvasPageOperationError(
       'page_not_found',
       `Page ${requestedPageId} does not exist.`,

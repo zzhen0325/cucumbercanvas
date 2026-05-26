@@ -116,9 +116,9 @@ describe("canvas page helpers", () => {
       applyCanvasOperation(legacy, {
         type: "insertNode",
         node: rect("typo-target"),
-        activePageId: "missing",
+        activePageId: "page-default",
       }),
-    ).toThrow("Page missing does not exist.");
+    ).toThrow("Page page-default does not exist.");
 
     expect(legacy.children.map((node) => node.id)).toEqual(["legacy"]);
   });
