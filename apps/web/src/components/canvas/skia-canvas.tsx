@@ -1492,10 +1492,11 @@ export const SkiaCanvas = memo(
     const setActivePage = useCallback(
       (pageId: string) => {
         try {
-          const activePageId = resolveActivePageId(docRef.current, pageId);
-          if (activePageId === resolveActivePageId(docRef.current)) {
+          const currentActivePageId = resolveActivePageId(docRef.current);
+          if (pageId.trim() === currentActivePageId) {
             return;
           }
+          const activePageId = resolveActivePageId(docRef.current, pageId);
           const next = { ...docRef.current, activePageId, selection: [] };
           commitDocument(next);
           setSelection([]);
