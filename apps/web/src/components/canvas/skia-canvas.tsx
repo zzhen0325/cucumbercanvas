@@ -244,6 +244,25 @@ function syncRendererDocument(
   renderer.setPage(activePageId);
 }
 
+function reconcileActivePageId(
+  nextRaw: PenDocument,
+  normalized: PenDocument,
+  currentActivePageId: string,
+): string {
+  const requestedActivePageId =
+    typeof nextRaw.activePageId === "string" && nextRaw.activePageId.trim()
+      ? nextRaw.activePageId.trim()
+      : null;
+  if (requestedActivePageId) {
+    return resolveActivePageId(normalized, requestedActivePageId);
+  }
+  try {
+    return resolveActivePageId(normalized, currentActivePageId);
+  } catch {
+    return resolveActivePageId(normalized);
+  }
+}
+
 type DrawableShapeTool = "rect" | "ellipse" | "polygon";
 type ResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
 
@@ -492,8 +511,12 @@ export const SkiaCanvas = memo(
         opts?: { captureHistory?: boolean; notify?: boolean },
       ) => {
         const normalized = normalizeCanvasPages(next);
-        const nextActivePageId = resolveActivePageId(normalized);
         const previousActivePageId = activePageIdRef.current;
+        const nextActivePageId = reconcileActivePageId(
+          next,
+          normalized,
+          previousActivePageId,
+        );
         const nextSelection = filterSelectionForActivePage(
           normalized,
           getDocumentSelection(normalized, selectedIds),
