@@ -23,6 +23,17 @@ const rect = (id: string, x = 0): PenNode => ({
   height: 10,
 });
 
+const group = (id: string, children: PenNode[]): PenNode => ({
+  id,
+  type: "group",
+  name: id,
+  x: 0,
+  y: 0,
+  width: 20,
+  height: 20,
+  children,
+});
+
 describe("canvas page helpers", () => {
   it("normalizes legacy children-only documents into a first page", () => {
     const legacy: PenDocument = {
@@ -69,6 +80,32 @@ describe("canvas page helpers", () => {
     expect(next.children).toEqual([]);
   });
 
+  it("rejects stale active page IDs without mutating the first page", () => {
+    const doc: PenDocument = normalizeCanvasPages({
+      version: "cucumber-canvas-v1",
+      children: [],
+      pages: [
+        { id: "page-a", name: "A", children: [rect("a")] },
+        { id: "page-b", name: "B", children: [rect("b")] },
+      ],
+    });
+
+    expect(() =>
+      applyCanvasOperation(doc, {
+        type: "insertNode",
+        node: rect("typo-target"),
+        activePageId: "page-typo",
+      }),
+    ).toThrow("Page page-typo does not exist.");
+
+    expect(getActiveChildren(doc, "page-a").map((node) => node.id)).toEqual([
+      "a",
+    ]);
+    expect(getActiveChildren(doc, "page-b").map((node) => node.id)).toEqual([
+      "b",
+    ]);
+  });
+
   it("adds, renames, duplicates, reorders, and deletes pages without deleting the final page", () => {
     let doc = normalizeCanvasPages({
       version: "cucumber-canvas-v1",
@@ -104,5 +141,35 @@ describe("canvas page helpers", () => {
     expect(() => deleteCanvasPage(onePageDoc, "page-default")).toThrow(
       "Cannot delete the only page.",
     );
+  });
+
+  it("duplicates page children recursively with new IDs", () => {
+    const doc = normalizeCanvasPages({
+      version: "cucumber-canvas-v1",
+      children: [],
+      pages: [
+        {
+          id: "source-page",
+          name: "Source",
+          children: [group("group-original", [rect("child-original")])],
+        },
+      ],
+    });
+
+    const duplicated = duplicateCanvasPage(doc, "source-page");
+    const originalGroup = getActiveChildren(doc, "source-page")[0]!;
+    const originalChild =
+      "children" in originalGroup && Array.isArray(originalGroup.children)
+        ? originalGroup.children[0]
+        : undefined;
+    const clonedGroup = duplicated.page.children[0]!;
+    const clonedChild =
+      "children" in clonedGroup && Array.isArray(clonedGroup.children)
+        ? clonedGroup.children[0]
+        : undefined;
+
+    expect(clonedGroup.id).not.toBe(originalGroup.id);
+    expect(clonedChild?.id).toBeDefined();
+    expect(clonedChild?.id).not.toBe(originalChild?.id);
   });
 });

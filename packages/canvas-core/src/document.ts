@@ -1,6 +1,6 @@
 import type { PenDocument, PenNode, PenPage } from '@cucumber/pen-types';
 import type { CanvasBounds, CanvasViewport } from './types.js';
-import { DEFAULT_CANVAS_PAGE_ID } from './pages.js';
+import { CanvasPageOperationError, DEFAULT_CANVAS_PAGE_ID } from './pages.js';
 
 let idCounter = 0;
 
@@ -29,8 +29,16 @@ export function createEmptyDocument(name?: string): PenDocument {
 
 export function getActivePage(doc: PenDocument, activePageId?: string | null): PenPage {
   if (doc.pages && doc.pages.length > 0) {
-    if (activePageId) {
-      return doc.pages.find((page) => page.id === activePageId) ?? doc.pages[0]!;
+    const requestedPageId = normalizeOptionalPageId(activePageId);
+    if (requestedPageId) {
+      const page = doc.pages.find((candidate) => candidate.id === requestedPageId);
+      if (!page) {
+        throw new CanvasPageOperationError(
+          'page_not_found',
+          `Page ${requestedPageId} does not exist.`,
+        );
+      }
+      return page;
     }
     return doc.pages[0]!;
   }
@@ -183,4 +191,10 @@ export const cloneCanvasDocument = cloneDocument;
 
 export function defaultViewport(): CanvasViewport {
   return { x: 0, y: 0, zoom: 1, backgroundColor: '#ffffff' };
+}
+
+function normalizeOptionalPageId(pageId: string | null | undefined): string | null {
+  if (pageId === undefined || pageId === null) return null;
+  const trimmed = pageId.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }

@@ -51,20 +51,23 @@ export function getCanvasPages(doc: PenDocument): PenPage[] {
 
 export function resolveActivePageId(doc: PenDocument, activePageId?: string | null): string {
   const pages = getCanvasPages(doc);
-  if (activePageId && pages.some((page) => page.id === activePageId)) {
-    return activePageId;
+  const requestedPageId = normalizeOptionalPageId(activePageId);
+  if (!requestedPageId) {
+    return pages[0]!.id;
   }
-  return pages[0]!.id;
+  if (pages.some((page) => page.id === requestedPageId)) {
+    return requestedPageId;
+  }
+  throw new CanvasPageOperationError(
+    'page_not_found',
+    `Page ${requestedPageId} does not exist.`,
+  );
 }
 
 export function getCanvasPage(doc: PenDocument, pageId?: string | null): PenPage {
   const pages = getCanvasPages(doc);
   const resolvedPageId = resolveActivePageId(doc, pageId);
-  const page = pages.find((candidate) => candidate.id === resolvedPageId);
-  if (!page) {
-    throw new CanvasPageOperationError('page_not_found', `Page ${resolvedPageId} does not exist.`);
-  }
-  return page;
+  return pages.find((candidate) => candidate.id === resolvedPageId)!;
 }
 
 export function addCanvasPage(
@@ -190,6 +193,12 @@ function normalizePageName(name: string): string {
     throw new CanvasPageOperationError('invalid_page_name', 'Page name cannot be empty.');
   }
   return trimmed;
+}
+
+function normalizeOptionalPageId(pageId: string | null | undefined): string | null {
+  if (pageId === undefined || pageId === null) return null;
+  const trimmed = pageId.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function clampInsertIndex(index: number | undefined, length: number): number {
