@@ -19,6 +19,7 @@ import {
   getActiveChildren,
   getFigmaAutoLayoutMeta,
   getNodeBounds,
+  getOrderedCanvasNodes,
   getVisibleCanvasNodesInBounds,
   insertCanvasImportResult,
   mergeSymbolProps,
@@ -266,6 +267,59 @@ describe("cucumber canvas core", () => {
         height: 100,
       }).map((node) => node.id),
     ).toEqual(["visible"]);
+  });
+
+  it("orders and hit-tests nodes from the active page", () => {
+    const doc = createCanvasDocument();
+    const next = {
+      ...doc,
+      activePageId: "page-b",
+      pages: [
+        {
+          id: "page-a",
+          name: "A",
+          children: [
+            {
+              id: "page-a-rect",
+              type: "rectangle" as const,
+              x: 0,
+              y: 0,
+              width: 100,
+              height: 100,
+            },
+          ],
+        },
+        {
+          id: "page-b",
+          name: "B",
+          children: [
+            {
+              id: "page-b-rect",
+              type: "rectangle" as const,
+              x: 0,
+              y: 0,
+              width: 100,
+              height: 100,
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(getOrderedCanvasNodes(next).map((entry) => entry.node.id)).toEqual([
+      "page-b-rect",
+    ]);
+    expect(
+      getVisibleCanvasNodesInBounds(next, {
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+      }).map((node) => node.id),
+    ).toEqual(["page-b-rect"]);
+    expect(getOrderedCanvasNodes(next, "page-a").map((entry) => entry.node.id)).toEqual([
+      "page-a-rect",
+    ]);
   });
 
   it("groups and ungroups sibling nodes without changing their bounds", () => {

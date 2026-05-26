@@ -38,6 +38,22 @@ const group = (id: string, children: PenNode[]): PenNode => ({
   children,
 });
 
+function expectPageError(
+  action: () => unknown,
+  code: CanvasPageOperationError["code"],
+  message: string,
+): void {
+  try {
+    action();
+  } catch (error) {
+    expect(error).toBeInstanceOf(CanvasPageOperationError);
+    expect((error as CanvasPageOperationError).code).toBe(code);
+    expect((error as Error).message).toContain(message);
+    return;
+  }
+  throw new Error("Expected CanvasPageOperationError.");
+}
+
 describe("canvas page helpers", () => {
   it("normalizes legacy children-only documents into a first page", () => {
     const legacy: PenDocument = {
@@ -54,6 +70,21 @@ describe("canvas page helpers", () => {
     ]);
     expect(normalized.activePageId).toBe("page-default");
     expect(normalized.children).toEqual([]);
+  });
+
+  it("clones explicit page children while normalizing pages", () => {
+    const seed = rect("seed");
+    const doc: PenDocument = {
+      version: "cucumber-canvas-v1",
+      children: [],
+      pages: [{ id: "page-a", name: "A", children: [seed] }],
+    };
+
+    const normalized = normalizeCanvasPages(doc);
+
+    expect(normalized.pages?.[0]?.children).not.toBe(doc.pages?.[0]?.children);
+    expect(normalized.pages?.[0]?.children[0]).not.toBe(seed);
+    expect(normalized.pages?.[0]?.children[0]?.id).toBe("seed");
   });
 
   it("finds and mutates nodes on the requested active page", () => {
@@ -146,13 +177,16 @@ describe("canvas page helpers", () => {
       ],
     });
 
-    expect(() =>
-      applyCanvasOperation(doc, {
-        type: "insertNode",
-        node: rect("typo-target"),
-        activePageId: "page-typo",
-      }),
-    ).toThrow("Page page-typo does not exist.");
+    expectPageError(
+      () =>
+        applyCanvasOperation(doc, {
+          type: "insertNode",
+          node: rect("typo-target"),
+          activePageId: "page-typo",
+        }),
+      "page_not_found",
+      "Page page-typo does not exist.",
+    );
 
     expect(getActiveChildren(doc, "page-a").map((node) => node.id)).toEqual([
       "a",
@@ -161,14 +195,17 @@ describe("canvas page helpers", () => {
       "b",
     ]);
 
-    expect(() =>
-      applyCanvasOperation(doc, {
-        type: "insertNode",
-        node: rect("agent-target"),
-        agentId: "agent-1",
-        activePageId: "page-typo",
-      }),
-    ).toThrow("Page page-typo does not exist.");
+    expectPageError(
+      () =>
+        applyCanvasOperation(doc, {
+          type: "insertNode",
+          node: rect("agent-target"),
+          agentId: "agent-1",
+          activePageId: "page-typo",
+        }),
+      "page_not_found",
+      "Page page-typo does not exist.",
+    );
   });
 
   it("rejects stale active page IDs on legacy children-only documents without mutating root children", () => {
@@ -177,18 +214,24 @@ describe("canvas page helpers", () => {
       children: [rect("legacy")],
     };
 
-    expect(() =>
-      applyCanvasOperation(legacy, {
-        type: "insertNode",
-        node: rect("typo-target"),
-        activePageId: "page-default",
-      }),
-    ).toThrow("Page page-default does not exist.");
-
-    expect(() => resolveActivePageId(legacy, "page-default")).toThrow(
+    expectPageError(
+      () =>
+        applyCanvasOperation(legacy, {
+          type: "insertNode",
+          node: rect("typo-target"),
+          activePageId: "page-default",
+        }),
+      "page_not_found",
       "Page page-default does not exist.",
     );
-    expect(() => getCanvasPage(legacy, "page-default")).toThrow(
+    expectPageError(
+      () => resolveActivePageId(legacy, "page-default"),
+      "page_not_found",
+      "Page page-default does not exist.",
+    );
+    expectPageError(
+      () => getCanvasPage(legacy, "page-default"),
+      "page_not_found",
       "Page page-default does not exist.",
     );
     expect(legacy.children.map((node) => node.id)).toEqual(["legacy"]);
@@ -201,16 +244,23 @@ describe("canvas page helpers", () => {
       children: [rect("legacy")],
     };
 
-    expect(() =>
-      applyCanvasOperation(legacy, {
-        type: "insertNode",
-        node: rect("target"),
-      }),
-    ).toThrow("Page page-default does not exist.");
-    expect(() => normalizeCanvasPages(legacy)).toThrow(
+    expectPageError(
+      () =>
+        applyCanvasOperation(legacy, {
+          type: "insertNode",
+          node: rect("target"),
+        }),
+      "page_not_found",
       "Page page-default does not exist.",
     );
-    expect(() => getCanvasPages(legacy)).toThrow(
+    expectPageError(
+      () => normalizeCanvasPages(legacy),
+      "page_not_found",
+      "Page page-default does not exist.",
+    );
+    expectPageError(
+      () => getCanvasPages(legacy),
+      "page_not_found",
       "Page page-default does not exist.",
     );
   });
@@ -269,10 +319,11 @@ describe("canvas page helpers", () => {
       ],
     });
 
-    expect(() => addCanvasPage(doc, { id: "page-b", name: "Duplicate" }))
-      .toThrow(CanvasPageOperationError);
-    expect(() => addCanvasPage(doc, { id: "page-b", name: "Duplicate" }))
-      .toThrow("Page page-b already exists.");
+    expectPageError(
+      () => addCanvasPage(doc, { id: "page-b", name: "Duplicate" }),
+      "invalid_page_operation",
+      "Page page-b already exists.",
+    );
   });
 
   it("rejects persisted documents with duplicate page IDs before page-child writes", () => {
@@ -347,7 +398,9 @@ describe("canvas page helpers", () => {
       }),
       { name: "Second" },
     ).document;
-    expect(() => deleteCanvasPage(invalidNextDoc, "page-default", "missing")).toThrow(
+    expectPageError(
+      () => deleteCanvasPage(invalidNextDoc, "page-default", "missing"),
+      "page_not_found",
       "Page missing does not exist.",
     );
 
@@ -355,7 +408,14 @@ describe("canvas page helpers", () => {
       version: "cucumber-canvas-v1",
       children: [rect("only")],
     });
-    expect(() => deleteCanvasPage(onePageDoc, "page-default")).toThrow(
+    expectPageError(
+      () => deleteCanvasPage(onePageDoc, "missing"),
+      "page_not_found",
+      "Page missing does not exist.",
+    );
+    expectPageError(
+      () => deleteCanvasPage(onePageDoc, "page-default"),
+      "invalid_page_operation",
       "Cannot delete the only page.",
     );
   });

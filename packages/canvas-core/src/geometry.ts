@@ -1,6 +1,6 @@
 import type { PenDocument, PenNode } from '@cucumber/pen-types';
 import type { CanvasBounds } from './types.js';
-import { findNode, flattenNodes, getNodeBounds } from './document.js';
+import { findNode, getActiveChildren, getNodeBounds } from './document.js';
 
 export interface OrderedCanvasNode {
   node: PenNode;
@@ -34,16 +34,23 @@ export function getBoundsUnion(boundsList: CanvasBounds[]): CanvasBounds {
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
-export function getSelectionBounds(doc: PenDocument, nodeIds: string[]): CanvasBounds | null {
+export function getSelectionBounds(
+  doc: PenDocument,
+  nodeIds: string[],
+  activePageId?: string | null,
+): CanvasBounds | null {
   const boundsList = nodeIds
-    .map((id) => findNode(doc, id))
+    .map((id) => findNode(doc, id, activePageId))
     .filter(Boolean)
     .map((n) => getNodeBounds(n!));
   if (boundsList.length === 0) return null;
   return getBoundsUnion(boundsList);
 }
 
-export function getOrderedCanvasNodes(doc: PenDocument): OrderedCanvasNode[] {
+export function getOrderedCanvasNodes(
+  doc: PenDocument,
+  activePageId?: string | null,
+): OrderedCanvasNode[] {
   const result: OrderedCanvasNode[] = [];
   const walk = (nodes: PenNode[], depth: number) => {
     for (const node of nodes) {
@@ -53,17 +60,16 @@ export function getOrderedCanvasNodes(doc: PenDocument): OrderedCanvasNode[] {
       }
     }
   };
-  // Get children from active page
-  const children = doc.pages?.[0]?.children ?? doc.children;
-  walk(children, 0);
+  walk(getActiveChildren(doc, activePageId), 0);
   return result;
 }
 
 export function getVisibleCanvasNodesInBounds(
   doc: PenDocument,
   bounds: CanvasBounds,
+  activePageId?: string | null,
 ): PenNode[] {
-  return getOrderedCanvasNodes(doc)
+  return getOrderedCanvasNodes(doc, activePageId)
     .map((e) => e.node)
     .filter((node) => node.visible !== false && boundsIntersect(getNodeBounds(node), bounds));
 }

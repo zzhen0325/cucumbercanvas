@@ -33,7 +33,7 @@ export function normalizeCanvasPages(doc: PenDocument): PenDocument {
       ...page,
       id: page.id || (index === 0 ? DEFAULT_CANVAS_PAGE_ID : createNodeId('page')),
       name: normalizePageName(page.name || `Page ${index + 1}`),
-      children: page.children ?? [],
+      children: structuredClone(page.children ?? []),
     }));
     assertUniqueCanvasPageIds(pages);
 
@@ -168,11 +168,11 @@ export function deleteCanvasPage(
 ): CanvasPageMutationResult {
   const normalized = normalizeCanvasPages(doc);
   const pages = getNormalizedPages(normalized);
+  getExistingPage(normalized, pageId);
   if (pages.length === 1) {
     throw new CanvasPageOperationError('invalid_page_operation', 'Cannot delete the only page.');
   }
   const currentActivePageId = resolveActivePageId(normalized);
-  getExistingPage(normalized, pageId);
   const deletedIndex = pages.findIndex((candidate) => candidate.id === pageId);
   const nextPages = pages.filter((candidate) => candidate.id !== pageId);
   const normalizedNextActivePageId = normalizeOptionalPageId(nextActivePageId);
