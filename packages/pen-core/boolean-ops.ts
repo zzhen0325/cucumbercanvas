@@ -50,9 +50,9 @@ let scope: PaperScope | null = null;
  * where require('paper') is unavailable). Call once before executeBooleanOp.
  * Accepts the paper module object (which has PaperScope, Point, Size, etc.).
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function setPaperModule(mod: any): void {
-  paperModule = mod as PaperModule;
+export function setPaperModule(mod: PaperModule | null | undefined): void {
+  paperModule = mod;
+  scope = null;
 }
 
 function getPaperModule(): PaperModule | null {
