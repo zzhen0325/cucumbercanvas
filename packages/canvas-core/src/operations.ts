@@ -18,6 +18,7 @@ export function applyCanvasOperation(
 ): PenDocument {
   const next = cloneDocument(doc);
   const activePageId = 'activePageId' in operation ? operation.activePageId : undefined;
+  validateOperationActivePage(next, operation, activePageId);
 
   switch (operation.type) {
     case 'insertNode': {
@@ -100,6 +101,17 @@ export function applyCanvasOperation(
   }
 
   return next;
+}
+
+function validateOperationActivePage(
+  doc: PenDocument,
+  operation: CanvasOperation,
+  activePageId?: string | null,
+): void {
+  if (operation.type === 'createDataFlowEdge' || operation.type === 'removeDataFlowEdge') {
+    return;
+  }
+  getActiveChildren(doc, activePageId);
 }
 
 // ---------------------------------------------------------------------------

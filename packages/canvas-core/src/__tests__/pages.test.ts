@@ -104,6 +104,15 @@ describe("canvas page helpers", () => {
     expect(getActiveChildren(doc, "page-b").map((node) => node.id)).toEqual([
       "b",
     ]);
+
+    expect(() =>
+      applyCanvasOperation(doc, {
+        type: "insertNode",
+        node: rect("agent-target"),
+        agentId: "agent-1",
+        activePageId: "page-typo",
+      }),
+    ).toThrow("Page page-typo does not exist.");
   });
 
   it("rejects stale active page IDs on legacy children-only documents without mutating root children", () => {
