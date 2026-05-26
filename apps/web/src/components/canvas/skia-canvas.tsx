@@ -903,7 +903,25 @@ export const SkiaCanvas = memo(
         }
 
         // Other drawing tools keep the legacy click-to-create behavior for now.
-        if (tool === "container" || tool === "text") {
+        if (tool === "container") {
+          const scene = screenToScene(
+            event.clientX,
+            event.clientY,
+            rect,
+            renderer.getViewport(),
+          );
+          const bounds = defaultBounds(docRef.current, "container");
+          createContainer({
+            x: scene.x - bounds.width / 2,
+            y: scene.y - bounds.height / 2,
+            width: bounds.width,
+            height: bounds.height,
+          });
+          setActiveTool("select");
+          return;
+        }
+
+        if (tool === "text" || tool === "line" || tool === "arrow") {
           const scene = screenToScene(
             event.clientX,
             event.clientY,
@@ -1301,6 +1319,25 @@ export const SkiaCanvas = memo(
               content: "Double click to edit",
               fontSize: 28,
               fill: [{ type: "solid" as const, color: "#111827" }],
+            } as unknown as PenNode;
+            break;
+          case "line":
+          case "arrow":
+            node = {
+              id,
+              type: "line" as const,
+              name: shapeType === "arrow" ? "Arrow" : "Line",
+              x: cx - 80,
+              y: cy,
+              width: 160,
+              height: 1,
+              x2: cx + 80,
+              y2: cy,
+              stroke: {
+                thickness: 3,
+                fill: [{ type: "solid" as const, color: "#111827" }],
+              },
+              ...(shapeType === "arrow" ? { _connectorType: "arrow" } : null),
             } as unknown as PenNode;
             break;
           default:
@@ -2405,12 +2442,29 @@ export const SkiaCanvas = memo(
     );
 
     const booleanRejectionReason = useMemo(() => {
-      if (selectedIds.length < 2) return null;
-      if (selectedActivePageNodes.length !== selectedIds.length) {
+      const currentSelection = getDocumentSelection(doc, selectedIds);
+      if (currentSelection.length < 2) return null;
+      const topSelectionIds = getTopLevelSelectionIds(
+        doc as CucumberCanvasDocument,
+        currentSelection,
+        activePageId,
+      );
+      if (topSelectionIds.length < 2) {
+        return "Select at least two top-level supported vector shapes.";
+      }
+      if (selectedActivePageNodes.length !== topSelectionIds.length) {
         return "One or more selected nodes are no longer available on the active page.";
       }
+      const activeChildren = getActiveChildren(doc, activePageId);
+      const activeRootIds = new Set(activeChildren.map((node) => node.id));
+      const nestedSelectionIds = topSelectionIds.filter(
+        (id) => !activeRootIds.has(id),
+      );
+      if (nestedSelectionIds.length > 0) {
+        return "Boolean operations require top-level selections on the active page.";
+      }
       return getBooleanOpRejectionReason(selectedActivePageNodes);
-    }, [selectedActivePageNodes, selectedIds.length]);
+    }, [activePageId, doc, selectedActivePageNodes, selectedIds]);
 
     // -----------------------------------------------------------------------
     // Initial document sync

@@ -17,7 +17,7 @@ type EditorToolButtonProps = {
 };
 
 export function EditorToolButton({
-  active = false,
+  active,
   className,
   disabled = false,
   icon: Icon,
@@ -33,7 +33,7 @@ export function EditorToolButton({
       variant="ghost"
       size="icon-sm"
       aria-label={label}
-      aria-pressed={active}
+      aria-pressed={active === undefined ? undefined : active}
       className={cn(
         "size-8 text-muted-foreground hover:bg-muted hover:text-foreground",
         active &&
