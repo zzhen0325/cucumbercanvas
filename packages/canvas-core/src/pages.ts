@@ -165,7 +165,7 @@ export function deleteCanvasPage(
     ? getPageOrThrow(nextPages, normalizedNextActivePageId)
     : getPageAt(nextPages, Math.min(deletedIndex, nextPages.length - 1));
   return {
-    document: { ...normalized, pages: nextPages, children: [] },
+    document: { ...normalized, activePageId: activePage.id, pages: nextPages, children: [] },
     page: activePage,
   };
 }

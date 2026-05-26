@@ -311,7 +311,11 @@ describe("canvas page helpers", () => {
     doc = reorderCanvasPage(doc, duplicated.page.id, "left").document;
     expect(getCanvasPages(doc)[1]?.id).toBe(duplicated.page.id);
 
-    doc = deleteCanvasPage(doc, duplicated.page.id).document;
+    doc = { ...doc, activePageId: duplicated.page.id };
+    const deleted = deleteCanvasPage(doc, duplicated.page.id);
+    doc = deleted.document;
+    expect(deleted.page.id).toBe(added.page.id);
+    expect(doc.activePageId).toBe(added.page.id);
     expect(getCanvasPages(doc).some((page) => page.id === duplicated.page.id)).toBe(
       false,
     );
