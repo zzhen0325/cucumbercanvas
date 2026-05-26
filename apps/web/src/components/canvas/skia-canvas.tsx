@@ -2433,14 +2433,6 @@ export const SkiaCanvas = memo(
       });
     }, [pasteFromSystemClipboard, toast]);
 
-    const selectedActivePageNodes = useMemo(
-      () =>
-        selectedIds
-          .map((id) => findNode(doc, id, activePageId))
-          .filter(isPenNode),
-      [activePageId, doc, selectedIds],
-    );
-
     const booleanRejectionReason = useMemo(() => {
       const currentSelection = getDocumentSelection(doc, selectedIds);
       if (currentSelection.length < 2) return null;
@@ -2452,7 +2444,10 @@ export const SkiaCanvas = memo(
       if (topSelectionIds.length < 2) {
         return "Select at least two top-level supported vector shapes.";
       }
-      if (selectedActivePageNodes.length !== topSelectionIds.length) {
+      const topSelectionNodes = topSelectionIds
+        .map((id) => findNode(doc, id, activePageId))
+        .filter(isPenNode);
+      if (topSelectionNodes.length !== topSelectionIds.length) {
         return "One or more selected nodes are no longer available on the active page.";
       }
       const activeChildren = getActiveChildren(doc, activePageId);
@@ -2463,8 +2458,8 @@ export const SkiaCanvas = memo(
       if (nestedSelectionIds.length > 0) {
         return "Boolean operations require top-level selections on the active page.";
       }
-      return getBooleanOpRejectionReason(selectedActivePageNodes);
-    }, [activePageId, doc, selectedActivePageNodes, selectedIds]);
+      return getBooleanOpRejectionReason(topSelectionNodes);
+    }, [activePageId, doc, selectedIds]);
 
     // -----------------------------------------------------------------------
     // Initial document sync
