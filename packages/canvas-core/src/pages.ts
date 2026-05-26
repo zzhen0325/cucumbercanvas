@@ -39,13 +39,23 @@ export function normalizeCanvasPages(doc: PenDocument): PenDocument {
 
     return {
       ...doc,
+      activePageId: resolvePageIdFromPages(pages, doc.activePageId),
       pages,
       children: [],
     };
   }
 
+  const requestedPageId = normalizeOptionalPageId(doc.activePageId);
+  if (requestedPageId) {
+    throw new CanvasPageOperationError(
+      'page_not_found',
+      `Page ${requestedPageId} does not exist.`,
+    );
+  }
+
   return {
     ...doc,
+    activePageId: DEFAULT_CANVAS_PAGE_ID,
     pages: [createDefaultCanvasPage(doc.children ?? [])],
     children: [],
   };
@@ -94,6 +104,7 @@ export function addCanvasPage(
 ): CanvasPageMutationResult {
   const normalized = normalizeCanvasPages(doc);
   const pages = getNormalizedPages(normalized);
+  const activePageId = resolveActivePageId(normalized);
   const page: CanvasPage = {
     id: options?.id ?? createNodeId('page'),
     name: normalizePageName(options?.name ?? `Page ${pages.length + 1}`),
@@ -104,7 +115,7 @@ export function addCanvasPage(
   nextPages.splice(index, 0, page);
   assertUniqueCanvasPageIds(nextPages);
   return {
-    document: { ...normalized, pages: nextPages, children: [] },
+    document: { ...normalized, activePageId, pages: nextPages, children: [] },
     page,
   };
 }
@@ -115,11 +126,13 @@ export function renameCanvasPage(
   name: string,
 ): CanvasPageMutationResult {
   const normalized = normalizeCanvasPages(doc);
+  const activePageId = resolveActivePageId(normalized);
   const page = getExistingPage(normalized, pageId);
   const renamedPage = { ...page, name: normalizePageName(name) };
   return {
     document: {
       ...normalized,
+      activePageId,
       pages: getNormalizedPages(normalized).map((candidate) =>
         candidate.id === pageId ? renamedPage : candidate,
       ),
@@ -132,6 +145,7 @@ export function renameCanvasPage(
 export function duplicateCanvasPage(doc: PenDocument, pageId: string): CanvasPageMutationResult {
   const normalized = normalizeCanvasPages(doc);
   const pages = getNormalizedPages(normalized);
+  const activePageId = resolveActivePageId(normalized);
   const page = getExistingPage(normalized, pageId);
   const pageIndex = pages.findIndex((candidate) => candidate.id === pageId);
   const duplicatedPage: CanvasPage = {
@@ -142,7 +156,7 @@ export function duplicateCanvasPage(doc: PenDocument, pageId: string): CanvasPag
   const nextPages = [...pages];
   nextPages.splice(pageIndex + 1, 0, duplicatedPage);
   return {
-    document: { ...normalized, pages: nextPages, children: [] },
+    document: { ...normalized, activePageId, pages: nextPages, children: [] },
     page: duplicatedPage,
   };
 }
@@ -177,6 +191,7 @@ export function reorderCanvasPage(
 ): CanvasPageMutationResult {
   const normalized = normalizeCanvasPages(doc);
   const pages = getNormalizedPages(normalized);
+  const activePageId = resolveActivePageId(normalized);
   const page = getExistingPage(normalized, pageId);
   const fromIndex = pages.findIndex((candidate) => candidate.id === pageId);
   let toIndex = fromIndex;
@@ -186,14 +201,14 @@ export function reorderCanvasPage(
   if (direction === 'end') toIndex = pages.length - 1;
 
   if (toIndex === fromIndex) {
-    return { document: normalized, page };
+    return { document: { ...normalized, activePageId, children: [] }, page };
   }
 
   const nextPages = [...pages];
   nextPages.splice(fromIndex, 1);
   nextPages.splice(toIndex, 0, page);
   return {
-    document: { ...normalized, pages: nextPages, children: [] },
+    document: { ...normalized, activePageId, pages: nextPages, children: [] },
     page,
   };
 }
@@ -225,6 +240,17 @@ function getPageAt(pages: readonly CanvasPage[], index: number): CanvasPage {
     );
   }
   return page;
+}
+
+function resolvePageIdFromPages(
+  pages: readonly CanvasPage[],
+  activePageId?: string | null,
+): string {
+  const requestedPageId = normalizeOptionalPageId(activePageId);
+  if (!requestedPageId) {
+    return getPageAt(pages, 0).id;
+  }
+  return getPageOrThrow(pages, requestedPageId).id;
 }
 
 export function assertUniqueCanvasPageIds(pages: readonly PenPage[]): void {

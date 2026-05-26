@@ -52,6 +52,7 @@ describe("canvas page helpers", () => {
     expect(normalized.pages?.[0]?.children.map((node) => node.id)).toEqual([
       "legacy",
     ]);
+    expect(normalized.activePageId).toBe("page-default");
     expect(normalized.children).toEqual([]);
   });
 
@@ -206,6 +207,12 @@ describe("canvas page helpers", () => {
         node: rect("target"),
       }),
     ).toThrow("Page page-default does not exist.");
+    expect(() => normalizeCanvasPages(legacy)).toThrow(
+      "Page page-default does not exist.",
+    );
+    expect(() => getCanvasPages(legacy)).toThrow(
+      "Page page-default does not exist.",
+    );
   });
 
   it("creates default pages and appends children to the active page", () => {
@@ -297,18 +304,23 @@ describe("canvas page helpers", () => {
     const added = addCanvasPage(doc, { name: "Exploration" });
     doc = added.document;
     expect(added.page.name).toBe("Exploration");
+    expect(doc.activePageId).toBe("page-default");
     expect(resolveActivePageId(doc, added.page.id)).toBe(added.page.id);
 
+    doc = { ...doc, activePageId: added.page.id };
     doc = renameCanvasPage(doc, added.page.id, "Final UI").document;
+    expect(doc.activePageId).toBe(added.page.id);
     expect(getCanvasPages(doc).find((page) => page.id === added.page.id)?.name).toBe(
       "Final UI",
     );
 
     const duplicated = duplicateCanvasPage(doc, added.page.id);
     doc = duplicated.document;
+    expect(doc.activePageId).toBe(added.page.id);
     expect(duplicated.page.name).toBe("Final UI copy");
 
     doc = reorderCanvasPage(doc, duplicated.page.id, "left").document;
+    expect(doc.activePageId).toBe(added.page.id);
     expect(getCanvasPages(doc)[1]?.id).toBe(duplicated.page.id);
 
     doc = { ...doc, activePageId: duplicated.page.id };
@@ -330,6 +342,32 @@ describe("canvas page helpers", () => {
     });
     expect(() => deleteCanvasPage(onePageDoc, "page-default")).toThrow(
       "Cannot delete the only page.",
+    );
+  });
+
+  it("rejects stale persisted active page IDs in page mutations", () => {
+    const doc: PenDocument = {
+      version: "cucumber-canvas-v1",
+      activePageId: "missing",
+      children: [],
+      pages: [
+        { id: "page-a", name: "A", children: [] },
+        { id: "page-b", name: "B", children: [] },
+      ],
+    };
+
+    expect(() => normalizeCanvasPages(doc)).toThrow("Page missing does not exist.");
+    expect(() => addCanvasPage(doc, { name: "C" })).toThrow(
+      "Page missing does not exist.",
+    );
+    expect(() => renameCanvasPage(doc, "page-a", "A2")).toThrow(
+      "Page missing does not exist.",
+    );
+    expect(() => duplicateCanvasPage(doc, "page-a")).toThrow(
+      "Page missing does not exist.",
+    );
+    expect(() => reorderCanvasPage(doc, "page-a", "right")).toThrow(
+      "Page missing does not exist.",
     );
   });
 

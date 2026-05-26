@@ -73,6 +73,7 @@ export function setActiveChildren(
     );
     return {
       ...doc,
+      activePageId: page.id,
       pages,
       children: [],
     };

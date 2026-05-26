@@ -134,6 +134,7 @@ function insertNodeInDoc(
       newChildren.push(node);
     }
     const updated = setActiveChildren(doc, newChildren, activePageId);
+    doc.activePageId = updated.activePageId;
     doc.pages = updated.pages;
     doc.children = updated.children;
     return;
@@ -160,6 +161,7 @@ function updateNodeInDoc(
   const children = getActiveChildren(doc, activePageId);
   const newChildren = replaceNodeInList(children, nodeId, updated);
   const updatedDoc = setActiveChildren(doc, newChildren, activePageId);
+  doc.activePageId = updatedDoc.activePageId;
   doc.pages = updatedDoc.pages;
   doc.children = updatedDoc.children;
 }
@@ -184,6 +186,7 @@ function removeNodeFromDoc(doc: PenDocument, nodeId: string, activePageId?: stri
     throw new CanvasOperationError('node_not_found', `Node ${nodeId} not found in tree.`);
   }
   const updated = setActiveChildren(doc, removed.nodes, activePageId);
+  doc.activePageId = updated.activePageId;
   doc.pages = updated.pages;
   doc.children = updated.children;
 }
