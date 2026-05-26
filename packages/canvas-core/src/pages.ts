@@ -171,13 +171,17 @@ export function deleteCanvasPage(
   if (pages.length === 1) {
     throw new CanvasPageOperationError('invalid_page_operation', 'Cannot delete the only page.');
   }
+  const currentActivePageId = resolveActivePageId(normalized);
   getExistingPage(normalized, pageId);
   const deletedIndex = pages.findIndex((candidate) => candidate.id === pageId);
   const nextPages = pages.filter((candidate) => candidate.id !== pageId);
   const normalizedNextActivePageId = normalizeOptionalPageId(nextActivePageId);
-  const activePage = normalizedNextActivePageId
-    ? getPageOrThrow(nextPages, normalizedNextActivePageId)
-    : getPageAt(nextPages, Math.min(deletedIndex, nextPages.length - 1));
+  const activePage =
+    normalizedNextActivePageId
+      ? getPageOrThrow(nextPages, normalizedNextActivePageId)
+      : currentActivePageId === pageId
+        ? getPageAt(nextPages, Math.min(deletedIndex, nextPages.length - 1))
+        : getPageOrThrow(nextPages, currentActivePageId);
   return {
     document: { ...normalized, activePageId: activePage.id, pages: nextPages, children: [] },
     page: activePage,

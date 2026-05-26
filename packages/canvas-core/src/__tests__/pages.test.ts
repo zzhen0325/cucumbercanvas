@@ -323,6 +323,14 @@ describe("canvas page helpers", () => {
     expect(doc.activePageId).toBe(added.page.id);
     expect(getCanvasPages(doc)[1]?.id).toBe(duplicated.page.id);
 
+    const inactiveDeleted = deleteCanvasPage(doc, "page-default");
+    doc = inactiveDeleted.document;
+    expect(inactiveDeleted.page.id).toBe(added.page.id);
+    expect(doc.activePageId).toBe(added.page.id);
+    expect(getCanvasPages(doc).some((page) => page.id === "page-default")).toBe(
+      false,
+    );
+
     doc = { ...doc, activePageId: duplicated.page.id };
     const deleted = deleteCanvasPage(doc, duplicated.page.id);
     doc = deleted.document;
@@ -332,8 +340,15 @@ describe("canvas page helpers", () => {
       false,
     );
 
-    expect(() => deleteCanvasPage(doc, added.page.id, duplicated.page.id)).toThrow(
-      `Page ${duplicated.page.id} does not exist.`,
+    const invalidNextDoc = addCanvasPage(
+      normalizeCanvasPages({
+        version: "cucumber-canvas-v1",
+        children: [rect("root")],
+      }),
+      { name: "Second" },
+    ).document;
+    expect(() => deleteCanvasPage(invalidNextDoc, "page-default", "missing")).toThrow(
+      "Page missing does not exist.",
     );
 
     const onePageDoc = normalizeCanvasPages({
