@@ -261,6 +261,21 @@ function hasPenChildren(node: PenNode | undefined): node is PenNode & {
   );
 }
 
+function getDocumentSelection(
+  doc: PenDocument,
+  fallbackSelection: string[],
+): string[] {
+  return (doc as CanvasRuntimeDocument).selection ?? fallbackSelection;
+}
+
+function filterSelectionForActivePage(
+  doc: PenDocument,
+  selection: string[],
+  activePageId?: string | null,
+): string[] {
+  return selection.filter((id) => Boolean(findNode(doc, id, activePageId)));
+}
+
 // ---------------------------------------------------------------------------
 // SkiaCanvas
 // ---------------------------------------------------------------------------
@@ -1478,6 +1493,9 @@ export const SkiaCanvas = memo(
       (pageId: string) => {
         try {
           const activePageId = resolveActivePageId(docRef.current, pageId);
+          if (activePageId === resolveActivePageId(docRef.current)) {
+            return;
+          }
           const next = { ...docRef.current, activePageId, selection: [] };
           commitDocument(next);
           setSelection([]);
@@ -1539,17 +1557,24 @@ export const SkiaCanvas = memo(
     const deletePage = useCallback(
       (pageId: string) => {
         const result = deleteCanvasPage(docRef.current, pageId);
+        const activePageId = resolveActivePageId(result.document);
+        const nextSelection = filterSelectionForActivePage(
+          result.document,
+          getDocumentSelection(docRef.current, selectedIds),
+          activePageId,
+        );
         commitDocument({
           ...result.document,
-          selection: [],
+          selection: nextSelection,
         } as CanvasRuntimeDocument);
-        setSelection([]);
+        setSelection(nextSelection);
         console.info("[skia-canvas] page.deleted", {
           deletedPageId: pageId,
           activePageId: result.page.id,
+          retainedSelectionCount: nextSelection.length,
         });
       },
-      [commitDocument, setSelection],
+      [commitDocument, selectedIds, setSelection],
     );
 
     const reorderPage = useCallback(
@@ -1568,9 +1593,13 @@ export const SkiaCanvas = memo(
       (operation: BooleanOpType) => {
         try {
           const activePageId = resolveActivePageId(docRef.current);
+          const currentSelection = getDocumentSelection(
+            docRef.current,
+            selectedIds,
+          );
           const topSelectionIds = getTopLevelSelectionIds(
             docRef.current as CucumberCanvasDocument,
-            selectedIds,
+            currentSelection,
           );
           const nodes = topSelectionIds
             .map((id) => findNode(docRef.current, id, activePageId))
@@ -1599,6 +1628,26 @@ export const SkiaCanvas = memo(
             return null;
           }
 
+          const activeChildren = getActiveChildren(
+            docRef.current,
+            activePageId,
+          );
+          const activeRootIds = new Set(activeChildren.map((node) => node.id));
+          const nestedSelectionIds = topSelectionIds.filter(
+            (id) => !activeRootIds.has(id),
+          );
+          if (nestedSelectionIds.length > 0) {
+            console.warn("[skia-canvas] boolean-operation.rejected", {
+              operation,
+              activePageId,
+              selectedIds: topSelectionIds,
+              nestedSelectionIds,
+              reason:
+                "Boolean operations currently require top-level selections on the active page.",
+            });
+            return null;
+          }
+
           const resultPath = executeBooleanOp(nodes, operation);
           if (!resultPath) {
             console.warn("[skia-canvas] boolean-operation.failed", {
@@ -1612,10 +1661,6 @@ export const SkiaCanvas = memo(
             return null;
           }
 
-          const activeChildren = getActiveChildren(
-            docRef.current,
-            activePageId,
-          );
           const insertionIndexes = topSelectionIds
             .map((id) => activeChildren.findIndex((node) => node.id === id))
             .filter((index) => index >= 0);
@@ -1639,8 +1684,13 @@ export const SkiaCanvas = memo(
             activePageId,
           });
 
-          commitDocument(next);
-          setSelection([resultPath.id]);
+          const nextSelection = [resultPath.id];
+          const nextWithSelection = {
+            ...next,
+            selection: nextSelection,
+          } as CanvasRuntimeDocument;
+          commitDocument(nextWithSelection);
+          setSelection(nextSelection);
           console.info("[skia-canvas] boolean-operation.applied", {
             operation,
             activePageId,
@@ -1651,7 +1701,7 @@ export const SkiaCanvas = memo(
         } catch (error) {
           console.warn("[skia-canvas] boolean-operation.failed", {
             operation,
-            selectedIds,
+            selectedIds: getDocumentSelection(docRef.current, selectedIds),
             error,
           });
           return null;
