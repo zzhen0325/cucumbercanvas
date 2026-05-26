@@ -297,7 +297,7 @@ describe("cucumber canvas core", () => {
 
     expect(doc.children).toEqual(["a", "b"]);
     expect(getNodeBounds(findNode(doc, "a")!)).toEqual(getNodeBounds(a));
-    expect(findParent(doc, "b")?.id).toBeNull();
+    expect(findParent(doc, "b")).toBeUndefined();
   });
 
   it("aligns unlocked nodes to the selection bounds", () => {
