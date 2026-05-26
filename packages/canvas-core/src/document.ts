@@ -1,6 +1,10 @@
 import type { PenDocument, PenNode, PenPage } from '@cucumber/pen-types';
+import {
+  CanvasPageOperationError,
+  DEFAULT_CANVAS_PAGE_ID,
+  assertUniqueCanvasPageIds,
+} from './pages.js';
 import type { CanvasBounds, CanvasViewport } from './types.js';
-import { CanvasPageOperationError, DEFAULT_CANVAS_PAGE_ID } from './pages.js';
 
 let idCounter = 0;
 
@@ -30,6 +34,7 @@ export function createEmptyDocument(name?: string): PenDocument {
 export function getActivePage(doc: PenDocument, activePageId?: string | null): PenPage {
   const requestedPageId = normalizeOptionalPageId(activePageId);
   if (doc.pages && doc.pages.length > 0) {
+    assertUniqueCanvasPageIds(doc.pages);
     if (requestedPageId) {
       const page = doc.pages.find((candidate) => candidate.id === requestedPageId);
       if (!page) {
@@ -40,7 +45,14 @@ export function getActivePage(doc: PenDocument, activePageId?: string | null): P
       }
       return page;
     }
-    return doc.pages[0]!;
+    const firstPage = doc.pages[0];
+    if (!firstPage) {
+      throw new CanvasPageOperationError(
+        'invalid_page_operation',
+        'Canvas document must contain at least one page.',
+      );
+    }
+    return firstPage;
   }
   if (requestedPageId) {
     throw new CanvasPageOperationError(

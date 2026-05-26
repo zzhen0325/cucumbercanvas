@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
 import type { PenDocument, PenNode } from "@cucumber/pen-types";
+import { describe, expect, it } from "vitest";
 import {
+  CanvasPageOperationError,
   addCanvasPage,
   applyCanvasOperation,
   deleteCanvasPage,
@@ -150,6 +151,42 @@ describe("canvas page helpers", () => {
     ).toThrow("Page missing does not exist.");
   });
 
+  it("rejects duplicate page IDs when adding a page", () => {
+    const doc = normalizeCanvasPages({
+      version: "cucumber-canvas-v1",
+      children: [],
+      pages: [
+        { id: "page-a", name: "A", children: [] },
+        { id: "page-b", name: "B", children: [] },
+      ],
+    });
+
+    expect(() => addCanvasPage(doc, { id: "page-b", name: "Duplicate" }))
+      .toThrow(CanvasPageOperationError);
+    expect(() => addCanvasPage(doc, { id: "page-b", name: "Duplicate" }))
+      .toThrow("Page page-b already exists.");
+  });
+
+  it("rejects persisted documents with duplicate page IDs before page-child writes", () => {
+    const malformed: PenDocument = {
+      version: "cucumber-canvas-v1",
+      children: [],
+      pages: [
+        { id: "page-a", name: "A", children: [rect("a")] },
+        { id: "page-a", name: "Duplicate A", children: [rect("duplicate")] },
+      ],
+    };
+
+    expect(() => getCanvasPages(malformed)).toThrow(CanvasPageOperationError);
+    expect(() =>
+      applyCanvasOperation(malformed, {
+        type: "insertNode",
+        node: rect("target"),
+        activePageId: "page-a",
+      }),
+    ).toThrow("Page page-a already exists.");
+  });
+
   it("adds, renames, duplicates, reorders, and deletes pages without deleting the final page", () => {
     let doc = normalizeCanvasPages({
       version: "cucumber-canvas-v1",
@@ -178,6 +215,10 @@ describe("canvas page helpers", () => {
       false,
     );
 
+    expect(() => deleteCanvasPage(doc, added.page.id, duplicated.page.id)).toThrow(
+      `Page ${duplicated.page.id} does not exist.`,
+    );
+
     const onePageDoc = normalizeCanvasPages({
       version: "cucumber-canvas-v1",
       children: [rect("only")],
@@ -201,18 +242,22 @@ describe("canvas page helpers", () => {
     });
 
     const duplicated = duplicateCanvasPage(doc, "source-page");
-    const originalGroup = getActiveChildren(doc, "source-page")[0]!;
+    const originalGroup = getActiveChildren(doc, "source-page")[0];
+    expect(originalGroup).toBeDefined();
     const originalChild =
-      "children" in originalGroup && Array.isArray(originalGroup.children)
+      originalGroup &&
+      "children" in originalGroup &&
+      Array.isArray(originalGroup.children)
         ? originalGroup.children[0]
         : undefined;
-    const clonedGroup = duplicated.page.children[0]!;
+    const clonedGroup = duplicated.page.children[0];
+    expect(clonedGroup).toBeDefined();
     const clonedChild =
-      "children" in clonedGroup && Array.isArray(clonedGroup.children)
+      clonedGroup && "children" in clonedGroup && Array.isArray(clonedGroup.children)
         ? clonedGroup.children[0]
         : undefined;
 
-    expect(clonedGroup.id).not.toBe(originalGroup.id);
+    expect(clonedGroup?.id).not.toBe(originalGroup?.id);
     expect(clonedChild?.id).toBeDefined();
     expect(clonedChild?.id).not.toBe(originalChild?.id);
   });

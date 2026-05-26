@@ -47,7 +47,7 @@ export type {
   StyledTextSegment,
 } from '@cucumber/pen-types';
 
-import type { PenNode, PenDocument, AgentBinding } from '@cucumber/pen-types';
+import type { AgentBinding, PenDocument, PenNode } from '@cucumber/pen-types';
 
 // ---------------------------------------------------------------------------
 // Backward-compatible type aliases (pre-Phase1 consumers)
@@ -120,8 +120,15 @@ export interface AgentContext {
 // Canvas Operations (PenDocument-based)
 // ---------------------------------------------------------------------------
 
+export interface PageAwareCanvasOperationMetadata {
+  activePageId?: string | null;
+}
+
+export type PageAwareCanvasOperation<Operation extends object> = Operation &
+  PageAwareCanvasOperationMetadata;
+
 export type CanvasOperation =
-  | {
+  | PageAwareCanvasOperation<{
       type: 'insertNode';
       node: PenNode;
       parentId?: string | null;
@@ -129,66 +136,56 @@ export type CanvasOperation =
       containerId?: string | null;
       index?: number;
       agentId?: string;
-      activePageId?: string | null;
-    }
-  | {
+    }>
+  | PageAwareCanvasOperation<{
       type: 'updateNode';
       nodeId: string;
       updates: Partial<PenNode>;
       agentId?: string;
-      activePageId?: string | null;
-    }
-  | {
+    }>
+  | PageAwareCanvasOperation<{
       type: 'deleteNode';
       nodeId: string;
       agentId?: string;
-      activePageId?: string | null;
-    }
-  | {
+    }>
+  | PageAwareCanvasOperation<{
       type: 'setSelection';
       nodeIds: string[];
-      activePageId?: string | null;
-    }
-  | {
+    }>
+  | PageAwareCanvasOperation<{
       type: 'moveNode';
       nodeId: string;
       newParentId?: string | null;
       index?: number;
-      activePageId?: string | null;
-    }
-  | {
+    }>
+  | PageAwareCanvasOperation<{
       type: 'groupNodes';
       groupId: string;
       nodeIds: string[];
       title?: string;
-      activePageId?: string | null;
-    }
-  | {
+    }>
+  | PageAwareCanvasOperation<{
       type: 'ungroupNode';
       groupId: string;
-      activePageId?: string | null;
-    }
-  | {
+    }>
+  | PageAwareCanvasOperation<{
       type: 'alignNodes';
       nodeIds: string[];
       alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom';
-      activePageId?: string | null;
-    }
-  | {
+    }>
+  | PageAwareCanvasOperation<{
       type: 'reorderNode';
       nodeId: string;
       direction?: 'forward' | 'backward' | 'front' | 'back';
       targetParentId?: string | null;
       targetIndex?: number;
-      activePageId?: string | null;
-    }
-  | {
+    }>
+  | PageAwareCanvasOperation<{
       type: 'bindAgent';
       nodeId?: string;
       binding: AgentBinding;
       containerId?: string;
-      activePageId?: string | null;
-    }
+    }>
   | {
       type: 'createDataFlowEdge';
       edgeId: string;

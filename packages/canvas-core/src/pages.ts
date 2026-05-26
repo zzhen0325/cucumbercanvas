@@ -20,14 +20,17 @@ export interface CanvasPageMutationResult {
 
 export function normalizeCanvasPages(doc: PenDocument): PenDocument {
   if (doc.pages && doc.pages.length > 0) {
+    const pages = doc.pages.map((page, index) => ({
+      ...page,
+      id: page.id || (index === 0 ? DEFAULT_CANVAS_PAGE_ID : createNodeId('page')),
+      name: normalizePageName(page.name || `Page ${index + 1}`),
+      children: page.children ?? [],
+    }));
+    assertUniqueCanvasPageIds(pages);
+
     return {
       ...doc,
-      pages: doc.pages.map((page, index) => ({
-        ...page,
-        id: page.id || (index === 0 ? DEFAULT_CANVAS_PAGE_ID : createNodeId('page')),
-        name: normalizePageName(page.name || `Page ${index + 1}`),
-        children: page.children ?? [],
-      })),
+      pages,
       children: [],
     };
   }
@@ -46,7 +49,7 @@ export function normalizeCanvasPages(doc: PenDocument): PenDocument {
 }
 
 export function getCanvasPages(doc: PenDocument): PenPage[] {
-  return normalizeCanvasPages(doc).pages!;
+  return getNormalizedPages(normalizeCanvasPages(doc));
 }
 
 export function resolveActivePageId(doc: PenDocument, activePageId?: string | null): string {
@@ -63,7 +66,7 @@ export function resolveActivePageId(doc: PenDocument, activePageId?: string | nu
 
   const pages = getCanvasPages(doc);
   if (!requestedPageId) {
-    return pages[0]!.id;
+    return getPageAt(pages, 0).id;
   }
   if (pages.some((page) => page.id === requestedPageId)) {
     return requestedPageId;
@@ -75,9 +78,10 @@ export function resolveActivePageId(doc: PenDocument, activePageId?: string | nu
 }
 
 export function getCanvasPage(doc: PenDocument, pageId?: string | null): PenPage {
-  const pages = getCanvasPages(doc);
-  const resolvedPageId = resolveActivePageId(doc, pageId);
-  return pages.find((candidate) => candidate.id === resolvedPageId)!;
+  const normalized = normalizeCanvasPages(doc);
+  const pages = getNormalizedPages(normalized);
+  const resolvedPageId = resolveActivePageId(normalized, pageId);
+  return getPageOrThrow(pages, resolvedPageId);
 }
 
 export function addCanvasPage(
@@ -85,7 +89,7 @@ export function addCanvasPage(
   options?: { id?: string; name?: string; children?: PenNode[]; index?: number },
 ): CanvasPageMutationResult {
   const normalized = normalizeCanvasPages(doc);
-  const pages = normalized.pages!;
+  const pages = getNormalizedPages(normalized);
   const page: PenPage = {
     id: options?.id ?? createNodeId('page'),
     name: normalizePageName(options?.name ?? `Page ${pages.length + 1}`),
@@ -94,6 +98,7 @@ export function addCanvasPage(
   const index = clampInsertIndex(options?.index, pages.length);
   const nextPages = [...pages];
   nextPages.splice(index, 0, page);
+  assertUniqueCanvasPageIds(nextPages);
   return {
     document: { ...normalized, pages: nextPages, children: [] },
     page,
@@ -111,7 +116,7 @@ export function renameCanvasPage(
   return {
     document: {
       ...normalized,
-      pages: normalized.pages!.map((candidate) =>
+      pages: getNormalizedPages(normalized).map((candidate) =>
         candidate.id === pageId ? renamedPage : candidate,
       ),
       children: [],
@@ -122,7 +127,7 @@ export function renameCanvasPage(
 
 export function duplicateCanvasPage(doc: PenDocument, pageId: string): CanvasPageMutationResult {
   const normalized = normalizeCanvasPages(doc);
-  const pages = normalized.pages!;
+  const pages = getNormalizedPages(normalized);
   const page = getExistingPage(normalized, pageId);
   const pageIndex = pages.findIndex((candidate) => candidate.id === pageId);
   const duplicatedPage: PenPage = {
@@ -144,17 +149,17 @@ export function deleteCanvasPage(
   nextActivePageId?: string | null,
 ): CanvasPageMutationResult {
   const normalized = normalizeCanvasPages(doc);
-  const pages = normalized.pages!;
+  const pages = getNormalizedPages(normalized);
   if (pages.length === 1) {
     throw new CanvasPageOperationError('invalid_page_operation', 'Cannot delete the only page.');
   }
   getExistingPage(normalized, pageId);
   const deletedIndex = pages.findIndex((candidate) => candidate.id === pageId);
   const nextPages = pages.filter((candidate) => candidate.id !== pageId);
-  const activePage =
-    nextActivePageId && nextPages.find((candidate) => candidate.id === nextActivePageId)
-      ? nextPages.find((candidate) => candidate.id === nextActivePageId)!
-      : nextPages[Math.min(deletedIndex, nextPages.length - 1)]!;
+  const normalizedNextActivePageId = normalizeOptionalPageId(nextActivePageId);
+  const activePage = normalizedNextActivePageId
+    ? getPageOrThrow(nextPages, normalizedNextActivePageId)
+    : getPageAt(nextPages, Math.min(deletedIndex, nextPages.length - 1));
   return {
     document: { ...normalized, pages: nextPages, children: [] },
     page: activePage,
@@ -167,7 +172,7 @@ export function reorderCanvasPage(
   direction: 'left' | 'right' | 'start' | 'end',
 ): CanvasPageMutationResult {
   const normalized = normalizeCanvasPages(doc);
-  const pages = normalized.pages!;
+  const pages = getNormalizedPages(normalized);
   const page = getExistingPage(normalized, pageId);
   const fromIndex = pages.findIndex((candidate) => candidate.id === pageId);
   let toIndex = fromIndex;
@@ -191,6 +196,49 @@ export function reorderCanvasPage(
 
 function getExistingPage(doc: PenDocument, pageId: string): PenPage {
   const page = getCanvasPages(doc).find((candidate) => candidate.id === pageId);
+  if (!page) {
+    throw new CanvasPageOperationError('page_not_found', `Page ${pageId} does not exist.`);
+  }
+  return page;
+}
+
+function getNormalizedPages(doc: PenDocument): PenPage[] {
+  if (!doc.pages || doc.pages.length === 0) {
+    throw new CanvasPageOperationError(
+      'invalid_page_operation',
+      'Canvas document must contain at least one page.',
+    );
+  }
+  return doc.pages;
+}
+
+function getPageAt(pages: readonly PenPage[], index: number): PenPage {
+  const page = pages[index];
+  if (!page) {
+    throw new CanvasPageOperationError(
+      'invalid_page_operation',
+      `Page index ${index} does not exist.`,
+    );
+  }
+  return page;
+}
+
+export function assertUniqueCanvasPageIds(pages: readonly PenPage[]): void {
+  const seen = new Set<string>();
+  for (const page of pages) {
+    if (!page.id) continue;
+    if (seen.has(page.id)) {
+      throw new CanvasPageOperationError(
+        'invalid_page_operation',
+        `Page ${page.id} already exists.`,
+      );
+    }
+    seen.add(page.id);
+  }
+}
+
+function getPageOrThrow(pages: readonly PenPage[], pageId: string): PenPage {
+  const page = pages.find((candidate) => candidate.id === pageId);
   if (!page) {
     throw new CanvasPageOperationError('page_not_found', `Page ${pageId} does not exist.`);
   }
