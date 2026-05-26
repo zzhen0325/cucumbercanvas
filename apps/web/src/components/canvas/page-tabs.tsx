@@ -179,7 +179,9 @@ export function CanvasPageTabs({
       onClick={stopCanvasPropagation}
       onDoubleClick={stopCanvasPropagation}
       onKeyDown={stopCanvasPropagation}
+      onPointerCancel={stopCanvasPropagation}
       onPointerDown={stopCanvasPropagation}
+      onPointerMove={stopCanvasPropagation}
       onPointerUp={stopCanvasPropagation}
       onWheel={stopCanvasPropagation}
     >

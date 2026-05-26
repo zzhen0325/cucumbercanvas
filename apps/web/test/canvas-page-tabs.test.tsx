@@ -66,6 +66,26 @@ describe("CanvasPageTabs", () => {
     expect(props.onRenamePage).toHaveBeenCalledWith("page-1", "Opening Frame");
   });
 
+  it("commits a rename on blur and cancels a rename on Escape", async () => {
+    const user = userEvent.setup();
+    const props = renderTabs();
+
+    await user.dblClick(screen.getByText("Cover"));
+    const blurInput = screen.getByRole("textbox", { name: "Rename page" });
+    await user.clear(blurInput);
+    await user.type(blurInput, "  Cover Blur  ");
+    await user.tab();
+
+    expect(props.onRenamePage).toHaveBeenCalledWith("page-1", "Cover Blur");
+
+    await user.dblClick(screen.getByText("Cover"));
+    const escapeInput = screen.getByRole("textbox", { name: "Rename page" });
+    await user.clear(escapeInput);
+    await user.type(escapeInput, "Cancelled{Escape}");
+
+    expect(props.onRenamePage).not.toHaveBeenCalledWith("page-1", "Cancelled");
+  });
+
   it("duplicates, deletes, and reorders pages through accessible controls", async () => {
     const user = userEvent.setup();
     const props = renderTabs();
