@@ -270,6 +270,8 @@ describe("boolean operations", () => {
   it("returns null after Paper module injection is reset and no runtime is available", () => {
     setPaperModule(null);
 
-    expect(executeBooleanOp([rectangle("a"), rectangle("b")], "union")).toBeNull();
+    expect(
+      executeBooleanOp([rectangle("a"), rectangle("b")], "union"),
+    ).toBeNull();
   });
 });
