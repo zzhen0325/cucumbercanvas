@@ -505,6 +505,24 @@ export const SkiaCanvas = memo(
     // Document commit helper
     // -----------------------------------------------------------------------
 
+    const notifySceneListeners = useCallback(
+      (
+        next: PenDocument,
+        activePageId: string,
+        selection: readonly string[],
+      ) => {
+        queueMicrotask(() => {
+          const elements = toSceneElements(next, activePageId);
+          const state = toAppState(next, [...selection]);
+          const files = toFiles(next);
+          for (const listener of listenersRef.current) {
+            listener(elements, state, files);
+          }
+        });
+      },
+      [],
+    );
+
     const commitDocument = useCallback(
       (
         next: PenDocument,
@@ -554,17 +572,15 @@ export const SkiaCanvas = memo(
           onDocumentChange?.(committed as CucumberCanvasDocument);
         }
 
-        // Notify scene listeners
-        queueMicrotask(() => {
-          const elements = toSceneElements(committed, nextActivePageId);
-          const state = toAppState(committed, nextSelection);
-          const files = toFiles(committed);
-          for (const listener of listenersRef.current) {
-            listener(elements, state, files);
-          }
-        });
+        notifySceneListeners(committed, nextActivePageId, nextSelection);
       },
-      [historyIndex, onDocumentChange, selectedIds, setEditorOverlay],
+      [
+        historyIndex,
+        notifySceneListeners,
+        onDocumentChange,
+        selectedIds,
+        setEditorOverlay,
+      ],
     );
 
     // -----------------------------------------------------------------------
@@ -585,6 +601,7 @@ export const SkiaCanvas = memo(
         docRef.current = next;
         setDoc(next);
         setEditorOverlay({ selectedIds: validIds });
+        notifySceneListeners(next, activePageId, validIds);
         if (opts?.notifySelection !== false) {
           onSelectionChange?.(
             validIds
@@ -594,7 +611,7 @@ export const SkiaCanvas = memo(
           );
         }
       },
-      [onSelectionChange, setEditorOverlay],
+      [notifySceneListeners, onSelectionChange, setEditorOverlay],
     );
 
     const penTool = usePenTool({
