@@ -120,6 +120,9 @@ describe("canvas page helpers", () => {
       }),
     ).toThrow("Page page-default does not exist.");
 
+    expect(() => resolveActivePageId(legacy, "page-default")).toThrow(
+      "Page page-default does not exist.",
+    );
     expect(legacy.children.map((node) => node.id)).toEqual(["legacy"]);
   });
 

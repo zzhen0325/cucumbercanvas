@@ -50,8 +50,18 @@ export function getCanvasPages(doc: PenDocument): PenPage[] {
 }
 
 export function resolveActivePageId(doc: PenDocument, activePageId?: string | null): string {
-  const pages = getCanvasPages(doc);
   const requestedPageId = normalizeOptionalPageId(activePageId);
+  if (!doc.pages || doc.pages.length === 0) {
+    if (!requestedPageId) {
+      return DEFAULT_CANVAS_PAGE_ID;
+    }
+    throw new CanvasPageOperationError(
+      'page_not_found',
+      `Page ${requestedPageId} does not exist.`,
+    );
+  }
+
+  const pages = getCanvasPages(doc);
   if (!requestedPageId) {
     return pages[0]!.id;
   }
