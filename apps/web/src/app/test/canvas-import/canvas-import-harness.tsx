@@ -2,16 +2,21 @@
 
 import { useMemo, useState } from "react";
 
-import { createEmptyCanvasDocument, type CucumberCanvasDocument, flattenNodes } from "@cucumber/canvas-core";
-
 import {
-  CanvasSurface,
-  type CanvasSceneElement,
-} from "../../../components/canvas/canvas-surface";
+  type CucumberCanvasDocument,
+  createEmptyCanvasDocument,
+  flattenNodes,
+  getActiveChildren,
+} from "@cucumber/canvas-core";
+
+import type { CanvasSceneElement } from "../../../components/canvas/canvas-api";
+import { SkiaCanvas } from "../../../components/canvas/skia-canvas";
 
 export function CanvasImportHarness() {
   const initialContent = useMemo(() => createEmptyCanvasDocument(), []);
-  const [doc, setDoc] = useState<CucumberCanvasDocument>(() => createEmptyCanvasDocument());
+  const [doc, setDoc] = useState<CucumberCanvasDocument>(() =>
+    createEmptyCanvasDocument(),
+  );
   const [selection, setSelection] = useState<CanvasSceneElement[]>([]);
 
   const importedSelection = selection.filter(
@@ -40,7 +45,7 @@ export function CanvasImportHarness() {
           overflow: "hidden",
         }}
       >
-        <CanvasSurface
+        <SkiaCanvas
           initialContent={initialContent}
           onDocumentChange={setDoc}
           onSelectionChange={setSelection}
@@ -58,12 +63,17 @@ export function CanvasImportHarness() {
           padding: 16,
         }}
       >
-        <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Canvas Import Harness</h1>
+        <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>
+          Canvas Import Harness
+        </h1>
         <p style={{ color: "#94a3b8", fontSize: 13, margin: 0 }}>
-          通过真实 paste 事件验证 Figma/SVG 导入链路，并在右侧暴露当前选区与文档快照。
+          通过真实 paste 事件验证 Figma/SVG
+          导入链路，并在右侧暴露当前选区与文档快照。
         </p>
         <div data-testid="selection-count">{selection.length}</div>
-        <div data-testid="imported-selection-count">{importedSelection.length}</div>
+        <div data-testid="imported-selection-count">
+          {importedSelection.length}
+        </div>
         <pre
           data-testid="selected-meta"
           style={{
@@ -95,15 +105,18 @@ export function CanvasImportHarness() {
           {JSON.stringify(
             {
               nodeCount: flattenNodes(doc).length,
-              rootNodeIds: doc.children?.map((c: any) => c.id) ?? [],
+              rootNodeIds: getActiveChildren(doc).map((child) => child.id),
               selection: [],
-              nodes: flattenNodes(doc).map((node: any) => ({
+              nodes: flattenNodes(doc).map((node) => ({
                 id: node.id,
                 type: node.type,
-                title: node.title,
-                parentId: node.parentId,
-                childrenOrder: "childrenOrder" in node ? node.childrenOrder : undefined,
-                meta: node.meta,
+                name: node.name,
+                childrenOrder:
+                  "childrenOrder" in node ? node.childrenOrder : undefined,
+                meta:
+                  "meta" in node
+                    ? (node.meta as Record<string, unknown> | undefined)
+                    : undefined,
               })),
             },
             null,

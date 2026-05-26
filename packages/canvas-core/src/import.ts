@@ -1,15 +1,15 @@
-import { cloneDocument, createNodeId, findNode } from "./document.js";
-import { applyCanvasOperation } from "./operations.js";
-import { parseFigmaClipboardNative } from "./figma-native.js";
-import type { CanvasEffect, CanvasFill, CanvasStroke } from "./styles.js";
 import type { PenDocument, PenNode } from "@cucumber/pen-types";
+import { cloneDocument, createNodeId, findNode } from "./document.js";
+import { parseFigmaClipboardNative } from "./figma-native.js";
+import { applyCanvasOperation } from "./operations.js";
+import type { CanvasEffect, CanvasFill, CanvasStroke } from "./styles.js";
 import type {
   CanvasAsset,
   CanvasBounds,
-  CanvasImportedAutoLayoutMeta,
-  CanvasImportedNodeMeta,
   CanvasImportSource,
   CanvasImportWarningCode,
+  CanvasImportedAutoLayoutMeta,
+  CanvasImportedNodeMeta,
 } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -41,7 +41,7 @@ export interface ImportNode {
   effects?: CanvasEffect[];
   alt?: string;
   fontWeight?: number;
-  textAlign?: 'left' | 'center' | 'right' | 'justify';
+  textAlign?: "left" | "center" | "right" | "justify";
 }
 
 export interface CanvasImportWarning {
@@ -77,12 +77,16 @@ type ParsedStyle = {
   color?: string;
 };
 
-function parsedFillToCanvasFills(parsed: ParsedStyle): CanvasFill[] | undefined {
+function parsedFillToCanvasFills(
+  parsed: ParsedStyle,
+): CanvasFill[] | undefined {
   const c = parsed.fill ?? parsed.color;
   return c ? [{ type: "solid" as const, color: c }] : undefined;
 }
 
-function parsedStrokeToCanvasStroke(parsed: ParsedStyle): CanvasStroke | undefined {
+function parsedStrokeToCanvasStroke(
+  parsed: ParsedStyle,
+): CanvasStroke | undefined {
   const c = parsed.stroke;
   if (!c) return undefined;
   return {
@@ -166,7 +170,9 @@ function getWarningCodes(warnings: CanvasImportWarning[]): string[] {
   return Array.from(new Set(warnings.map((warning) => warning.code)));
 }
 
-function getHtmlAutoLayoutMeta(style: Record<string, string>): CanvasImportedAutoLayoutMeta | undefined {
+function getHtmlAutoLayoutMeta(
+  style: Record<string, string>,
+): CanvasImportedAutoLayoutMeta | undefined {
   const isFlex = style.display === "flex" || style.display === "inline-flex";
   if (!isFlex) {
     return undefined;
@@ -178,10 +184,15 @@ function getHtmlAutoLayoutMeta(style: Record<string, string>): CanvasImportedAut
     padding: readCssPadding(style),
     justifyContent: mapCssJustifyContent(style.justifyContent),
     alignItems: mapCssAlignItems(style.alignItems),
-    clipContent: style.overflow === "hidden" || style.overflow === "clip" ? true : undefined,
+    clipContent:
+      style.overflow === "hidden" || style.overflow === "clip"
+        ? true
+        : undefined,
   };
 
-  return Object.values(meta).some((value) => value !== undefined) ? meta : undefined;
+  return Object.values(meta).some((value) => value !== undefined)
+    ? meta
+    : undefined;
 }
 
 function readCssPadding(
@@ -192,7 +203,11 @@ function readCssPadding(
   const bottom = parseCssNumber(style.paddingBottom ?? style.padding);
   const left = parseCssNumber(style.paddingLeft ?? style.padding);
 
-  if ([top, right, bottom, left].every((value) => value === undefined || value === 0)) {
+  if (
+    [top, right, bottom, left].every(
+      (value) => value === undefined || value === 0,
+    )
+  ) {
     return undefined;
   }
 
@@ -200,7 +215,11 @@ function readCssPadding(
   const safeRight = right ?? 0;
   const safeBottom = bottom ?? 0;
   const safeLeft = left ?? 0;
-  if (safeTop === safeRight && safeRight === safeBottom && safeBottom === safeLeft) {
+  if (
+    safeTop === safeRight &&
+    safeRight === safeBottom &&
+    safeBottom === safeLeft
+  ) {
     return safeTop;
   }
   if (safeTop === safeBottom && safeLeft === safeRight) {
@@ -209,7 +228,9 @@ function readCssPadding(
   return [safeTop, safeRight, safeBottom, safeLeft];
 }
 
-function mapCssJustifyContent(value?: string): CanvasImportedAutoLayoutMeta["justifyContent"] {
+function mapCssJustifyContent(
+  value?: string,
+): CanvasImportedAutoLayoutMeta["justifyContent"] {
   switch (value) {
     case "center":
       return "center";
@@ -219,13 +240,14 @@ function mapCssJustifyContent(value?: string): CanvasImportedAutoLayoutMeta["jus
     case "space-evenly":
     case "space-around":
       return "space_between";
-    case "flex-start":
     default:
       return value ? "start" : undefined;
   }
 }
 
-function mapCssAlignItems(value?: string): CanvasImportedAutoLayoutMeta["alignItems"] {
+function mapCssAlignItems(
+  value?: string,
+): CanvasImportedAutoLayoutMeta["alignItems"] {
   switch (value) {
     case "center":
       return "center";
@@ -233,7 +255,6 @@ function mapCssAlignItems(value?: string): CanvasImportedAutoLayoutMeta["alignIt
       return "end";
     case "baseline":
       return "baseline";
-    case "flex-start":
     default:
       return value ? "start" : undefined;
   }
@@ -307,12 +328,7 @@ export function parseSvgMarkup(
   const roots: string[] = [];
 
   for (const child of Array.from(svg.children)) {
-    const parsed = parseSvgElement(
-      child,
-      null,
-      inherited,
-      state,
-    );
+    const parsed = parseSvgElement(child, null, inherited, state);
     if (parsed) roots.push(parsed);
   }
 
@@ -354,9 +370,14 @@ export function insertCanvasImportResult(
     next = { ...next, assets };
   }
 
-  // Detect node format: ImportNode has `bounds`, PenNode has flat x/y
+  // Detect node format: parser ImportNode has import-only fields such as
+  // bounds/title/childrenOrder; already-normalized PenNode trees do not.
   const firstNode = result.nodes[0];
-  const isNative = firstNode && !('bounds' in firstNode);
+  const isNative =
+    firstNode &&
+    !("bounds" in firstNode) &&
+    !("title" in firstNode) &&
+    !("childrenOrder" in firstNode);
 
   if (isNative) {
     // Native Figma path: nodes are already PenNode tree
@@ -364,14 +385,17 @@ export function insertCanvasImportResult(
     for (const rootId of result.rootNodeIds) {
       const penNode = nativeNodes.find((n) => n.id === rootId);
       if (!penNode) continue;
-      // Apply offset to root nodes
-      if (offsetX !== 0 || offsetY !== 0) {
-        (penNode as any).x = (penNode.x ?? 0) + offsetX;
-        (penNode as any).y = (penNode.y ?? 0) + offsetY;
-      }
+      const nodeWithOffset =
+        offsetX !== 0 || offsetY !== 0
+          ? {
+              ...penNode,
+              x: (penNode.x ?? 0) + offsetX,
+              y: (penNode.y ?? 0) + offsetY,
+            }
+          : penNode;
       next = applyCanvasOperation(next, {
-        type: 'insertNode',
-        node: penNode,
+        type: "insertNode",
+        node: nodeWithOffset,
         parentId: targetParentId,
       });
     }
@@ -388,15 +412,16 @@ export function insertCanvasImportResult(
 
   // Resolve childrenOrder → children for container nodes
   for (const imported of importNodes) {
-    if (!imported.childrenOrder || imported.childrenOrder.length === 0) continue;
+    if (!imported.childrenOrder || imported.childrenOrder.length === 0)
+      continue;
     const penNode = nodeMap.get(imported.id);
-    if (!penNode || !('children' in penNode)) continue;
+    if (!penNode || !("children" in penNode)) continue;
     const children: PenNode[] = [];
     for (const childId of imported.childrenOrder) {
       const child = nodeMap.get(childId);
       if (child) children.push(child);
     }
-    (penNode as any).children = children;
+    nodeMap.set(imported.id, { ...penNode, children } as PenNode);
   }
 
   // Insert root nodes via applyCanvasOperation
@@ -405,7 +430,7 @@ export function insertCanvasImportResult(
     const penNode = nodeMap.get(rootId);
     if (!penNode) continue;
     next = applyCanvasOperation(next, {
-      type: 'insertNode',
+      type: "insertNode",
       node: penNode,
       parentId: targetParentId,
     });
@@ -429,18 +454,22 @@ function importNodeToPenNode(
     source: getImportSourceMeta(result.source).nodeSource,
     importSessionId: result.importSessionId,
     importSourceLabel: result.sourceLabel,
-    degradationHints: importedMeta.degradationHints ?? getWarningCodes(result.warnings),
-    warningCount: importedMeta.warningCount ?? (isRoot ? result.warnings.length : undefined),
+    degradationHints:
+      importedMeta.degradationHints ?? getWarningCodes(result.warnings),
+    warningCount:
+      importedMeta.warningCount ??
+      (isRoot ? result.warnings.length : undefined),
   };
 
+  const bounds = getImportNodeBounds(imported);
   const base = {
     id: imported.id,
-    type: imported.type as PenNode['type'],
+    type: normalizeImportedNodeType(imported.type) as PenNode["type"],
     name: imported.title,
-    x: imported.bounds.x + offsetX,
-    y: imported.bounds.y + offsetY,
-    width: imported.bounds.width,
-    height: imported.bounds.height,
+    x: bounds.x + offsetX,
+    y: bounds.y + offsetY,
+    width: bounds.width,
+    height: bounds.height,
     opacity: imported.opacity,
     cornerRadius: imported.cornerRadius,
     fill: imported.fills,
@@ -450,37 +479,99 @@ function importNodeToPenNode(
 
   // Type-specific fields for PenNode union members
   switch (imported.type) {
-    case 'text':
-      return { ...base, type: 'text' as const, content: imported.text ?? '', fontFamily: imported.fontFamily, fontSize: imported.fontSize } as unknown as PenNode;
-    case 'path':
-      return { ...base, type: 'path' as const, d: imported.d ?? '' } as unknown as PenNode;
-    case 'polygon':
-      return { ...base, type: 'polygon' as const, polygonCount: imported.points ?? 3 } as unknown as PenNode;
-    case 'line':
-      return { ...base, type: 'line' as const } as unknown as PenNode;
-    case 'image':
-      return { ...base, type: 'image' as const, src: imported.src ?? '' } as unknown as PenNode;
-    case 'videoEmbed':
-      return { ...base, type: 'videoEmbed' as const, src: imported.src ?? '' } as unknown as PenNode;
+    case "text":
+      return {
+        ...base,
+        type: "text" as const,
+        content: imported.text ?? "",
+        fontFamily: imported.fontFamily,
+        fontSize: imported.fontSize,
+      } as unknown as PenNode;
+    case "frame":
+      return {
+        ...base,
+        type: "frame" as const,
+        children: [],
+      } as unknown as PenNode;
+    case "group":
+      return {
+        ...base,
+        type: "group" as const,
+        children: [],
+      } as unknown as PenNode;
+    case "rect":
+    case "rectangle":
+      return { ...base, type: "rectangle" as const } as unknown as PenNode;
+    case "path":
+      return {
+        ...base,
+        type: "path" as const,
+        d: imported.d ?? "",
+      } as unknown as PenNode;
+    case "polygon":
+      return {
+        ...base,
+        type: "polygon" as const,
+        polygonCount: imported.points ?? 3,
+      } as unknown as PenNode;
+    case "line":
+      return { ...base, type: "line" as const } as unknown as PenNode;
+    case "image":
+      return {
+        ...base,
+        type: "image" as const,
+        src: imported.src ?? "",
+      } as unknown as PenNode;
+    case "videoEmbed":
+      return {
+        ...base,
+        type: "videoEmbed" as const,
+        src: imported.src ?? "",
+      } as unknown as PenNode;
     default:
       return base as unknown as PenNode;
   }
 }
 
-export function getCanvasImportBounds(result: CanvasImportResult): CanvasBounds | null {
+function normalizeImportedNodeType(type: string): string {
+  return type === "rect" ? "rectangle" : type;
+}
+
+function getImportNodeBounds(imported: ImportNode): CanvasBounds {
+  if (imported.bounds) {
+    return imported.bounds;
+  }
+  const legacy = imported as unknown as {
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+  };
+  return {
+    x: legacy.x ?? 0,
+    y: legacy.y ?? 0,
+    width: legacy.width ?? 1,
+    height: legacy.height ?? 1,
+  };
+}
+
+export function getCanvasImportBounds(
+  result: CanvasImportResult,
+): CanvasBounds | null {
   if (result.nodes.length === 0) return null;
   const nodes = result.nodes;
   // Handle both ImportNode (has `bounds`) and PenNode (has flat x/y/width/height)
   const getBounds = (node: ImportNode | PenNode): CanvasBounds => {
-    if ('bounds' in node) {
+    if ("bounds" in node) {
       return (node as ImportNode).bounds;
     }
     const pen = node as PenNode;
+    const sized = pen as PenNode & { width?: unknown; height?: unknown };
     return {
       x: pen.x ?? 0,
       y: pen.y ?? 0,
-      width: ('width' in pen ? (pen as any).width : undefined) ?? 100,
-      height: ('height' in pen ? (pen as any).height : undefined) ?? 100,
+      width: typeof sized.width === "number" ? sized.width : 100,
+      height: typeof sized.height === "number" ? sized.height : 100,
     };
   };
   const boundsList = nodes.map(getBounds);
@@ -504,7 +595,8 @@ function parseFigmaClipboardHtml(html: string): CanvasImportResult | null {
     const result = parseSvgMarkup(svgMatch[0], { source: "figma" });
     result.warnings.push({
       code: "partial_fidelity",
-      message: "当前 Figma 剪贴板按内嵌 SVG 回退导入，复杂组件与自动布局可能无法完整保真。",
+      message:
+        "当前 Figma 剪贴板按内嵌 SVG 回退导入，复杂组件与自动布局可能无法完整保真。",
     });
     return result;
   }
@@ -569,7 +661,8 @@ function parseStyledHtmlElement(
     degradationHints.push("layout_degraded");
     pushImportWarning(state, {
       code: "layout_degraded",
-      message: "检测到 Figma 自动布局样式，已保留布局元数据，当前画布仍按静态几何近似导入。",
+      message:
+        "检测到 Figma 自动布局样式，已保留布局元数据，当前画布仍按静态几何近似导入。",
       originNodeId,
       originNodeType,
     });
@@ -587,7 +680,8 @@ function parseStyledHtmlElement(
     degradationHints.push("component_metadata_dropped");
     pushImportWarning(state, {
       code: "component_metadata_dropped",
-      message: "检测到组件或实例元数据，当前仅保留可编辑几何结构，不保留组件引用语义。",
+      message:
+        "检测到组件或实例元数据，当前仅保留可编辑几何结构，不保留组件引用语义。",
       originNodeId,
       originNodeType,
     });
@@ -774,8 +868,10 @@ function parseSvgElement(
     const id = createNodeId("ellipse");
     const cx = readNumber(element, "cx");
     const cy = readNumber(element, "cy");
-    const rx = tag === "circle" ? readNumber(element, "r") : readNumber(element, "rx");
-    const ry = tag === "circle" ? readNumber(element, "r") : readNumber(element, "ry");
+    const rx =
+      tag === "circle" ? readNumber(element, "r") : readNumber(element, "rx");
+    const ry =
+      tag === "circle" ? readNumber(element, "r") : readNumber(element, "ry");
     state.nodes.push({
       id,
       type: "ellipse",
@@ -828,9 +924,7 @@ function parseSvgElement(
     if (points.length === 0) return null;
     const bounds = getPointBounds(points);
     const id =
-      tag === "polygon"
-        ? createNodeId("polygon")
-        : createNodeId("path");
+      tag === "polygon" ? createNodeId("polygon") : createNodeId("path");
     if (tag === "polygon") {
       state.nodes.push({
         id,
@@ -955,7 +1049,10 @@ function parseSvgElement(
   return null;
 }
 
-function readElementStyle(element: Element, inherited: ParsedStyle): ParsedStyle {
+function readElementStyle(
+  element: Element,
+  inherited: ParsedStyle,
+): ParsedStyle {
   const fromAttr = parseStyleAttribute(element.getAttribute("style"));
   const fill = normalizeColor(
     element.getAttribute("fill") ?? fromAttr.fill ?? inherited.fill,
@@ -983,7 +1080,9 @@ function readElementStyle(element: Element, inherited: ParsedStyle): ParsedStyle
       parseCssNumber(fromAttr.fontSize) ??
       inherited.fontSize,
     fontFamily:
-      fromAttr.fontFamily ?? element.getAttribute("font-family") ?? inherited.fontFamily,
+      fromAttr.fontFamily ??
+      element.getAttribute("font-family") ??
+      inherited.fontFamily,
   };
 }
 
@@ -1097,9 +1196,7 @@ function getPointBounds(points: Array<{ x: number; y: number }>): CanvasBounds {
 
 function pointsToPath(points: Array<{ x: number; y: number }>): string {
   return points
-    .map((point, index) =>
-      `${index === 0 ? "M" : "L"}${point.x} ${point.y}`,
-    )
+    .map((point, index) => `${index === 0 ? "M" : "L"}${point.x} ${point.y}`)
     .join(" ");
 }
 

@@ -47,7 +47,7 @@ test.describe("canvas import harness", () => {
       await page.mouse.up();
     };
 
-    await drawShape("矩形工具", { x: 160, y: 160 }, { x: 300, y: 240 });
+    await drawShape("矩形", { x: 160, y: 160 }, { x: 300, y: 240 });
     await drawShape("椭圆", { x: 220, y: 300 }, { x: 360, y: 400 });
     await drawShape("多边形", { x: 420, y: 180 }, { x: 560, y: 300 });
 

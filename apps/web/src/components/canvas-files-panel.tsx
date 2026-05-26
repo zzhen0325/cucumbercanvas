@@ -5,7 +5,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type {
   CanvasApi,
   CanvasFileRecord,
-} from "./canvas/canvas-surface";
+} from "./canvas/canvas-api";
 
 export type CanvasFilesPanelProps = {
   canvasApi: CanvasApi | null;

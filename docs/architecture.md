@@ -58,7 +58,7 @@ The current P2 import path follows a three-step boundary:
 
 1. Browser clipboard or file input captures SVG/Figma payloads in the web app.
 2. `@cucumber/canvas-core` parses and normalizes those payloads into `CanvasNode[]` and `CanvasAsset[]`, preserving import metadata such as source and origin node type.
-3. `CanvasSurface` inserts the normalized result into `CucumberCanvasDocument` as a normal history-tracked canvas mutation.
+3. `SkiaCanvas` inserts the normalized result into `CucumberCanvasDocument` as a normal history-tracked canvas mutation.
 
 This keeps import, future component/ref modeling, variable/token wiring, and design-as-code export anchored to the same durable canvas schema instead of coupling the product shell to OpenPencil document internals.
 

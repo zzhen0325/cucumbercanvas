@@ -36,7 +36,7 @@ import {
   saveMessage,
 } from "../lib/server-api";
 import type { CanvasSelectedElement } from "./canvas-editor";
-import type { CanvasApi } from "./canvas/canvas-surface";
+import type { CanvasApi } from "./canvas/canvas-api";
 import {
   type BrandKitMentionItem,
   type CanvasImageItem,

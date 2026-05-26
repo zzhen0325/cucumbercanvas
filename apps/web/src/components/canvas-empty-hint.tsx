@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import type { CanvasApi, CanvasSceneElement } from "./canvas/canvas-surface";
+import type { CanvasApi, CanvasSceneElement } from "./canvas/canvas-api";
 
 type CanvasEmptyHintProps = {
   canvasApi: CanvasApi | null;

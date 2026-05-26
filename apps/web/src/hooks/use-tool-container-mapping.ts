@@ -9,7 +9,7 @@ import {
 } from "@cucumber/canvas-core";
 import type { ToolArtifact } from "@cucumber/shared";
 
-import type { CanvasApi } from "../components/canvas/canvas-surface";
+import type { CanvasApi } from "../components/canvas/canvas-api";
 
 // ── Helpers ──────────────────────────────────────────────────
 

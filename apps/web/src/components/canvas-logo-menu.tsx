@@ -16,7 +16,7 @@ import {
 import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 
-import type { CanvasApi } from "@/components/canvas/canvas-surface";
+import type { CanvasApi } from "@/components/canvas/canvas-api";
 import { CucumberLogo } from "@/components/icons/cucumber-logo";
 import { useToast } from "@/components/toast";
 import {

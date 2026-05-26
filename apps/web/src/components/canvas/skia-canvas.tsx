@@ -2,39 +2,34 @@
 
 import {
   type AgentBinding,
-  applyCanvasOperation,
   type CanvasAsset,
   type CanvasBounds,
-  type CanvasNode,
-  type ContainerNode,
-  createNodeId,
+  type CanvasClipboardData,
+  type ClipboardImportPayload,
   type CucumberCanvasDocument,
+  applyCanvasOperation,
+  copyCanvasSelection,
+  createNodeId,
+  duplicateCanvasNodes,
   findNode,
   findParent,
   flattenNodes,
+  getCanvasImportBounds,
   getNodeBounds,
-  groupNodesInDoc,
-  isContainerNode,
+  getOrderedCanvasNodes,
+  getVisibleCanvasNodesInBounds,
+  insertCanvasImportResult,
+  parseClipboardImport,
+  pasteCanvasClipboard,
   resolveContext,
-  ungroupNodeInDoc,
 } from "@cucumber/canvas-core";
+import { createEmptyDocument, getActiveChildren } from "@cucumber/canvas-core";
 import {
-  createEmptyDocument,
-  findNodeInList,
-  getActiveChildren,
-  setActiveChildren,
-} from "@cucumber/canvas-core";
-import type {
-  ContainerRole,
-  FrameNode,
-  PenDocument,
-  PenNode,
-} from "@cucumber/pen-types";
-import {
-  loadCanvasKit,
   PenRenderer,
+  loadCanvasKit,
   screenToScene,
 } from "@cucumber/pen-renderer";
+import type { ContainerRole, PenDocument, PenNode } from "@cucumber/pen-types";
 import type { CanvasKit } from "canvaskit-wasm";
 import {
   forwardRef,
@@ -47,26 +42,36 @@ import {
   useState,
 } from "react";
 
+import { useToast } from "@/components/toast";
 import type {
+  AlignMode,
   CanvasApi,
-  CanvasSceneElement,
-  CanvasFileRecord,
   CanvasAppState,
   CanvasChangeListener,
-} from "./canvas-surface";
+  CanvasFileRecord,
+  CanvasSceneElement,
+} from "./canvas-api";
 import { exportDocumentImage } from "./canvas-export";
+import {
+  getPrimarySelectedContainerId,
+  getTopLevelSelectionIds,
+} from "./canvas-selection-helpers";
 import { CanvasPropertyPanel } from "./property-panel/canvas-property-panel";
 import {
-  penNodeToLegacy,
-  legacyUpdateToPenNode,
-} from "./property-panel/pen-node-adapter";
+  type ClipboardImportContext,
+  readClipboardImportPayload,
+  useCanvasClipboardImport,
+} from "./use-canvas-clipboard-import";
+import { useCanvasKeyboardShortcuts } from "./use-canvas-keyboard-shortcuts";
 
 // ---------------------------------------------------------------------------
-// Helpers to bridge old canvas-surface types
+// Helpers to bridge the public CanvasApi summaries with PenDocument nodes.
 // ---------------------------------------------------------------------------
 
 function toSceneElement(node: PenNode): CanvasSceneElement {
   const b = getNodeBounds(node);
+  const nodeRecord = node as unknown as Record<string, unknown>;
+  const meta = nodeRecord.meta as Record<string, unknown> | undefined;
   return {
     id: node.id,
     type: node.type,
@@ -74,12 +79,22 @@ function toSceneElement(node: PenNode): CanvasSceneElement {
     y: b.y,
     width: b.width,
     height: b.height,
+    fileId:
+      typeof nodeRecord.fileId === "string"
+        ? nodeRecord.fileId
+        : typeof nodeRecord.assetId === "string"
+          ? nodeRecord.assetId
+          : undefined,
+    text:
+      typeof nodeRecord.content === "string"
+        ? nodeRecord.content
+        : typeof nodeRecord.text === "string"
+          ? nodeRecord.text
+          : undefined,
     visible: node.visible,
     locked: node.locked,
     depth: 0,
-    customData: (node as unknown as Record<string, unknown>).meta as
-      | Record<string, unknown>
-      | undefined,
+    customData: meta,
   };
 }
 
@@ -89,20 +104,23 @@ function toSceneElements(doc: PenDocument): CanvasSceneElement[] {
     .map(toSceneElement);
 }
 
-function toAppState(doc: PenDocument): CanvasAppState {
+function toAppState(doc: PenDocument, selection?: string[]): CanvasAppState {
+  const runtimeDoc = doc as CanvasRuntimeDocument;
+  const selectedIds = selection ?? runtimeDoc.selection ?? [];
+  const viewport = runtimeDoc.viewport;
   return {
-    zoom: { value: (doc as any).viewport?.zoom ?? 1 },
-    scrollX: (doc as any).viewport?.x ?? 0,
-    scrollY: (doc as any).viewport?.y ?? 0,
-    viewBackgroundColor: (doc as any).viewport?.backgroundColor ?? "#ffffff",
+    zoom: { value: viewport?.zoom ?? 1 },
+    scrollX: viewport?.x ?? 0,
+    scrollY: viewport?.y ?? 0,
+    viewBackgroundColor: viewport?.backgroundColor ?? "#ffffff",
     selectedElementIds: Object.fromEntries(
-      ((doc as any).selection ?? []).map((id: string) => [id, true]),
+      selectedIds.map((id: string) => [id, true]),
     ),
   };
 }
 
 function toFiles(doc: PenDocument): Record<string, CanvasFileRecord> {
-  const assets = (doc as any).assets as Record<string, CanvasAsset> | undefined;
+  const assets = (doc as CanvasRuntimeDocument).assets;
   if (!assets) return {};
   return Object.fromEntries(
     Object.entries(assets).map(([id, a]) => [
@@ -124,9 +142,13 @@ function defaultBounds(
   _type: string,
   _parentId?: string | null,
 ): CanvasBounds {
-  const vp = (doc as any).viewport ?? { x: 0, y: 0, zoom: 1 };
-  const cx = -vp.x / vp.zoom + 200;
-  const cy = -vp.y / vp.zoom + 200;
+  const vp = (doc as CanvasRuntimeDocument).viewport ?? {
+    x: 0,
+    y: 0,
+    zoom: 1,
+  };
+  const cx = -((vp.x ?? 0) / (vp.zoom ?? 1)) + 200;
+  const cy = -((vp.y ?? 0) / (vp.zoom ?? 1)) + 200;
   return { x: cx, y: cy, width: 300, height: 200 };
 }
 
@@ -154,7 +176,8 @@ type CanvasTool =
   | "line"
   | "arrow";
 
-type DrawableShapeTool = "rect" | "ellipse" | "polygon";
+type DrawableShapeTool = "rect" | "ellipse" | "polygon" | "path";
+type ResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
 
 type ShapeDrawPreview = {
   type: DrawableShapeTool;
@@ -162,6 +185,31 @@ type ShapeDrawPreview = {
 };
 
 const MIN_DRAW_SIZE = 2;
+
+type CanvasRuntimeDocument = PenDocument & {
+  assets?: Record<string, CanvasAsset>;
+  selection?: string[];
+  viewport?: {
+    x?: number;
+    y?: number;
+    zoom?: number;
+    backgroundColor?: string;
+  };
+};
+
+function isPenNode(node: PenNode | undefined): node is PenNode {
+  return Boolean(node);
+}
+
+function hasPenChildren(node: PenNode | undefined): node is PenNode & {
+  children: PenNode[];
+} {
+  return Boolean(
+    node &&
+      "children" in node &&
+      Array.isArray((node as { children?: unknown }).children),
+  );
+}
 
 // ---------------------------------------------------------------------------
 // SkiaCanvas
@@ -224,6 +272,22 @@ export const SkiaCanvas = memo(
           origins: Record<string, CanvasBounds>;
         }
       | {
+          kind: "resize";
+          nodeId: string;
+          handle: ResizeHandle;
+          startX: number;
+          startY: number;
+          origin: CanvasBounds;
+          preserveAspectRatio: boolean;
+        }
+      | {
+          kind: "rotate";
+          nodeId: string;
+          center: { x: number; y: number };
+          originRotation: number;
+          startAngle: number;
+        }
+      | {
           kind: "drawShape";
           shapeType: DrawableShapeTool;
           startPoint: { x: number; y: number };
@@ -235,6 +299,8 @@ export const SkiaCanvas = memo(
           originSelection: string[];
         };
     const dragRef = useRef<DragState | null>(null);
+    const clipboardRef = useRef<CanvasClipboardData | null>(null);
+    const toast = useToast();
 
     // -----------------------------------------------------------------------
     // CanvasKit init
@@ -335,14 +401,14 @@ export const SkiaCanvas = memo(
         // Notify scene listeners
         queueMicrotask(() => {
           const elements = toSceneElements(next);
-          const state = toAppState(next);
+          const state = toAppState(next, selectedIds);
           const files = toFiles(next);
           for (const listener of listenersRef.current) {
             listener(elements, state, files);
           }
         });
       },
-      [historyIndex, onDocumentChange],
+      [historyIndex, onDocumentChange, selectedIds],
     );
 
     // -----------------------------------------------------------------------
@@ -351,19 +417,22 @@ export const SkiaCanvas = memo(
 
     const setSelection = useCallback(
       (nodeIds: string[], opts?: { notifySelection?: boolean }) => {
-        setSelectedIds(nodeIds);
+        const validIds = nodeIds.filter((id) =>
+          Boolean(findNode(docRef.current, id)),
+        );
+        setSelectedIds(validIds);
         const next = {
           ...docRef.current,
-          selection: nodeIds,
+          selection: validIds,
         } as PenDocument & { selection: string[] };
         docRef.current = next;
         setDoc(next);
         if (opts?.notifySelection !== false) {
           onSelectionChange?.(
-            nodeIds
+            validIds
               .map((id) => findNode(docRef.current, id))
-              .filter(Boolean)
-              .map((node) => toSceneElement(node!)),
+              .filter(isPenNode)
+              .map((node) => toSceneElement(node)),
           );
         }
       },
@@ -390,19 +459,16 @@ export const SkiaCanvas = memo(
         const hit = renderer.hitTest(screenX, screenY);
 
         if (event.shiftKey) {
-          // Additive selection
-          setSelectedIds((prev) => {
-            if (!hit) return prev;
-            const next = prev.includes(hit.id)
-              ? prev.filter((id) => id !== hit.id)
-              : [...prev, hit.id];
-            return next;
-          });
+          if (!hit) return;
+          const next = selectedIds.includes(hit.id)
+            ? selectedIds.filter((id) => id !== hit.id)
+            : [...selectedIds, hit.id];
+          setSelection(next);
         } else {
           setSelection(hit ? [hit.id] : []);
         }
       },
-      [setSelection],
+      [selectedIds, setSelection],
     );
 
     // -----------------------------------------------------------------------
@@ -562,7 +628,29 @@ export const SkiaCanvas = memo(
         }
 
         if (drag.kind === "marquee") {
-          // Basic marquee — just track, selection done on up
+          const rect = canvasContainerRef.current?.getBoundingClientRect();
+          if (!rect) return;
+          const start = screenToScene(
+            rect.left + drag.startX,
+            rect.top + drag.startY,
+            rect,
+            renderer.getViewport(),
+          );
+          const end = screenToScene(
+            event.clientX,
+            event.clientY,
+            rect,
+            renderer.getViewport(),
+          );
+          const bounds = normalizeDrawBounds(start, end, false);
+          const hitIds = getVisibleCanvasNodesInBounds(
+            docRef.current as CucumberCanvasDocument,
+            bounds,
+          ).map((node) => node.id);
+          setSelection(
+            Array.from(new Set([...drag.originSelection, ...hitIds])),
+            { notifySelection: true },
+          );
           return;
         }
 
@@ -606,8 +694,53 @@ export const SkiaCanvas = memo(
           setDoc(next);
           renderer.setDocument(next);
         }
+
+        if (drag.kind === "resize") {
+          const vp = renderer.getViewport();
+          const dx = (event.clientX - drag.startX) / vp.zoom;
+          const dy = (event.clientY - drag.startY) / vp.zoom;
+          const bounds = calculateResizeBounds(
+            drag.origin,
+            drag.handle,
+            dx,
+            dy,
+            event.shiftKey || drag.preserveAspectRatio,
+          );
+          const next = applyCanvasOperation(docRef.current, {
+            type: "updateNode",
+            nodeId: drag.nodeId,
+            updates: boundsToNodeUpdates(bounds),
+          });
+          docRef.current = next;
+          setDoc(next);
+          renderer.setDocument(next);
+          return;
+        }
+
+        if (drag.kind === "rotate") {
+          const rect = canvasContainerRef.current?.getBoundingClientRect();
+          if (!rect) return;
+          const point = screenToScene(
+            event.clientX,
+            event.clientY,
+            rect,
+            renderer.getViewport(),
+          );
+          const rotation =
+            drag.originRotation +
+            pointToAngle(drag.center, point) -
+            drag.startAngle;
+          const next = applyCanvasOperation(docRef.current, {
+            type: "updateNode",
+            nodeId: drag.nodeId,
+            updates: { rotation: Math.round(rotation) } as Partial<PenNode>,
+          });
+          docRef.current = next;
+          setDoc(next);
+          renderer.setDocument(next);
+        }
       },
-      [],
+      [setSelection],
     );
 
     const handlePointerUp = useCallback(
@@ -656,8 +789,16 @@ export const SkiaCanvas = memo(
           setActiveTool("select");
           suppressNextClickRef.current = true;
         }
-        if (drag?.kind === "move") {
+        if (
+          drag?.kind === "move" ||
+          drag?.kind === "resize" ||
+          drag?.kind === "rotate"
+        ) {
           onDocumentChange?.(docRef.current as CucumberCanvasDocument);
+          console.info("[skia-canvas] selection.transform.committed", {
+            kind: drag.kind,
+            nodeCount: drag.kind === "move" ? drag.nodeIds.length : 1,
+          });
         }
         dragRef.current = null;
         if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -696,13 +837,25 @@ export const SkiaCanvas = memo(
     // -----------------------------------------------------------------------
 
     const createContainer = useCallback(
-      (opts?: Partial<{ title: string; bounds: CanvasBounds }>) => {
+      (opts?: {
+        name?: string;
+        x?: number;
+        y?: number;
+        width?: number;
+        height?: number;
+      }) => {
         const id = createNodeId("container");
-        const b = opts?.bounds ?? defaultBounds(docRef.current, "container");
+        const defaultB = defaultBounds(docRef.current, "container");
+        const b = {
+          x: opts?.x ?? defaultB.x,
+          y: opts?.y ?? defaultB.y,
+          width: opts?.width ?? defaultB.width,
+          height: opts?.height ?? defaultB.height,
+        };
         const container = {
           id,
           type: "frame" as const,
-          name: opts?.title ?? "New container",
+          name: opts?.name ?? "New container",
           x: b.x,
           y: b.y,
           width: b.width,
@@ -731,7 +884,7 @@ export const SkiaCanvas = memo(
         commitDocument(next);
         setSelection([id]);
         console.info("[skia-canvas] container.created", { containerId: id });
-        return container as unknown as ContainerNode;
+        return container;
       },
       [commitDocument, setSelection],
     );
@@ -773,7 +926,7 @@ export const SkiaCanvas = memo(
               ...shared,
               type: "text" as const,
               name: "Text",
-              text: "Double click to edit",
+              content: "Double click to edit",
               fontSize: 28,
               fill: [{ type: "solid" as const, color: "#111827" }],
             } as unknown as PenNode;
@@ -795,6 +948,248 @@ export const SkiaCanvas = memo(
         setSelection([id]);
       },
       [commitDocument, setSelection],
+    );
+
+    const notifySelectionForDoc = useCallback(
+      (nextDoc: PenDocument, nodeIds: string[]) => {
+        onSelectionChange?.(
+          nodeIds
+            .map((id) => findNode(nextDoc, id))
+            .filter(isPenNode)
+            .map((node) => toSceneElement(node)),
+        );
+      },
+      [onSelectionChange],
+    );
+
+    const copySelection = useCallback(() => {
+      if (selectedIds.length === 0) return false;
+      const topSelection = getTopLevelSelectionIds(
+        docRef.current as CucumberCanvasDocument,
+        selectedIds,
+      );
+      clipboardRef.current = copyCanvasSelection(docRef.current, topSelection);
+      console.info("[skia-canvas] selection.copied", {
+        count: clipboardRef.current.nodes.length,
+      });
+      return true;
+    }, [selectedIds]);
+
+    const deleteSelection = useCallback(() => {
+      const ids = getTopLevelSelectionIds(
+        docRef.current as CucumberCanvasDocument,
+        selectedIds,
+      );
+      if (ids.length === 0) return;
+      let next = docRef.current;
+      for (const nodeId of ids) {
+        next = applyCanvasOperation(next, { type: "deleteNode", nodeId });
+      }
+      commitDocument(next);
+      setSelection([]);
+      console.info("[skia-canvas] selection.deleted", { count: ids.length });
+    }, [commitDocument, selectedIds, setSelection]);
+
+    const cutSelection = useCallback(() => {
+      if (copySelection()) {
+        deleteSelection();
+      }
+    }, [copySelection, deleteSelection]);
+
+    const pasteClipboard = useCallback(() => {
+      const clipboard = clipboardRef.current;
+      if (!clipboard) return [];
+      const parentId = getPrimarySelectedContainerId(
+        docRef.current as CucumberCanvasDocument,
+        selectedIds,
+      );
+      const result = pasteCanvasClipboard(docRef.current, clipboard, {
+        parentId,
+        offset: 18,
+      });
+      commitDocument(result.doc);
+      setSelection(result.pastedIds);
+      notifySelectionForDoc(result.doc, result.pastedIds);
+      console.info("[skia-canvas] clipboard.pasted", {
+        count: result.pastedIds.length,
+        parentId,
+      });
+      return result.pastedIds;
+    }, [commitDocument, notifySelectionForDoc, selectedIds, setSelection]);
+
+    const importFromPayload = useCallback(
+      (payload: ClipboardImportPayload, context?: ClipboardImportContext) => {
+        const parsed = parseClipboardImport(payload);
+        if (!parsed) return [];
+        const importBounds = getCanvasImportBounds(parsed);
+        const rect = canvasContainerRef.current?.getBoundingClientRect();
+        const viewport = rendererRef.current?.getViewport() ?? {
+          zoom: 1,
+          panX: 0,
+          panY: 0,
+        };
+        const viewportCenter = {
+          x: ((rect?.width ?? 0) / 2 - viewport.panX) / viewport.zoom,
+          y: ((rect?.height ?? 0) / 2 - viewport.panY) / viewport.zoom,
+        };
+        const offsetX = importBounds
+          ? viewportCenter.x - (importBounds.x + importBounds.width / 2)
+          : 0;
+        const offsetY = importBounds
+          ? viewportCenter.y - (importBounds.y + importBounds.height / 2)
+          : 0;
+        const inserted = insertCanvasImportResult(docRef.current, parsed, {
+          parentId: getPrimarySelectedContainerId(
+            docRef.current as CucumberCanvasDocument,
+            selectedIds,
+          ),
+          offsetX,
+          offsetY,
+        });
+        commitDocument(inserted.doc);
+        setSelection(inserted.insertedIds);
+        notifySelectionForDoc(inserted.doc, inserted.insertedIds);
+        if (parsed.warnings.length > 0) {
+          toast.toast(
+            `${parsed.sourceLabel} 已导入 ${inserted.insertedIds.length} 个节点，包含 ${parsed.warnings.length} 条兼容性提醒。`,
+          );
+        } else {
+          toast.success(
+            `${parsed.sourceLabel} 已导入 ${inserted.insertedIds.length} 个节点。`,
+          );
+        }
+        console.info("[skia-canvas] clipboard.imported", {
+          trigger: context?.trigger ?? "unknown",
+          mimeTypes: context?.mimeTypes ?? [],
+          source: parsed.source,
+          importSessionId: parsed.importSessionId,
+          insertedCount: inserted.insertedIds.length,
+          warningCount: parsed.warnings.length,
+        });
+        return inserted.insertedIds;
+      },
+      [commitDocument, notifySelectionForDoc, selectedIds, setSelection, toast],
+    );
+
+    const pasteFromSystemClipboard = useCallback(async () => {
+      const { payload, context } = await readClipboardImportPayload();
+      if (!payload.html && !payload.text) return [];
+      try {
+        return importFromPayload(payload, context);
+      } catch (error) {
+        console.warn("[skia-canvas] clipboard.import.failed", {
+          trigger: context.trigger,
+          mimeTypes: context.mimeTypes,
+          error,
+        });
+        toast.error(
+          error instanceof Error ? error.message : "剪贴板导入失败，请重试。",
+        );
+        return [];
+      }
+    }, [importFromPayload, toast]);
+
+    const importSvgMarkup = useCallback(
+      (svgMarkup: string) => {
+        try {
+          return importFromPayload(
+            { text: svgMarkup },
+            {
+              trigger: "clipboard-api",
+              mimeTypes: ["image/svg+xml", "text/plain"],
+              hasHtml: false,
+              hasText: true,
+            },
+          );
+        } catch (error) {
+          console.warn("[skia-canvas] svg.import.failed", { error });
+          toast.error(
+            error instanceof Error ? error.message : "SVG 导入失败。",
+          );
+          return [];
+        }
+      },
+      [importFromPayload, toast],
+    );
+
+    const duplicateSelection = useCallback(() => {
+      if (selectedIds.length === 0) return [];
+      const topSelection = getTopLevelSelectionIds(
+        docRef.current as CucumberCanvasDocument,
+        selectedIds,
+      );
+      const result = duplicateCanvasNodes(docRef.current, topSelection, 18);
+      commitDocument(result.doc);
+      setSelection(result.pastedIds);
+      notifySelectionForDoc(result.doc, result.pastedIds);
+      console.info("[skia-canvas] selection.duplicated", {
+        count: result.pastedIds.length,
+      });
+      return result.pastedIds;
+    }, [commitDocument, notifySelectionForDoc, selectedIds, setSelection]);
+
+    const insertImageNode = useCallback(
+      (
+        artifact: {
+          assetId?: string;
+          jobId?: string;
+          url: string;
+          mimeType: string;
+          width?: number;
+          height?: number;
+          title?: string;
+        },
+        source: CanvasAsset["source"],
+      ) => {
+        const id = createNodeId("image");
+        const assetId =
+          artifact.assetId ?? artifact.jobId ?? createNodeId("asset");
+        const targetContainerId = getPrimarySelectedContainerId(
+          docRef.current as CucumberCanvasDocument,
+          selectedIds,
+        );
+        const b = defaultBounds(docRef.current, "image", targetContainerId);
+        const asset: CanvasAsset = {
+          id: assetId,
+          url: artifact.url,
+          mimeType: artifact.mimeType,
+          name: artifact.title,
+          width: artifact.width,
+          height: artifact.height,
+          source,
+        };
+        const node: PenNode = {
+          id,
+          type: "image",
+          name: artifact.title ?? "Generated image",
+          x: b.x,
+          y: b.y,
+          width: artifact.width ?? b.width,
+          height: artifact.height ?? b.height,
+          src: artifact.url,
+          fileId: assetId,
+          imageFit: "cover",
+          meta: { source, title: artifact.title },
+        } as unknown as PenNode;
+        const next = applyCanvasOperation(
+          {
+            ...docRef.current,
+            assets: {
+              ...((docRef.current as CanvasRuntimeDocument).assets ?? {}),
+              [assetId]: asset,
+            },
+          } as PenDocument,
+          { type: "insertNode", node, parentId: targetContainerId },
+        );
+        commitDocument(next);
+        setSelection([id]);
+        console.info("[skia-canvas] image.inserted", {
+          nodeId: id,
+          assetId,
+          source,
+        });
+      },
+      [commitDocument, selectedIds, setSelection],
     );
 
     const api = useMemo<CanvasApi>(
@@ -871,7 +1266,7 @@ export const SkiaCanvas = memo(
           },
           getSceneElements: () => toSceneElements(docRef.current),
           getFiles: () => toFiles(docRef.current),
-          getAppState: () => toAppState(docRef.current),
+          getAppState: () => toAppState(docRef.current, selectedIds),
           updateScene: (scene) => {
             if (scene.appState) {
               const state = scene.appState;
@@ -890,8 +1285,27 @@ export const SkiaCanvas = memo(
               }
             }
           },
-          addFiles: (_files) => {
-            // No-op for now — assets managed elsewhere
+          addFiles: (incoming) => {
+            const assets = {
+              ...((
+                docRef.current as PenDocument & {
+                  assets?: Record<string, CanvasAsset>;
+                }
+              ).assets ?? {}),
+            };
+            for (const file of incoming) {
+              assets[file.id] = {
+                id: file.id,
+                url: file.storageUrl ?? file.dataURL ?? "",
+                mimeType: file.mimeType,
+                name: file.name,
+                source: "upload",
+              };
+            }
+            commitDocument({ ...docRef.current, assets } as PenDocument);
+            console.info("[skia-canvas] assets.added", {
+              count: incoming.length,
+            });
           },
           onChange: (listener) => {
             listenersRef.current.add(listener);
@@ -920,31 +1334,32 @@ export const SkiaCanvas = memo(
           },
           canUndo: () => historyIndex >= 0,
           canRedo: () => historyIndex < historyStack.length - 1,
-          copySelection: () => false,
-          pasteClipboard: () => [],
-          duplicateSelection: () => [],
-          deleteSelection: () => {
-            for (const id of selectedIds) {
-              const next = applyCanvasOperation(docRef.current, {
-                type: "deleteNode",
-                nodeId: id,
-              });
-              commitDocument(next, { notify: false });
-            }
-            setSelection([]);
-            onDocumentChange?.(docRef.current as CucumberCanvasDocument);
-          },
+          copySelection,
+          pasteClipboard,
+          duplicateSelection,
+          deleteSelection,
           groupSelection: () => {
-            if (selectedIds.length < 2) return null;
+            const topSelection = getTopLevelSelectionIds(
+              docRef.current as CucumberCanvasDocument,
+              selectedIds,
+            );
+            if (topSelection.length < 2) return null;
             const groupId = createNodeId("group");
-            const doc = docRef.current;
             try {
-              groupNodesInDoc(doc, groupId, [...selectedIds]);
-              commitDocument(doc);
+              const next = applyCanvasOperation(docRef.current, {
+                type: "groupNodes",
+                groupId,
+                nodeIds: topSelection,
+              });
+              commitDocument(next);
               setSelection([groupId]);
+              console.info("[skia-canvas] selection.grouped", {
+                groupId,
+                count: topSelection.length,
+              });
               return groupId;
             } catch (e) {
-              console.warn("[groupSelection]", e);
+              console.warn("[skia-canvas] selection.group.failed", e);
               return null;
             }
           },
@@ -954,23 +1369,25 @@ export const SkiaCanvas = memo(
               return node && node.type === "group";
             });
             if (groupIds.length === 0) return [];
-            const doc = docRef.current;
             const ungrouped: string[] = [];
             for (const gid of groupIds) {
-              const group = findNode(doc, gid);
+              const group = findNode(docRef.current, gid);
               if (!group || group.type !== "group") continue;
-              const childIds =
-                ((group as any).children as any[] | undefined)?.map(
-                  (c: any) => c.id,
-                ) ?? [];
+              const childIds = hasPenChildren(group)
+                ? group.children.map((child) => child.id)
+                : [];
               try {
-                ungroupNodeInDoc(doc, gid);
+                const next = applyCanvasOperation(docRef.current, {
+                  type: "ungroupNode",
+                  groupId: gid,
+                });
+                docRef.current = next;
                 ungrouped.push(...childIds);
               } catch (e) {
-                console.warn("[ungroupSelection]", e);
+                console.warn("[skia-canvas] selection.ungroup.failed", e);
               }
             }
-            commitDocument(doc);
+            commitDocument(docRef.current);
             setSelection(ungrouped);
             return ungrouped;
           },
@@ -1031,12 +1448,9 @@ export const SkiaCanvas = memo(
             const node = findNode(doc, nodeId);
             if (!node) return;
             const parent = findParent(doc, nodeId);
-            const siblings =
-              parent &&
-              "children" in parent &&
-              Array.isArray((parent as any).children)
-                ? ((parent as any).children as PenNode[])
-                : flattenNodes(doc).filter((n) => !findParent(doc, n.id));
+            const siblings = hasPenChildren(parent)
+              ? parent.children
+              : flattenNodes(doc).filter((n) => !findParent(doc, n.id));
             const idx = siblings.findIndex((c: PenNode) => c.id === nodeId);
             if (idx < 0) return;
             const reordered = siblings.filter((c: PenNode) => c.id !== nodeId);
@@ -1080,21 +1494,18 @@ export const SkiaCanvas = memo(
             });
             if (targetParentId && targetIndex >= 0) {
               const parent = findNode(next, targetParentId);
-              if (
-                parent &&
-                "children" in parent &&
-                Array.isArray((parent as any).children)
-              ) {
-                const children = [...((parent as any).children as PenNode[])];
+              if (hasPenChildren(parent)) {
+                const children = [...parent.children];
                 const nodeIdx = children.findIndex(
                   (c: PenNode) => c.id === nodeId,
                 );
                 if (nodeIdx >= 0 && nodeIdx !== targetIndex) {
                   const [moved] = children.splice(nodeIdx, 1);
+                  if (!moved) return;
                   children.splice(
                     Math.min(targetIndex, children.length),
                     0,
-                    moved!,
+                    moved,
                   );
                   next = applyCanvasOperation(next, {
                     type: "updateNode",
@@ -1127,88 +1538,10 @@ export const SkiaCanvas = memo(
             });
             commitDocument(next);
           },
-          pasteFromSystemClipboard: async () => {
-            try {
-              // Try to read HTML from clipboard (Figma/SVG paste)
-              const clipboardData = await navigator.clipboard.read();
-              for (const item of clipboardData) {
-                if (item.types.includes("text/html")) {
-                  const blob = await item.getType("text/html");
-                  const html = await blob.text();
-                  const nodes = pasteHtmlToPenNodes(html, createNodeId);
-                  if (nodes.length > 0) {
-                    let next = docRef.current;
-                    const insertedIds: string[] = [];
-                    for (const node of nodes) {
-                      next = applyCanvasOperation(next, {
-                        type: "insertNode",
-                        node,
-                      });
-                      insertedIds.push(node.id);
-                    }
-                    commitDocument(next);
-                    setSelection(insertedIds);
-                    return insertedIds;
-                  }
-                }
-                if (item.types.includes("text/plain")) {
-                  const blob = await item.getType("text/plain");
-                  const text = await blob.text();
-                  // Create a text node with the pasted plain text
-                  const id = createNodeId("text");
-                  const vp = rendererRef.current?.getViewport() ?? {
-                    zoom: 1,
-                    panX: 0,
-                    panY: 0,
-                  };
-                  const node: PenNode = {
-                    id,
-                    type: "text",
-                    name: text.slice(0, 30),
-                    content: text,
-                    x: 100 - vp.panX / vp.zoom,
-                    y: 100 - vp.panY / vp.zoom,
-                    width: 300,
-                    height: 40,
-                    fontSize: 16,
-                    fill: [{ type: "solid", color: "#111827" }],
-                  } as PenNode;
-                  const next = applyCanvasOperation(docRef.current, {
-                    type: "insertNode",
-                    node,
-                  });
-                  commitDocument(next);
-                  setSelection([id]);
-                  return [id];
-                }
-              }
-            } catch (err) {
-              console.warn("[skia-canvas] paste from clipboard failed", err);
-            }
-            return [];
-          },
-          importSvgMarkup: () => [],
-          insertImageArtifact: (artifact) => {
-            const id = createNodeId("image");
-            const b = defaultBounds(docRef.current, "image");
-            const node: PenNode = {
-              id,
-              type: "image",
-              name: artifact.title ?? "Generated image",
-              x: b.x,
-              y: b.y,
-              width: artifact.width ?? b.width,
-              height: artifact.height ?? b.height,
-              src: artifact.url,
-              imageFit: "cover",
-            } as PenNode;
-            const next = applyCanvasOperation(docRef.current, {
-              type: "insertNode",
-              node,
-            });
-            commitDocument(next);
-            setSelection([id]);
-          },
+          pasteFromSystemClipboard,
+          importSvgMarkup,
+          insertImageArtifact: (artifact) =>
+            insertImageNode(artifact, "generated"),
           insertVideoArtifact: (artifact) => {
             const id = createNodeId("videoEmbed");
             const b = defaultBounds(docRef.current, "videoEmbed");
@@ -1233,13 +1566,19 @@ export const SkiaCanvas = memo(
         }) as CanvasApi,
       [
         commitDocument,
+        copySelection,
         createContainer,
-        setSelection,
-        selectedIds,
+        deleteSelection,
+        duplicateSelection,
         historyIndex,
         historyStack,
-        onDocumentChange,
+        importSvgMarkup,
+        insertImageNode,
+        pasteClipboard,
+        pasteFromSystemClipboard,
         createShapeNode,
+        selectedIds,
+        setSelection,
       ],
     );
 
@@ -1249,17 +1588,140 @@ export const SkiaCanvas = memo(
       onApiReady?.(api);
     }, [api, onApiReady]);
 
+    useCanvasKeyboardShortcuts({
+      undo: api.undo,
+      redo: api.redo,
+      selectAll: () =>
+        setSelection(
+          getOrderedCanvasNodes(docRef.current)
+            .map((entry) => entry.node)
+            .filter((node) => node.visible !== false)
+            .map((node) => node.id),
+        ),
+      copySelection,
+      cutSelection,
+      pasteClipboard,
+      pasteFromSystemClipboard,
+      duplicateSelection,
+      deleteSelection,
+      groupSelection: api.groupSelection,
+      ungroupSelection: api.ungroupSelection,
+      nudgeSelection: (dx, dy) => {
+        if (selectedIds.length === 0) return;
+        let next = docRef.current;
+        for (const nodeId of selectedIds) {
+          const node = findNode(next, nodeId);
+          if (!node || node.locked) continue;
+          const bounds = getNodeBounds(node);
+          next = applyCanvasOperation(next, {
+            type: "updateNode",
+            nodeId,
+            updates: {
+              x: bounds.x + dx,
+              y: bounds.y + dy,
+            } as Partial<PenNode>,
+          });
+        }
+        commitDocument(next);
+      },
+      reorderSelection: (direction) => {
+        const topSelection = getTopLevelSelectionIds(
+          docRef.current as CucumberCanvasDocument,
+          selectedIds,
+        );
+        for (const nodeId of topSelection) {
+          api.reorderNode(nodeId, direction);
+        }
+      },
+      setActiveTool: (tool) => {
+        setActiveTool(tool === "pen" ? "path" : tool);
+      },
+    });
+
+    useCanvasClipboardImport({
+      onImportPayload: (payload, context) => {
+        try {
+          return importFromPayload(payload, context).length > 0;
+        } catch (error) {
+          console.warn("[skia-canvas] clipboard.import.failed", {
+            trigger: context.trigger,
+            mimeTypes: context.mimeTypes,
+            error,
+          });
+          toast.error(
+            error instanceof Error ? error.message : "剪贴板导入失败，请重试。",
+          );
+          return false;
+        }
+      },
+    });
+
+    const beginResize = useCallback(
+      (
+        nodeId: string,
+        handle: ResizeHandle,
+        event: React.PointerEvent<HTMLButtonElement>,
+      ) => {
+        const node = findNode(docRef.current, nodeId);
+        if (!node || node.locked) return;
+        event.preventDefault();
+        event.stopPropagation();
+        dragRef.current = {
+          kind: "resize",
+          nodeId,
+          handle,
+          startX: event.clientX,
+          startY: event.clientY,
+          origin: getNodeBounds(node),
+          preserveAspectRatio: event.shiftKey,
+        };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      },
+      [],
+    );
+
+    const beginRotate = useCallback(
+      (nodeId: string, event: React.PointerEvent<HTMLButtonElement>) => {
+        const node = findNode(docRef.current, nodeId);
+        const renderer = rendererRef.current;
+        const rect = canvasContainerRef.current?.getBoundingClientRect();
+        if (!node || node.locked || !renderer || !rect) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const bounds = getNodeBounds(node);
+        const center = {
+          x: bounds.x + bounds.width / 2,
+          y: bounds.y + bounds.height / 2,
+        };
+        const start = screenToScene(
+          event.clientX,
+          event.clientY,
+          rect,
+          renderer.getViewport(),
+        );
+        dragRef.current = {
+          kind: "rotate",
+          nodeId,
+          center,
+          originRotation: bounds.rotation ?? 0,
+          startAngle: pointToAngle(center, start),
+        };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      },
+      [],
+    );
+
     // -----------------------------------------------------------------------
     // Initial document sync
     // -----------------------------------------------------------------------
 
+    // biome-ignore lint/correctness/useExhaustiveDependencies: initial content should resync only when CanvasKit becomes ready.
     useEffect(() => {
-      if (!rendererRef.current) return;
+      if (!ckReady || !rendererRef.current) return;
       const next = normalizePenDocument(initialContent);
       commitDocument(next, { captureHistory: false });
       rendererRef.current.setDocument(next);
       rendererRef.current.zoomToFit(64);
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [ckReady]);
 
     // -----------------------------------------------------------------------
@@ -1291,6 +1753,10 @@ export const SkiaCanvas = memo(
         : effectiveTool === "select"
           ? "cursor-default"
           : "cursor-crosshair";
+    const selectionViewport = rendererRef.current?.getViewport();
+    const selectedNodes = selectedIds
+      .map((id) => findNode(doc, id))
+      .filter((node): node is PenNode => Boolean(node));
 
     return (
       <div
@@ -1298,9 +1764,11 @@ export const SkiaCanvas = memo(
         style={{ backgroundColor: "#ffffff" }}
         onClick={handleCanvasClick}
         onWheel={handleWheel}
+        onKeyDown={() => undefined}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
       >
         {/* CanvasKit canvas container */}
         <div ref={canvasContainerRef} className="absolute inset-0" />
@@ -1309,6 +1777,15 @@ export const SkiaCanvas = memo(
           <SkiaShapeDrawPreview
             preview={shapeDrawPreview}
             viewport={rendererRef.current.getViewport()}
+          />
+        ) : null}
+
+        {selectionViewport ? (
+          <SkiaSelectionOverlay
+            nodes={selectedNodes}
+            viewport={selectionViewport}
+            onResizeStart={beginResize}
+            onRotateStart={beginRotate}
           />
         ) : null}
 
@@ -1328,22 +1805,20 @@ export const SkiaCanvas = memo(
         {/* Property panel */}
         {selectedIds.length === 1 && selectedIds[0]
           ? (() => {
-              const selectedNode = findNode(doc, selectedIds[0]!);
+              const selectedNodeId = selectedIds[0];
+              if (!selectedNodeId) return null;
+              const selectedNode = findNode(doc, selectedNodeId);
               if (!selectedNode) return null;
-              const legacyNode = penNodeToLegacy(selectedNode);
-              const ctx = resolveContext(doc, selectedIds[0]!);
+              const ctx = resolveContext(doc, selectedNodeId);
               return (
                 <CanvasPropertyPanel
-                  node={legacyNode}
+                  node={selectedNode}
                   context={ctx}
                   onUpdate={(updates) => {
-                    const penUpdates = legacyUpdateToPenNode(
-                      updates as Record<string, unknown>,
-                    );
-                    api.updateNode(selectedIds[0]!, penUpdates);
+                    api.updateNode(selectedNodeId, updates);
                   }}
                   onBindAgent={(binding: AgentBinding) => {
-                    api.bindAgentToContainer(selectedIds[0]!, binding);
+                    api.bindAgentToContainer(selectedNodeId, binding);
                   }}
                 />
               );
@@ -1410,6 +1885,7 @@ function SkiaShapeDrawPreview({
       ) : null}
       {type === "polygon" ? (
         <svg
+          aria-hidden="true"
           className="h-full w-full overflow-visible"
           viewBox={`0 0 ${style.width} ${style.height}`}
         >
@@ -1423,6 +1899,84 @@ function SkiaShapeDrawPreview({
           />
         </svg>
       ) : null}
+      {type === "path" ? (
+        <svg
+          aria-hidden="true"
+          className="h-full w-full overflow-visible"
+          viewBox={`0 0 ${style.width} ${style.height}`}
+        >
+          <path
+            d={createPathPreviewD(style.width, style.height)}
+            fill="none"
+            stroke={strokeColor}
+            strokeDasharray="5 3"
+            strokeLinecap="round"
+            strokeWidth={1.5}
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+      ) : null}
+    </div>
+  );
+}
+
+function SkiaSelectionOverlay({
+  nodes,
+  viewport,
+  onResizeStart,
+  onRotateStart,
+}: {
+  nodes: PenNode[];
+  viewport: { zoom: number; panX: number; panY: number };
+  onResizeStart: (
+    nodeId: string,
+    handle: ResizeHandle,
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => void;
+  onRotateStart: (
+    nodeId: string,
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => void;
+}) {
+  if (nodes.length === 0) return null;
+
+  return (
+    <div className="pointer-events-none absolute inset-0 z-10">
+      {nodes.map((node) => {
+        const bounds = getNodeBounds(node);
+        const rotation = bounds.rotation ?? 0;
+        const style = {
+          left: bounds.x * viewport.zoom + viewport.panX,
+          top: bounds.y * viewport.zoom + viewport.panY,
+          width: bounds.width * viewport.zoom,
+          height: bounds.height * viewport.zoom,
+          transform: `rotate(${rotation}deg)`,
+        };
+        return (
+          <div
+            key={node.id}
+            className="pointer-events-none absolute border border-primary"
+            data-canvas-selection-overlay={node.id}
+            style={style}
+          >
+            {RESIZE_HANDLES.map((handle) => (
+              <button
+                key={handle}
+                type="button"
+                aria-label={`Resize ${handle}`}
+                className={`pointer-events-auto absolute h-2.5 w-2.5 rounded-full border border-primary bg-background shadow-sm ${resizeHandleClass(handle)}`}
+                onPointerDown={(event) => onResizeStart(node.id, handle, event)}
+              />
+            ))}
+            <button
+              type="button"
+              aria-label="Rotate selection"
+              className="pointer-events-auto absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 -translate-y-7 rounded-full border border-primary bg-background shadow-sm before:absolute before:left-1/2 before:top-full before:h-4 before:w-px before:-translate-x-1/2 before:bg-primary"
+              onPointerDown={(event) => onRotateStart(node.id, event)}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1432,6 +1986,7 @@ function SkiaShapeDrawPreview({
 // ---------------------------------------------------------------------------
 
 import {
+  Box,
   Circle,
   Frame,
   Hand,
@@ -1444,7 +1999,6 @@ import {
   Triangle,
   Type,
   Undo2,
-  Box,
 } from "lucide-react";
 
 function SkiaToolbar({
@@ -1474,8 +2028,12 @@ function SkiaToolbar({
     <div
       className="absolute left-1/2 top-4 z-20 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card/90 px-1.5 py-1.5 shadow-card backdrop-blur"
       onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
     >
       <button
+        type="button"
         className={`${btn} ${activeTool === "select" ? "bg-muted text-foreground" : ""}`}
         onClick={() => onToolChange("select")}
         title="选择"
@@ -1483,6 +2041,7 @@ function SkiaToolbar({
         <MousePointer2 className="h-4 w-4" />
       </button>
       <button
+        type="button"
         className={`${btn} ${activeTool === "hand" ? "bg-muted text-foreground" : ""}`}
         onClick={() => onToolChange("hand")}
         title="抓手"
@@ -1490,18 +2049,36 @@ function SkiaToolbar({
         <Hand className="h-4 w-4" />
       </button>
       <span className="mx-1 h-4 w-px bg-border" />
-      <button className={btn} disabled={!canUndo} onClick={onUndo} title="撤销">
+      <button
+        type="button"
+        className={btn}
+        disabled={!canUndo}
+        onClick={onUndo}
+        title="撤销"
+      >
         <Undo2 className="h-4 w-4" />
       </button>
-      <button className={btn} disabled={!canRedo} onClick={onRedo} title="重做">
+      <button
+        type="button"
+        className={btn}
+        disabled={!canRedo}
+        onClick={onRedo}
+        title="重做"
+      >
         <Redo2 className="h-4 w-4" />
       </button>
       <span className="mx-1 h-4 w-px bg-border" />
-      <button className={btn} onClick={onCreateContainer} title="新建容器">
+      <button
+        type="button"
+        className={btn}
+        onClick={onCreateContainer}
+        title="新建容器"
+      >
         <Plus className="h-4 w-4" />
       </button>
       <span className="mx-1 h-4 w-px bg-border" />
       <button
+        type="button"
         className={`${btn} ${activeTool === "rect" ? "bg-muted text-foreground" : ""}`}
         onClick={() => onToolChange("rect")}
         title="矩形"
@@ -1509,6 +2086,7 @@ function SkiaToolbar({
         <Box className="h-4 w-4" />
       </button>
       <button
+        type="button"
         className={`${btn} ${activeTool === "ellipse" ? "bg-muted text-foreground" : ""}`}
         onClick={() => onToolChange("ellipse")}
         title="椭圆"
@@ -1516,6 +2094,7 @@ function SkiaToolbar({
         <Circle className="h-4 w-4" />
       </button>
       <button
+        type="button"
         className={`${btn} ${activeTool === "polygon" ? "bg-muted text-foreground" : ""}`}
         onClick={() => onToolChange("polygon")}
         title="多边形"
@@ -1523,6 +2102,7 @@ function SkiaToolbar({
         <Triangle className="h-4 w-4" />
       </button>
       <button
+        type="button"
         className={`${btn} ${activeTool === "path" ? "bg-muted text-foreground" : ""}`}
         onClick={() => onToolChange("path")}
         title="路径"
@@ -1530,6 +2110,7 @@ function SkiaToolbar({
         <PenTool className="h-4 w-4" />
       </button>
       <button
+        type="button"
         className={`${btn} ${activeTool === "icon" ? "bg-muted text-foreground" : ""}`}
         onClick={() => onToolChange("icon")}
         title="图标"
@@ -1537,6 +2118,7 @@ function SkiaToolbar({
         <Sparkles className="h-4 w-4" />
       </button>
       <button
+        type="button"
         className={`${btn} ${activeTool === "text" ? "bg-muted text-foreground" : ""}`}
         onClick={() => onToolChange("text")}
         title="文字"
@@ -1544,6 +2126,7 @@ function SkiaToolbar({
         <Type className="h-4 w-4" />
       </button>
       <button
+        type="button"
         className={btn}
         disabled={selectedCount === 0}
         onClick={onDelete}
@@ -1556,7 +2139,37 @@ function SkiaToolbar({
 }
 
 function isDrawableShapeTool(tool: CanvasTool): tool is DrawableShapeTool {
-  return tool === "rect" || tool === "ellipse" || tool === "polygon";
+  return (
+    tool === "rect" ||
+    tool === "ellipse" ||
+    tool === "polygon" ||
+    tool === "path"
+  );
+}
+
+const RESIZE_HANDLES: ResizeHandle[] = [
+  "n",
+  "ne",
+  "e",
+  "se",
+  "s",
+  "sw",
+  "w",
+  "nw",
+];
+
+function resizeHandleClass(handle: ResizeHandle): string {
+  const position: Record<ResizeHandle, string> = {
+    n: "left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 cursor-ns-resize",
+    ne: "right-0 top-0 translate-x-1/2 -translate-y-1/2 cursor-nesw-resize",
+    e: "right-0 top-1/2 translate-x-1/2 -translate-y-1/2 cursor-ew-resize",
+    se: "bottom-0 right-0 translate-x-1/2 translate-y-1/2 cursor-nwse-resize",
+    s: "bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 cursor-ns-resize",
+    sw: "bottom-0 left-0 -translate-x-1/2 translate-y-1/2 cursor-nesw-resize",
+    w: "left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize",
+    nw: "left-0 top-0 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize",
+  };
+  return position[handle];
 }
 
 function normalizeDrawBounds(
@@ -1577,6 +2190,67 @@ function normalizeDrawBounds(
     width: Math.abs(width),
     height: Math.abs(height),
   };
+}
+
+function boundsToNodeUpdates(bounds: CanvasBounds): Partial<PenNode> {
+  return {
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    rotation: bounds.rotation,
+  } as Partial<PenNode>;
+}
+
+function pointToAngle(
+  center: { x: number; y: number },
+  point: { x: number; y: number },
+): number {
+  return (Math.atan2(point.y - center.y, point.x - center.x) * 180) / Math.PI;
+}
+
+function calculateResizeBounds(
+  origin: CanvasBounds,
+  handle: ResizeHandle,
+  dx: number,
+  dy: number,
+  preserveAspectRatio: boolean,
+): CanvasBounds {
+  let { x, y, width, height } = origin;
+  const minSize = 8;
+  if (handle.includes("e")) width += dx;
+  if (handle.includes("s")) height += dy;
+  if (handle.includes("w")) {
+    x += dx;
+    width -= dx;
+  }
+  if (handle.includes("n")) {
+    y += dy;
+    height -= dy;
+  }
+
+  if (preserveAspectRatio) {
+    const ratio =
+      Math.max(origin.width, minSize) / Math.max(origin.height, minSize);
+    if (Math.abs(dx) > Math.abs(dy)) {
+      height = width / ratio;
+    } else {
+      width = height * ratio;
+    }
+    if (handle.includes("w")) x = origin.x + origin.width - width;
+    if (handle.includes("n")) y = origin.y + origin.height - height;
+  }
+
+  if (width < minSize) {
+    if (handle.includes("w")) x = origin.x + origin.width - minSize;
+    width = minSize;
+  }
+  if (height < minSize) {
+    if (handle.includes("n")) y = origin.y + origin.height - minSize;
+    height = minSize;
+  }
+
+  return { x, y, width, height, rotation: origin.rotation };
 }
 
 function createDrawableShapeNode(
@@ -1617,6 +2291,20 @@ function createDrawableShapeNode(
       name: "Ellipse",
     } as PenNode;
   }
+  if (type === "path") {
+    return {
+      ...shared,
+      type: "path",
+      name: "Path",
+      d: createPathPreviewD(bounds.width, bounds.height),
+      fill: [],
+      stroke: {
+        thickness: 2,
+        fill: [{ type: "solid" as const, color: "#111827" }],
+      },
+      closed: false,
+    } as PenNode;
+  }
   return {
     ...shared,
     type: "polygon",
@@ -1636,286 +2324,11 @@ function createPolygonPreviewPoints(width: number, height: number): string {
   }).join(" ");
 }
 
-// ---------------------------------------------------------------------------
-// Paste helper — parse SVG/HTML from clipboard into PenNodes directly
-// ---------------------------------------------------------------------------
-
-function pasteHtmlToPenNodes(
-  html: string,
-  createId: (prefix?: string) => string,
-): PenNode[] {
-  if (typeof DOMParser === "undefined") return [];
-
-  // Try to extract SVG from Figma HTML clipboard
-  const svgMatch = html.match(/<svg[\s\S]*?<\/svg>/i);
-  if (svgMatch?.[0]) {
-    return parseSvgStringToPenNodes(svgMatch[0], createId);
-  }
-
-  // Parse as HTML (Figma styled-HTML fallback)
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, "text/html");
-  const nodes: PenNode[] = [];
-
-  for (const el of Array.from(doc.body.children)) {
-    const converted = htmlElementToPenNode(el, null, createId);
-    if (converted) nodes.push(converted);
-  }
-  return nodes;
-}
-
-function parseSvgStringToPenNodes(
-  svg: string,
-  createId: (prefix?: string) => string,
-): PenNode[] {
-  if (typeof DOMParser === "undefined") return [];
-  const parser = new DOMParser();
-  const svgDoc = parser.parseFromString(svg, "image/svg+xml");
-  const svgEl = svgDoc.documentElement;
-  if (!svgEl || svgEl.tagName.toLowerCase() !== "svg") return [];
-
-  const nodes: PenNode[] = [];
-  const importId = createId("import");
-
-  for (const child of Array.from(svgEl.children)) {
-    const node = svgElementToPenNode(child, null, importId, createId);
-    if (node) nodes.push(node);
-  }
-  return nodes;
-}
-
-function svgElementToPenNode(
-  el: Element,
-  parentId: string | null,
-  importId: string,
-  createId: (prefix?: string) => string,
-): PenNode | null {
-  const tag = el.tagName.toLowerCase();
-  if (tag === "defs" || tag === "style" || tag === "title" || tag === "desc")
-    return null;
-
-  const meta = {
-    source: "svg-import",
-    importSessionId: importId,
-    originNodeType: tag,
-  };
-
-  if (tag === "g" || tag === "svg") {
-    const groupId = createId("group");
-    const children: PenNode[] = [];
-    for (const child of Array.from(el.children)) {
-      const c = svgElementToPenNode(child, groupId, importId, createId);
-      if (c) children.push(c);
-    }
-    if (children.length === 0) return null;
-    const minX = Math.min(...children.map((c) => c.x ?? 0));
-    const minY = Math.min(...children.map((c) => c.y ?? 0));
-    const maxX = Math.max(
-      ...children.map((c) => (c.x ?? 0) + ((c as any).width ?? 100)),
-    );
-    const maxY = Math.max(
-      ...children.map((c) => (c.y ?? 0) + ((c as any).height ?? 100)),
-    );
-    return {
-      id: groupId,
-      type: "group",
-      name: "Group",
-      x: minX,
-      y: minY,
-      width: Math.max(1, maxX - minX),
-      height: Math.max(1, maxY - minY),
-      children,
-      meta,
-    } as unknown as PenNode;
-  }
-
-  const x = parseFloat(el.getAttribute("x") ?? "0");
-  const y = parseFloat(el.getAttribute("y") ?? "0");
-  const w = Math.max(1, parseFloat(el.getAttribute("width") ?? "100"));
-  const h = Math.max(1, parseFloat(el.getAttribute("height") ?? "100"));
-  const fillColor = el.getAttribute("fill");
-  const strokeColor = el.getAttribute("stroke");
-  const sw = parseFloat(el.getAttribute("stroke-width") ?? "1");
-  const fill = fillColor
-    ? [{ type: "solid" as const, color: fillColor }]
-    : undefined;
-
-  if (tag === "rect") {
-    return {
-      id: createId("rect"),
-      type: "rectangle",
-      name: "Rectangle",
-      x,
-      y,
-      width: w,
-      height: h,
-      fill,
-      stroke: strokeColor
-        ? { thickness: sw, fill: [{ type: "solid", color: strokeColor }] }
-        : undefined,
-      cornerRadius: parseFloat(el.getAttribute("rx") ?? "0") || undefined,
-      meta,
-    } as unknown as PenNode;
-  }
-
-  if (tag === "circle" || tag === "ellipse") {
-    const cx = parseFloat(el.getAttribute("cx") ?? "0");
-    const cy = parseFloat(el.getAttribute("cy") ?? "0");
-    const rx =
-      tag === "circle"
-        ? parseFloat(el.getAttribute("r") ?? "50")
-        : parseFloat(el.getAttribute("rx") ?? "50");
-    const ry =
-      tag === "circle"
-        ? parseFloat(el.getAttribute("r") ?? "50")
-        : parseFloat(el.getAttribute("ry") ?? "50");
-    return {
-      id: createId("ellipse"),
-      type: "ellipse",
-      name: "Ellipse",
-      x: cx - rx,
-      y: cy - ry,
-      width: rx * 2,
-      height: ry * 2,
-      fill,
-      stroke: strokeColor
-        ? { thickness: sw, fill: [{ type: "solid", color: strokeColor }] }
-        : undefined,
-      meta,
-    } as unknown as PenNode;
-  }
-
-  if (tag === "line") {
-    const x1 = parseFloat(el.getAttribute("x1") ?? "0");
-    const y1 = parseFloat(el.getAttribute("y1") ?? "0");
-    const x2 = parseFloat(el.getAttribute("x2") ?? "100");
-    const y2 = parseFloat(el.getAttribute("y2") ?? "100");
-    return {
-      id: createId("line"),
-      type: "line",
-      name: "Line",
-      x: Math.min(x1, x2),
-      y: Math.min(y1, y2),
-      width: Math.max(1, Math.abs(x2 - x1)),
-      height: Math.max(1, Math.abs(y2 - y1)),
-      stroke: {
-        thickness: sw,
-        fill: [{ type: "solid", color: strokeColor ?? "#111827" }],
-      },
-      meta,
-    } as unknown as PenNode;
-  }
-
-  if (tag === "path") {
-    const d = el.getAttribute("d");
-    if (!d) return null;
-    return {
-      id: createId("path"),
-      type: "path",
-      name: "Path",
-      x: 0,
-      y: 0,
-      width: 100,
-      height: 100,
-      d,
-      fill,
-      stroke: strokeColor
-        ? { thickness: sw, fill: [{ type: "solid", color: strokeColor }] }
-        : undefined,
-      meta,
-    } as unknown as PenNode;
-  }
-
-  if (tag === "text") {
-    const text = el.textContent?.trim() ?? "";
-    if (!text) return null;
-    const fontSize = parseFloat(el.getAttribute("font-size") ?? "16");
-    return {
-      id: createId("text"),
-      type: "text",
-      name: text.slice(0, 20),
-      content: text,
-      x,
-      y: y - fontSize,
-      width: Math.max(50, text.length * fontSize * 0.7),
-      height: fontSize * 2,
-      fontSize,
-      fill: fill ?? [{ type: "solid", color: "#111827" }],
-      meta,
-    } as unknown as PenNode;
-  }
-
-  return null;
-}
-
-function htmlElementToPenNode(
-  el: Element,
-  parentId: string | null,
-  createId: (prefix?: string) => string,
-): PenNode | null {
-  const style = parseInlineCss(el.getAttribute("style") ?? "");
-  const left = parseFloat(style.left ?? "0") || 0;
-  const top = parseFloat(style.top ?? "0") || 0;
-  const width = parseFloat(style.width ?? "100") || 100;
-  const height = parseFloat(style.height ?? "100") || 100;
-  const bg = style.backgroundColor ?? style.background;
-  const text = el.textContent?.trim() ?? "";
-  const importId = createId("import");
-
-  const nodes: PenNode[] = [];
-  if (bg && width > 0 && height > 0) {
-    nodes.push({
-      id: createId("rect"),
-      type: "rectangle",
-      name: "Block",
-      x: left,
-      y: top,
-      width,
-      height,
-      fill: [{ type: "solid", color: bg }],
-      cornerRadius: parseFloat(style.borderRadius ?? "0") || undefined,
-      meta: { source: "figma-paste", importSessionId: importId },
-    } as unknown as PenNode);
-  }
-  if (text) {
-    nodes.push({
-      id: createId("text"),
-      type: "text",
-      name: text.slice(0, 20),
-      content: text,
-      x: left,
-      y: top,
-      width: Math.max(50, text.length * 14),
-      height: 28,
-      fontSize: parseFloat(style.fontSize ?? "14") || 14,
-      fill: [{ type: "solid", color: style.color ?? "#111827" }],
-      meta: { source: "figma-paste", importSessionId: importId },
-    } as unknown as PenNode);
-  }
-
-  if (nodes.length === 0) return null;
-  if (nodes.length === 1) return nodes[0]!;
-
-  return {
-    id: createId("group"),
-    type: "group",
-    name: "Pasted",
-    x: left,
-    y: top,
-    width,
-    height,
-    children: nodes,
-    meta: { source: "figma-paste", importSessionId: importId },
-  } as unknown as PenNode;
-}
-
-function parseInlineCss(raw: string): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const entry of raw.split(";")) {
-    const [key, ...rest] = entry.split(":");
-    if (key && rest.length > 0) {
-      result[key.trim()] = rest.join(":").trim();
-    }
-  }
-  return result;
+function createPathPreviewD(width: number, height: number): string {
+  const w = Math.max(width, 1);
+  const h = Math.max(height, 1);
+  return [
+    `M 1 ${Math.max(h - 1, 1)}`,
+    `C ${w * 0.32} ${h * 0.16}, ${w * 0.68} ${h * 0.84}, ${Math.max(w - 1, 1)} 1`,
+  ].join(" ");
 }

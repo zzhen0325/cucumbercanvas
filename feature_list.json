@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-25T17:33:00+08:00",
+  "updatedAt": "2026-05-26T00:00:00+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -101,7 +101,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "product-engineering",
-      "summary": "Canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing now includes live editor RPC synchronization for agent tools, bounds-aware screenshot export, tree-style layer management, modular shortcuts/clipboard flows, OpenPencil-style rubber-band vector shape drawing, and the P2 import path now combines warning-rich SVG/Figma fallback metadata with native-first Figma clipboard binary decode, instance overrides, auto-layout metadata, and runnable Playwright smoke coverage.",
+      "summary": "Canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit behind a standalone CanvasApi contract, and the P2 import/edit path combines warning-rich SVG/Figma fallback metadata with native-first Figma clipboard binary decode, instance overrides, auto-layout metadata, robust paste event handling, PenNode property editing, path drag creation, and runnable Playwright smoke coverage.",
       "artifacts": [
         "packages/canvas-core",
         "packages/canvas-core/src/clipboard.ts",
@@ -112,12 +112,13 @@
         "packages/canvas-core/src/import.ts",
         "packages/canvas-core/src/layout.ts",
         "packages/canvas-core/src/__tests__/canvas-core.test.ts",
-        "apps/web/src/components/canvas/canvas-surface.tsx",
+        "apps/web/src/components/canvas/canvas-api.ts",
         "apps/web/src/components/canvas/skia-canvas.tsx",
         "apps/web/src/components/canvas/canvas-export.ts",
         "apps/web/src/components/canvas/use-canvas-keyboard-shortcuts.ts",
         "apps/web/src/components/canvas/use-canvas-clipboard-import.ts",
         "apps/web/src/components/canvas/canvas-selection-helpers.ts",
+        "apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx",
         "apps/web/src/components/canvas-layers-panel.tsx",
         "apps/web/src/components/canvas-logo-menu.tsx",
         "apps/web/src/components/canvas-editor.tsx",
@@ -128,6 +129,7 @@
         "apps/web/src/app/test/canvas-engine/page.tsx",
         "apps/web/src/app/test/canvas-engine/canvas-engine-harness.tsx",
         "apps/web/test/use-canvas-clipboard-import.test.tsx",
+        "apps/web/test/use-canvas-keyboard-shortcuts.test.tsx",
         "apps/web/test/canvas-export.test.ts",
         "playwright.config.ts",
         "tests/e2e/canvas-import.spec.ts",

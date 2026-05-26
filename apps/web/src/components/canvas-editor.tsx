@@ -14,19 +14,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { WebSocketHandle } from "../hooks/use-websocket";
 import { getServerBaseUrl } from "../lib/env";
 import { saveCanvas, uploadThumbnail } from "../lib/server-api";
+import type { CanvasApi, CanvasSceneElement } from "./canvas/canvas-api";
 import {
   calculateDocumentBounds,
   calculateExportSize,
 } from "./canvas/canvas-export";
-import {
-  type CanvasApi,
-  type CanvasSceneElement,
-  CanvasSurface,
-} from "./canvas/canvas-surface";
 import { ErrorBoundary } from "./error-boundary";
-
-/** Set to true to use the new Skia/CanvasKit renderer */
-const USE_SKIA_CANVAS = true;
 
 const SkiaCanvas = dynamic(
   () => import("./canvas/skia-canvas").then((m) => ({ default: m.SkiaCanvas })),
@@ -314,21 +307,12 @@ export function CanvasEditor({
       }
     >
       <div className="h-full w-full relative">
-        {USE_SKIA_CANVAS ? (
-          <SkiaCanvas
-            initialContent={initialContent}
-            onApiReady={handleApiReady}
-            onDocumentChange={handleDocumentChange}
-            onSelectionChange={handleSelectionChange}
-          />
-        ) : (
-          <CanvasSurface
-            initialContent={initialContent}
-            onApiReady={handleApiReady}
-            onDocumentChange={handleDocumentChange}
-            onSelectionChange={handleSelectionChange}
-          />
-        )}
+        <SkiaCanvas
+          initialContent={initialContent}
+          onApiReady={handleApiReady}
+          onDocumentChange={handleDocumentChange}
+          onSelectionChange={handleSelectionChange}
+        />
       </div>
     </ErrorBoundary>
   );

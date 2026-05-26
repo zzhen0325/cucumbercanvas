@@ -1,33 +1,37 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-25 17:33 CST
+Last updated: 2026-05-26 00:00 CST
 
 ## Current Session
 
-Goal: clarify the product positioning around AI-native infinite canvas without changing the existing UI, canvas API, schema, or manual editing entry points.
+Goal: finish the Skia/CanvasKit canvas migration by extracting the public CanvasApi contract, closing the missing editing/import parity gaps, moving the import harness onto Skia, and removing the old React DOM canvas runtime.
 
 Status:
 
+- Extracted the canvas-facing public contract into `apps/web/src/components/canvas/canvas-api.ts`, and moved editor panels, chat/sidebar integrations, page code, hooks, and harnesses off the deleted render implementation.
+- SkiaCanvas now owns recursive copy/cut/paste/duplicate/delete, system clipboard import, SVG import, image asset registration, generated image insertion, keyboard shortcuts, selection notification, marquee selection, resize handles, and rotate handles behind the stable CanvasApi.
+- Migrated `/test/canvas-import` to SkiaCanvas so import and vector-shape smoke coverage now exercises the production renderer path.
+- Removed the old `apps/web/src/components/canvas/canvas-surface.tsx` implementation and the stale migration helper that targeted it.
 - Documented the product position that the canvas is the visual artifact of Agent execution, containers are structured Agent outputs, and spatial relationships express context, reasoning, and data flow.
 - Added two concrete product scenarios: generated-image second-pass editing via contextual Agent overlay/quick actions, and stronger Figma-like editing for structured outputs such as PPT, web pages, and UI screens.
 - Updated the main Agent system prompt so visual or structured work should create containerized canvas results, while respecting user manual edits as follow-up context.
 - Updated the feature registry summaries for the AI-native canvas workspace and Cucumber Canvas runtime to align with the Agent-first positioning.
 - Preserved existing manual creation and editing surfaces; these remain user controls for arranging, refining, and giving feedback on Agent-generated results.
 - Added `@cucumber/canvas-core` with the new `CucumberCanvasDocument` model, container nodes, context resolution, typed operation errors, permission checks, and focused unit tests.
-- Replaced the web canvas editor surface with `CanvasSurface` / `CanvasApi` while preserving the existing Studio shell, side panels, bottom bar, chat sidebar, and artifact insertion hooks.
+- Replaced the web canvas editor surface with `SkiaCanvas` / `CanvasApi` while preserving the existing Studio shell, side panels, bottom bar, chat sidebar, and artifact insertion hooks.
 - New documents save directly as Cucumber canvas content. Legacy Excalidraw payloads are treated as empty new documents rather than migrated.
 - Containers can be created, selected, dragged, resized, renamed, assigned context rules, and bound to an Agent from the inspector.
 - Image/video artifacts now insert through the new canvas API and land in the selected container when one is selected.
 - `inspect_canvas` can summarize new Cucumber canvas documents, including container tree, effective context, Agent binding, filtering, and node lookup.
 - `manipulate_canvas` now writes `CanvasOperation` updates against new canvas documents with permission and bounds enforcement, instead of mutating only legacy Excalidraw-style `elements`.
 - Agent-generated image/video results now insert into the new canvas document model from both runtime and background job paths.
-- `CanvasSurface` now includes the first native tool batch: hand/pan mode, in-canvas image upload, image resize with visible bounds overlay, and lightweight line/arrow nodes rendered directly from the new document model.
+- `SkiaCanvas` now includes the first native tool batch: hand/pan mode, in-canvas image upload, image resize with visible bounds overlay, and lightweight line/arrow nodes rendered directly from the new document model.
 - Current rendering is a React DOM runtime behind the public `CanvasApi`; the lower-level editor adapter can be swapped behind this boundary without changing product callers.
 - Added P0 native editing affordances: multi-select, marquee selection, undo/redo history, keyboard shortcuts, recursive copy/paste/duplicate/delete, and layer lock/visibility/reorder controls.
 - Moved shared canvas behavior for ordered traversal, marquee hit-testing, recursive clipboard clone/paste, and document history into `@cucumber/canvas-core` so the web surface calls headless helpers instead of owning those document mutations directly.
 - Added the first P1 native editing slice: generic property panel, ellipse/polygon/path/icon nodes, 8-way resize, rotate handles, group/ungroup, selection alignment, and grid snap guides.
-- Moved P1 document mutations for grouping, ungrouping, alignment, selection bounds, and new shape node schemas into `@cucumber/canvas-core`, keeping `CanvasSurface` as the interaction adapter.
-- Continued the P1 editing hardening pass by splitting keyboard shortcuts and clipboard import handling out of `CanvasSurface`, adding a tree-style layers panel with rename/drag-sort/action menu support, and exposing copy/cut/paste/SVG import actions from the canvas menu.
+- Moved P1 document mutations for grouping, ungrouping, alignment, selection bounds, and new shape node schemas into `@cucumber/canvas-core`, keeping `SkiaCanvas` as the interaction adapter.
+- Continued the P1 editing hardening pass by splitting keyboard shortcuts and clipboard import handling out of `SkiaCanvas`, adding a tree-style layers panel with rename/drag-sort/action menu support, and exposing copy/cut/paste/SVG import actions from the canvas menu.
 - Added the first P2 import slice: system clipboard parsing for SVG/Figma-like payloads, normalization into `CucumberCanvasDocument` nodes/assets inside `@cucumber/canvas-core`, centered placement on the current viewport, warning toasts, and history-tracked insertion.
 - Upgraded the P2 import slice with stronger provenance metadata (`importSessionId`, source/origin fields, degradation hints, warning counts), richer Figma HTML fallback grouping, aggregated compatibility warnings, and a page-level import summary that surfaces warning counts instead of only a single toast.
 - Added focused coverage for import metadata persistence in `canvas-core` and for the web clipboard-import hook behavior around paste interception and clipboard API fallback.
@@ -40,16 +44,19 @@ Status:
 - Continued P2.2 with a fourth batch focused on auto-layout fidelity: imported Figma nodes and Figma-like HTML fallback nodes now preserve normalized layout metadata such as direction, gap, padding, alignment, sizing mode, clip behavior, and child grow/align-self hints inside import metadata, while warnings now clarify that the runtime still renders static geometry.
 - Added a browser-side canvas import harness route plus a Playwright smoke scaffold for real paste events, then fixed the shared `tests/e2e` Next webServer bootstrap by launching from `apps/web` and forcing `NODE_ENV=development` so Tailwind/PostCSS initialize correctly in Playwright.
 - Re-enabled the real-paste `canvas-import` smoke, verified the existing `transport` smoke against the same webServer, and confirmed the full `tests/e2e` suite now runs cleanly instead of failing on the old CSS/Tailwind base issue.
-- Taught the editor to consume imported auto-layout metadata: `@cucumber/canvas-core` now exposes a pure reflow helper that reapplies imported layout hints onto child geometry, while `CanvasSurface` uses it for imported layout roots on bounds changes and the property panel now surfaces/imports those hints with a manual "应用布局" action.
+- Taught the editor to consume imported auto-layout metadata: `@cucumber/canvas-core` now exposes a pure reflow helper that reapplies imported layout hints onto child geometry, while `SkiaCanvas` uses it for imported layout roots on bounds changes and the property panel now surfaces/imports those hints with a manual "应用布局" action.
 - Switched agent canvas tooling to the live editor path: opened canvases bind their WebSocket connection with `canvas.bind`, expose document get/set RPC, and `inspect_canvas` / `manipulate_canvas` now require the live editor instead of mutating legacy Excalidraw payloads.
 - Added the production migration path that resets non-`cucumber-canvas-v1` canvas content to the canonical Cucumber canvas document default, matching the decision to drop legacy Excalidraw canvas data.
-- Ported the OpenPencil-style rubber-band vector shape drawing interaction into `CanvasSurface` for rectangle, ellipse, and polygon tools, including in-canvas preview, shift-constrained square drawing, native node insertion, and diagnostic logs.
+- Ported the OpenPencil-style rubber-band vector shape drawing interaction into `SkiaCanvas` for rectangle, ellipse, and polygon tools, including in-canvas preview, shift-constrained square drawing, native node insertion, and diagnostic logs.
 - Fixed the canvas toolbar arrow active state and normalized quick-insert shape paint payloads so newly inserted shapes render/edit through the same native fill/stroke schema as dragged shapes.
 - Added e2e coverage for the canvas harness shape tools so native rectangle, ellipse, and polygon drag creation is regression-tested alongside clipboard import coverage.
 - Corrected the active production editor path: `CanvasEditor` currently uses `SkiaCanvas`, so the same OpenPencil-style drag-to-draw interaction is now implemented in the Skia toolbar/runtime as well, with a dedicated `/test/canvas-engine` harness and smoke coverage.
 - Copied the OpenPencil-style bounded screenshot/export capability into the live Cucumber canvas path: `screenshot_canvas` now resolves `full`, `viewport`, and explicit `region` requests into scene-space bounds, returns `actualBounds`, and exports the requested bounding box instead of always sending the whole canvas.
-- Added a shared bounds-aware `canvas-export` helper used by both `SkiaCanvas` and `CanvasSurface`, plus focused coverage for document bounds, export scaling, and explicit bounding-box SVG output.
+- Added a shared bounds-aware `canvas-export` helper used by both `SkiaCanvas` and `SkiaCanvas`, plus focused coverage for document bounds, export scaling, and explicit bounding-box SVG output.
 - Updated screenshot artifact persistence to preserve SVG screenshots as `image/svg+xml` instead of labeling all canvas captures as PNG.
+- Tightened the Skia editor interaction chain after the render/layout review: Figma/system paste now lets native paste events carry HTML payloads when the internal canvas clipboard is empty, imported `rect` nodes normalize to renderable `rectangle` nodes, and single-quoted Figma clipboard attributes are decoded.
+- Fixed selected-node editing ergonomics in the Skia path by keeping property-panel and toolbar events from bubbling into canvas hit-testing, binding the panel directly to PenNode fields, and making the path/pen tool create a visible path from the same drag bounds used by its preview.
+- Added focused keyboard shortcut coverage for paste behavior, plus targeted Figma clipboard extraction/import regression checks.
 
 ## Next Targets
 
@@ -73,10 +80,21 @@ Status:
 
 ## Verification Log
 
+- Passed: `pnpm --filter @cucumber/web typecheck`.
+- Passed: `pnpm --filter @cucumber/web test -- use-canvas-clipboard-import.test.tsx use-canvas-keyboard-shortcuts.test.tsx`.
+- Passed: `pnpm --filter @cucumber/web typecheck`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm --dir packages/canvas-core exec vitest run src/__tests__/canvas-core.test.ts -t "extracts figma clipboard"`.
+- Passed: `pnpm --dir packages/canvas-core exec vitest run src/__tests__/canvas-core.test.ts -t "inserts imported nodes"`.
+- Passed: targeted `pnpm exec biome check --write` for the touched Skia canvas, property panel, keyboard shortcut, Figma native, and import files.
+- Failed: full `pnpm lint` remains blocked by unrelated existing diagnostics in `openpencil/**`, `apps/server/src/agent/backends/dev.ts`, `apps/server/src/agent/persistence/index.ts`, and `apps/server/src/agent/deep-agent.ts`.
+- Passed: targeted `pnpm exec biome check` for `apps/web/src/components/canvas/canvas-api.ts`, `apps/web/src/components/canvas/skia-canvas.tsx`, `apps/web/src/components/canvas-editor.tsx`, `apps/web/src/app/test/canvas-import/canvas-import-harness.tsx`, `tests/e2e/canvas-import.spec.ts`, `docs/architecture.md`, `progress.md`, and `feature_list.json`.
+- Passed: local Playwright smoke against `http://localhost:3002` for `/test/canvas-engine` and `/test/canvas-import`, covering Skia rectangle/ellipse/polygon drag creation plus Figma-like paste import metadata.
+- Note: direct `pnpm exec playwright test tests/e2e/skia-canvas.spec.ts tests/e2e/canvas-import.spec.ts` is blocked by the current root `playwright.config.ts` pointing at `playwright-tests/tests`, so those files are not discovered by that config.
 - Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
 - Passed: `pnpm --filter @cucumber/canvas-core test`.
 - Passed: `pnpm --filter @cucumber/web typecheck`.
-- Passed: targeted diagnostics for `packages/canvas-core/src/types.ts`, `packages/canvas-core/src/import.ts`, `packages/canvas-core/src/figma-native-types.ts`, `packages/canvas-core/src/figma-native.ts`, `packages/canvas-core/src/__tests__/canvas-core.test.ts`, `apps/web/src/components/canvas/canvas-surface.tsx`, `apps/web/src/components/canvas-editor.tsx`, `apps/web/src/app/test/canvas-import/**`, `tests/e2e/canvas-import.spec.ts`, and `playwright.config.ts`.
+- Passed: targeted diagnostics for `packages/canvas-core/src/types.ts`, `packages/canvas-core/src/import.ts`, `packages/canvas-core/src/figma-native-types.ts`, `packages/canvas-core/src/figma-native.ts`, `packages/canvas-core/src/__tests__/canvas-core.test.ts`, `apps/web/src/components/canvas/skia-canvas.tsx`, `apps/web/src/components/canvas-editor.tsx`, `apps/web/src/app/test/canvas-import/**`, `tests/e2e/canvas-import.spec.ts`, and `playwright.config.ts`.
 - Passed: `pnpm exec playwright test tests/e2e/transport.spec.ts`.
 - Passed: `pnpm exec playwright test tests/e2e/canvas-import.spec.ts`.
 - Passed: `pnpm exec playwright test tests/e2e`.
@@ -86,15 +104,15 @@ Status:
 - Passed: `pnpm exec playwright test canvas-import.spec.ts` using a temporary Playwright config pointed at the clean `http://localhost:3001` dev server.
 - Passed: `pnpm exec playwright test skia-canvas.spec.ts` using a temporary Playwright config pointed at a clean `http://localhost:3002` dev server.
 - Passed: `pnpm exec biome check apps/web/src/app/test/canvas-engine/page.tsx apps/web/src/app/test/canvas-engine/canvas-engine-harness.tsx tests/e2e/skia-canvas.spec.ts`.
-- Partial: `pnpm exec biome check apps/web/src/components/canvas/canvas-surface.tsx` remains blocked by pre-existing diagnostics in the same file, including explicit `any`, non-null assertions, and SVG title warnings.
+- Partial: `pnpm exec biome check apps/web/src/components/canvas/skia-canvas.tsx` remains blocked by pre-existing diagnostics in the same file, including explicit `any`, non-null assertions, and SVG title warnings.
 - Note: `http://localhost:3000` was already occupied by a stale/incorrect Next server whose `_next/static` chunks returned 404, so interactive verification used port 3001.
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/use-canvas-clipboard-import.test.tsx`.
 - Passed: `pnpm install --no-frozen-lockfile` after adding native Figma clipboard parser dependencies to `packages/canvas-core`.
-- Passed: targeted diagnostics for `apps/web/src/components/canvas/canvas-surface.tsx`, `apps/web/src/components/canvas-layers-panel.tsx`, `apps/web/src/components/canvas-logo-menu.tsx`, `apps/web/src/components/canvas-editor.tsx`, and new canvas import helper files.
+- Passed: targeted diagnostics for `apps/web/src/components/canvas/skia-canvas.tsx`, `apps/web/src/components/canvas-layers-panel.tsx`, `apps/web/src/components/canvas-logo-menu.tsx`, `apps/web/src/components/canvas-editor.tsx`, and new canvas import helper files.
 - Passed: targeted `pnpm exec biome check --write` for touched P1 canvas-core and web canvas files.
 - Passed: Playwright smoke opened `http://localhost:3000/canvas`; unauthenticated flow redirected to `/login` with no browser console/page errors.
-- Passed: targeted diagnostics for `apps/web/src/components/canvas/canvas-surface.tsx` and `packages/canvas-core/src/types.ts`.
-- Passed: targeted diagnostics for `packages/canvas-core/src/import.ts`, `packages/canvas-core/src/types.ts`, `apps/web/src/components/canvas/use-canvas-clipboard-import.ts`, `apps/web/src/components/canvas/canvas-surface.tsx`, `apps/web/src/components/canvas-editor.tsx`, `apps/web/src/app/canvas/page.tsx`, `apps/web/src/components/canvas-logo-menu.tsx`, and new clipboard import tests.
+- Passed: targeted diagnostics for `apps/web/src/components/canvas/skia-canvas.tsx` and `packages/canvas-core/src/types.ts`.
+- Passed: targeted diagnostics for `packages/canvas-core/src/import.ts`, `packages/canvas-core/src/types.ts`, `apps/web/src/components/canvas/use-canvas-clipboard-import.ts`, `apps/web/src/components/canvas/skia-canvas.tsx`, `apps/web/src/components/canvas-editor.tsx`, `apps/web/src/app/canvas/page.tsx`, `apps/web/src/components/canvas-logo-menu.tsx`, and new clipboard import tests.
 - Passed: targeted server tests for `manipulate-canvas` and `canvas-element-writer`, plus new canvas-core bounds regression coverage.
 - Passed: `./node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`.
 - Passed: `./node_modules/.bin/tsc -p apps/server/tsconfig.json --noEmit`.

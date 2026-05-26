@@ -16,7 +16,7 @@ import type {
   CanvasApi,
   CanvasFileRecord,
   CanvasSceneElement,
-} from "./canvas/canvas-surface";
+} from "./canvas/canvas-api";
 import {
   DropdownMenu,
   DropdownMenuContent,

@@ -21,7 +21,7 @@ import type {
   CanvasApi,
   CanvasFileRecord,
   CanvasSceneElement,
-} from "../../components/canvas/canvas-surface";
+} from "../../components/canvas/canvas-api";
 import { ChatSidebar } from "../../components/chat-sidebar";
 import { EditableProjectName } from "../../components/editable-project-name";
 import { LoadingScreen } from "../../components/loading-screen";

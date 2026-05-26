@@ -1,16 +1,8 @@
-import { ByteBuffer, compileSchema, decodeBinarySchema } from "kiwi-schema";
 import { decompress as zstdDecompress } from "fzstd";
+import { ByteBuffer, compileSchema, decodeBinarySchema } from "kiwi-schema";
 import * as UZIP from "uzip";
 
 import { createCanvasNodeId } from "./document.js";
-import type { CanvasEffect, CanvasFill, CanvasStroke } from "./styles.js";
-import type {
-  CanvasAsset,
-  CanvasImportedAutoLayoutMeta,
-  CanvasImportWarningCode,
-  CanvasImportedNodeMeta,
-} from "./types.js";
-import type { ImportNode } from "./import.js";
 import type {
   FigmaClipboardData,
   FigmaColor,
@@ -21,6 +13,14 @@ import type {
   FigmaPaint,
   FigmaTreeNode,
 } from "./figma-native-types.js";
+import type { ImportNode } from "./import.js";
+import type { CanvasEffect, CanvasFill, CanvasStroke } from "./styles.js";
+import type {
+  CanvasAsset,
+  CanvasImportWarningCode,
+  CanvasImportedAutoLayoutMeta,
+  CanvasImportedNodeMeta,
+} from "./types.js";
 
 export interface FigmaNativeWarning {
   code: CanvasImportWarningCode;
@@ -60,7 +60,8 @@ const uint32 = new Uint32Array(int32.buffer);
 
 const B64_LOOKUP = new Uint8Array(256);
 {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const chars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   for (let index = 0; index < chars.length; index += 1) {
     B64_LOOKUP[chars.charCodeAt(index)] = index;
   }
@@ -68,7 +69,9 @@ const B64_LOOKUP = new Uint8Array(256);
   B64_LOOKUP["_".charCodeAt(0)] = 63;
 }
 
-export function extractFigmaClipboardData(html: string): FigmaClipboardData | null {
+export function extractFigmaClipboardData(
+  html: string,
+): FigmaClipboardData | null {
   let metaB64: string | null = null;
   let bufferB64: string | null = null;
 
@@ -85,15 +88,13 @@ export function extractFigmaClipboardData(html: string): FigmaClipboardData | nu
   }
 
   if (!metaB64 || !bufferB64) {
-    const attrMetaMatch = html.match(/data-metadata="([^"]*)"/);
-    const attrBufferMatch = html.match(/data-buffer="([^"]*)"/);
+    const attrMetaMatch = html.match(/data-metadata=(["'])([\s\S]*?)\1/);
+    const attrBufferMatch = html.match(/data-buffer=(["'])([\s\S]*?)\1/);
     if (attrMetaMatch && attrBufferMatch) {
-      metaB64 = attrMetaMatch[1]
-        ?.replace(/<!--\(figmeta\)(-->)?/g, "")
-        .trim() ?? null;
-      bufferB64 = attrBufferMatch[1]
-        ?.replace(/<!--\(figma\)(-->)?/g, "")
-        .trim() ?? null;
+      metaB64 =
+        attrMetaMatch[2]?.replace(/<!--\(figmeta\)(-->)?/g, "").trim() ?? null;
+      bufferB64 =
+        attrBufferMatch[2]?.replace(/<!--\(figma\)(-->)?/g, "").trim() ?? null;
     }
   }
 
@@ -126,7 +127,9 @@ export function extractFigmaClipboardData(html: string): FigmaClipboardData | nu
   }
 }
 
-export function parseFigmaClipboardNative(html: string): FigmaNativeParseResult | null {
+export function parseFigmaClipboardNative(
+  html: string,
+): FigmaNativeParseResult | null {
   const clipboardData = extractFigmaClipboardData(html);
   if (!clipboardData) {
     return null;
@@ -188,7 +191,8 @@ function decodeBase64ToBytes(input: string): Uint8Array {
     const c = B64_LOOKUP[cleaned.charCodeAt(index + 2) ?? 0];
     const d = B64_LOOKUP[cleaned.charCodeAt(index + 3) ?? 0];
 
-    if (pointer < byteLength) bytes[pointer++] = ((a ?? 0) << 2) | ((b ?? 0) >> 4);
+    if (pointer < byteLength)
+      bytes[pointer++] = ((a ?? 0) << 2) | ((b ?? 0) >> 4);
     if (pointer < byteLength) {
       bytes[pointer++] = (((b ?? 0) & 0x0f) << 4) | ((c ?? 0) >> 2);
     }
@@ -207,7 +211,9 @@ function decodeBase64(input: string): string {
 function parseFigFile(fileBuffer: ArrayBuffer): FigmaDecodedFile {
   const { parts, imageFiles } = figToBinaryParts(fileBuffer);
   if (parts.length < 2) {
-    throw new Error(`Invalid .fig file: expected at least 2 binary parts, got ${parts.length}`);
+    throw new Error(
+      `Invalid .fig file: expected at least 2 binary parts, got ${parts.length}`,
+    );
   }
 
   const [schemaByte, dataByte] = parts;
@@ -223,14 +229,20 @@ function parseFigFile(fileBuffer: ArrayBuffer): FigmaDecodedFile {
     throw new Error("Decoded .fig data is empty or invalid");
   }
 
-  const nodeChanges =
-    Array.isArray((raw as { nodeChanges?: unknown[] }).nodeChanges)
-      ? ((raw as { nodeChanges: FigmaNodeChange[] }).nodeChanges ?? [])
-      : [];
+  const nodeChanges = Array.isArray(
+    (raw as { nodeChanges?: unknown[] }).nodeChanges,
+  )
+    ? ((raw as { nodeChanges: FigmaNodeChange[] }).nodeChanges ?? [])
+    : [];
 
   if (nodeChanges.length === 0) {
     for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-      if (Array.isArray(value) && value[0] && typeof value[0] === "object" && "guid" in value[0]) {
+      if (
+        Array.isArray(value) &&
+        value[0] &&
+        typeof value[0] === "object" &&
+        "guid" in value[0]
+      ) {
         return {
           nodeChanges: value as FigmaNodeChange[],
           blobs: extractBlobs(raw as Record<string, unknown>),
@@ -251,7 +263,8 @@ function figToBinaryParts(fileBuffer: ArrayBuffer): {
   parts: Uint8Array[];
   imageFiles: Map<string, Uint8Array>;
 } {
-  let fileBytes = new Uint8Array(fileBuffer);
+  let currentFileBuffer = fileBuffer;
+  let fileBytes = new Uint8Array(currentFileBuffer);
   const imageFiles = new Map<string, Uint8Array>();
 
   if (!hasFigKiwiMagic(fileBytes)) {
@@ -259,7 +272,7 @@ function figToBinaryParts(fileBuffer: ArrayBuffer): {
       throw new Error("Compressed .fig file exceeds maximum size limit");
     }
 
-    const unzipped = UZIP.parse(fileBuffer);
+    const unzipped = UZIP.parse(currentFileBuffer);
     const entryCount = Object.keys(unzipped).length;
     if (entryCount > MAX_ZIP_ENTRIES) {
       throw new Error(`ZIP archive contains too many entries (${entryCount})`);
@@ -285,8 +298,8 @@ function figToBinaryParts(fileBuffer: ArrayBuffer): {
     if (!canvasFile) {
       throw new Error("Invalid .fig file: no canvas.fig found in archive");
     }
-    fileBuffer = canvasFile.buffer as ArrayBuffer;
-    fileBytes = new Uint8Array(fileBuffer);
+    currentFileBuffer = canvasFile.buffer as ArrayBuffer;
+    fileBytes = new Uint8Array(currentFileBuffer);
   }
 
   if (!hasFigKiwiMagic(fileBytes)) {
@@ -331,7 +344,9 @@ function extractBlobs(raw: Record<string, unknown>): (Uint8Array | string)[] {
   });
 }
 
-function buildTreeForClipboard(nodeChanges: FigmaNodeChange[]): FigmaTreeNode[] {
+function buildTreeForClipboard(
+  nodeChanges: FigmaNodeChange[],
+): FigmaTreeNode[] {
   const nodeMap = new Map<string, FigmaTreeNode>();
   const childKeys = new Set<string>();
 
@@ -386,7 +401,10 @@ function sortChildrenRecursive(node: FigmaTreeNode): void {
   }
 }
 
-function collectSymbolTree(node: FigmaTreeNode, map: Map<string, FigmaTreeNode>): void {
+function collectSymbolTree(
+  node: FigmaTreeNode,
+  map: Map<string, FigmaTreeNode>,
+): void {
   if (node.figma.type === "SYMBOL" && node.figma.guid) {
     map.set(guidToString(node.figma.guid), node);
   }
@@ -428,11 +446,16 @@ function resolveStyleReferences(nodeChanges: FigmaNodeChange[]): void {
 
     const textStyle = lookup(nodeChange.styleIdForText);
     if (textStyle) {
-      if (!nodeChange.fontName && textStyle.fontName) nodeChange.fontName = textStyle.fontName;
-      if (nodeChange.fontSize === undefined && textStyle.fontSize !== undefined) {
+      if (!nodeChange.fontName && textStyle.fontName)
+        nodeChange.fontName = textStyle.fontName;
+      if (
+        nodeChange.fontSize === undefined &&
+        textStyle.fontSize !== undefined
+      ) {
         nodeChange.fontSize = textStyle.fontSize;
       }
-      if (!nodeChange.lineHeight && textStyle.lineHeight) nodeChange.lineHeight = textStyle.lineHeight;
+      if (!nodeChange.lineHeight && textStyle.lineHeight)
+        nodeChange.lineHeight = textStyle.lineHeight;
       if (!nodeChange.letterSpacing && textStyle.letterSpacing) {
         nodeChange.letterSpacing = textStyle.letterSpacing;
       }
@@ -456,7 +479,12 @@ function convertFigmaTreeNode(
   parentStackMode?: FigmaNodeChange["stackMode"],
 ): string | null {
   const node = treeNode.figma;
-  if (node.visible === false || !node.type || node.type === "CANVAS" || node.type === "DOCUMENT") {
+  if (
+    node.visible === false ||
+    !node.type ||
+    node.type === "CANVAS" ||
+    node.type === "DOCUMENT"
+  ) {
     return null;
   }
 
@@ -466,14 +494,38 @@ function convertFigmaTreeNode(
     case "GROUP":
     case "FRAME":
     case "SECTION":
-      return convertFigmaGroupLike(treeNode, parentId, decoded, state, parentStackMode);
+      return convertFigmaGroupLike(
+        treeNode,
+        parentId,
+        decoded,
+        state,
+        parentStackMode,
+      );
     case "INSTANCE":
-      return convertFigmaInstance(treeNode, parentId, decoded, state, parentStackMode);
+      return convertFigmaInstance(
+        treeNode,
+        parentId,
+        decoded,
+        state,
+        parentStackMode,
+      );
     case "SYMBOL":
-      return convertFigmaGroupLike(treeNode, parentId, decoded, state, parentStackMode);
+      return convertFigmaGroupLike(
+        treeNode,
+        parentId,
+        decoded,
+        state,
+        parentStackMode,
+      );
     case "RECTANGLE":
     case "ROUNDED_RECTANGLE":
-      return convertFigmaRectangle(node, parentId, decoded, state, parentStackMode);
+      return convertFigmaRectangle(
+        node,
+        parentId,
+        decoded,
+        state,
+        parentStackMode,
+      );
     case "ELLIPSE":
       return convertFigmaEllipse(node, parentId, state, parentStackMode);
     case "LINE":
@@ -484,7 +536,13 @@ function convertFigmaTreeNode(
     case "BOOLEAN_OPERATION":
     case "STAR":
     case "REGULAR_POLYGON":
-      return convertFigmaVector(node, parentId, decoded, state, parentStackMode);
+      return convertFigmaVector(
+        node,
+        parentId,
+        decoded,
+        state,
+        parentStackMode,
+      );
     default:
       state.warnings.push({
         code: "unsupported_tag",
@@ -508,8 +566,15 @@ function convertFigmaGroupLike(
   const groupId = createCanvasNodeId("group");
   const childIds: string[] = [];
 
-  const frameFill = getPrimaryVisiblePaint(figma.fillPaints ?? figma.backgroundPaints);
-  if (frameFill && frameFill.type !== "IMAGE" && bounds.width > 0 && bounds.height > 0) {
+  const frameFill = getPrimaryVisiblePaint(
+    figma.fillPaints ?? figma.backgroundPaints,
+  );
+  if (
+    frameFill &&
+    frameFill.type !== "IMAGE" &&
+    bounds.width > 0 &&
+    bounds.height > 0
+  ) {
     const backgroundId = createCanvasNodeId("rectangle");
     state.nodes.push({
       id: backgroundId,
@@ -518,12 +583,15 @@ function convertFigmaGroupLike(
       title: `${figma.name ?? "Frame"} background`,
       bounds,
       fills: getPaintFills([frameFill]),
-      stroke: getPaintStroke(getPrimaryVisiblePaint(figma.strokePaints), figma.strokeWeight),
+      stroke: getPaintStroke(
+        getPrimaryVisiblePaint(figma.strokePaints),
+        figma.strokeWeight,
+      ),
       cornerRadius: figma.cornerRadius,
       locked: figma.locked,
       visible: figma.visible,
       effects: convertFigmaEffects(figma.effects),
-    meta: createFigmaMeta(figma, { parentStackMode }),
+      meta: createFigmaMeta(figma, { parentStackMode }),
     });
     childIds.push(backgroundId);
   }
@@ -605,7 +673,13 @@ function convertFigmaInstance(
     );
   }
 
-  return convertFigmaGroupLike(treeNode, parentId, decoded, state, parentStackMode);
+  return convertFigmaGroupLike(
+    treeNode,
+    parentId,
+    decoded,
+    state,
+    parentStackMode,
+  );
 }
 
 function convertFigmaRectangle(
@@ -622,7 +696,11 @@ function convertFigmaRectangle(
 ): string {
   const imagePaint = getVisibleImagePaint(figma.fillPaints);
   if (imagePaint) {
-    const resolved = resolveImagePaint(imagePaint, decoded, state.imageAssetCache);
+    const resolved = resolveImagePaint(
+      imagePaint,
+      decoded,
+      state.imageAssetCache,
+    );
     if (resolved) {
       state.assets.push(resolved.asset);
       const nodeId = createCanvasNodeId("image");
@@ -638,7 +716,7 @@ function convertFigmaRectangle(
         locked: figma.locked,
         visible: figma.visible,
         effects: convertFigmaEffects(figma.effects),
-    meta: createFigmaMeta(figma, {
+        meta: createFigmaMeta(figma, {
           degradationHints: ["partial_fidelity"],
           parentStackMode,
         }),
@@ -662,7 +740,10 @@ function convertFigmaRectangle(
     title: figma.name ?? "Imported rectangle",
     bounds: getNodeBounds(figma),
     fills: getPaintFills(figma.fillPaints ?? figma.backgroundPaints),
-    stroke: getPaintStroke(getPrimaryVisiblePaint(figma.strokePaints), figma.strokeWeight),
+    stroke: getPaintStroke(
+      getPrimaryVisiblePaint(figma.strokePaints),
+      figma.strokeWeight,
+    ),
     cornerRadius: figma.cornerRadius,
     locked: figma.locked,
     visible: figma.visible,
@@ -688,7 +769,10 @@ function convertFigmaEllipse(
     title: figma.name ?? "Imported ellipse",
     bounds: getNodeBounds(figma),
     fills: getPaintFills(figma.fillPaints),
-    stroke: getPaintStroke(getPrimaryVisiblePaint(figma.strokePaints), figma.strokeWeight),
+    stroke: getPaintStroke(
+      getPrimaryVisiblePaint(figma.strokePaints),
+      figma.strokeWeight,
+    ),
     locked: figma.locked,
     visible: figma.visible,
     effects: convertFigmaEffects(figma.effects),
@@ -712,7 +796,10 @@ function convertFigmaLine(
     parentId,
     title: figma.name ?? "Imported line",
     bounds: getNodeBounds(figma),
-    stroke: getPaintStroke(getPrimaryVisiblePaint(figma.strokePaints ?? figma.fillPaints), figma.strokeWeight),
+    stroke: getPaintStroke(
+      getPrimaryVisiblePaint(figma.strokePaints ?? figma.fillPaints),
+      figma.strokeWeight,
+    ),
     locked: figma.locked,
     visible: figma.visible,
     effects: convertFigmaEffects(figma.effects),
@@ -740,7 +827,9 @@ function convertFigmaText(
     fontSize: Math.max(12, figma.fontSize ?? 16),
     fontFamily: figma.fontName?.family,
     fontWeight: figma.fontName ? extractFontWeight(figma.fontName) : undefined,
-    fills: getPaintFills(figma.fillPaints) ?? [{ type: "solid", color: "#111827" }],
+    fills: getPaintFills(figma.fillPaints) ?? [
+      { type: "solid", color: "#111827" },
+    ],
     textAlign: mapTextAlign(figma.textAlignHorizontal),
     bounds: getNodeBounds(figma),
     locked: figma.locked,
@@ -774,11 +863,14 @@ function convertFigmaVector(
       title: figma.name ?? "Imported vector fallback",
       bounds: getNodeBounds(figma),
       fills: getPaintFills(figma.fillPaints),
-      stroke: getPaintStroke(getPrimaryVisiblePaint(figma.strokePaints), figma.strokeWeight),
+      stroke: getPaintStroke(
+        getPrimaryVisiblePaint(figma.strokePaints),
+        figma.strokeWeight,
+      ),
       locked: figma.locked,
       visible: figma.visible,
       effects: convertFigmaEffects(figma.effects),
-    meta: createFigmaMeta(figma, {
+      meta: createFigmaMeta(figma, {
         degradationHints: ["partial_fidelity"],
         parentStackMode,
       }),
@@ -794,7 +886,10 @@ function convertFigmaVector(
     d: path,
     bounds: normalizePathBounds(figma, path),
     fills: getPaintFills(figma.fillPaints),
-    stroke: getPaintStroke(getPrimaryVisiblePaint(figma.strokePaints), figma.strokeWeight),
+    stroke: getPaintStroke(
+      getPrimaryVisiblePaint(figma.strokePaints),
+      figma.strokeWeight,
+    ),
     locked: figma.locked,
     visible: figma.visible,
     effects: convertFigmaEffects(figma.effects),
@@ -848,7 +943,10 @@ export function applyInstanceOverrides(
   derived: FigmaDerivedSymbolDataEntry[] | undefined,
   instanceSize: { x: number; y: number } | undefined,
 ): FigmaTreeNode[] {
-  if ((!derived || derived.length === 0) && (!overrides || overrides.length === 0)) {
+  if (
+    (!derived || derived.length === 0) &&
+    (!overrides || overrides.length === 0)
+  ) {
     return scaleTreeChildren(symbolNode, instanceSize);
   }
 
@@ -872,7 +970,9 @@ export function applyInstanceOverrides(
   }
 
   const flatSymbol = flattenTree(symbolNode);
-  const oneLevelDerived = safeDerived.filter((entry) => (entry.guidPath?.guids.length ?? 0) === 1);
+  const oneLevelDerived = safeDerived.filter(
+    (entry) => (entry.guidPath?.guids.length ?? 0) === 1,
+  );
   const firstGuids = oneLevelDerived[0]?.guidPath?.guids;
   const sessionID = firstGuids?.[0]?.sessionID;
   const firstLocalID = firstGuids?.[0]?.localID;
@@ -908,7 +1008,10 @@ export function applyInstanceOverrides(
     }
   }
 
-  if (directMatches > oneLevelDerived.length * 0.5 || oneLevelDerived.length === 0) {
+  if (
+    directMatches > oneLevelDerived.length * 0.5 ||
+    oneLevelDerived.length === 0
+  ) {
     for (const entry of oneLevelDerived) {
       const guid = entry.guidPath?.guids?.[0];
       if (!guid) {
@@ -938,39 +1041,53 @@ export function applyInstanceOverrides(
       const actualGuid = guidToString(node.figma.guid);
       const pathKey = guidPathKey(entry.guidPath.guids);
       resolveToNode(pathKey, actualGuid);
-      pathToNodeGuid.set(guidToString(entry.guidPath.guids[0] ?? node.figma.guid), actualGuid);
+      pathToNodeGuid.set(
+        guidToString(entry.guidPath.guids[0] ?? node.figma.guid),
+        actualGuid,
+      );
     }
   } else if (firstLocalID !== undefined && sessionID !== undefined) {
     const fullPathToNode = new Map<string, string>();
     let fullIndex = 0;
     const walkFull = (node: FigmaTreeNode) => {
       if (node.figma.guid) {
-        fullPathToNode.set(`${sessionID}:${firstLocalID + fullIndex}`, guidToString(node.figma.guid));
+        fullPathToNode.set(
+          `${sessionID}:${firstLocalID + fullIndex}`,
+          guidToString(node.figma.guid),
+        );
       }
       fullIndex += 1;
       const sortedChildren = [...node.children].sort(
-        (left, right) => (left.figma.guid?.localID ?? 0) - (right.figma.guid?.localID ?? 0),
+        (left, right) =>
+          (left.figma.guid?.localID ?? 0) - (right.figma.guid?.localID ?? 0),
       );
       for (const child of sortedChildren) {
         walkFull(child);
       }
     };
     for (const child of [...symbolNode.children].sort(
-      (left, right) => (left.figma.guid?.localID ?? 0) - (right.figma.guid?.localID ?? 0),
+      (left, right) =>
+        (left.figma.guid?.localID ?? 0) - (right.figma.guid?.localID ?? 0),
     )) {
       walkFull(child);
     }
 
-    const rootGuid = symbolNode.figma.guid ? guidToString(symbolNode.figma.guid) : "";
+    const rootGuid = symbolNode.figma.guid
+      ? guidToString(symbolNode.figma.guid)
+      : "";
     const rootPathToNode = new Map<string, string>();
     let rootIndex = 0;
     const walkRoot = (node: FigmaTreeNode) => {
       if (node.figma.guid) {
-        rootPathToNode.set(`${sessionID}:${firstLocalID + rootIndex}`, guidToString(node.figma.guid));
+        rootPathToNode.set(
+          `${sessionID}:${firstLocalID + rootIndex}`,
+          guidToString(node.figma.guid),
+        );
       }
       rootIndex += 1;
       const sortedChildren = [...node.children].sort(
-        (left, right) => (left.figma.guid?.localID ?? 0) - (right.figma.guid?.localID ?? 0),
+        (left, right) =>
+          (left.figma.guid?.localID ?? 0) - (right.figma.guid?.localID ?? 0),
       );
       for (const child of sortedChildren) {
         walkRoot(child);
@@ -1003,7 +1120,11 @@ export function applyInstanceOverrides(
       }
     }
   } else {
-    for (let index = 0; index < Math.min(flatSymbol.length, safeDerived.length); index += 1) {
+    for (
+      let index = 0;
+      index < Math.min(flatSymbol.length, safeDerived.length);
+      index += 1
+    ) {
       const node = flatSymbol[index];
       const entry = safeDerived[index];
       if (!node?.figma.guid || !entry?.guidPath?.guids?.length) {
@@ -1013,7 +1134,10 @@ export function applyInstanceOverrides(
       const pathKey = guidPathKey(entry.guidPath.guids);
       resolveToNode(pathKey, actualGuid);
       if (entry.guidPath.guids.length === 1) {
-        pathToNodeGuid.set(guidToString(entry.guidPath.guids[0] ?? node.figma.guid), actualGuid);
+        pathToNodeGuid.set(
+          guidToString(entry.guidPath.guids[0] ?? node.figma.guid),
+          actualGuid,
+        );
       }
     }
   }
@@ -1037,7 +1161,8 @@ export function applyInstanceOverrides(
     if (
       nestedRootGuids.size > 0 &&
       candidateInstances.length > 0 &&
-      (nestedRootGuids.size === candidateInstances.length || candidateInstances.length === 1)
+      (nestedRootGuids.size === candidateInstances.length ||
+        candidateInstances.length === 1)
     ) {
       const orderedRootGuids = Array.from(nestedRootGuids);
       for (let index = 0; index < orderedRootGuids.length; index += 1) {
@@ -1119,14 +1244,17 @@ export function applyInstanceOverrides(
     const currentPath = currentGuid ? [...parentPath, currentGuid] : parentPath;
     const directKey = currentGuid ? guidToString(currentGuid) : "";
     const pathKey = currentPath.length > 0 ? guidPathKey(currentPath) : "";
-    const directOverride = nodeOverride.get(directKey) ?? overrideMap.get(pathKey);
+    const directOverride =
+      nodeOverride.get(directKey) ?? overrideMap.get(pathKey);
     const directDerived = nodeDerived.get(directKey) ?? derivedMap.get(pathKey);
     const nestedOverrides = nestedOverrideMap.get(directKey);
     const nestedDerived = nestedDerivedMap.get(directKey);
 
     const figma: FigmaNodeChange = {
       ...node.figma,
-      textData: node.figma.textData ? { ...node.figma.textData } : node.figma.textData,
+      textData: node.figma.textData
+        ? { ...node.figma.textData }
+        : node.figma.textData,
     };
 
     const fallbackTransform = applyInstanceTransform(
@@ -1168,7 +1296,10 @@ export function applyInstanceOverrides(
       applyOverrideToNode(figma, directOverride);
     }
 
-    if ((nestedOverrides || nestedDerived) && (figma.type === "INSTANCE" || figma.symbolData)) {
+    if (
+      (nestedOverrides || nestedDerived) &&
+      (figma.type === "INSTANCE" || figma.symbolData)
+    ) {
       if (nestedOverrides) {
         const existingOverrides = figma.symbolData?.symbolOverrides ?? [];
         figma.symbolData = {
@@ -1181,7 +1312,9 @@ export function applyInstanceOverrides(
       }
     }
 
-    const children = node.children.map((child) => applyToNode(child, currentPath));
+    const children = node.children.map((child) =>
+      applyToNode(child, currentPath),
+    );
     return { figma, children };
   };
 
@@ -1222,7 +1355,9 @@ function scaleTreeChildren(
             y: Math.max(1, node.figma.size.y * scaleY),
           }
         : node.figma.size,
-      textData: node.figma.textData ? { ...node.figma.textData } : node.figma.textData,
+      textData: node.figma.textData
+        ? { ...node.figma.textData }
+        : node.figma.textData,
     };
     return {
       figma,
@@ -1233,7 +1368,10 @@ function scaleTreeChildren(
   return symbolNode.children.map(cloneNode);
 }
 
-function applyOverrideToNode(target: FigmaNodeChange, override: FigmaNodeChange): void {
+function applyOverrideToNode(
+  target: FigmaNodeChange,
+  override: FigmaNodeChange,
+): void {
   const skipKeys = new Set([
     "guidPath",
     "guid",
@@ -1278,9 +1416,10 @@ function applyInstanceTransform(
   };
 }
 
-function getNodeOrigin(
-  figma: Pick<FigmaNodeChange, "transform" | "size">,
-): { x: number; y: number } {
+function getNodeOrigin(figma: Pick<FigmaNodeChange, "transform" | "size">): {
+  x: number;
+  y: number;
+} {
   return {
     x: figma.transform?.m02 ?? 0,
     y: figma.transform?.m12 ?? 0,
@@ -1307,14 +1446,20 @@ function guidPathKey(guids: FigmaGUID[]): string {
   return guids.map((guid) => guidToString(guid)).join("/");
 }
 
-function isSameGuid(left: FigmaGUID | undefined, right: FigmaGUID | undefined): boolean {
+function isSameGuid(
+  left: FigmaGUID | undefined,
+  right: FigmaGUID | undefined,
+): boolean {
   if (!left || !right) {
     return false;
   }
   return left.sessionID === right.sessionID && left.localID === right.localID;
 }
 
-function pushFigmaWarnings(figma: FigmaNodeChange, warnings: FigmaNativeWarning[]): void {
+function pushFigmaWarnings(
+  figma: FigmaNodeChange,
+  warnings: FigmaNativeWarning[],
+): void {
   const originNodeId = figma.guid ? guidToString(figma.guid) : undefined;
   const originNodeType = figma.type;
 
@@ -1338,7 +1483,10 @@ function pushFigmaWarnings(figma: FigmaNodeChange, warnings: FigmaNativeWarning[
     });
   }
 
-  if (hasComplexPaint(figma.fillPaints) || hasComplexPaint(figma.strokePaints)) {
+  if (
+    hasComplexPaint(figma.fillPaints) ||
+    hasComplexPaint(figma.strokePaints)
+  ) {
     warnings.push({
       code: "partial_fidelity",
       message: `Figma 节点 "${figma.name ?? originNodeType ?? "Unnamed"}" 包含渐变或复杂图像填充，当前按基础样式导入。`,
@@ -1394,7 +1542,10 @@ export function getFigmaAutoLayoutMeta(
   meta.widthMode = mapFigmaWidthSizing(figma, parentStackMode);
   meta.heightMode = mapFigmaHeightSizing(figma, parentStackMode);
 
-  if (figma.stackChildPrimaryGrow !== undefined && figma.stackChildPrimaryGrow > 0) {
+  if (
+    figma.stackChildPrimaryGrow !== undefined &&
+    figma.stackChildPrimaryGrow > 0
+  ) {
     meta.grow = figma.stackChildPrimaryGrow;
   }
   const alignSelf = mapFigmaAlignSelf(figma.stackChildAlignSelf);
@@ -1402,10 +1553,13 @@ export function getFigmaAutoLayoutMeta(
     meta.alignSelf = alignSelf;
   }
   if (figma.stackPositioning) {
-    meta.positioning = figma.stackPositioning === "ABSOLUTE" ? "absolute" : "auto";
+    meta.positioning =
+      figma.stackPositioning === "ABSOLUTE" ? "absolute" : "auto";
   }
 
-  return Object.values(meta).some((value) => value !== undefined) ? meta : undefined;
+  return Object.values(meta).some((value) => value !== undefined)
+    ? meta
+    : undefined;
 }
 
 function getNodeBounds(figma: FigmaNodeChange): {
@@ -1419,10 +1573,11 @@ function getNodeBounds(figma: FigmaNodeChange): {
   const y = figma.transform?.m12 ?? 0;
   const width = Math.max(1, figma.size?.x ?? 1);
   const height = Math.max(1, figma.size?.y ?? 1);
-  const rotation =
-    figma.transform
-      ? Math.round((Math.atan2(figma.transform.m10, figma.transform.m00) * 180) / Math.PI)
-      : undefined;
+  const rotation = figma.transform
+    ? Math.round(
+        (Math.atan2(figma.transform.m10, figma.transform.m00) * 180) / Math.PI,
+      )
+    : undefined;
 
   return rotation ? { x, y, width, height, rotation } : { x, y, width, height };
 }
@@ -1513,16 +1668,25 @@ function mapFigmaWidthSizing(
   figma: FigmaNodeChange,
   parentStackMode?: FigmaNodeChange["stackMode"],
 ): CanvasImportedAutoLayoutMeta["widthMode"] {
-  if (figma.stackPrimarySizing === "RESIZE_TO_FIT" && figma.stackMode === "HORIZONTAL") {
+  if (
+    figma.stackPrimarySizing === "RESIZE_TO_FIT" &&
+    figma.stackMode === "HORIZONTAL"
+  ) {
     return "fit_content";
   }
-  if (figma.stackCounterSizing === "RESIZE_TO_FIT" && figma.stackMode === "VERTICAL") {
+  if (
+    figma.stackCounterSizing === "RESIZE_TO_FIT" &&
+    figma.stackMode === "VERTICAL"
+  ) {
     return "fit_content";
   }
   if (figma.stackChildPrimaryGrow === 1 && parentStackMode === "HORIZONTAL") {
     return "fill_container";
   }
-  if (figma.stackChildAlignSelf === "STRETCH" && parentStackMode === "VERTICAL") {
+  if (
+    figma.stackChildAlignSelf === "STRETCH" &&
+    parentStackMode === "VERTICAL"
+  ) {
     return "fill_container";
   }
   return figma.size?.x ? "fixed" : undefined;
@@ -1532,16 +1696,25 @@ function mapFigmaHeightSizing(
   figma: FigmaNodeChange,
   parentStackMode?: FigmaNodeChange["stackMode"],
 ): CanvasImportedAutoLayoutMeta["heightMode"] {
-  if (figma.stackPrimarySizing === "RESIZE_TO_FIT" && figma.stackMode === "VERTICAL") {
+  if (
+    figma.stackPrimarySizing === "RESIZE_TO_FIT" &&
+    figma.stackMode === "VERTICAL"
+  ) {
     return "fit_content";
   }
-  if (figma.stackCounterSizing === "RESIZE_TO_FIT" && figma.stackMode === "HORIZONTAL") {
+  if (
+    figma.stackCounterSizing === "RESIZE_TO_FIT" &&
+    figma.stackMode === "HORIZONTAL"
+  ) {
     return "fit_content";
   }
   if (figma.stackChildPrimaryGrow === 1 && parentStackMode === "VERTICAL") {
     return "fill_container";
   }
-  if (figma.stackChildAlignSelf === "STRETCH" && parentStackMode === "HORIZONTAL") {
+  if (
+    figma.stackChildAlignSelf === "STRETCH" &&
+    parentStackMode === "HORIZONTAL"
+  ) {
     return "fill_container";
   }
   return figma.size?.y ? "fixed" : undefined;
@@ -1573,7 +1746,9 @@ function getPrimaryVisiblePaint(paints?: FigmaPaint[]): FigmaPaint | undefined {
 }
 
 function getVisibleImagePaint(paints?: FigmaPaint[]): FigmaPaint | undefined {
-  return paints?.find((paint) => paint.visible !== false && paint.type === "IMAGE");
+  return paints?.find(
+    (paint) => paint.visible !== false && paint.type === "IMAGE",
+  );
 }
 
 function hasComplexPaint(paints?: FigmaPaint[]): boolean {
@@ -1645,7 +1820,9 @@ function getPaintStroke(
   };
 }
 
-function extractFontWeight(fontName: { family?: string; style?: string }): number | undefined {
+function extractFontWeight(fontName: { family?: string; style?: string }):
+  | number
+  | undefined {
   const style = fontName.style ?? "";
   if (/\b(bold|700|800|900)\b/i.test(style)) return 700;
   if (/\b(semibold|600)\b/i.test(style)) return 600;
@@ -1675,7 +1852,9 @@ function figmaColorToHex(color: FigmaColor, opacity?: number): string {
 }
 
 /** Convert Figma effects to CanvasEffect[]. Returns undefined if no visible effects. */
-function convertFigmaEffects(effects?: import("./figma-native-types.js").FigmaEffect[]): CanvasEffect[] | undefined {
+function convertFigmaEffects(
+  effects?: import("./figma-native-types.js").FigmaEffect[],
+): CanvasEffect[] | undefined {
   if (!effects || effects.length === 0) return undefined;
   const mapped: CanvasEffect[] = [];
   for (const effect of effects) {
@@ -1867,7 +2046,9 @@ function isZstd(bytes: Uint8Array): boolean {
 }
 
 function isPng(bytes: Uint8Array): boolean {
-  return bytes.length >= 2 && bytes[0] === PNG_MAGIC_0 && bytes[1] === PNG_MAGIC_1;
+  return (
+    bytes.length >= 2 && bytes[0] === PNG_MAGIC_0 && bytes[1] === PNG_MAGIC_1
+  );
 }
 
 function decompressChunk(bytes: Uint8Array): Uint8Array {
@@ -1890,7 +2071,9 @@ function decompressChunk(bytes: Uint8Array): Uint8Array {
   }
 }
 
-function findDecoder(schemaHelper: Record<string, unknown>): (bb: ByteBuffer) => unknown {
+function findDecoder(
+  schemaHelper: Record<string, unknown>,
+): (bb: ByteBuffer) => unknown {
   if (typeof schemaHelper.decodeMessage === "function") {
     return schemaHelper.decodeMessage as (bb: ByteBuffer) => unknown;
   }
@@ -1912,12 +2095,16 @@ function decodeFigmaVectorPath(
   figma: FigmaNodeChange,
   blobs: (Uint8Array | string)[],
 ): string | null {
-  const hasVisibleFills = figma.fillPaints?.some((paint) => paint.visible !== false);
-  const hasVisibleStrokes = figma.strokePaints?.some((paint) => paint.visible !== false);
+  const hasVisibleFills = figma.fillPaints?.some(
+    (paint) => paint.visible !== false,
+  );
+  const hasVisibleStrokes = figma.strokePaints?.some(
+    (paint) => paint.visible !== false,
+  );
   const geometries =
     !hasVisibleFills && hasVisibleStrokes
-      ? figma.strokeGeometry ?? figma.fillGeometry
-      : figma.fillGeometry ?? figma.strokeGeometry;
+      ? (figma.strokeGeometry ?? figma.fillGeometry)
+      : (figma.fillGeometry ?? figma.strokeGeometry);
 
   if (!geometries?.length) {
     return decodeVectorNetworkBlob(figma, blobs);
@@ -2128,7 +2315,9 @@ function decodeVectorNetworkBlob(
 }
 
 function roundPathNumber(value: number): string {
-  return Math.abs(value) < 0.00005 ? "0" : parseFloat(value.toFixed(4)).toString();
+  return Math.abs(value) < 0.00005
+    ? "0"
+    : Number.parseFloat(value.toFixed(4)).toString();
 }
 
 function joinPathParts(parts: string[]): string | null {
@@ -2143,10 +2332,10 @@ function computeSvgPathBounds(
     return null;
   }
 
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
   for (const command of commands) {
     if (command[0]?.toUpperCase() === "Z") {
       continue;

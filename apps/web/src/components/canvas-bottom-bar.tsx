@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HexColorPicker } from "react-colorful";
 import { createPortal } from "react-dom";
 
-import type { CanvasApi } from "./canvas/canvas-surface";
+import type { CanvasApi } from "./canvas/canvas-api";
 
 /* ── Preset color swatches for background picker ── */
 const BG_PRESETS = [

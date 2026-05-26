@@ -58,11 +58,13 @@ export function useCanvasKeyboardShortcuts(options: {
       }
 
       if (isMod && key === "v") {
-        event.preventDefault();
         const pastedIds = options.pasteClipboard();
-        if (pastedIds.length === 0) {
-          void options.pasteFromSystemClipboard();
+        if (pastedIds.length > 0) {
+          event.preventDefault();
+          return;
         }
+        // Let the browser dispatch the native paste event so Figma/SVG HTML
+        // payloads remain available on event.clipboardData without Clipboard API permission.
         return;
       }
 

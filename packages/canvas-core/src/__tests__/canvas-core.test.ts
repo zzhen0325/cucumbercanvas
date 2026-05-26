@@ -3,39 +3,38 @@ import type { FigmaTreeNode } from "../figma-native-types.js";
 import type { ContainerRole, PenFill } from "../types.js";
 
 import {
-  findParent,
-  getNodeBounds,
+  type CanvasImportResult,
+  type PenNode,
+  applyCanvasOperation,
   applyImportedAutoLayout,
   applyInstanceOverrides,
-  type PenNode,
-  findNode,
-  applyCanvasOperation,
   buildAgentContext,
-  extractFigmaClipboardData,
-  getFigmaAutoLayoutMeta,
-  mergeSymbolProps,
-  parseClipboardImport,
-  createNodeId,
   createEmptyDocument,
+  createNodeId,
   duplicateCanvasNodes,
-  type CanvasImportResult,
+  extractFigmaClipboardData,
+  findNode,
+  findParent,
+  getFigmaAutoLayoutMeta,
+  getNodeBounds,
   getVisibleCanvasNodesInBounds,
   insertCanvasImportResult,
+  mergeSymbolProps,
+  parseClipboardImport,
   resolveContext,
 } from "../index.js";
 
-const parserCapableIt =
-  typeof DOMParser === "undefined" ? it.skip : it;
+const parserCapableIt = typeof DOMParser === "undefined" ? it.skip : it;
 
-function makeContainer(
-  id: string,
-  _parentId: string | null = null,
-): PenNode {
+function makeContainer(id: string, _parentId: string | null = null): PenNode {
   return {
     id,
     type: "frame" as const,
     name: id,
-    x: 0, y: 0, width: 500, height: 400,
+    x: 0,
+    y: 0,
+    width: 500,
+    height: 400,
     containerRole: ["visual", "task", "context"] as ContainerRole[],
     children: [] as PenNode[],
     contextSlots: {},
@@ -84,7 +83,10 @@ describe("cucumber canvas core", () => {
     const node: PenNode = {
       id: createNodeId("rect"),
       type: "rectangle",
-      x: 1000, y: 1000, width: 100, height: 100,
+      x: 1000,
+      y: 1000,
+      width: 100,
+      height: 100,
       fill: [{ type: "solid", color: "#ffffff" }] as PenFill[],
     };
 
@@ -106,7 +108,10 @@ describe("cucumber canvas core", () => {
     const node: PenNode = {
       id: createNodeId("rect"),
       type: "rectangle",
-      x: 40, y: 40, width: 120, height: 80,
+      x: 40,
+      y: 40,
+      width: 120,
+      height: 80,
       fill: [{ type: "solid", color: "#ffffff" }] as PenFill[],
     };
     doc = applyCanvasOperation(doc, {
@@ -124,7 +129,10 @@ describe("cucumber canvas core", () => {
         containerId: "container",
         agentId: "agent-1",
         updates: {
-          x: 520, y: 60, width: 120, height: 80,
+          x: 520,
+          y: 60,
+          width: 120,
+          height: 80,
         } as Partial<PenNode>,
       }),
     ).toThrow("cannot write outside container");
@@ -149,7 +157,10 @@ describe("cucumber canvas core", () => {
     const child: PenNode = {
       id: "child",
       type: "rectangle",
-      x: 40, y: 40, width: 120, height: 80,
+      x: 40,
+      y: 40,
+      width: 120,
+      height: 80,
       fill: [{ type: "solid", color: "#ffffff" }] as PenFill[],
     };
     doc = applyCanvasOperation(doc, { type: "insertNode", node: container });
@@ -165,8 +176,7 @@ describe("cucumber canvas core", () => {
     const clone = cloneId ? findNode(result.doc, cloneId) : undefined;
 
     expect(clone?.type).toBe("frame");
-    const cloneChildren =
-      clone && "children" in clone ? clone.children : [];
+    const cloneChildren = clone && "children" in clone ? clone.children : [];
     expect(cloneChildren).toHaveLength(1);
     const childClone = (cloneChildren as PenNode[])[0];
     expect(childClone).toBeDefined();
@@ -180,12 +190,18 @@ describe("cucumber canvas core", () => {
     const a: PenNode = {
       id: "a",
       type: "rectangle",
-      x: 0, y: 0, width: 10, height: 10,
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
     };
     const b: PenNode = {
       id: "b",
       type: "rectangle",
-      x: 20, y: 0, width: 10, height: 10,
+      x: 20,
+      y: 0,
+      width: 10,
+      height: 10,
     };
     doc = applyCanvasOperation(doc, { type: "insertNode", node: a });
     doc = applyCanvasOperation(doc, { type: "insertNode", node: b });
@@ -203,12 +219,18 @@ describe("cucumber canvas core", () => {
     const visible: PenNode = {
       id: "visible",
       type: "rectangle",
-      x: 10, y: 10, width: 80, height: 80,
+      x: 10,
+      y: 10,
+      width: 80,
+      height: 80,
     };
     const hidden: PenNode = {
       id: "hidden",
       type: "rectangle",
-      x: 20, y: 20, width: 80, height: 80,
+      x: 20,
+      y: 20,
+      width: 80,
+      height: 80,
       visible: false,
     };
     doc = applyCanvasOperation(doc, { type: "insertNode", node: visible });
@@ -229,12 +251,18 @@ describe("cucumber canvas core", () => {
     const a: PenNode = {
       id: "a",
       type: "rectangle",
-      x: 20, y: 30, width: 80, height: 60,
+      x: 20,
+      y: 30,
+      width: 80,
+      height: 60,
     };
     const b: PenNode = {
       id: "b",
       type: "ellipse",
-      x: 140, y: 100, width: 100, height: 90,
+      x: 140,
+      y: 100,
+      width: 100,
+      height: 90,
       fill: [{ type: "solid", color: "#ffffff" }] as PenFill[],
     };
     doc = applyCanvasOperation(doc, { type: "insertNode", node: a });
@@ -270,12 +298,18 @@ describe("cucumber canvas core", () => {
     const a: PenNode = {
       id: "a",
       type: "rectangle",
-      x: 20, y: 30, width: 80, height: 60,
+      x: 20,
+      y: 30,
+      width: 80,
+      height: 60,
     };
     const b: PenNode = {
       id: "b",
       type: "rectangle",
-      x: 140, y: 100, width: 100, height: 90,
+      x: 140,
+      y: 100,
+      width: 100,
+      height: 90,
     };
     doc = applyCanvasOperation(doc, { type: "insertNode", node: a });
     doc = applyCanvasOperation(doc, { type: "insertNode", node: b });
@@ -295,17 +329,26 @@ describe("cucumber canvas core", () => {
     const a: PenNode = {
       id: "a",
       type: "rectangle",
-      x: 0, y: 0, width: 10, height: 10,
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
     };
     const b: PenNode = {
       id: "b",
       type: "rectangle",
-      x: 20, y: 0, width: 10, height: 10,
+      x: 20,
+      y: 0,
+      width: 10,
+      height: 10,
     };
     const c: PenNode = {
       id: "c",
       type: "rectangle",
-      x: 40, y: 0, width: 10, height: 10,
+      x: 40,
+      y: 0,
+      width: 10,
+      height: 10,
     };
     doc = applyCanvasOperation(doc, { type: "insertNode", node: a });
     doc = applyCanvasOperation(doc, { type: "insertNode", node: b });
@@ -335,7 +378,10 @@ describe("cucumber canvas core", () => {
           id: "group-1",
           type: "group",
           title: "Imported",
-          x: 10, y: 20, width: 200, height: 120,
+          x: 10,
+          y: 20,
+          width: 200,
+          height: 120,
           childrenOrder: ["child-1"],
           meta: { source: "svg-import" },
         },
@@ -343,7 +389,10 @@ describe("cucumber canvas core", () => {
           id: "child-1",
           type: "rectangle",
           title: "Child",
-          x: 20, y: 30, width: 100, height: 80,
+          x: 20,
+          y: 30,
+          width: 100,
+          height: 80,
           fill: [{ type: "solid", color: "#ffffff" }] as PenFill[],
           meta: { source: "svg-import" },
         },
@@ -381,7 +430,10 @@ describe("cucumber canvas core", () => {
           id: "rect-1",
           type: "rectangle",
           title: "Imported rect",
-          x: 10, y: 20, width: 80, height: 60,
+          x: 10,
+          y: 20,
+          width: 80,
+          height: 60,
           fill: [{ type: "solid", color: "#ffffff" }] as PenFill[],
           meta: { source: "svg-import" },
         },
@@ -443,37 +495,59 @@ describe("cucumber canvas core", () => {
   );
 
   it("extracts figma clipboard meta and buffer from comment blocks", () => {
-    const metaBase64 = Buffer.from(JSON.stringify({ source: "figma", nodeCount: 2 })).toString(
+    const metaBase64 = Buffer.from(
+      JSON.stringify({ source: "figma", nodeCount: 2 }),
+    ).toString("base64");
+    const bufferBase64 = Buffer.from(Uint8Array.from([1, 2, 3, 4])).toString(
       "base64",
     );
-    const bufferBase64 = Buffer.from(Uint8Array.from([1, 2, 3, 4])).toString("base64");
     const html = `<!--(figmeta)-->${metaBase64}<!--(figmeta)--><!--(figma)-->${bufferBase64}<!--(figma)-->`;
 
     const extracted = extractFigmaClipboardData(html);
 
-    expect((extracted as any)?.meta).toEqual({ source: "figma", nodeCount: 2 });
-    expect(Array.from(new Uint8Array(extracted?.buffer ?? new ArrayBuffer(0)))).toEqual([
-      1, 2, 3, 4,
-    ]);
+    expect(extracted?.meta).toEqual({ source: "figma", nodeCount: 2 });
+    expect(
+      Array.from(new Uint8Array(extracted?.buffer ?? new ArrayBuffer(0))),
+    ).toEqual([1, 2, 3, 4]);
   });
 
-  parserCapableIt("falls back to styled html figma parsing when native clipboard decode is invalid", () => {
-    const html = `
+  it("extracts figma clipboard meta and buffer from quoted data attributes", () => {
+    const metaBase64 = Buffer.from(
+      JSON.stringify({ source: "figma", nodeCount: 1 }),
+    ).toString("base64");
+    const bufferBase64 = Buffer.from(Uint8Array.from([4, 3, 2, 1])).toString(
+      "base64",
+    );
+    const html = `<div data-metadata='${metaBase64}' data-buffer='${bufferBase64}'></div>`;
+
+    const extracted = extractFigmaClipboardData(html);
+
+    expect(extracted?.meta).toEqual({ source: "figma", nodeCount: 1 });
+    expect(
+      Array.from(new Uint8Array(extracted?.buffer ?? new ArrayBuffer(0))),
+    ).toEqual([4, 3, 2, 1]);
+  });
+
+  parserCapableIt(
+    "falls back to styled html figma parsing when native clipboard decode is invalid",
+    () => {
+      const html = `
       <div data-metadata="invalid" data-buffer="invalid" style="position:absolute;left:12px;top:16px;width:120px;height:56px;background-color:#ffffff">
         Native fallback
       </div>
     `;
 
-    const result = parseClipboardImport({ html });
+      const result = parseClipboardImport({ html });
 
-    expect(result?.source).toBe("figma");
-    expect(result?.rootNodeIds.length).toBeGreaterThan(0);
-    expect(result?.warnings).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ code: "partial_fidelity" }),
-      ]),
-    );
-  });
+      expect(result?.source).toBe("figma");
+      expect(result?.rootNodeIds.length).toBeGreaterThan(0);
+      expect(result?.warnings).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: "partial_fidelity" }),
+        ]),
+      );
+    },
+  );
 
   it("merges missing symbol props into an instance node", () => {
     const merged = mergeSymbolProps(
@@ -550,7 +624,10 @@ describe("cucumber canvas core", () => {
   it("applies imported auto-layout to container children and nested layout containers", () => {
     let doc = createEmptyDocument();
     const root = makeContainer("root");
-    (root as any).x = 10; (root as any).y = 20; (root as any).width = 300; (root as any).height = 200;
+    (root as any).x = 10;
+    (root as any).y = 20;
+    (root as any).width = 300;
+    (root as any).height = 200;
     (root as any).meta = {
       source: "figma-paste",
       autoLayout: {
@@ -564,7 +641,10 @@ describe("cucumber canvas core", () => {
     const titleNode = {
       id: "title",
       type: "text" as const,
-      x: 0, y: 0, width: 50, height: 20,
+      x: 0,
+      y: 0,
+      width: 50,
+      height: 20,
       content: "Title",
       fontSize: 16,
       meta: {
@@ -575,7 +655,10 @@ describe("cucumber canvas core", () => {
       },
     } as any as PenNode;
     const nested = makeContainer("nested", "root");
-    (nested as any).x = 0; (nested as any).y = 0; (nested as any).width = 100; (nested as any).height = 40;
+    (nested as any).x = 0;
+    (nested as any).y = 0;
+    (nested as any).width = 100;
+    (nested as any).height = 40;
     (nested as any).meta = {
       source: "figma-paste",
       autoLayout: {
@@ -590,14 +673,20 @@ describe("cucumber canvas core", () => {
     const nestedLabel: PenNode = {
       id: "nested-label",
       type: "text",
-      x: 0, y: 0, width: 60, height: 20,
+      x: 0,
+      y: 0,
+      width: 60,
+      height: 20,
       content: "Nested",
       fontSize: 14,
     };
     const nestedValue: PenNode = {
       id: "nested-value",
       type: "text" as const,
-      x: 0, y: 0, width: 40, height: 20,
+      x: 0,
+      y: 0,
+      width: 40,
+      height: 20,
       content: "Value",
       fontSize: 14,
       meta: {
@@ -662,7 +751,10 @@ describe("cucumber canvas core", () => {
   it("keeps imported absolute-positioned children fixed during auto-layout reflow", () => {
     let doc = createEmptyDocument();
     const root = makeContainer("absolute-root");
-    (root as any).x = 0; (root as any).y = 0; (root as any).width = 200; (root as any).height = 120;
+    (root as any).x = 0;
+    (root as any).y = 0;
+    (root as any).width = 200;
+    (root as any).height = 120;
     (root as any).meta = {
       source: "figma-paste",
       autoLayout: {
@@ -675,13 +767,19 @@ describe("cucumber canvas core", () => {
     const flowNode: PenNode = {
       id: "flow",
       type: "rectangle",
-      x: 0, y: 0, width: 40, height: 20,
+      x: 0,
+      y: 0,
+      width: 40,
+      height: 20,
       fill: [{ type: "solid", color: "#ffffff" }] as PenFill[],
     };
     const absoluteNode: PenNode = {
       id: "absolute",
       type: "rectangle" as const,
-      x: 77, y: 33, width: 30, height: 30,
+      x: 77,
+      y: 33,
+      width: 30,
+      height: 30,
       fill: [{ type: "solid", color: "#ffffff" }] as PenFill[],
       meta: {
         source: "figma-paste",
