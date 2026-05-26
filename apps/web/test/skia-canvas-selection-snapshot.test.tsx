@@ -116,4 +116,114 @@ describe("SkiaCanvas selection snapshots", () => {
       globalThis.ResizeObserver = originalResizeObserver;
     }
   });
+
+  it("reconciles a stale active page when agents replace the document", async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    globalThis.ResizeObserver =
+      MockResizeObserver as unknown as typeof ResizeObserver;
+    const apiRef: { current: CanvasApi | null } = { current: null };
+
+    try {
+      const { container } = render(
+        <SkiaCanvas
+          initialContent={initialDocument}
+          onApiReady={(readyApi) => {
+            apiRef.current = readyApi;
+          }}
+        />,
+      );
+
+      await waitFor(() => expect(apiRef.current).not.toBeNull());
+      await waitFor(() =>
+        expect(container.querySelector("canvas")).not.toBeNull(),
+      );
+      const readyApi = apiRef.current;
+      if (!readyApi) throw new Error("Canvas API was not initialized.");
+
+      await act(async () => {
+        readyApi.setDocument({
+          version: "cucumber-canvas-v1",
+          activePageId: "deleted-page",
+          pages: [{ id: "page-a", name: "Page A", children: [] }],
+          children: [],
+        } as CucumberCanvasDocument);
+      });
+
+      expect(readyApi.getActivePageId()).toBe("page-a");
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver;
+    }
+  });
+
+  it("reorders root-level nodes through the CanvasApi", async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    globalThis.ResizeObserver =
+      MockResizeObserver as unknown as typeof ResizeObserver;
+    const apiRef: { current: CanvasApi | null } = { current: null };
+
+    try {
+      const { container } = render(
+        <SkiaCanvas
+          initialContent={initialDocument}
+          onApiReady={(readyApi) => {
+            apiRef.current = readyApi;
+          }}
+        />,
+      );
+
+      await waitFor(() => expect(apiRef.current).not.toBeNull());
+      await waitFor(() =>
+        expect(container.querySelector("canvas")).not.toBeNull(),
+      );
+      const readyApi = apiRef.current;
+      if (!readyApi) throw new Error("Canvas API was not initialized.");
+
+      await act(async () => {
+        readyApi.setDocument({
+          version: "cucumber-canvas-v1",
+          activePageId: "page-a",
+          pages: [
+            {
+              id: "page-a",
+              name: "Page A",
+              children: [
+                {
+                  id: "a",
+                  type: "rectangle",
+                  x: 0,
+                  y: 0,
+                  width: 10,
+                  height: 10,
+                },
+                {
+                  id: "b",
+                  type: "rectangle",
+                  x: 20,
+                  y: 0,
+                  width: 10,
+                  height: 10,
+                },
+              ],
+            },
+          ],
+          children: [],
+        } as CucumberCanvasDocument);
+        readyApi.reorderNode("a", "front");
+      });
+
+      expect(
+        readyApi.getDocument().pages?.[0]?.children.map((node) => node.id),
+      ).toEqual(["b", "a"]);
+
+      await act(async () => {
+        readyApi.moveNodeToIndex("a", null, 0);
+      });
+
+      expect(
+        readyApi.getDocument().pages?.[0]?.children.map((node) => node.id),
+      ).toEqual(["a", "b"]);
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver;
+    }
+  });
 });

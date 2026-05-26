@@ -6,6 +6,7 @@ import {
   type CanvasBounds,
   type CanvasClipboardData,
   type CanvasImportResult,
+  CanvasPageOperationError,
   type ClipboardImportPayload,
   type CucumberCanvasDocument,
   type ImportNode,
@@ -17,7 +18,6 @@ import {
   duplicateCanvasNodes,
   duplicateCanvasPage,
   findNode,
-  findParent,
   flattenNodes,
   getActiveChildren,
   getCanvasImportBounds,
@@ -49,7 +49,6 @@ import {
 } from "@cucumber/pen-renderer";
 import type { ContainerRole, PenDocument, PenNode } from "@cucumber/pen-types";
 import type { CanvasKit } from "canvaskit-wasm";
-import paper from "paper";
 import {
   forwardRef,
   memo,
@@ -237,6 +236,38 @@ function normalizeRuntimeDocument(raw: unknown): PenDocument {
   return normalizeCanvasPages(normalizePenDocument(raw));
 }
 
+function normalizeRuntimeDocumentForCanvasSet(raw: unknown): {
+  document: PenDocument;
+  reconciledFrom: string | null;
+} {
+  const candidate = normalizePenDocument(raw);
+  try {
+    return {
+      document: normalizeCanvasPages(candidate),
+      reconciledFrom: null,
+    };
+  } catch (error) {
+    if (
+      error instanceof CanvasPageOperationError &&
+      error.code === "page_not_found" &&
+      Array.isArray(candidate.pages) &&
+      candidate.pages.length > 0
+    ) {
+      return {
+        document: normalizeCanvasPages({
+          ...candidate,
+          activePageId: undefined,
+        }),
+        reconciledFrom:
+          typeof candidate.activePageId === "string"
+            ? candidate.activePageId
+            : null,
+      };
+    }
+    throw error;
+  }
+}
+
 function syncRendererDocument(
   renderer: PenRenderer | null,
   doc: PenDocument,
@@ -273,8 +304,6 @@ const MIN_DRAW_SIZE = 2;
 const CANVAS_SELECTION_COLOR = "#37BFF9";
 const DEFAULT_RECT_FILL = "#d3f256";
 const DEFAULT_SHAPE_FILL = "#f8fafc";
-
-setPaperModule(paper as unknown as Parameters<typeof setPaperModule>[0]);
 
 type CanvasRuntimeDocument = PenDocument & {
   assets?: Record<string, CanvasAsset>;
@@ -363,6 +392,36 @@ export const SkiaCanvas = memo(
       penPreview: null,
     });
     const suppressNextClickRef = useRef(false);
+    const [booleanRuntimeStatus, setBooleanRuntimeStatus] = useState<
+      "loading" | "ready" | "failed"
+    >("loading");
+
+    useEffect(() => {
+      let cancelled = false;
+      setBooleanRuntimeStatus("loading");
+      import("paper")
+        .then((paperModule) => {
+          if (cancelled) return;
+          const runtimeModule =
+            "default" in paperModule ? paperModule.default : paperModule;
+          setPaperModule(
+            runtimeModule as unknown as Parameters<typeof setPaperModule>[0],
+          );
+          setBooleanRuntimeStatus("ready");
+          console.info("[skia-canvas] Paper.js boolean runtime loaded");
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setPaperModule(null);
+          setBooleanRuntimeStatus("failed");
+          console.error("[skia-canvas] Paper.js boolean runtime failed", {
+            error,
+          });
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, []);
 
     // Space-held → temporary hand tool
     const [spaceHeld, setSpaceHeld] = useState(false);
@@ -1767,6 +1826,18 @@ export const SkiaCanvas = memo(
     const applyBooleanOperation = useCallback(
       (operation: BooleanOpType) => {
         try {
+          if (booleanRuntimeStatus !== "ready") {
+            const reason =
+              booleanRuntimeStatus === "loading"
+                ? "Boolean operations are still loading the vector runtime."
+                : "Boolean operations are unavailable because the vector runtime failed to load.";
+            console.warn("[skia-canvas] boolean-operation.rejected", {
+              operation,
+              selectedIds: getDocumentSelection(docRef.current, selectedIds),
+              reason,
+            });
+            return null;
+          }
           const activePageId = resolveActivePageId(docRef.current);
           const currentSelection = getDocumentSelection(
             docRef.current,
@@ -1883,15 +1954,22 @@ export const SkiaCanvas = memo(
           return null;
         }
       },
-      [commitDocument, selectedIds, setSelection],
+      [booleanRuntimeStatus, commitDocument, selectedIds, setSelection],
     );
 
     const api = useMemo<CanvasApi>(
       () => ({
         getDocument: () => docRef.current as unknown as CucumberCanvasDocument,
         setDocument: (raw: unknown) => {
-          const next = normalizeRuntimeDocument(raw);
+          const { document: next, reconciledFrom } =
+            normalizeRuntimeDocumentForCanvasSet(raw);
           commitDocument(next, { captureHistory: false });
+          if (reconciledFrom) {
+            console.info("[skia-canvas] page.active.reconciled", {
+              previousActivePageId: reconciledFrom,
+              activePageId: activePageIdRef.current,
+            });
+          }
           syncRendererDocument(
             rendererRef.current,
             docRef.current,
@@ -2171,86 +2249,24 @@ export const SkiaCanvas = memo(
           commitDocument(docRef.current);
         },
         reorderNode: (nodeId, direction) => {
-          const doc = docRef.current;
           const activePageId = activePageIdRef.current;
-          const node = findNode(doc, nodeId, activePageId);
-          if (!node) return;
-          const parent = findParent(doc, nodeId, activePageId);
-          const siblings = hasPenChildren(parent)
-            ? parent.children
-            : flattenNodes(doc, activePageId).filter(
-                (n) => !findParent(doc, n.id, activePageId),
-              );
-          const idx = siblings.findIndex((c: PenNode) => c.id === nodeId);
-          if (idx < 0) return;
-          const reordered = siblings.filter((c: PenNode) => c.id !== nodeId);
-          if (direction === "front" || direction === "forward") {
-            const newIdx = Math.min(
-              reordered.length,
-              idx + (direction === "front" ? reordered.length : 1),
-            );
-            reordered.splice(newIdx, 0, node);
-          } else {
-            const newIdx = Math.max(
-              0,
-              idx - (direction === "back" ? reordered.length : 1),
-            );
-            reordered.splice(newIdx, 0, node);
-          }
-          if (parent && "children" in parent) {
-            const next = applyCanvasOperation(doc, {
-              type: "updateNode",
-              nodeId: parent.id,
-              updates: { children: reordered } as Partial<PenNode>,
-              activePageId,
-            });
-            docRef.current = next;
-          }
-          commitDocument(docRef.current);
+          const next = applyCanvasOperation(docRef.current, {
+            type: "reorderNode",
+            nodeId,
+            direction,
+            activePageId,
+          });
+          commitDocument(next);
         },
         moveNodeToIndex: (nodeId, targetParentId, targetIndex) => {
-          const doc = docRef.current;
           const activePageId = activePageIdRef.current;
-          const node = findNode(doc, nodeId, activePageId);
-          if (!node) return;
-          // Remove from current position
-          let next = applyCanvasOperation(doc, {
-            type: "deleteNode",
+          const next = applyCanvasOperation(docRef.current, {
+            type: "reorderNode",
             nodeId,
+            targetParentId,
+            targetIndex,
             activePageId,
           });
-          // Insert at new position
-          next = applyCanvasOperation(next, {
-            type: "insertNode",
-            node,
-            parentId: targetParentId,
-            activePageId,
-          });
-          if (targetParentId && targetIndex >= 0) {
-            const parent = findNode(next, targetParentId, activePageId);
-            if (hasPenChildren(parent)) {
-              const children = [...parent.children];
-              const nodeIdx = children.findIndex(
-                (c: PenNode) => c.id === nodeId,
-              );
-              if (nodeIdx >= 0 && nodeIdx !== targetIndex) {
-                const [moved] = children.splice(nodeIdx, 1);
-                if (!moved) return;
-                children.splice(
-                  Math.min(targetIndex, children.length),
-                  0,
-                  moved,
-                );
-                next = applyCanvasOperation(next, {
-                  type: "updateNode",
-                  nodeId: targetParentId,
-                  updates: { children } as Partial<PenNode>,
-                  activePageId,
-                });
-              }
-            }
-          }
-          docRef.current = next;
           commitDocument(next);
         },
         toggleNodeLocked: (nodeId) => {
@@ -2436,6 +2452,12 @@ export const SkiaCanvas = memo(
     const booleanRejectionReason = useMemo(() => {
       const currentSelection = getDocumentSelection(doc, selectedIds);
       if (currentSelection.length < 2) return null;
+      if (booleanRuntimeStatus === "loading") {
+        return "Boolean operations are still loading the vector runtime.";
+      }
+      if (booleanRuntimeStatus === "failed") {
+        return "Boolean operations are unavailable because the vector runtime failed to load.";
+      }
       const topSelectionIds = getTopLevelSelectionIds(
         doc as CucumberCanvasDocument,
         currentSelection,
@@ -2459,7 +2481,7 @@ export const SkiaCanvas = memo(
         return "Boolean operations require top-level selections on the active page.";
       }
       return getBooleanOpRejectionReason(topSelectionNodes);
-    }, [activePageId, doc, selectedIds]);
+    }, [activePageId, booleanRuntimeStatus, doc, selectedIds]);
 
     // -----------------------------------------------------------------------
     // Initial document sync
@@ -2546,11 +2568,11 @@ export const SkiaCanvas = memo(
           visible={selectedIds.length >= 2}
         />
 
-        <div className="absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100%-2rem)] -translate-x-1/2 justify-center">
+        <div className="absolute bottom-4 left-[clamp(6rem,50%,calc(100vw-6rem))] z-20 flex -translate-x-1/2 justify-center">
           <CanvasPageTabs
             pages={api.getPages()}
             activePageId={activePageId}
-            onAddPage={api.addPage}
+            onAddPage={() => api.addPage()}
             onDeletePage={api.deletePage}
             onDuplicatePage={api.duplicatePage}
             onRenamePage={api.renamePage}

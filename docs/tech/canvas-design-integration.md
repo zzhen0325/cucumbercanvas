@@ -50,3 +50,23 @@ The Dockerfile handles everything:
 
 Place new skills in `skills/<skill-name>/SKILL.md`. They are automatically
 discovered by SkillsMiddleware on next agent run. No code changes needed.
+
+## Phase A Page-Aware Editor Behavior
+
+The web editor remains the live-canvas authority. `CanvasEditor` still exposes
+`canvas.document.get`, `canvas.document.set`, and `canvas.screenshot` over the
+WebSocket RPC boundary.
+
+Canvas documents are normalized to `PenDocument.pages`. Legacy documents with
+root `children` are wrapped into a single `Page 1` page in memory, then saved
+through the existing debounce pipeline after the next document change.
+
+The editor tracks `activePageId` locally and passes it through `CanvasApi` page
+methods. Node operations, layers, selection, screenshots, and exports operate on
+the active page unless an explicit export region is provided. If an agent writes
+a document that removes the active page, the editor switches to the first
+available page and logs `[skia-canvas] page.active.reconciled`.
+
+Boolean operations are only available for compatible vector/shape selections:
+frames, rectangles, ellipses, polygons, paths, and lines. Rejected operations
+leave the document unchanged and log a concrete reason.

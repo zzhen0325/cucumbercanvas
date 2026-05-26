@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-27T00:23:00+08:00",
+  "updatedAt": "2026-05-27T04:22:00+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -148,6 +148,23 @@
         "packages/shared/src/contracts.ts",
         "packages/shared/src/ws-protocol.ts",
         "supabase/migrations/20260522000001_cucumber_canvas_only.sql"
+      ]
+    },
+    {
+      "id": "openpencil-phase-a-editor",
+      "name": "OpenPencil Phase A editor controls",
+      "status": "done",
+      "priority": "P0",
+      "owner": "product-engineering",
+      "summary": "OpenPencil Phase A editor migration with page-aware canvas operations, page tabs, editor toolbar, boolean toolbar, and advanced drawing/editing controls on the live Skia canvas.",
+      "scope": "Multi-page canvas UI, editor toolbar, boolean toolbar, and advanced drawing/editing controls",
+      "artifacts": [
+        "apps/web/src/components/canvas/skia-canvas.tsx",
+        "apps/web/src/components/canvas/page-tabs.tsx",
+        "apps/web/src/components/canvas/editor-toolbar.tsx",
+        "apps/web/src/components/canvas/boolean-toolbar.tsx",
+        "apps/web/src/components/canvas/canvas-api.ts",
+        "docs/tech/canvas-design-integration.md"
       ]
     }
   ]
