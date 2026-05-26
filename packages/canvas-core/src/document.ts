@@ -1,5 +1,6 @@
 import type { PenDocument, PenNode, PenPage } from '@cucumber/pen-types';
 import type { CanvasBounds, CanvasViewport } from './types.js';
+import { DEFAULT_CANVAS_PAGE_ID } from './pages.js';
 
 let idCounter = 0;
 
@@ -13,45 +14,59 @@ export const createCanvasNodeId = createNodeId;
 
 export function createEmptyDocument(name?: string): PenDocument {
   const defaultPage: PenPage = {
-    id: 'page-default',
+    id: DEFAULT_CANVAS_PAGE_ID,
     name: 'Page 1',
     children: [],
   };
   return {
-    version: '1.0.0',
+    version: 'cucumber-canvas-v1',
     name: name ?? 'Untitled',
     pages: [defaultPage],
     children: [],
-  };
+    viewport: defaultViewport(),
+  } as PenDocument;
 }
 
-export function getActivePage(doc: PenDocument): PenPage {
+export function getActivePage(doc: PenDocument, activePageId?: string | null): PenPage {
   if (doc.pages && doc.pages.length > 0) {
+    if (activePageId) {
+      return doc.pages.find((page) => page.id === activePageId) ?? doc.pages[0]!;
+    }
     return doc.pages[0]!;
   }
-  return { id: 'page-default', name: 'Page 1', children: doc.children };
+  return { id: DEFAULT_CANVAS_PAGE_ID, name: 'Page 1', children: doc.children };
 }
 
-export function getActiveChildren(doc: PenDocument): PenNode[] {
-  return getActivePage(doc).children;
+export function getActiveChildren(doc: PenDocument, activePageId?: string | null): PenNode[] {
+  return getActivePage(doc, activePageId).children;
 }
 
-export function setActiveChildren(doc: PenDocument, children: PenNode[]): PenDocument {
-  const page = getActivePage(doc);
+export function setActiveChildren(
+  doc: PenDocument,
+  children: PenNode[],
+  activePageId?: string | null,
+): PenDocument {
+  const page = getActivePage(doc, activePageId);
   if (doc.pages && doc.pages.length > 0) {
+    const pages = doc.pages.map((p) =>
+      p.id === page.id ? { ...p, children } : p,
+    );
     return {
       ...doc,
-      pages: doc.pages.map((p) =>
-        p.id === page.id ? { ...p, children } : p,
-      ),
+      pages,
+      children: pages[0]!.children.map((node) => node.id) as unknown as PenNode[],
     };
   }
   return { ...doc, children };
 }
 
 /** BFS search for a node by ID in the document tree */
-export function findNode(doc: PenDocument, nodeId: string): PenNode | undefined {
-  const children = getActiveChildren(doc);
+export function findNode(
+  doc: PenDocument,
+  nodeId: string,
+  activePageId?: string | null,
+): PenNode | undefined {
+  const children = getActiveChildren(doc, activePageId);
   return findNodeInList(children, nodeId);
 }
 
@@ -67,8 +82,12 @@ export function findNodeInList(nodes: PenNode[], nodeId: string): PenNode | unde
 }
 
 /** Find parent node of a given node ID */
-export function findParent(doc: PenDocument, nodeId: string): PenNode | undefined {
-  const children = getActiveChildren(doc);
+export function findParent(
+  doc: PenDocument,
+  nodeId: string,
+  activePageId?: string | null,
+): PenNode | undefined {
+  const children = getActiveChildren(doc, activePageId);
   return findParentInList(children, nodeId);
 }
 
@@ -85,17 +104,22 @@ export function findParentInList(nodes: PenNode[], nodeId: string): PenNode | un
 }
 
 /** Check if candidateId is a descendant of ancestorId */
-export function isDescendantOf(doc: PenDocument, nodeId: string, ancestorId: string): boolean {
-  let current = findParent(doc, nodeId);
+export function isDescendantOf(
+  doc: PenDocument,
+  nodeId: string,
+  ancestorId: string,
+  activePageId?: string | null,
+): boolean {
+  let current = findParent(doc, nodeId, activePageId);
   while (current) {
     if (current.id === ancestorId) return true;
-    current = findParent(doc, current.id);
+    current = findParent(doc, current.id, activePageId);
   }
   return false;
 }
 
 /** Flatten the document tree into a flat array (depth-first) */
-export function flattenNodes(doc: PenDocument): PenNode[] {
+export function flattenNodes(doc: PenDocument, activePageId?: string | null): PenNode[] {
   const result: PenNode[] = [];
   const walk = (nodes: PenNode[]) => {
     for (const node of nodes) {
@@ -105,14 +129,18 @@ export function flattenNodes(doc: PenDocument): PenNode[] {
       }
     }
   };
-  walk(getActiveChildren(doc));
+  walk(getActiveChildren(doc, activePageId));
   return result;
 }
 
 /** Get children of a container node */
-export function getNodeChildren(doc: PenDocument, nodeId: string | null): PenNode[] {
-  if (nodeId === null) return getActiveChildren(doc);
-  const node = findNode(doc, nodeId);
+export function getNodeChildren(
+  doc: PenDocument,
+  nodeId: string | null,
+  activePageId?: string | null,
+): PenNode[] {
+  if (nodeId === null) return getActiveChildren(doc, activePageId);
+  const node = findNode(doc, nodeId, activePageId);
   if (!node || !('children' in node) || !Array.isArray(node.children)) return [];
   return node.children as PenNode[];
 }

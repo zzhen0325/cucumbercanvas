@@ -1,0 +1,107 @@
+import { describe, expect, it } from "vitest";
+import type { PenDocument, PenNode } from "@cucumber/pen-types";
+import {
+  addCanvasPage,
+  applyCanvasOperation,
+  deleteCanvasPage,
+  duplicateCanvasPage,
+  findNode,
+  getActiveChildren,
+  getCanvasPages,
+  normalizeCanvasPages,
+  renameCanvasPage,
+  reorderCanvasPage,
+  resolveActivePageId,
+} from "../index.js";
+
+const rect = (id: string, x = 0): PenNode => ({
+  id,
+  type: "rectangle",
+  x,
+  y: 0,
+  width: 10,
+  height: 10,
+});
+
+describe("canvas page helpers", () => {
+  it("normalizes legacy children-only documents into a first page", () => {
+    const legacy: PenDocument = {
+      version: "cucumber-canvas-v1",
+      children: [rect("legacy")],
+    };
+
+    const normalized = normalizeCanvasPages(legacy);
+
+    expect(normalized.pages).toHaveLength(1);
+    expect(normalized.pages?.[0]?.name).toBe("Page 1");
+    expect(normalized.pages?.[0]?.children.map((node) => node.id)).toEqual([
+      "legacy",
+    ]);
+    expect(normalized.children).toEqual([]);
+  });
+
+  it("finds and mutates nodes on the requested active page", () => {
+    const doc: PenDocument = normalizeCanvasPages({
+      version: "cucumber-canvas-v1",
+      children: [],
+      pages: [
+        { id: "page-a", name: "A", children: [rect("a")] },
+        { id: "page-b", name: "B", children: [rect("b")] },
+      ],
+    });
+
+    expect(findNode(doc, "b", "page-b")?.id).toBe("b");
+    expect(findNode(doc, "b", "page-a")).toBeUndefined();
+
+    const next = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: rect("b2", 20),
+      activePageId: "page-b",
+    });
+
+    expect(getActiveChildren(next, "page-a").map((node) => node.id)).toEqual([
+      "a",
+    ]);
+    expect(getActiveChildren(next, "page-b").map((node) => node.id)).toEqual([
+      "b",
+      "b2",
+    ]);
+  });
+
+  it("adds, renames, duplicates, reorders, and deletes pages without deleting the final page", () => {
+    let doc = normalizeCanvasPages({
+      version: "cucumber-canvas-v1",
+      children: [rect("root")],
+    });
+
+    const added = addCanvasPage(doc, { name: "Exploration" });
+    doc = added.document;
+    expect(added.page.name).toBe("Exploration");
+    expect(resolveActivePageId(doc, added.page.id)).toBe(added.page.id);
+
+    doc = renameCanvasPage(doc, added.page.id, "Final UI").document;
+    expect(getCanvasPages(doc).find((page) => page.id === added.page.id)?.name).toBe(
+      "Final UI",
+    );
+
+    const duplicated = duplicateCanvasPage(doc, added.page.id);
+    doc = duplicated.document;
+    expect(duplicated.page.name).toBe("Final UI copy");
+
+    doc = reorderCanvasPage(doc, duplicated.page.id, "left").document;
+    expect(getCanvasPages(doc)[1]?.id).toBe(duplicated.page.id);
+
+    doc = deleteCanvasPage(doc, duplicated.page.id).document;
+    expect(getCanvasPages(doc).some((page) => page.id === duplicated.page.id)).toBe(
+      false,
+    );
+
+    const onePageDoc = normalizeCanvasPages({
+      version: "cucumber-canvas-v1",
+      children: [rect("only")],
+    });
+    expect(() => deleteCanvasPage(onePageDoc, "page-default")).toThrow(
+      "Cannot delete the only page.",
+    );
+  });
+});

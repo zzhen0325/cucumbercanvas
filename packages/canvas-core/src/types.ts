@@ -129,42 +129,50 @@ export type CanvasOperation =
       containerId?: string | null;
       index?: number;
       agentId?: string;
+      activePageId?: string | null;
     }
   | {
       type: 'updateNode';
       nodeId: string;
       updates: Partial<PenNode>;
       agentId?: string;
+      activePageId?: string | null;
     }
   | {
       type: 'deleteNode';
       nodeId: string;
       agentId?: string;
+      activePageId?: string | null;
     }
   | {
       type: 'setSelection';
       nodeIds: string[];
+      activePageId?: string | null;
     }
   | {
       type: 'moveNode';
       nodeId: string;
       newParentId?: string | null;
       index?: number;
+      activePageId?: string | null;
     }
   | {
       type: 'groupNodes';
       groupId: string;
       nodeIds: string[];
       title?: string;
+      activePageId?: string | null;
     }
   | {
       type: 'ungroupNode';
       groupId: string;
+      activePageId?: string | null;
     }
   | {
       type: 'alignNodes';
       nodeIds: string[];
       alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom';
+      activePageId?: string | null;
     }
   | {
       type: 'reorderNode';
@@ -172,12 +180,14 @@ export type CanvasOperation =
       direction?: 'forward' | 'backward' | 'front' | 'back';
       targetParentId?: string | null;
       targetIndex?: number;
+      activePageId?: string | null;
     }
   | {
       type: 'bindAgent';
       nodeId?: string;
       binding: AgentBinding;
       containerId?: string;
+      activePageId?: string | null;
     }
   | {
       type: 'createDataFlowEdge';

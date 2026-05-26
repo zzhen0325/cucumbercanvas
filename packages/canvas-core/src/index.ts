@@ -2,6 +2,7 @@ export * from './types.js';
 export * from './styles.js';
 export * from './style-resolvers.js';
 export * from './document.js';
+export * from './pages.js';
 export * from './context.js';
 export * from './operations.js';
 export * from './geometry.js';
