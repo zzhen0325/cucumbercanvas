@@ -882,7 +882,7 @@ export function ChatSidebar({
   }
 
   // Shared event isolation — prevent keyboard/clipboard events from bleeding
-  // into Excalidraw canvas when the sidebar has focus.
+  // into the active Cucumber canvas when the sidebar has focus.
   const eventIsolationProps = {
     onKeyDown: (e: React.KeyboardEvent) => e.stopPropagation(),
     onKeyUp: (e: React.KeyboardEvent) => e.stopPropagation(),

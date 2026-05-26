@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-26T16:51:00+08:00",
+  "updatedAt": "2026-05-26T18:17:00+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -103,7 +103,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "product-engineering",
-      "summary": "Canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit behind a standalone CanvasApi contract, and the P2 import/edit/export path combines warning-rich SVG/Figma fallback metadata with native-first Figma clipboard binary decode, instance overrides, auto-layout metadata, robust paste event handling, renderer-native selection/marquee/pen overlays with scene-coordinate hit-testing, richer PenNode typography/component/ref/variable property editing, direct React/HTML selection export, path drag creation, and runnable Playwright smoke coverage.",
+      "summary": "Canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit behind a standalone CanvasApi contract, and the P2 import/edit/export path combines complete clipboard MIME capture, warning-rich SVG/Figma fallback metadata, native-first Figma clipboard binary decode, instance overrides, direct auto-layout-to-PenNode mapping, transform/style/defs-aware SVG import, robust paste event handling, renderer-native selection/marquee/pen overlays with scene-coordinate hit-testing, richer PenNode typography/component/ref/variable property editing, direct React/HTML selection export, path drag creation, retired Excalidraw/Pixi shadow runtime packages, and runnable Playwright smoke coverage.",
       "artifacts": [
         "packages/canvas-core",
         "packages/canvas-core/src/clipboard.ts",

@@ -42,6 +42,24 @@ export interface ImportNode {
   alt?: string;
   fontWeight?: number;
   textAlign?: "left" | "center" | "right" | "justify";
+  fontStyle?: "normal" | "italic";
+  letterSpacing?: number;
+  lineHeight?: number;
+  textAlignVertical?: "top" | "middle" | "bottom";
+  textGrowth?: "auto" | "fixed-width" | "fixed-width-height";
+  layout?: "none" | "vertical" | "horizontal";
+  gap?: number;
+  padding?: number | [number, number] | [number, number, number, number];
+  justifyContent?:
+    | "start"
+    | "center"
+    | "end"
+    | "space_between"
+    | "space_around";
+  alignItems?: "start" | "center" | "end";
+  clipContent?: boolean;
+  x2?: number;
+  y2?: number;
 }
 
 export interface CanvasImportWarning {
@@ -65,6 +83,8 @@ export interface CanvasImportResult {
 export interface ClipboardImportPayload {
   html?: string;
   text?: string;
+  svg?: string;
+  items?: Array<{ type: string; text: string }>;
 }
 
 type ParsedStyle = {
@@ -79,20 +99,25 @@ type ParsedStyle = {
 
 function parsedFillToCanvasFills(
   parsed: ParsedStyle,
+  state?: Pick<SvgParseState, "paintServers">,
 ): CanvasFill[] | undefined {
   const c = parsed.fill ?? parsed.color;
+  const paintServer = c ? resolvePaintServer(c, state) : undefined;
+  if (paintServer) return [paintServer];
   return c ? [{ type: "solid" as const, color: c }] : undefined;
 }
 
 function parsedStrokeToCanvasStroke(
   parsed: ParsedStyle,
+  state?: Pick<SvgParseState, "paintServers">,
 ): CanvasStroke | undefined {
   const c = parsed.stroke;
   if (!c) return undefined;
+  const paintServer = resolvePaintServer(c, state);
   return {
     thickness: parsed.strokeWidth ?? 1,
     align: "center",
-    fill: [{ type: "solid" as const, color: c }],
+    fill: paintServer ? [paintServer] : [{ type: "solid" as const, color: c }],
   };
 }
 
@@ -104,6 +129,8 @@ type SvgParseState = {
   assets: CanvasAsset[];
   warnings: CanvasImportWarning[];
   warningKeys: Set<string>;
+  cssRules: Array<{ selector: string; style: Record<string, string> }>;
+  paintServers: Map<string, CanvasFill>;
 };
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -271,9 +298,23 @@ export function isLikelyFigmaClipboardHtml(value: string): boolean {
 export function parseClipboardImport(
   payload: ClipboardImportPayload,
 ): CanvasImportResult | null {
-  if (payload.html && isLikelyFigmaClipboardHtml(payload.html)) {
+  const html =
+    payload.html ??
+    payload.items?.find((item) => item.type === "text/html")?.text;
+  const svg =
+    payload.svg ??
+    payload.items?.find((item) => item.type === "image/svg+xml")?.text ??
+    payload.items?.find((item) => item.type === "text/svg")?.text;
+  const text =
+    payload.text ??
+    payload.items?.find((item) => item.type === "text/plain")?.text;
+  const figmaHtml =
+    html ??
+    payload.items?.find((item) => isLikelyFigmaClipboardHtml(item.text))?.text;
+
+  if (figmaHtml && isLikelyFigmaClipboardHtml(figmaHtml)) {
     try {
-      const nativeResult = parseFigmaClipboardNative(payload.html);
+      const nativeResult = parseFigmaClipboardNative(figmaHtml);
       if (nativeResult) {
         return {
           source: "figma",
@@ -288,14 +329,17 @@ export function parseClipboardImport(
     } catch {
       // Fall through to the existing HTML/SVG fallback path when native decode fails.
     }
-    const figmaResult = parseFigmaClipboardHtml(payload.html);
+    const figmaResult = parseFigmaClipboardHtml(figmaHtml);
     if (figmaResult) return figmaResult;
   }
-  if (payload.html && isLikelySvgMarkup(payload.html)) {
-    return parseSvgMarkup(payload.html, { source: "svg" });
+  if (svg && isLikelySvgMarkup(svg)) {
+    return parseSvgMarkup(svg, { source: "svg" });
   }
-  if (payload.text && isLikelySvgMarkup(payload.text)) {
-    return parseSvgMarkup(payload.text, { source: "svg" });
+  if (html && isLikelySvgMarkup(html)) {
+    return parseSvgMarkup(html, { source: "svg" });
+  }
+  if (text && isLikelySvgMarkup(text)) {
+    return parseSvgMarkup(text, { source: "svg" });
   }
   return null;
 }
@@ -323,12 +367,25 @@ export function parseSvgMarkup(
     assets: [],
     warnings: [],
     warningKeys: new Set<string>(),
+    cssRules: [],
+    paintServers: new Map<string, CanvasFill>(),
   };
-  const inherited = readElementStyle(svg, {});
+  collectSvgDefinitions(svg, state);
+  const inherited = readElementStyle(svg, {}, state);
   const roots: string[] = [];
+  const rootTransform = multiplySvgTransform(
+    getSvgViewBoxTransform(svg),
+    parseSvgTransform(svg.getAttribute("transform")),
+  );
 
   for (const child of Array.from(svg.children)) {
-    const parsed = parseSvgElement(child, null, inherited, state);
+    const parsed = parseSvgElement(
+      child,
+      null,
+      inherited,
+      state,
+      rootTransform,
+    );
     if (parsed) roots.push(parsed);
   }
 
@@ -468,12 +525,16 @@ function importNodeToPenNode(
     name: imported.title,
     x: bounds.x + offsetX,
     y: bounds.y + offsetY,
+    rotation: bounds.rotation,
     width: bounds.width,
     height: bounds.height,
     opacity: imported.opacity,
+    visible: imported.visible,
+    locked: imported.locked,
     cornerRadius: imported.cornerRadius,
     fill: imported.fills,
     stroke: imported.stroke,
+    effects: imported.effects,
     meta,
   };
 
@@ -486,17 +547,36 @@ function importNodeToPenNode(
         content: imported.text ?? "",
         fontFamily: imported.fontFamily,
         fontSize: imported.fontSize,
+        fontWeight: imported.fontWeight,
+        fontStyle: imported.fontStyle,
+        letterSpacing: imported.letterSpacing,
+        lineHeight: imported.lineHeight,
+        textAlign: imported.textAlign,
+        textAlignVertical: imported.textAlignVertical,
+        textGrowth: imported.textGrowth,
       } as unknown as PenNode;
     case "frame":
       return {
         ...base,
         type: "frame" as const,
+        layout: imported.layout,
+        gap: imported.gap,
+        padding: imported.padding,
+        justifyContent: imported.justifyContent,
+        alignItems: imported.alignItems,
+        clipContent: imported.clipContent,
         children: [],
       } as unknown as PenNode;
     case "group":
       return {
         ...base,
         type: "group" as const,
+        layout: imported.layout,
+        gap: imported.gap,
+        padding: imported.padding,
+        justifyContent: imported.justifyContent,
+        alignItems: imported.alignItems,
+        clipContent: imported.clipContent,
         children: [],
       } as unknown as PenNode;
     case "rect":
@@ -515,7 +595,12 @@ function importNodeToPenNode(
         polygonCount: imported.points ?? 3,
       } as unknown as PenNode;
     case "line":
-      return { ...base, type: "line" as const } as unknown as PenNode;
+      return {
+        ...base,
+        type: "line" as const,
+        x2: imported.x2 !== undefined ? imported.x2 + offsetX : undefined,
+        y2: imported.y2 !== undefined ? imported.y2 + offsetY : undefined,
+      } as unknown as PenNode;
     case "image":
       return {
         ...base,
@@ -611,6 +696,8 @@ function parseFigmaClipboardHtml(html: string): CanvasImportResult | null {
     assets: [],
     warnings: [],
     warningKeys: new Set<string>(),
+    cssRules: [],
+    paintServers: new Map<string, CanvasFill>(),
   };
   const roots: string[] = [];
   const elements = Array.from(doc.body.children);
@@ -798,19 +885,43 @@ function parseSvgElement(
   parentId: string | null,
   inherited: ParsedStyle,
   state: SvgParseState,
+  inheritedTransform: SvgTransform = IDENTITY_TRANSFORM,
 ): string | null {
   const tag = element.tagName.toLowerCase();
   if (tag === "defs" || tag === "style" || tag === "title" || tag === "desc") {
     return null;
   }
-  const style = readElementStyle(element, inherited);
+  const style = readElementStyle(element, inherited, state);
+  const transform = multiplySvgTransform(
+    inheritedTransform,
+    parseSvgTransform(element.getAttribute("transform")),
+  );
+  if (
+    element.hasAttribute("clip-path") ||
+    element.hasAttribute("mask") ||
+    element.hasAttribute("filter")
+  ) {
+    pushImportWarning(state, {
+      code: "partial_fidelity",
+      message:
+        "检测到 SVG clip/mask/filter 效果，当前导入会保留可编辑几何并降级高级裁剪或滤镜。",
+      originNodeId: element.getAttribute("id") ?? undefined,
+      originNodeType: tag,
+    });
+  }
 
   if (tag === "g" || tag === "svg") {
     const groupId = tag === "g" ? createNodeId("group") : null;
     const childParentId = groupId ?? parentId;
     const childIds: string[] = [];
     for (const child of Array.from(element.children)) {
-      const parsed = parseSvgElement(child, childParentId, style, state);
+      const parsed = parseSvgElement(
+        child,
+        childParentId,
+        style,
+        state,
+        transform,
+      );
       if (parsed) childIds.push(parsed);
     }
     if (!groupId) return null;
@@ -850,13 +961,18 @@ function parseSvgElement(
       parentId,
       title: element.getAttribute("id") ?? "Rectangle",
       bounds: {
-        x: readNumber(element, "x"),
-        y: readNumber(element, "y"),
-        width: Math.max(1, readNumber(element, "width")),
-        height: Math.max(1, readNumber(element, "height")),
+        ...transformBounds(
+          {
+            x: readNumber(element, "x"),
+            y: readNumber(element, "y"),
+            width: Math.max(1, readNumber(element, "width")),
+            height: Math.max(1, readNumber(element, "height")),
+          },
+          transform,
+        ),
       },
-      fills: parsedFillToCanvasFills(style),
-      stroke: parsedStrokeToCanvasStroke(style),
+      fills: parsedFillToCanvasFills(style, state),
+      stroke: parsedStrokeToCanvasStroke(style, state),
       cornerRadius: readNumber(element, "rx") || undefined,
       opacity,
       meta: commonMeta,
@@ -878,13 +994,18 @@ function parseSvgElement(
       parentId,
       title: element.getAttribute("id") ?? "Ellipse",
       bounds: {
-        x: cx - rx,
-        y: cy - ry,
-        width: Math.max(1, rx * 2),
-        height: Math.max(1, ry * 2),
+        ...transformBounds(
+          {
+            x: cx - rx,
+            y: cy - ry,
+            width: Math.max(1, rx * 2),
+            height: Math.max(1, ry * 2),
+          },
+          transform,
+        ),
       },
-      fills: parsedFillToCanvasFills(style),
-      stroke: parsedStrokeToCanvasStroke(style),
+      fills: parsedFillToCanvasFills(style, state),
+      stroke: parsedStrokeToCanvasStroke(style, state),
       opacity,
       meta: commonMeta,
     } as ImportNode);
@@ -897,22 +1018,28 @@ function parseSvgElement(
     const x2 = readNumber(element, "x2");
     const y2 = readNumber(element, "y2");
     const id = createNodeId("line");
+    const p1 = transformPoint({ x: x1, y: y1 }, transform);
+    const p2 = transformPoint({ x: x2, y: y2 }, transform);
     state.nodes.push({
       id,
       type: "line",
       parentId,
       title: element.getAttribute("id") ?? "Line",
       bounds: {
-        x: Math.min(x1, x2),
-        y: Math.min(y1, y2),
-        width: Math.max(1, Math.abs(x2 - x1)),
-        height: Math.max(1, Math.abs(y2 - y1)),
+        x: Math.min(p1.x, p2.x),
+        y: Math.min(p1.y, p2.y),
+        width: Math.max(1, Math.abs(p2.x - p1.x)),
+        height: Math.max(1, Math.abs(p2.y - p1.y)),
       },
       stroke: {
         thickness: style.strokeWidth ?? 1,
         align: "center",
-        fill: [{ type: "solid", color: style.stroke ?? "#111827" }],
+        fill: parsedStrokeToCanvasStroke(style, state)?.fill ?? [
+          { type: "solid", color: style.stroke ?? "#111827" },
+        ],
       },
+      x2: p2.x,
+      y2: p2.y,
       opacity,
       meta: commonMeta,
     } as ImportNode);
@@ -922,7 +1049,10 @@ function parseSvgElement(
   if (tag === "polygon" || tag === "polyline") {
     const points = readPoints(element.getAttribute("points"));
     if (points.length === 0) return null;
-    const bounds = getPointBounds(points);
+    const transformedPoints = points.map((point) =>
+      transformPoint(point, transform),
+    );
+    const bounds = getPointBounds(transformedPoints);
     const id =
       tag === "polygon" ? createNodeId("polygon") : createNodeId("path");
     if (tag === "polygon") {
@@ -933,8 +1063,8 @@ function parseSvgElement(
         title: element.getAttribute("id") ?? "Polygon",
         bounds,
         points: Math.max(3, points.length),
-        fills: parsedFillToCanvasFills(style),
-        stroke: parsedStrokeToCanvasStroke(style),
+        fills: parsedFillToCanvasFills(style, state),
+        stroke: parsedStrokeToCanvasStroke(style, state),
         opacity,
         meta: commonMeta,
       } as ImportNode);
@@ -946,7 +1076,7 @@ function parseSvgElement(
       parentId,
       title: element.getAttribute("id") ?? "Polyline",
       bounds,
-      d: pointsToPath(points),
+      d: pointsToPath(transformedPoints),
       fills: undefined,
       stroke: {
         thickness: style.strokeWidth ?? 1,
@@ -962,7 +1092,9 @@ function parseSvgElement(
   if (tag === "path") {
     const d = element.getAttribute("d");
     if (!d) return null;
-    const bounds = getPathBounds(d);
+    const bounds = {
+      ...transformBounds(getPathBounds(d), transform),
+    };
     const id = createNodeId("path");
     state.nodes.push({
       id,
@@ -971,8 +1103,8 @@ function parseSvgElement(
       title: element.getAttribute("id") ?? "Path",
       bounds,
       d,
-      fills: parsedFillToCanvasFills(style),
-      stroke: parsedStrokeToCanvasStroke(style),
+      fills: parsedFillToCanvasFills(style, state),
+      stroke: parsedStrokeToCanvasStroke(style, state),
       opacity,
       meta: commonMeta,
     } as ImportNode);
@@ -1000,10 +1132,15 @@ function parseSvgElement(
       assetId,
       src: href,
       bounds: {
-        x: readNumber(element, "x"),
-        y: readNumber(element, "y"),
-        width: Math.max(1, readNumber(element, "width")),
-        height: Math.max(1, readNumber(element, "height")),
+        ...transformBounds(
+          {
+            x: readNumber(element, "x"),
+            y: readNumber(element, "y"),
+            width: Math.max(1, readNumber(element, "width")),
+            height: Math.max(1, readNumber(element, "height")),
+          },
+          transform,
+        ),
       },
       opacity,
       meta: commonMeta,
@@ -1029,10 +1166,15 @@ function parseSvgElement(
       fontFamily: style.fontFamily,
       fills: [{ type: "solid", color: textColor }],
       bounds: {
-        x,
-        y: y - fontSize,
-        width: estimateTextWidth(text, fontSize),
-        height: Math.round(fontSize * 1.5),
+        ...transformBounds(
+          {
+            x,
+            y: y - fontSize,
+            width: estimateTextWidth(text, fontSize),
+            height: Math.round(fontSize * 1.5),
+          },
+          transform,
+        ),
       },
       opacity,
       meta: commonMeta,
@@ -1052,16 +1194,19 @@ function parseSvgElement(
 function readElementStyle(
   element: Element,
   inherited: ParsedStyle,
+  state: Pick<SvgParseState, "cssRules">,
 ): ParsedStyle {
+  const fromCss = getMatchedSvgStyle(element, state.cssRules);
   const fromAttr = parseStyleAttribute(element.getAttribute("style"));
+  const merged = { ...fromCss, ...fromAttr };
   const fill = normalizeColor(
-    element.getAttribute("fill") ?? fromAttr.fill ?? inherited.fill,
+    element.getAttribute("fill") ?? merged.fill ?? inherited.fill,
   );
   const stroke = normalizeColor(
-    element.getAttribute("stroke") ?? fromAttr.stroke ?? inherited.stroke,
+    element.getAttribute("stroke") ?? merged.stroke ?? inherited.stroke,
   );
   const color = normalizeColor(
-    fromAttr.color ?? element.getAttribute("color") ?? inherited.color,
+    merged.color ?? element.getAttribute("color") ?? inherited.color,
   );
   return {
     fill,
@@ -1069,21 +1214,139 @@ function readElementStyle(
     color,
     strokeWidth:
       readOptionalNumber(element.getAttribute("stroke-width")) ??
-      parseCssNumber(fromAttr.strokeWidth) ??
+      parseCssNumber(merged.strokeWidth) ??
       inherited.strokeWidth,
     opacity:
       readOpacity(element.getAttribute("opacity")) ??
-      readOpacity(fromAttr.opacity) ??
+      readOpacity(merged.opacity) ??
       inherited.opacity,
     fontSize:
       readOptionalNumber(element.getAttribute("font-size")) ??
-      parseCssNumber(fromAttr.fontSize) ??
+      parseCssNumber(merged.fontSize) ??
       inherited.fontSize,
     fontFamily:
-      fromAttr.fontFamily ??
+      merged.fontFamily ??
       element.getAttribute("font-family") ??
       inherited.fontFamily,
   };
+}
+
+function collectSvgDefinitions(svg: Element, state: SvgParseState): void {
+  for (const styleElement of Array.from(svg.querySelectorAll("style"))) {
+    state.cssRules.push(...parseCssRules(styleElement.textContent ?? ""));
+  }
+
+  for (const gradient of Array.from(
+    svg.querySelectorAll("linearGradient, radialGradient"),
+  )) {
+    const id = gradient.getAttribute("id");
+    if (!id) continue;
+    const stops = Array.from(gradient.querySelectorAll("stop"))
+      .map((stop, index, all) => {
+        const style = parseStyleAttribute(stop.getAttribute("style"));
+        const color = normalizeColor(
+          stop.getAttribute("stop-color") ?? style.stopColor,
+        );
+        if (!color) return null;
+        const rawOffset = stop.getAttribute("offset");
+        const parsedOffset = rawOffset?.endsWith("%")
+          ? Number.parseFloat(rawOffset) / 100
+          : Number.parseFloat(rawOffset ?? "");
+        return {
+          offset: Number.isFinite(parsedOffset)
+            ? Math.max(0, Math.min(1, parsedOffset))
+            : all.length <= 1
+              ? 0
+              : index / (all.length - 1),
+          color,
+        };
+      })
+      .filter((stop): stop is { offset: number; color: string } =>
+        Boolean(stop),
+      );
+    if (stops.length === 0) continue;
+    if (gradient.tagName.toLowerCase() === "radialgradient") {
+      state.paintServers.set(id, {
+        type: "radial_gradient",
+        cx: parseCssNumber(gradient.getAttribute("cx") ?? undefined),
+        cy: parseCssNumber(gradient.getAttribute("cy") ?? undefined),
+        radius: parseCssNumber(gradient.getAttribute("r") ?? undefined),
+        stops,
+      });
+    } else {
+      state.paintServers.set(id, {
+        type: "linear_gradient",
+        angle: readLinearGradientAngle(gradient),
+        stops,
+      });
+    }
+  }
+}
+
+function parseCssRules(
+  css: string,
+): Array<{ selector: string; style: Record<string, string> }> {
+  const rules: Array<{ selector: string; style: Record<string, string> }> = [];
+  const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  for (const match of withoutComments.matchAll(/([^{}]+)\{([^{}]+)\}/g)) {
+    const selectors = (match[1] ?? "")
+      .split(",")
+      .map((selector) => selector.trim())
+      .filter(Boolean);
+    const style = parseStyleAttribute(match[2] ?? null);
+    for (const selector of selectors) {
+      if (/^[.#]?[A-Za-z0-9_-]+$/.test(selector)) {
+        rules.push({ selector, style });
+      }
+    }
+  }
+  return rules;
+}
+
+function getMatchedSvgStyle(
+  element: Element,
+  rules: Array<{ selector: string; style: Record<string, string> }>,
+): Record<string, string> {
+  const matched: Record<string, string> = {};
+  const tag = element.tagName.toLowerCase();
+  const id = element.getAttribute("id");
+  const classes = new Set(
+    (element.getAttribute("class") ?? "")
+      .split(/\s+/)
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+  for (const rule of rules) {
+    if (
+      rule.selector === tag ||
+      (id && rule.selector === `#${id}`) ||
+      (rule.selector.startsWith(".") && classes.has(rule.selector.slice(1)))
+    ) {
+      Object.assign(matched, rule.style);
+    }
+  }
+  return matched;
+}
+
+function resolvePaintServer(
+  value: string,
+  state?: Pick<SvgParseState, "paintServers">,
+): CanvasFill | undefined {
+  const match = value.match(/^url\(["']?#([^"')]+)["']?\)$/i);
+  if (!match?.[1]) return undefined;
+  return state?.paintServers.get(match[1]);
+}
+
+function readLinearGradientAngle(element: Element): number | undefined {
+  const x1 = parseCssNumber(element.getAttribute("x1") ?? undefined);
+  const y1 = parseCssNumber(element.getAttribute("y1") ?? undefined);
+  const x2 = parseCssNumber(element.getAttribute("x2") ?? undefined);
+  const y2 = parseCssNumber(element.getAttribute("y2") ?? undefined);
+  if ([x1, y1, x2, y2].some((value) => value === undefined)) {
+    return undefined;
+  }
+  const radians = Math.atan2((y2 ?? 0) - (y1 ?? 0), (x2 ?? 0) - (x1 ?? 0));
+  return Math.round(90 + (radians * 180) / Math.PI);
 }
 
 function parseStyleAttribute(raw: string | null): Record<string, string> {
@@ -1112,6 +1375,145 @@ function extractDirectText(element: Element): string {
 function extractSvgTextContent(element: Element): string {
   const text = element.textContent ?? "";
   return text.replace(/\s+/g, " ").trim();
+}
+
+type SvgTransform = {
+  a: number;
+  b: number;
+  c: number;
+  d: number;
+  e: number;
+  f: number;
+};
+
+const IDENTITY_TRANSFORM: SvgTransform = {
+  a: 1,
+  b: 0,
+  c: 0,
+  d: 1,
+  e: 0,
+  f: 0,
+};
+
+function parseSvgTransform(raw: string | null): SvgTransform {
+  if (!raw) return IDENTITY_TRANSFORM;
+  let current = IDENTITY_TRANSFORM;
+  for (const match of raw.matchAll(/([a-zA-Z]+)\(([^)]*)\)/g)) {
+    const fn = match[1]?.toLowerCase();
+    const values = (match[2] ?? "")
+      .split(/[\s,]+/)
+      .map((value) => Number.parseFloat(value))
+      .filter((value) => Number.isFinite(value));
+    let next = IDENTITY_TRANSFORM;
+    if (fn === "matrix" && values.length >= 6) {
+      next = {
+        a: values[0] ?? 1,
+        b: values[1] ?? 0,
+        c: values[2] ?? 0,
+        d: values[3] ?? 1,
+        e: values[4] ?? 0,
+        f: values[5] ?? 0,
+      };
+    } else if (fn === "translate") {
+      next = {
+        ...IDENTITY_TRANSFORM,
+        e: values[0] ?? 0,
+        f: values[1] ?? 0,
+      };
+    } else if (fn === "scale") {
+      const sx = values[0] ?? 1;
+      next = {
+        ...IDENTITY_TRANSFORM,
+        a: sx,
+        d: values[1] ?? sx,
+      };
+    } else if (fn === "rotate") {
+      const angle = ((values[0] ?? 0) * Math.PI) / 180;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const cx = values[1] ?? 0;
+      const cy = values[2] ?? 0;
+      next = multiplySvgTransform(
+        multiplySvgTransform(
+          { ...IDENTITY_TRANSFORM, e: cx, f: cy },
+          { a: cos, b: sin, c: -sin, d: cos, e: 0, f: 0 },
+        ),
+        { ...IDENTITY_TRANSFORM, e: -cx, f: -cy },
+      );
+    }
+    current = multiplySvgTransform(current, next);
+  }
+  return current;
+}
+
+function getSvgViewBoxTransform(svg: Element): SvgTransform {
+  const viewBox = svg.getAttribute("viewBox");
+  if (!viewBox) return IDENTITY_TRANSFORM;
+  const values = viewBox
+    .trim()
+    .split(/[\s,]+/)
+    .map((value) => Number.parseFloat(value));
+  const [minX, minY, viewW, viewH] = values;
+  if (
+    minX === undefined ||
+    minY === undefined ||
+    !viewW ||
+    !viewH ||
+    !Number.isFinite(viewW) ||
+    !Number.isFinite(viewH)
+  ) {
+    return IDENTITY_TRANSFORM;
+  }
+  const width = readOptionalNumber(svg.getAttribute("width"));
+  const height = readOptionalNumber(svg.getAttribute("height"));
+  if (!width || !height) return IDENTITY_TRANSFORM;
+  const scaleX = width / viewW;
+  const scaleY = height / viewH;
+  return {
+    a: scaleX,
+    b: 0,
+    c: 0,
+    d: scaleY,
+    e: -minX * scaleX,
+    f: -minY * scaleY,
+  };
+}
+
+function multiplySvgTransform(
+  left: SvgTransform,
+  right: SvgTransform,
+): SvgTransform {
+  return {
+    a: left.a * right.a + left.c * right.b,
+    b: left.b * right.a + left.d * right.b,
+    c: left.a * right.c + left.c * right.d,
+    d: left.b * right.c + left.d * right.d,
+    e: left.a * right.e + left.c * right.f + left.e,
+    f: left.b * right.e + left.d * right.f + left.f,
+  };
+}
+
+function transformPoint(
+  point: { x: number; y: number },
+  transform: SvgTransform,
+): { x: number; y: number } {
+  return {
+    x: point.x * transform.a + point.y * transform.c + transform.e,
+    y: point.x * transform.b + point.y * transform.d + transform.f,
+  };
+}
+
+function transformBounds(
+  bounds: CanvasBounds,
+  transform: SvgTransform,
+): CanvasBounds {
+  const points = [
+    { x: bounds.x, y: bounds.y },
+    { x: bounds.x + bounds.width, y: bounds.y },
+    { x: bounds.x + bounds.width, y: bounds.y + bounds.height },
+    { x: bounds.x, y: bounds.y + bounds.height },
+  ].map((point) => transformPoint(point, transform));
+  return getPointBounds(points);
 }
 
 function hasComponentLikeMetadata(element: Element): boolean {

@@ -549,6 +549,133 @@ describe("cucumber canvas core", () => {
     },
   );
 
+  parserCapableIt("parses SVG clipboard MIME items with style, defs, and transform", () => {
+    const result = parseClipboardImport({
+      items: [
+        {
+          type: "image/svg+xml",
+          text: `
+            <svg width="200" height="100" viewBox="0 0 100 50">
+              <defs>
+                <linearGradient id="g"><stop offset="0%" stop-color="#ff0000"/><stop offset="100%" stop-color="#0000ff"/></linearGradient>
+              </defs>
+              <style>.hero { fill: url(#g); stroke: #111111; stroke-width: 2; }</style>
+              <rect class="hero" x="10" y="10" width="30" height="20" transform="translate(5 0)" />
+            </svg>
+          `,
+        },
+      ],
+    });
+
+    expect(result?.source).toBe("svg");
+    const rect = result?.nodes.find((node) => node.type === "rect") as
+      | {
+          bounds?: { x: number; y: number; width: number; height: number };
+          fills?: Array<{ type: string }>;
+          stroke?: { thickness?: number };
+        }
+      | undefined;
+    expect(rect?.bounds).toMatchObject({
+      x: 30,
+      y: 20,
+      width: 60,
+      height: 40,
+    });
+    expect(rect?.fills?.[0]).toMatchObject({ type: "linear_gradient" });
+    expect(rect?.stroke?.thickness).toBe(2);
+  });
+
+  it("preserves imported frame layout, effects, and text style during insertion", () => {
+    const result: CanvasImportResult = {
+      source: "figma",
+      sourceLabel: "Figma",
+      importSessionId: "import-test",
+      rootNodeIds: ["frame-1"],
+      nodes: [
+        {
+          id: "frame-1",
+          type: "frame",
+          parentId: null,
+          title: "Auto frame",
+          bounds: { x: 10, y: 20, width: 240, height: 120, rotation: 8 },
+          fills: [{ type: "solid", color: "#ffffff" }] as PenFill[],
+          effects: [
+            {
+              type: "shadow",
+              offsetX: 0,
+              offsetY: 4,
+              blur: 12,
+              spread: 0,
+              color: "#00000033",
+            },
+          ],
+          layout: "horizontal",
+          gap: 12,
+          padding: [8, 16],
+          justifyContent: "center",
+          alignItems: "center",
+          clipContent: true,
+          childrenOrder: ["text-1"],
+          meta: { source: "figma-paste" },
+        },
+        {
+          id: "text-1",
+          type: "text",
+          parentId: "frame-1",
+          text: "Styled",
+          bounds: { x: 0, y: 0, width: 80, height: 24 },
+          fontSize: 18,
+          fontWeight: 700,
+          lineHeight: 1.2,
+          letterSpacing: 0.4,
+          textAlign: "center",
+          textGrowth: "fixed-width",
+          fills: [{ type: "solid", color: "#111111" }] as PenFill[],
+        },
+      ],
+      assets: [],
+      warnings: [],
+    };
+
+    const inserted = insertCanvasImportResult(createEmptyDocument(), result);
+    const frame = findNode(inserted.doc, "frame-1") as
+      | (PenNode & {
+          gap?: number;
+          padding?: [number, number];
+          justifyContent?: string;
+          alignItems?: string;
+          clipContent?: boolean;
+          effects?: Array<{ type: string; blur?: number }>;
+        })
+      | undefined;
+    const text = findNode(inserted.doc, "text-1") as
+      | (PenNode & {
+          lineHeight?: number;
+          letterSpacing?: number;
+          textGrowth?: string;
+        })
+      | undefined;
+
+    expect(frame).toMatchObject({
+      type: "frame",
+      rotation: 8,
+      layout: "horizontal",
+      gap: 12,
+      padding: [8, 16],
+      justifyContent: "center",
+      alignItems: "center",
+      clipContent: true,
+    });
+    expect(frame?.effects?.[0]).toMatchObject({ type: "shadow", blur: 12 });
+    expect(text).toMatchObject({
+      fontWeight: 700,
+      lineHeight: 1.2,
+      letterSpacing: 0.4,
+      textAlign: "center",
+      textGrowth: "fixed-width",
+    });
+  });
+
   it("merges missing symbol props into an instance node", () => {
     const merged = mergeSymbolProps(
       {

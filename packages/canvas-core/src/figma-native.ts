@@ -563,40 +563,37 @@ function convertFigmaGroupLike(
 ): string | null {
   const figma = treeNode.figma;
   const bounds = getNodeBounds(figma);
-  const groupId = createCanvasNodeId("group");
+  const nodeType =
+    figma.type === "GROUP" ? ("group" as const) : ("frame" as const);
+  const groupId = createCanvasNodeId(nodeType);
   const childIds: string[] = [];
+  const frameFills =
+    nodeType === "frame"
+      ? getPaintFills(figma.fillPaints ?? figma.backgroundPaints)
+      : undefined;
+  const frameStroke =
+    nodeType === "frame"
+      ? getPaintStroke(
+          getPrimaryVisiblePaint(figma.strokePaints),
+          figma.strokeWeight,
+          figma.strokeAlign,
+          figma.strokeCap,
+          figma.strokeJoin,
+        )
+      : undefined;
+  const layoutProps = getFigmaLayoutProps(figma);
+  const hasOwnVisual =
+    nodeType === "frame" &&
+    (Boolean(frameFills?.length) ||
+      Boolean(frameStroke) ||
+      Boolean(figma.effects?.length));
 
-  const frameFill = getPrimaryVisiblePaint(
-    figma.fillPaints ?? figma.backgroundPaints,
-  );
-  if (
-    frameFill &&
-    frameFill.type !== "IMAGE" &&
-    bounds.width > 0 &&
-    bounds.height > 0
-  ) {
-    const backgroundId = createCanvasNodeId("rectangle");
-    state.nodes.push({
-      id: backgroundId,
-      type: "rectangle",
-      parentId: groupId,
-      title: `${figma.name ?? "Frame"} background`,
-      bounds,
-      fills: getPaintFills([frameFill]),
-      stroke: getPaintStroke(
-        getPrimaryVisiblePaint(figma.strokePaints),
-        figma.strokeWeight,
-      ),
-      cornerRadius: figma.cornerRadius,
-      locked: figma.locked,
-      visible: figma.visible,
-      effects: convertFigmaEffects(figma.effects),
-      meta: createFigmaMeta(figma, { parentStackMode }),
-    });
-    childIds.push(backgroundId);
-  }
+  const orderedChildren =
+    figma.stackMode && figma.stackMode !== "NONE"
+      ? [...treeNode.children].reverse()
+      : treeNode.children;
 
-  for (const child of treeNode.children) {
+  for (const child of orderedChildren) {
     const childId = convertFigmaTreeNode(
       child,
       groupId,
@@ -609,23 +606,67 @@ function convertFigmaGroupLike(
     }
   }
 
-  if (childIds.length === 0) {
+  if (childIds.length === 0 && !hasOwnVisual) {
     return null;
   }
 
   state.nodes.push({
     id: groupId,
-    type: "group",
+    type: nodeType,
     parentId,
     title: figma.name ?? figma.type ?? "Imported group",
     bounds,
     childrenOrder: childIds,
+    fills: frameFills,
+    stroke: frameStroke,
+    cornerRadius: nodeType === "frame" ? figma.cornerRadius : undefined,
     locked: figma.locked,
     visible: figma.visible,
     effects: convertFigmaEffects(figma.effects),
+    ...layoutProps,
     meta: createFigmaMeta(figma, { parentStackMode }),
   });
   return groupId;
+}
+
+function getFigmaLayoutProps(
+  figma: FigmaNodeChange,
+): Pick<
+  ImportNode,
+  "layout" | "gap" | "padding" | "justifyContent" | "alignItems" | "clipContent"
+> {
+  const props: Pick<
+    ImportNode,
+    | "layout"
+    | "gap"
+    | "padding"
+    | "justifyContent"
+    | "alignItems"
+    | "clipContent"
+  > = {};
+  if (figma.stackMode && figma.stackMode !== "NONE") {
+    props.layout = figma.stackMode === "HORIZONTAL" ? "horizontal" : "vertical";
+    if (
+      figma.stackSpacing !== undefined &&
+      figma.stackSpacing !== 0 &&
+      figma.stackPrimaryAlignItems !== "SPACE_EVENLY"
+    ) {
+      props.gap = figma.stackSpacing;
+    }
+    props.padding = getFigmaPadding(figma);
+    props.justifyContent = mapFigmaJustifyContent(
+      figma.stackPrimaryAlignItems,
+    ) as ImportNode["justifyContent"];
+    const alignItems = mapFigmaAlignItems(figma.stackCounterAlignItems);
+    props.alignItems =
+      alignItems === "baseline"
+        ? "end"
+        : (alignItems as ImportNode["alignItems"]);
+  }
+  if (figma.type !== "GROUP" && figma.frameMaskDisabled !== true) {
+    props.clipContent = true;
+  }
+  return props;
 }
 
 function convertFigmaInstance(
@@ -743,6 +784,9 @@ function convertFigmaRectangle(
     stroke: getPaintStroke(
       getPrimaryVisiblePaint(figma.strokePaints),
       figma.strokeWeight,
+      figma.strokeAlign,
+      figma.strokeCap,
+      figma.strokeJoin,
     ),
     cornerRadius: figma.cornerRadius,
     locked: figma.locked,
@@ -772,6 +816,9 @@ function convertFigmaEllipse(
     stroke: getPaintStroke(
       getPrimaryVisiblePaint(figma.strokePaints),
       figma.strokeWeight,
+      figma.strokeAlign,
+      figma.strokeCap,
+      figma.strokeJoin,
     ),
     locked: figma.locked,
     visible: figma.visible,
@@ -790,16 +837,22 @@ function convertFigmaLine(
   parentStackMode?: FigmaNodeChange["stackMode"],
 ): string {
   const nodeId = createCanvasNodeId("line");
+  const bounds = getNodeBounds(figma);
   state.nodes.push({
     id: nodeId,
     type: "line",
     parentId,
     title: figma.name ?? "Imported line",
-    bounds: getNodeBounds(figma),
+    bounds,
     stroke: getPaintStroke(
       getPrimaryVisiblePaint(figma.strokePaints ?? figma.fillPaints),
       figma.strokeWeight,
+      figma.strokeAlign,
+      figma.strokeCap,
+      figma.strokeJoin,
     ),
+    x2: bounds.x + (figma.size?.x ?? 100),
+    y2: bounds.y,
     locked: figma.locked,
     visible: figma.visible,
     effects: convertFigmaEffects(figma.effects),
@@ -827,10 +880,16 @@ function convertFigmaText(
     fontSize: Math.max(12, figma.fontSize ?? 16),
     fontFamily: figma.fontName?.family,
     fontWeight: figma.fontName ? extractFontWeight(figma.fontName) : undefined,
+    fontStyle: figma.fontName?.style?.toLowerCase().includes("italic")
+      ? "italic"
+      : undefined,
+    letterSpacing: mapFigmaLetterSpacing(figma),
+    lineHeight: mapFigmaLineHeight(figma),
     fills: getPaintFills(figma.fillPaints) ?? [
       { type: "solid", color: "#111827" },
     ],
     textAlign: mapTextAlign(figma.textAlignHorizontal),
+    textGrowth: mapTextGrowth(figma.textAutoResize),
     bounds: getNodeBounds(figma),
     locked: figma.locked,
     visible: figma.visible,
@@ -866,6 +925,9 @@ function convertFigmaVector(
       stroke: getPaintStroke(
         getPrimaryVisiblePaint(figma.strokePaints),
         figma.strokeWeight,
+        figma.strokeAlign,
+        figma.strokeCap,
+        figma.strokeJoin,
       ),
       locked: figma.locked,
       visible: figma.visible,
@@ -889,6 +951,9 @@ function convertFigmaVector(
     stroke: getPaintStroke(
       getPrimaryVisiblePaint(figma.strokePaints),
       figma.strokeWeight,
+      figma.strokeAlign,
+      figma.strokeCap,
+      figma.strokeJoin,
     ),
     locked: figma.locked,
     visible: figma.visible,
@@ -1810,14 +1875,56 @@ function getPaintFills(paints?: FigmaPaint[]): CanvasFill[] | undefined {
 function getPaintStroke(
   paint?: FigmaPaint,
   weight?: number,
+  align?: FigmaNodeChange["strokeAlign"],
+  cap?: FigmaNodeChange["strokeCap"],
+  join?: FigmaNodeChange["strokeJoin"],
 ): CanvasStroke | undefined {
   const color = getPaintColor(paint);
   if (!color && !weight) return undefined;
   return {
     thickness: weight ?? 1,
-    align: "center",
+    align: mapStrokeAlign(align),
+    cap: mapStrokeCap(cap),
+    join: mapStrokeJoin(join),
     fill: color ? [{ type: "solid", color }] : undefined,
   };
+}
+
+function mapStrokeAlign(
+  align?: FigmaNodeChange["strokeAlign"],
+): CanvasStroke["align"] {
+  switch (align) {
+    case "INSIDE":
+      return "inside";
+    case "OUTSIDE":
+      return "outside";
+    default:
+      return "center";
+  }
+}
+
+function mapStrokeCap(cap?: FigmaNodeChange["strokeCap"]): CanvasStroke["cap"] {
+  switch (cap) {
+    case "ROUND":
+      return "round";
+    case "SQUARE":
+      return "square";
+    default:
+      return undefined;
+  }
+}
+
+function mapStrokeJoin(
+  join?: FigmaNodeChange["strokeJoin"],
+): CanvasStroke["join"] {
+  switch (join) {
+    case "ROUND":
+      return "round";
+    case "BEVEL":
+      return "bevel";
+    default:
+      return undefined;
+  }
 }
 
 function extractFontWeight(fontName: { family?: string; style?: string }):
@@ -1830,6 +1937,50 @@ function extractFontWeight(fontName: { family?: string; style?: string }):
   if (/\b(light|300)\b/i.test(style)) return 300;
   if (/\b(thin|100)\b/i.test(style)) return 100;
   return undefined;
+}
+
+function mapFigmaLineHeight(figma: FigmaNodeChange): number | undefined {
+  const lineHeight = figma.lineHeight;
+  if (!lineHeight?.value) return undefined;
+  const fontSize = figma.fontSize ?? 16;
+  if (lineHeight.units === "PIXELS") {
+    return Math.round((lineHeight.value / fontSize) * 1000) / 1000;
+  }
+  if (lineHeight.units === "PERCENT") {
+    return Math.round((lineHeight.value / 100) * 1000) / 1000;
+  }
+  if (lineHeight.units === "RAW") {
+    return Math.round(lineHeight.value * 1000) / 1000;
+  }
+  return undefined;
+}
+
+function mapFigmaLetterSpacing(figma: FigmaNodeChange): number | undefined {
+  const letterSpacing = figma.letterSpacing;
+  if (!letterSpacing?.value) return undefined;
+  if (letterSpacing.units === "PIXELS") {
+    return letterSpacing.value;
+  }
+  if (letterSpacing.units === "PERCENT") {
+    const fontSize = figma.fontSize ?? 16;
+    return Math.round(((fontSize * letterSpacing.value) / 100) * 100) / 100;
+  }
+  return undefined;
+}
+
+function mapTextGrowth(
+  resize?: FigmaNodeChange["textAutoResize"],
+): "auto" | "fixed-width" | "fixed-width-height" | undefined {
+  switch (resize) {
+    case "WIDTH_AND_HEIGHT":
+      return "auto";
+    case "HEIGHT":
+      return "fixed-width";
+    case "NONE":
+      return "fixed-width-height";
+    default:
+      return undefined;
+  }
 }
 
 function figmaColorToHex(color: FigmaColor, opacity?: number): string {

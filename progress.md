@@ -1,6 +1,6 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-26 16:51 CST
+Last updated: 2026-05-26 18:17 CST
 
 ## Current Session
 
@@ -26,7 +26,6 @@ Status:
 - `manipulate_canvas` now writes `CanvasOperation` updates against new canvas documents with permission and bounds enforcement, instead of mutating only legacy Excalidraw-style `elements`.
 - Agent-generated image/video results now insert into the new canvas document model from both runtime and background job paths.
 - `SkiaCanvas` now includes the first native tool batch: hand/pan mode, in-canvas image upload, image resize with visible bounds overlay, and lightweight line/arrow nodes rendered directly from the new document model.
-- Current rendering is a React DOM runtime behind the public `CanvasApi`; the lower-level editor adapter can be swapped behind this boundary without changing product callers.
 - Added P0 native editing affordances: multi-select, marquee selection, undo/redo history, keyboard shortcuts, recursive copy/paste/duplicate/delete, and layer lock/visibility/reorder controls.
 - Moved shared canvas behavior for ordered traversal, marquee hit-testing, recursive clipboard clone/paste, and document history into `@cucumber/canvas-core` so the web surface calls headless helpers instead of owning those document mutations directly.
 - Added the first P1 native editing slice: generic property panel, ellipse/polygon/path/icon nodes, 8-way resize, rotate handles, group/ungroup, selection alignment, and grid snap guides.
@@ -57,9 +56,11 @@ Status:
 - Tightened the Skia editor interaction chain after the render/layout review: Figma/system paste now lets native paste events carry HTML payloads when the internal canvas clipboard is empty, imported `rect` nodes normalize to renderable `rectangle` nodes, and single-quoted Figma clipboard attributes are decoded.
 - Fixed selected-node editing ergonomics in the Skia path by keeping property-panel and toolbar events from bubbling into canvas hit-testing, binding the panel directly to PenNode fields, and making the path/pen tool create a visible path from the same drag bounds used by its preview.
 - Moved Skia canvas editing overlays out of React DOM and into the shared CanvasKit renderer: selection bounds, resize/rotate handles, marquee selection, shape drag previews, and pen previews now draw in the same render pass as canvas content, while resize/rotate hit-testing runs through renderer scene coordinates.
+- Removed the legacy React DOM / Excalidraw / Pixi shadow runtime remnants: deleted the old `@cucumber/engine`, `@cucumber/container`, `@cucumber/renderer`, and `@cucumber/ui` workspace packages, removed legacy shadow e2e harnesses and old migration plan docs, and kept the production Skia/CanvasKit canvas path as the only active renderer.
 - Added focused keyboard shortcut coverage for paste behavior, plus targeted Figma clipboard extraction/import regression checks.
 - Added the first OpenPencil-compatible live canvas agent tool slice: `batch_design`, `batch_get`, `snapshot_layout`, and `find_empty_space` are now registered as MCP tools, operate through `LiveCanvasService`, and let the main Agent perform DSL-style batch editing/reading against the current Cucumber `PenDocument` without changing the durable canvas schema.
 - Continued the OpenPencil migration with Figma/style/codegen parity slices: the live MCP tool set now includes `import_figma_clipboard`, OpenPencil-style `read_nodes`, variables/theme tools, recursive style search/replace, and in-memory codegen plan/submit/assemble/clean routes, while the Skia property panel can bind selected node colors to document variables.
+- Hardened Figma/system paste fidelity by capturing all readable clipboard MIME text, preferring native Figma/SVG payloads when present, mapping Figma auto-layout directly onto PenNode layout props, and extending the SVG fallback to preserve transforms, style rules, gradient defs, masks/clip warnings, text style, effects, and line endpoints.
 - Advanced codegen assembly from protocol-only state to concrete design-as-code file output: `codegen_assemble` now returns framework-specific files for React (`App.tsx`, component files, CSS), HTML (`index.html`, CSS), and generic framework fallbacks, and the property panel now includes typography controls plus reusable component/ref metadata and inline color variable creation/binding.
 - Added a dedicated `codegen_export` MCP tool so the Agent can export the current live canvas selection, or explicit node IDs, directly into React (`.tsx` + CSS) or static HTML (`index.html` + CSS) design-as-code files with diagnostic logging.
 
@@ -73,18 +74,31 @@ Status:
 6. Decide whether to harden `apps/web/next.config.ts` for local multi-lockfile setups with `outputFileTracingRoot` / `allowedDevOrigins`, or keep those as known non-blocking dev warnings for now.
 7. Continue P1 canvas parity with richer path/icon editing, reference guides, advanced snapping, shape-specific handles, and more complete property controls.
 8. Build the next P2 layers on top of the new import provenance metadata: richer reusable component/ref editing, variables/design tokens, and export-to-project handoff flows.
-9. Replace the current DOM runtime internals with a dedicated editor adapter if needed, keeping `CanvasApi` stable.
-10. Decide whether `@excalidraw/excalidraw` can be removed after dependent panels and legacy helpers no longer import it.
 
 ## Handoff Notes
 
-- Existing worktree changes under `apps/server/src/app.ts`, `apps/server/src/http/sse.ts`, `docs/DOC_YBOjdTenpo.md`, and `docs/MASTER_PLAN.md` predate this canvas runtime implementation. Do not revert them unless the user explicitly asks.
+- Existing worktree changes under `apps/server/src/app.ts` and `apps/server/src/http/sse.ts` predate this canvas runtime implementation. Do not revert them unless the user explicitly asks.
 - `.env.local` exists locally and must not be edited by default.
-- `pnpm-lock.yaml` changed in this session because `leafer-editor` and `@cucumber/canvas-core` workspace dependencies were added.
+- `pnpm-lock.yaml` changed in this session because legacy workspace packages and the old Pixi renderer dependency graph were removed.
 - The project is already marked trusted in the user-level Codex config, so `.codex/config.toml` and `.codex/rules/default.rules` should load in future Codex sessions.
 
 ## Verification Log
 
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm --filter @cucumber/web typecheck`.
+- Passed: `pnpm exec biome check packages/canvas-core/src/import.ts packages/canvas-core/src/figma-native.ts apps/web/src/components/canvas/use-canvas-clipboard-import.ts apps/web/test/use-canvas-clipboard-import.test.tsx`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/use-canvas-clipboard-import.test.tsx`.
+- Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/canvas-core.test.ts --testNamePattern "preserves imported frame layout"`.
+- Failed: full `pnpm --filter @cucumber/canvas-core test` remains blocked by existing document-model expectation mismatches in `packages/canvas-core/src/__tests__/canvas-core.test.ts`.
+- Passed: static legacy runtime scan for active sources after cleanup; only AGENTS framework guidance and Skia/CanvasKit HTMLCanvasSurface references remain.
+- Passed: `pnpm --filter @cucumber/web typecheck`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm --filter @cucumber/pen-renderer typecheck`.
+- Passed: `pnpm --filter @cucumber/web test`.
+- Blocked: `pnpm install --lockfile-only` was rejected by the current no-approval execution policy, so the old workspace and Pixi lockfile entries were removed manually.
+- Failed: `pnpm --filter @cucumber/canvas-core test` remains blocked by existing document-model expectation mismatches in `packages/canvas-core/src/__tests__/canvas-core.test.ts`.
+- Failed: targeted `pnpm exec biome check` remains blocked by pre-existing diagnostics in `apps/web/src/components/chat-sidebar.tsx` and `apps/server/src/features/canvas/canvas-element-writer.ts`.
+- Blocked: Playwright Skia smoke using a temporary port 3002 config hit an existing Next dev SSR error in `class-variance-authority` vendor chunk after the root config first hit port 3000 in use.
 - Passed: `pnpm --filter @cucumber/web typecheck`.
 - Passed: `pnpm --filter @cucumber/web test -- use-canvas-clipboard-import.test.tsx use-canvas-keyboard-shortcuts.test.tsx`.
 - Passed: `pnpm --filter @cucumber/web typecheck`.

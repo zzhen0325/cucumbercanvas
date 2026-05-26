@@ -1,5 +1,5 @@
 import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
+import { type Root, createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -81,6 +81,11 @@ describe("useCanvasClipboardImport", () => {
       {
         html: "<div data-buffer='1'></div>",
         text: "<svg></svg>",
+        svg: undefined,
+        items: [
+          { type: "text/html", text: "<div data-buffer='1'></div>" },
+          { type: "text/plain", text: "<svg></svg>" },
+        ],
       },
       {
         trigger: "paste-event",
@@ -105,6 +110,8 @@ describe("useCanvasClipboardImport", () => {
       payload: {
         html: undefined,
         text: "<svg></svg>",
+        svg: undefined,
+        items: undefined,
       },
       context: {
         trigger: "clipboard-api",

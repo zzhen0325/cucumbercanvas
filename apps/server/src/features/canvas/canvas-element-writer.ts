@@ -932,8 +932,8 @@ export async function markImageGenerationGroupFailed(
  * with auto-placement (or explicit placement), writes it back.
  *
  * The image file is already in Supabase Storage (uploaded by worker executor).
- * We download it and embed as base64 dataURL in the canvas files map so
- * Excalidraw can render it natively (consistent with frontend-inserted images).
+ * We download it and register a base64 dataURL asset so the Skia canvas can
+ * render it consistently with frontend-inserted images.
  */
 export async function insertImageElement(
   client: CanvasElementWriterClient,
@@ -1007,8 +1007,8 @@ export async function insertImageElement(
 }
 
 /**
- * Insert a video element into a canvas. Videos use Excalidraw's `embeddable`
- * type with a link URL — no files map entry needed.
+ * Insert a video element into a canvas. Videos use the Cucumber canvas
+ * `videoEmbed` node type with a link URL — no files map entry needed.
  */
 export async function insertVideoElement(
   client: CanvasElementWriterClient,

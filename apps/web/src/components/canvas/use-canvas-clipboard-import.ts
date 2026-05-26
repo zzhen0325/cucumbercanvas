@@ -16,9 +16,14 @@ export interface ClipboardImportReadResult {
 export function getClipboardImportPayloadFromEvent(
   event: ClipboardEvent,
 ): ClipboardImportPayload {
+  const items = Array.from(event.clipboardData?.types ?? [])
+    .map((type) => ({ type, text: event.clipboardData?.getData(type) ?? "" }))
+    .filter((item) => item.text.length > 0);
   return {
     html: event.clipboardData?.getData("text/html") || undefined,
     text: event.clipboardData?.getData("text/plain") || undefined,
+    svg: event.clipboardData?.getData("image/svg+xml") || undefined,
+    items: items.length > 0 ? items : undefined,
   };
 }
 
@@ -37,20 +42,24 @@ export function getClipboardImportContextFromEvent(
 export async function readClipboardImportPayload(): Promise<ClipboardImportReadResult> {
   let html: string | undefined;
   let text: string | undefined;
+  let svg: string | undefined;
   const mimeTypes: string[] = [];
+  const textItems: Array<{ type: string; text: string }> = [];
 
   if (typeof navigator !== "undefined" && navigator.clipboard?.read) {
     try {
       const items = await navigator.clipboard.read();
       for (const item of items) {
         mimeTypes.push(...item.types);
-        if (!html && item.types.includes("text/html")) {
-          const blob = await item.getType("text/html");
-          html = await blob.text();
-        }
-        if (!text && item.types.includes("text/plain")) {
-          const blob = await item.getType("text/plain");
-          text = await blob.text();
+        for (const type of item.types) {
+          if (!isReadableTextClipboardType(type)) continue;
+          const blob = await item.getType(type);
+          const value = await blob.text();
+          if (!value) continue;
+          textItems.push({ type, text: value });
+          if (!html && type === "text/html") html = value;
+          if (!text && type === "text/plain") text = value;
+          if (!svg && type === "image/svg+xml") svg = value;
         }
       }
     } catch {
@@ -58,7 +67,11 @@ export async function readClipboardImportPayload(): Promise<ClipboardImportReadR
     }
   }
 
-  if (!text && typeof navigator !== "undefined" && navigator.clipboard?.readText) {
+  if (
+    !text &&
+    typeof navigator !== "undefined" &&
+    navigator.clipboard?.readText
+  ) {
     try {
       text = await navigator.clipboard.readText();
     } catch {
@@ -67,7 +80,12 @@ export async function readClipboardImportPayload(): Promise<ClipboardImportReadR
   }
 
   return {
-    payload: { html, text },
+    payload: {
+      html,
+      text,
+      svg,
+      items: textItems.length > 0 ? textItems : undefined,
+    },
     context: {
       trigger: "clipboard-api",
       mimeTypes: Array.from(new Set(mimeTypes)),
@@ -75,6 +93,16 @@ export async function readClipboardImportPayload(): Promise<ClipboardImportReadR
       hasText: Boolean(text),
     },
   };
+}
+
+function isReadableTextClipboardType(type: string): boolean {
+  return (
+    type === "text/html" ||
+    type === "text/plain" ||
+    type === "image/svg+xml" ||
+    type.startsWith("text/") ||
+    type.includes("figma")
+  );
 }
 
 export function useCanvasClipboardImport(options: {

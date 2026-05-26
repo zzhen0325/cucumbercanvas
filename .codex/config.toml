@@ -19,3 +19,6 @@ inherit = "core"
 max_threads = 4
 max_depth = 2
 job_max_runtime_seconds = 3600
+
+[sandbox_workspace_write]
+network_access = true

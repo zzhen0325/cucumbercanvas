@@ -1,7 +1,6 @@
 /**
  * Shared helpers for canvas agent tools.
- * Extracted from the old Excalidraw helpers — only the functions still used
- * by the Cucumber canvas runtime remain.
+ * Only the functions still used by the Cucumber canvas runtime remain here.
  */
 
 // ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 
 /**
  * Proxy endpoint for fetching external images server-side, bypassing browser CORS restrictions.
- * Used by the frontend to load generated images into Excalidraw canvas.
+ * Used by the frontend to load generated images into the Cucumber canvas.
  */
 export function registerImageProxyRoute(app: FastifyInstance) {
   // Build allowed domains list: Seedream output hosts + dynamic Supabase host.

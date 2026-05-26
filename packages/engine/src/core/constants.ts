@@ -1,9 +1,0 @@
-export const DEFAULT_MAX_HISTORY = 300;
-export const HISTORY_DEBOUNCE_MS = 300;
-export const DEFAULT_BACKGROUND_COLOR = '#1a1a1a';
-export const MIN_DRAW_SIZE = 2;
-export const MIN_LINE_LENGTH = 2;
-export const DRAG_THRESHOLD = 3;
-export const HANDLE_HIT_RADIUS = 8;
-export const MIN_ZOOM = 0.01;
-export const MAX_ZOOM = 64;

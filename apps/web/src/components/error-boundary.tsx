@@ -24,7 +24,7 @@ type ErrorBoundaryState = {
  *
  * Usage:
  *   <ErrorBoundary>
- *     <Excalidraw ... />
+ *     <CanvasEditor ... />
  *   </ErrorBoundary>
  */
 export class ErrorBoundary extends React.Component<
