@@ -5,7 +5,11 @@ import type {
   ContextSlots,
   CucumberCanvasDocument,
   PenNode,
+  PenPage,
 } from "@cucumber/canvas-core";
+import type { BooleanOpType } from "@cucumber/pen-core";
+
+export type { PenPage } from "@cucumber/canvas-core";
 
 export type CanvasChangeListener = (
   elements: CanvasSceneElement[],
@@ -54,9 +58,33 @@ export type AlignMode =
   | "middle"
   | "bottom";
 
+export type CanvasTool =
+  | "select"
+  | "hand"
+  | "container"
+  | "rect"
+  | "ellipse"
+  | "polygon"
+  | "path"
+  | "text"
+  | "line"
+  | "arrow"
+  | "icon";
+
 export type CanvasApi = {
   getDocument: () => CucumberCanvasDocument;
   setDocument: (doc: unknown) => void;
+  getActivePageId: () => string;
+  setActivePage: (pageId: string) => void;
+  getPages: () => PenPage[];
+  addPage: (name?: string) => string;
+  renamePage: (pageId: string, name: string) => void;
+  duplicatePage: (pageId: string) => string;
+  deletePage: (pageId: string) => void;
+  reorderPage: (pageId: string, direction: "left" | "right") => void;
+  applyBooleanOperation: (operation: BooleanOpType) => string | null;
+  getActiveTool: () => CanvasTool;
+  setActiveTool: (tool: CanvasTool) => void;
   createContainer: (opts?: {
     name?: string;
     x?: number;
