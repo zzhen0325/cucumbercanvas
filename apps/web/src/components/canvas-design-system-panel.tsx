@@ -11,7 +11,7 @@ import {
   X,
 } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   type CucumberCanvasDocument,
@@ -31,12 +31,13 @@ import {
   type CanvasIconEntry,
 } from "./canvas/icon-library";
 
-type DesignSystemTab = "components" | "variables" | "icons";
+export type DesignSystemTab = "components" | "variables" | "icons";
 type VariableType = VariableDefinition["type"];
 type SizedRefNode = RefNode & { width?: number; height?: number };
 
 export type CanvasDesignSystemPanelProps = {
   canvasApi: CanvasApi | null;
+  initialTab?: DesignSystemTab;
   open: boolean;
   onClose: () => void;
 };
@@ -191,6 +192,7 @@ function EmptyState({ children }: { children: ReactNode }) {
 
 export function CanvasDesignSystemPanel({
   canvasApi,
+  initialTab,
   open,
   onClose,
 }: CanvasDesignSystemPanelProps) {
@@ -205,6 +207,7 @@ export function CanvasDesignSystemPanel({
   const [themeAxis, setThemeAxis] = useState("mode");
   const [themeValues, setThemeValues] = useState("light,dark");
   const [iconQuery, setIconQuery] = useState("");
+  const iconSearchRef = useRef<HTMLInputElement | null>(null);
 
   const refresh = useCallback(() => {
     setSnapshot(refreshSnapshot(canvasApi));
@@ -218,6 +221,17 @@ export function CanvasDesignSystemPanel({
       if (typeof unsubscribe === "function") unsubscribe();
     };
   }, [open, canvasApi, refresh]);
+
+  useEffect(() => {
+    if (!open) return;
+    setActiveTab(initialTab ?? "components");
+    setMessage(null);
+  }, [open, initialTab]);
+
+  useEffect(() => {
+    if (!open || activeTab !== "icons") return;
+    iconSearchRef.current?.focus();
+  }, [open, activeTab]);
 
   useEffect(() => {
     if (!open) return;
@@ -868,6 +882,7 @@ export function CanvasDesignSystemPanel({
             <div className="relative">
               <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <input
+                ref={iconSearchRef}
                 className={`${inputClass} pl-7`}
                 value={iconQuery}
                 onChange={(event) => setIconQuery(event.target.value)}

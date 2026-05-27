@@ -53,6 +53,31 @@ function createCanvasApi(
 }
 
 describe("CanvasDesignSystemPanel", () => {
+  it("defaults to components but can be opened directly on the icons library", () => {
+    const api = createCanvasApi(createDoc());
+    const { rerender } = render(
+      <CanvasDesignSystemPanel canvasApi={api} open onClose={vi.fn()} />,
+    );
+
+    expect(screen.getByRole("button", { name: "组件" })).toHaveClass(
+      "bg-muted",
+    );
+
+    rerender(
+      <CanvasDesignSystemPanel
+        canvasApi={api}
+        initialTab="icons"
+        open
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "图标" })).toHaveClass(
+      "bg-muted",
+    );
+    expect(screen.getByRole("textbox", { name: "Search icons" })).toHaveFocus();
+  });
+
   it("creates variables, manages theme axes, and binds a color variable to the selected fill", async () => {
     const user = userEvent.setup();
     const rect: PenNode = {

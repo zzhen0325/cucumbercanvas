@@ -51,6 +51,7 @@ type CanvasEditorProps = {
   accessToken: string;
   initialContent: CanvasContent;
   onApiReady?: (api: CanvasApi) => void;
+  onInsertIcon?: () => void;
   ws?: WebSocketHandle;
   leftPanelOpen?: boolean;
   onSelectionChange?: (elements: CanvasSelectedElement[]) => void;
@@ -83,6 +84,7 @@ export function CanvasEditor({
   accessToken,
   initialContent,
   onApiReady,
+  onInsertIcon,
   ws,
   onSelectionChange,
 }: CanvasEditorProps) {
@@ -311,6 +313,7 @@ export function CanvasEditor({
           initialContent={initialContent}
           onApiReady={handleApiReady}
           onDocumentChange={handleDocumentChange}
+          onInsertIcon={onInsertIcon}
           onSelectionChange={handleSelectionChange}
         />
       </div>

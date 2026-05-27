@@ -10,7 +10,10 @@ import type {
 } from "@cucumber/shared";
 import { BrandKitSelector } from "../../components/brand-kit-selector";
 import { CanvasBottomBar } from "../../components/canvas-bottom-bar";
-import { CanvasDesignSystemPanel } from "../../components/canvas-design-system-panel";
+import {
+  CanvasDesignSystemPanel,
+  type CanvasDesignSystemPanelProps,
+} from "../../components/canvas-design-system-panel";
 import type { CanvasSelectedElement } from "../../components/canvas-editor";
 import { CanvasEditor } from "../../components/canvas-editor";
 import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
@@ -83,6 +86,8 @@ function CanvasPageContent() {
   const [layersOpen, setLayersOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
   const [designOpen, setDesignOpen] = useState(false);
+  const [designInitialTab, setDesignInitialTab] =
+    useState<CanvasDesignSystemPanelProps["initialTab"]>("components");
   const [brandKitId, setBrandKitId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("Untitled");
   const [selectedCanvasElements, setSelectedCanvasElements] = useState<
@@ -114,10 +119,21 @@ function CanvasPageContent() {
     setDesignOpen(false);
   }, []);
   const handleToggleDesign = useCallback(() => {
+    setDesignInitialTab("components");
     setDesignOpen((v) => !v);
     setLayersOpen(false);
     setFilesOpen(false);
   }, []);
+  const handleInsertIconFromToolbar = useCallback(() => {
+    setDesignInitialTab("icons");
+    setDesignOpen(true);
+    setLayersOpen(false);
+    setFilesOpen(false);
+    console.info("[canvas-page] toolbar.insert-icon.design-system.opened", {
+      canvasId,
+      targetTab: "icons",
+    });
+  }, [canvasId]);
   const handleCloseLayers = useCallback(() => setLayersOpen(false), []);
   const handleCloseFiles = useCallback(() => setFilesOpen(false), []);
   const handleCloseDesign = useCallback(() => setDesignOpen(false), []);
@@ -390,6 +406,7 @@ function CanvasPageContent() {
           accessToken={accessToken}
           initialContent={canvasData.content}
           onApiReady={handleApiReady}
+          onInsertIcon={handleInsertIconFromToolbar}
           ws={ws}
           leftPanelOpen={layersOpen || filesOpen || designOpen}
           onSelectionChange={setSelectedCanvasElements}
@@ -417,6 +434,7 @@ function CanvasPageContent() {
         />
         <CanvasDesignSystemPanel
           canvasApi={canvasApi}
+          initialTab={designInitialTab}
           open={designOpen}
           onClose={handleCloseDesign}
         />

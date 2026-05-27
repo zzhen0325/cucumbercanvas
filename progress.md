@@ -1,6 +1,6 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-27 16:15 CST
+Last updated: 2026-05-27 17:05 CST
 
 ## 2026-05-27
 
@@ -20,6 +20,10 @@ Last updated: 2026-05-27 16:15 CST
   readable failures, and an accessible hierarchy move path; the shape toolbar
   only exposes icon insertion when a real callback is wired, and property-panel
   parity remains P1 until effects/path/line-specific limits are verified.
+- B0 toolbar icon insertion parity closed: the production canvas page now wires
+  the toolbar `Insert icon` affordance through `CanvasEditor`/`SkiaCanvas` to
+  the existing Design System Icons tab/search, preserving
+  `CanvasDesignSystemPanel` as the only icon insertion implementation.
 
 ## Current Session
 

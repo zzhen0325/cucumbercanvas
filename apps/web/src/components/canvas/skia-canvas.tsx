@@ -416,13 +416,20 @@ function getFirstSolidFillColor(node: PenNode, fallback = "#111827"): string {
 type SkiaCanvasProps = {
   initialContent: unknown;
   onDocumentChange?: (doc: CucumberCanvasDocument) => void;
+  onInsertIcon?: () => void;
   onApiReady?: (api: CanvasApi) => void;
   onSelectionChange?: (elements: CanvasSceneElement[]) => void;
 };
 
 export const SkiaCanvas = memo(
   forwardRef<CanvasApi, SkiaCanvasProps>(function SkiaCanvas(
-    { initialContent, onDocumentChange, onApiReady, onSelectionChange },
+    {
+      initialContent,
+      onDocumentChange,
+      onInsertIcon,
+      onApiReady,
+      onSelectionChange,
+    },
     ref,
   ) {
     const canvasContainerRef = useRef<HTMLDivElement>(null);
@@ -2793,6 +2800,7 @@ export const SkiaCanvas = memo(
           canUndo={api.canUndo()}
           onCreateContainer={() => createContainer()}
           onDelete={api.deleteSelection}
+          onInsertIcon={onInsertIcon}
           onImportImage={handleImportImage}
           onImportSvg={handleImportSvg}
           onRedo={api.redo}
