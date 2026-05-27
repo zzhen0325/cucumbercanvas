@@ -78,6 +78,7 @@ import {
   getTopLevelSelectionIds,
 } from "./canvas-selection-helpers";
 import { CanvasEditorToolbar } from "./editor-toolbar";
+import { lookupCanvasIcon } from "./icon-library";
 import { CanvasPageTabs } from "./page-tabs";
 import { CanvasPropertyPanel } from "./property-panel/canvas-property-panel";
 import {
@@ -536,6 +537,7 @@ export const SkiaCanvas = memo(
 
       const renderer = new PenRenderer(ckRef.current, {
         fontBasePath: "/fonts/",
+        iconLookup: lookupCanvasIcon,
         backgroundColor: "#ffffff",
       });
       renderer.init(canvas);

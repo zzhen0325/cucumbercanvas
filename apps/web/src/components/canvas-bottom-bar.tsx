@@ -1,5 +1,6 @@
 "use client";
 
+import { Palette } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HexColorPicker } from "react-colorful";
 import { createPortal } from "react-dom";
@@ -30,7 +31,9 @@ interface CanvasBottomBarProps {
   onToggleLayers: () => void;
   filesOpen: boolean;
   onToggleFiles: () => void;
-  /** Whether any left panel (layers/files) is open — shifts the bar right */
+  designOpen: boolean;
+  onToggleDesign: () => void;
+  /** Whether any left panel is open — shifts the bar right */
   leftPanelOpen: boolean;
 }
 
@@ -48,6 +51,7 @@ const Ico = ({
   fill = "none",
 }: IcoProps) => (
   <svg viewBox={vb} fill={fill} className={className}>
+    <title>Toolbar icon</title>
     {children}
   </svg>
 );
@@ -101,6 +105,7 @@ const CloseIcon = ({ className }: { className?: string }) => (
 /* checkerboard pattern for "transparent" swatch */
 const CheckerIcon = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 16 16" className={className}>
+    <title>Transparent background</title>
     <rect width="8" height="8" fill="#ccc" />
     <rect x="8" y="8" width="8" height="8" fill="#ccc" />
     <rect x="8" width="8" height="8" fill="#fff" />
@@ -204,6 +209,8 @@ export function CanvasBottomBar({
   onToggleLayers,
   filesOpen,
   onToggleFiles,
+  designOpen,
+  onToggleDesign,
   leftPanelOpen,
 }: CanvasBottomBarProps) {
   /* ── Zoom state ── */
@@ -314,6 +321,10 @@ export function CanvasBottomBar({
     closeAllPopovers();
     onToggleFiles();
   }, [closeAllPopovers, onToggleFiles]);
+  const handleToggleDesign = useCallback(() => {
+    closeAllPopovers();
+    onToggleDesign();
+  }, [closeAllPopovers, onToggleDesign]);
 
   return (
     <div
@@ -359,6 +370,16 @@ export function CanvasBottomBar({
           aria-label="Generated files"
         >
           <FileIcon className="h-3.5 w-3.5" />
+        </button>
+
+        {/* ── Design system button ── */}
+        <button
+          type="button"
+          className={`${btnClass} ${designOpen ? "bg-muted text-foreground" : ""}`}
+          onClick={handleToggleDesign}
+          aria-label="Design system"
+        >
+          <Palette className="h-3.5 w-3.5" />
         </button>
 
         {/* ── Divider ── */}

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-27T04:22:00+08:00",
+  "updatedAt": "2026-05-27T09:22:00+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -164,6 +164,23 @@
         "apps/web/src/components/canvas/editor-toolbar.tsx",
         "apps/web/src/components/canvas/boolean-toolbar.tsx",
         "apps/web/src/components/canvas/canvas-api.ts",
+        "docs/tech/canvas-design-integration.md"
+      ]
+    },
+    {
+      "id": "openpencil-phase-b-design-system",
+      "name": "OpenPencil Phase B design system panel",
+      "status": "done",
+      "priority": "P0",
+      "owner": "product-engineering",
+      "summary": "OpenPencil Phase B migration with component creation/instances, document variables and theme axes, and a local icon library rendered through the Skia icon lookup path.",
+      "scope": "Component system, variables/theme panel, and icon library",
+      "artifacts": [
+        "apps/web/src/components/canvas-design-system-panel.tsx",
+        "apps/web/src/components/canvas/icon-library.ts",
+        "apps/web/src/components/canvas-bottom-bar.tsx",
+        "apps/web/src/components/canvas/skia-canvas.tsx",
+        "apps/web/test/canvas-design-system-panel.test.tsx",
         "docs/tech/canvas-design-integration.md"
       ]
     }

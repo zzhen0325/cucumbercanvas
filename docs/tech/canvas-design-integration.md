@@ -70,3 +70,24 @@ available page and logs `[skia-canvas] page.active.reconciled`.
 Boolean operations are only available for compatible vector/shape selections:
 frames, rectangles, ellipses, polygons, paths, and lines. Rejected operations
 leave the document unchanged and log a concrete reason.
+
+## Phase B Design System Panel
+
+The live canvas now exposes an OpenPencil-style design system panel from the
+bottom bar. The panel is intentionally document-native: it reads and writes the
+active `PenDocument` rather than keeping a parallel UI-only registry.
+
+- Components: reusable `frame` nodes are listed as components, selected frames
+  can be marked reusable, and instances are inserted as `ref` nodes pointing to
+  the source component.
+- Variables and themes: document `variables` and `themes` can be created,
+  edited, deleted, and logged from the panel. Color variables can be bound to
+  the selected node fill as `$variableName`; deletes are blocked when canvas
+  nodes still reference the variable.
+- Icons: a local Lucide-compatible icon registry inserts real `icon_font`
+  nodes. `SkiaCanvas` passes the registry into `PenRenderer.iconLookup`, so
+  inserted icons render as paths instead of the fallback placeholder.
+
+All panel mutations log through `[canvas-design-system]` with component,
+variable, theme, icon, node, and active page context for local and production
+diagnosis.

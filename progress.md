@@ -1,11 +1,14 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-27 04:22 CST
+Last updated: 2026-05-27 09:22 CST
 
 ## 2026-05-27
 
 - Phase A OpenPencil editor migration completed for the live canvas: page-aware
   canvas operations, page tabs, editor toolbar, and boolean toolbar are in place.
+- Phase B OpenPencil design-system slice completed for the live canvas:
+  component instances, document variables/themes, and a render-backed icon
+  library are available from the canvas bottom bar.
 
 ## Current Session
 
@@ -94,6 +97,11 @@ Status:
 
 ## Verification Log
 
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-design-system-panel.test.tsx`.
+- Passed: `pnpm --filter @cucumber/web typecheck` (Next emitted the existing multi-lockfile workspace-root warning).
+- Passed: `pnpm exec biome check apps/web/src/components/canvas-design-system-panel.tsx apps/web/src/components/canvas/icon-library.ts apps/web/src/components/canvas-bottom-bar.tsx apps/web/src/components/canvas/skia-canvas.tsx apps/web/src/app/canvas/page.tsx apps/web/test/canvas-design-system-panel.test.tsx docs/tech/canvas-design-integration.md progress.md feature_list.json`.
+- Passed: temporary Next dev smoke on `http://localhost:3003/login` returned HTTP 200; dev mode fell back from Geist after the same local issuer certificate warning.
+- Failed: `pnpm --filter @cucumber/web build` remains blocked by the local certificate chain while `next/font` fetches Geist from Google Fonts (`UNABLE_TO_GET_ISSUER_CERT_LOCALLY`).
 - Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
 - Passed: `pnpm --filter @cucumber/web typecheck`.
 - Passed: `pnpm exec biome check packages/canvas-core/src/import.ts packages/canvas-core/src/figma-native.ts apps/web/src/components/canvas/use-canvas-clipboard-import.ts apps/web/test/use-canvas-clipboard-import.test.tsx`.

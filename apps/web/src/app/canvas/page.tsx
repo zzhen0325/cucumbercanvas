@@ -10,6 +10,7 @@ import type {
 } from "@cucumber/shared";
 import { BrandKitSelector } from "../../components/brand-kit-selector";
 import { CanvasBottomBar } from "../../components/canvas-bottom-bar";
+import { CanvasDesignSystemPanel } from "../../components/canvas-design-system-panel";
 import type { CanvasSelectedElement } from "../../components/canvas-editor";
 import { CanvasEditor } from "../../components/canvas-editor";
 import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
@@ -81,6 +82,7 @@ function CanvasPageContent() {
   });
   const [layersOpen, setLayersOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
+  const [designOpen, setDesignOpen] = useState(false);
   const [brandKitId, setBrandKitId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("Untitled");
   const [selectedCanvasElements, setSelectedCanvasElements] = useState<
@@ -104,13 +106,21 @@ function CanvasPageContent() {
   const handleToggleLayers = useCallback(() => {
     setLayersOpen((v) => !v);
     setFilesOpen(false);
+    setDesignOpen(false);
   }, []);
   const handleToggleFiles = useCallback(() => {
     setFilesOpen((v) => !v);
     setLayersOpen(false);
+    setDesignOpen(false);
+  }, []);
+  const handleToggleDesign = useCallback(() => {
+    setDesignOpen((v) => !v);
+    setLayersOpen(false);
+    setFilesOpen(false);
   }, []);
   const handleCloseLayers = useCallback(() => setLayersOpen(false), []);
   const handleCloseFiles = useCallback(() => setFilesOpen(false), []);
+  const handleCloseDesign = useCallback(() => setDesignOpen(false), []);
 
   const accessToken = session?.access_token;
   const accessTokenRef = useRef(accessToken);
@@ -381,7 +391,7 @@ function CanvasPageContent() {
           initialContent={canvasData.content}
           onApiReady={handleApiReady}
           ws={ws}
-          leftPanelOpen={layersOpen || filesOpen}
+          leftPanelOpen={layersOpen || filesOpen || designOpen}
           onSelectionChange={setSelectedCanvasElements}
         />
         <CanvasEmptyHint canvasApi={canvasApi} onOpenChat={handleOpenChat} />
@@ -391,7 +401,9 @@ function CanvasPageContent() {
           onToggleLayers={handleToggleLayers}
           filesOpen={filesOpen}
           onToggleFiles={handleToggleFiles}
-          leftPanelOpen={layersOpen || filesOpen}
+          designOpen={designOpen}
+          onToggleDesign={handleToggleDesign}
+          leftPanelOpen={layersOpen || filesOpen || designOpen}
         />
         <CanvasLayersPanel
           canvasApi={canvasApi}
@@ -402,6 +414,11 @@ function CanvasPageContent() {
           canvasApi={canvasApi}
           open={filesOpen}
           onClose={handleCloseFiles}
+        />
+        <CanvasDesignSystemPanel
+          canvasApi={canvasApi}
+          open={designOpen}
+          onClose={handleCloseDesign}
         />
       </div>
       <ChatSidebar
