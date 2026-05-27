@@ -71,6 +71,16 @@ describe("CanvasEditorToolbar", () => {
     expect(props.onImportImage).toHaveBeenCalledOnce();
     expect(props.onImportSvg).toHaveBeenCalledOnce();
   });
+
+  it("does not expose icon insertion when no icon insertion callback is wired", async () => {
+    const user = userEvent.setup();
+    const props = renderEditorToolbar({ onInsertIcon: undefined });
+
+    await user.click(screen.getByRole("button", { name: "Open shape menu" }));
+
+    expect(screen.queryByText("Insert icon")).not.toBeInTheDocument();
+    expect(props.onToolChange).not.toHaveBeenCalledWith("icon");
+  });
 });
 
 describe("CanvasBooleanToolbar", () => {

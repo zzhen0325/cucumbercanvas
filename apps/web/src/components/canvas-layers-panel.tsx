@@ -186,11 +186,21 @@ const LayerRow = memo(function LayerRow({
 
   return (
     <div
+      data-testid={`layer-row-${el.id}`}
       style={{ contentVisibility: "auto", containIntrinsicSize: "auto 44px" }}
       draggable
+      onClick={(event) => {
+        handleSelect(Boolean(event.shiftKey || event.metaKey));
+      }}
       onDragStart={() => onDragStart(el.id)}
       onDragOver={(event) => onDragOver(el.id, event)}
       onDrop={() => onDrop(el.id)}
+      onKeyDown={(event) => {
+        if (event.currentTarget !== event.target) return;
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        handleSelect(Boolean(event.shiftKey || event.metaKey));
+      }}
     >
       <div
         className={`group/layer flex h-11 w-full items-center gap-2.5 rounded-lg px-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
@@ -198,23 +208,25 @@ const LayerRow = memo(function LayerRow({
         } ${el.visible === false ? "opacity-55" : ""}`}
         style={{ paddingLeft: 8 + depth * 14 }}
       >
-        <button
-          type="button"
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-background"
-          onClick={(event) => {
-            event.stopPropagation();
-            if (canCollapse) onToggleCollapse(el.id);
-          }}
-          aria-label={collapsed ? "展开图层" : "收起图层"}
-        >
-          {canCollapse ? (
-            collapsed ? (
+        {canCollapse ? (
+          <button
+            type="button"
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-background"
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleCollapse(el.id);
+            }}
+            aria-label={collapsed ? "展开图层" : "收起图层"}
+          >
+            {collapsed ? (
               <ChevronRight className="h-3.5 w-3.5" />
             ) : (
               <ChevronDown className="h-3.5 w-3.5" />
-            )
-          ) : null}
-        </button>
+            )}
+          </button>
+        ) : (
+          <span aria-hidden="true" className="h-5 w-5 shrink-0" />
+        )}
         <LayerThumbnail el={el} files={files} />
         {editing ? (
           <input
@@ -403,7 +415,11 @@ export function CanvasLayersPanel({
   const orderedElementsRef = useRef<CanvasSceneElement[]>([]);
 
   const runLayerAction = useCallback(
-    (actionName: string, action: () => void) => {
+    (
+      actionName: string,
+      context: Record<string, unknown>,
+      action: () => void,
+    ) => {
       try {
         setActionError(null);
         action();
@@ -414,6 +430,8 @@ export function CanvasLayersPanel({
             : `Layer action failed while trying to ${actionName}.`;
         console.error("[canvas-layers-panel] layer action failed", {
           actionName,
+          ...context,
+          error,
           message,
         });
         setActionError(message);
@@ -484,13 +502,15 @@ export function CanvasLayersPanel({
     (id: string, additive = false) => {
       if (!canvasApi) return;
       if (!additive) {
-        runLayerAction("select layer", () => canvasApi.setSelection([id]));
+        runLayerAction("select layer", { targetId: id }, () =>
+          canvasApi.setSelection([id]),
+        );
         return;
       }
       const nextSelected = selectedIds[id]
         ? Object.keys(selectedIds).filter((selectedId) => selectedId !== id)
         : [...Object.keys(selectedIds), id];
-      runLayerAction("select layers", () =>
+      runLayerAction("select layers", { targetIds: nextSelected }, () =>
         canvasApi.setSelection(nextSelected),
       );
     },
@@ -500,7 +520,9 @@ export function CanvasLayersPanel({
   const toggleLock = useCallback(
     (id: string) => {
       if (!canvasApi) return;
-      runLayerAction("toggle layer lock", () => canvasApi.toggleNodeLocked(id));
+      runLayerAction("toggle layer lock", { targetId: id }, () =>
+        canvasApi.toggleNodeLocked(id),
+      );
     },
     [canvasApi, runLayerAction],
   );
@@ -508,7 +530,7 @@ export function CanvasLayersPanel({
   const toggleVisible = useCallback(
     (id: string) => {
       if (!canvasApi) return;
-      runLayerAction("toggle layer visibility", () =>
+      runLayerAction("toggle layer visibility", { targetId: id }, () =>
         canvasApi.toggleNodeVisible(id),
       );
     },
@@ -518,7 +540,7 @@ export function CanvasLayersPanel({
   const reorderElement = useCallback(
     (id: string, direction: "forward" | "backward" | "front" | "back") => {
       if (!canvasApi) return;
-      runLayerAction("reorder layer", () =>
+      runLayerAction("reorder layer", { direction, targetId: id }, () =>
         canvasApi.reorderNode(id, direction),
       );
     },
@@ -529,7 +551,9 @@ export function CanvasLayersPanel({
     (id: string, title: string) => {
       const updates: Parameters<CanvasApi["updateNode"]>[1] = { name: title };
       if (!canvasApi) return;
-      runLayerAction("rename layer", () => canvasApi.updateNode(id, updates));
+      runLayerAction("rename layer", { targetId: id }, () =>
+        canvasApi.updateNode(id, updates),
+      );
     },
     [canvasApi, runLayerAction],
   );
@@ -537,7 +561,9 @@ export function CanvasLayersPanel({
   const deleteElement = useCallback(
     (id: string) => {
       if (!canvasApi) return;
-      runLayerAction("delete layer", () => canvasApi.deleteNode(id));
+      runLayerAction("delete layer", { targetId: id }, () =>
+        canvasApi.deleteNode(id),
+      );
     },
     [canvasApi, runLayerAction],
   );
@@ -545,7 +571,7 @@ export function CanvasLayersPanel({
   const duplicateElement = useCallback(
     (id: string) => {
       if (!canvasApi) return;
-      runLayerAction("duplicate layer", () => {
+      runLayerAction("duplicate layer", { targetId: id }, () => {
         canvasApi.setSelection([id]);
         canvasApi.duplicateSelection();
       });
@@ -585,8 +611,10 @@ export function CanvasLayersPanel({
       );
       const targetIndex = siblings.findIndex((el) => el.id === targetId);
       if (targetIndex < 0) return;
-      runLayerAction("move layer", () =>
-        canvasApi.moveNodeToIndex(draggedId, targetParentId, targetIndex),
+      runLayerAction(
+        "move layer",
+        { draggedId, targetId, targetIndex, targetParentId },
+        () => canvasApi.moveNodeToIndex(draggedId, targetParentId, targetIndex),
       );
     },
     [canvasApi, runLayerAction],

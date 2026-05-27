@@ -145,6 +145,16 @@ describe("CanvasLayersPanel", () => {
     expect(api.toggleNodeVisible).toHaveBeenCalledWith("text-1");
   });
 
+  it("selects a layer from thumbnail or row padding and only exposes collapse for parent layers", async () => {
+    const user = userEvent.setup();
+    const api = renderLayersPanel();
+
+    await user.click(screen.getByTestId("layer-row-text-1"));
+
+    expect(api.setSelection).toHaveBeenLastCalledWith(["text-1"]);
+    expect(screen.getAllByRole("button", { name: "收起图层" })).toHaveLength(1);
+  });
+
   it("renames, duplicates, and deletes layers from the action menu", async () => {
     const user = userEvent.setup();
     const api = renderLayersPanel();
@@ -173,21 +183,21 @@ describe("CanvasLayersPanel", () => {
 
   it("moves a dragged layer to the target parent index", async () => {
     const api = renderLayersPanel();
-    const source = screen.getByText("Rectangle").closest("div");
-    const target = screen.getByText("Frame").closest("div");
+    const source = screen.getByTestId("layer-row-rect-1");
+    const target = screen.getByTestId("layer-row-frame-1");
 
-    expect(source).not.toBeNull();
-    expect(target).not.toBeNull();
-
-    fireEvent.dragStart(source as HTMLElement);
-    fireEvent.dragOver(target as HTMLElement);
-    fireEvent.drop(target as HTMLElement);
+    fireEvent.dragStart(source);
+    fireEvent.dragOver(target);
+    fireEvent.drop(target);
 
     expect(api.moveNodeToIndex).toHaveBeenCalledWith("rect-1", null, 0);
   });
 
   it("surfaces readable CanvasApi failures without leaking raw error codes", async () => {
     const user = userEvent.setup();
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
     const api = renderLayersPanel(
       createCanvasApi({
         toggleNodeVisible: vi.fn(() => {
@@ -207,5 +217,16 @@ describe("CanvasLayersPanel", () => {
       "Could not hide layer because the document is busy.",
     );
     expect(screen.getByRole("alert")).not.toHaveTextContent(/null|undefined/);
+    expect(consoleError).toHaveBeenCalledWith(
+      "[canvas-layers-panel] layer action failed",
+      expect.objectContaining({
+        actionName: "toggle layer visibility",
+        error: expect.any(Error),
+        message: "Could not hide layer because the document is busy.",
+        targetId: "text-1",
+      }),
+    );
+
+    consoleError.mockRestore();
   });
 });

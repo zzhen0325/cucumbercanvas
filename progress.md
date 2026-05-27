@@ -18,8 +18,8 @@ Last updated: 2026-05-27 16:15 CST
   supports Vue alongside React and HTML.
 - B0 editor-ui parity advanced: layers and property-panel P1 rows now have
   dedicated coverage, layer failures surface readable messages, and the shape
-  toolbar menu exposes an icon insertion affordance pending production parent
-  wiring.
+  toolbar menu can expose icon insertion only when a real callback is wired,
+  avoiding an inert production icon tool while parent wiring remains pending.
 
 ## Current Session
 

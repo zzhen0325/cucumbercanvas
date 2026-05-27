@@ -128,18 +128,12 @@ export function ShapeToolDropdown({
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuItem
-            onClick={() => {
-              if (onInsertIcon) {
-                onInsertIcon();
-                return;
-              }
-              onToolChange("icon");
-            }}
-          >
-            <Smile className="size-4" />
-            Insert icon
-          </DropdownMenuItem>
+          {onInsertIcon ? (
+            <DropdownMenuItem onClick={onInsertIcon}>
+              <Smile className="size-4" />
+              Insert icon
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuItem onClick={onImportImage}>
             <ImageIcon className="size-4" />
             Import image
