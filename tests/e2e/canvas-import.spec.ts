@@ -32,6 +32,22 @@ const SVG_WITH_UNSUPPORTED_CONTENT = `
 const ONE_BY_ONE_PNG_DATA_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
 
+type CanvasImportSnapshot = {
+  nodes: Array<{
+    id: string;
+    type: string;
+    assetId?: string;
+  }>;
+  assets?: Array<{
+    id: string;
+    mimeType?: string;
+    name?: string;
+    source?: string;
+    width?: number;
+    height?: number;
+  }>;
+};
+
 async function waitForCanvasReady(page: Page) {
   await expect(
     page.getByRole("navigation", { name: "Canvas editor tools" }),
@@ -82,6 +98,16 @@ async function dispatchPaste(
       ),
     },
   );
+}
+
+async function readDocumentSnapshot(page: Page): Promise<CanvasImportSnapshot> {
+  const raw = await page.getByTestId("document-snapshot").textContent();
+  if (!raw) {
+    throw new Error(
+      "Canvas import harness did not expose a document snapshot.",
+    );
+  }
+  return JSON.parse(raw) as CanvasImportSnapshot;
 }
 
 test.describe("canvas import harness", () => {
@@ -246,17 +272,22 @@ test.describe("canvas import harness", () => {
     await expect(page.getByTestId("selected-meta")).not.toContainText(
       '"warningCount"',
     );
-    await expect(page.getByTestId("document-snapshot")).toContainText(
-      '"type": "image"',
+    const snapshot = await readDocumentSnapshot(page);
+    const imageNodes = snapshot.nodes.filter((node) => node.type === "image");
+    expect(imageNodes).toHaveLength(1);
+
+    const imageNode = imageNodes[0];
+    expect(imageNode?.assetId).toBeTruthy();
+    const linkedAsset = snapshot.assets?.find(
+      (asset) => asset.id === imageNode?.assetId,
     );
-    await expect(page.getByTestId("document-snapshot")).toContainText(
-      '"assetId":',
-    );
-    await expect(page.getByTestId("document-snapshot")).toContainText(
-      '"mimeType": "image/png"',
-    );
-    await expect(page.getByTestId("document-snapshot")).toContainText(
-      '"name": "one-pixel.png"',
-    );
+    expect(linkedAsset).toMatchObject({
+      id: imageNode?.assetId,
+      mimeType: "image/png",
+      name: "one-pixel.png",
+      source: "upload",
+      width: 1,
+      height: 1,
+    });
   });
 });
