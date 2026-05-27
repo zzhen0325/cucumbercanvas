@@ -12,6 +12,7 @@ import {
   createCanvasDocument,
   createEmptyDocument,
   createNodeId,
+  detachNodesOutsideParentBounds,
   duplicateCanvasNodes,
   extractFigmaClipboardData,
   findNode,
@@ -443,6 +444,99 @@ describe("cucumber canvas core", () => {
       "c",
       "b",
     ]);
+  });
+
+  it("detaches dragged children when their center leaves the parent bounds", () => {
+    let doc = createEmptyDocument();
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: {
+        id: "frame",
+        type: "frame",
+        x: 100,
+        y: 50,
+        width: 160,
+        height: 120,
+        clipContent: true,
+        children: [
+          {
+            id: "rect",
+            type: "rectangle",
+            x: 180,
+            y: 20,
+            width: 40,
+            height: 40,
+          } as PenNode,
+        ],
+      } as PenNode,
+    });
+
+    const detached = detachNodesOutsideParentBounds(doc, ["rect"]);
+
+    expect(detached.detachedIds).toEqual(["rect"]);
+    expect(findParent(detached.doc, "rect")).toBeUndefined();
+    expect(findNode(detached.doc, "rect")).toMatchObject({
+      x: 280,
+      y: 70,
+    });
+  });
+
+  it("keeps children inside their parent and preserves line endpoints on detach", () => {
+    let doc = createEmptyDocument();
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: {
+        id: "outer",
+        type: "group",
+        x: 20,
+        y: 30,
+        width: 400,
+        height: 300,
+        children: [
+          {
+            id: "frame",
+            type: "frame",
+            x: 100,
+            y: 50,
+            width: 120,
+            height: 100,
+            clipContent: true,
+            children: [
+              {
+                id: "inside",
+                type: "rectangle",
+                x: 10,
+                y: 10,
+                width: 40,
+                height: 40,
+              } as PenNode,
+              {
+                id: "line",
+                type: "line",
+                x: 160,
+                y: 20,
+                x2: 220,
+                y2: 20,
+              } as PenNode,
+            ],
+          } as PenNode,
+        ],
+      } as PenNode,
+    });
+
+    const unchanged = detachNodesOutsideParentBounds(doc, ["inside"]);
+    expect(unchanged.detachedIds).toEqual([]);
+    expect(findParent(unchanged.doc, "inside")?.id).toBe("frame");
+
+    const detached = detachNodesOutsideParentBounds(doc, ["line"]);
+    expect(detached.detachedIds).toEqual(["line"]);
+    expect(findParent(detached.doc, "line")?.id).toBe("outer");
+    expect(findNode(detached.doc, "line")).toMatchObject({
+      x: 260,
+      y: 70,
+      x2: 320,
+      y2: 70,
+    });
   });
 
   it("inserts imported nodes into the target parent and selects the roots", () => {

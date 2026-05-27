@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-27T10:01:00+08:00",
+  "updatedAt": "2026-05-27T13:49:00+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -103,7 +103,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "product-engineering",
-      "summary": "Canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit behind a standalone CanvasApi contract, and the P2 import/edit/export path combines complete clipboard MIME/file/blob capture, paste-event plus Clipboard API MIME enrichment, raster image paste assets, warning-rich SVG/Figma fallback metadata, OpenPencil `pen-figma` native clipboard binary decode, native-failure SVG/raster MIME priority, paste strategy diagnostics, instance overrides, OpenPencil-aligned Figma stroke/fill/text/image-fill mapping, direct auto-layout-to-PenNode sizing/layout mapping, transform/style/defs/clip/filter-aware SVG import, robust paste event handling, renderer-native selection/marquee/pen overlays with scene-coordinate hit-testing, richer PenNode typography/component/ref/variable property editing, direct React/HTML selection export, path drag creation, retired Excalidraw/Pixi shadow runtime packages, and runnable Playwright smoke coverage.",
+      "summary": "Canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit behind a standalone CanvasApi contract, and the P2 import/edit/export path combines complete clipboard MIME/file/blob capture, paste-event plus Clipboard API MIME enrichment, raster image paste assets, warning-rich SVG/Figma fallback metadata, OpenPencil `pen-figma` native clipboard binary decode, native-failure SVG/raster MIME priority, paste strategy diagnostics, instance overrides, OpenPencil-aligned Figma stroke/fill/text/image-fill mapping, direct auto-layout-to-PenNode sizing/layout mapping, transform/style/defs/clip/filter-aware SVG import, robust paste event handling, renderer-native selection/marquee/pen overlays with scene-coordinate hit-testing, nested line endpoint rendering, clip-aware hit regions, drag-out frame/group auto-detach, richer PenNode typography/component/ref/variable property editing, direct React/HTML selection export, path drag creation, retired Excalidraw/Pixi shadow runtime packages, and runnable Playwright smoke coverage.",
       "artifacts": [
         "packages/canvas-core",
         "packages/pen-figma",
@@ -114,6 +114,7 @@
         "packages/canvas-core/src/figma-native-types.ts",
         "packages/canvas-core/src/import.ts",
         "packages/canvas-core/src/layout.ts",
+        "packages/canvas-core/src/operations.ts",
         "packages/canvas-core/src/__tests__/canvas-core.test.ts",
         "packages/canvas-core/src/__tests__/figma-native-adapter.test.ts",
         "apps/web/src/components/canvas/canvas-api.ts",
@@ -124,6 +125,8 @@
         "apps/web/src/components/canvas/canvas-selection-helpers.ts",
         "apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx",
         "packages/pen-renderer/src/renderer.ts",
+        "packages/pen-renderer/src/document-flattener.ts",
+        "packages/pen-renderer/src/spatial-index.ts",
         "packages/pen-renderer/src/types.ts",
         "apps/web/src/components/canvas-layers-panel.tsx",
         "apps/web/src/components/canvas-logo-menu.tsx",

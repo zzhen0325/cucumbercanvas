@@ -15,6 +15,7 @@ import {
   copyCanvasSelection,
   createNodeId,
   deleteCanvasPage,
+  detachNodesOutsideParentBounds,
   duplicateCanvasNodes,
   duplicateCanvasPage,
   findNode,
@@ -26,6 +27,7 @@ import {
   getOrderedCanvasNodes,
   getVisibleCanvasNodesInBounds,
   insertCanvasImportResult,
+  isDescendantOf,
   normalizeCanvasPages,
   normalizeLegacyImportCoordinates,
   parseClipboardImport,
@@ -895,8 +897,18 @@ export const SkiaCanvas = memo(
           }
 
           if (hit && !event.shiftKey) {
-            // Start move if clicking on selected node
-            if (selectedIds.includes(hit.id)) {
+            const hitSelectedNode =
+              selectedIds.includes(hit.id) ||
+              selectedIds.some((selectedId) =>
+                isDescendantOf(
+                  docRef.current,
+                  hit.id,
+                  selectedId,
+                  activePageId,
+                ),
+              );
+            // Start move if clicking on the selected node or its visible descendants.
+            if (hitSelectedNode) {
               const origins: Record<string, CanvasBounds> = {};
               for (const id of selectedIds) {
                 const n = findNode(docRef.current, id, activePageId);
@@ -1212,6 +1224,24 @@ export const SkiaCanvas = memo(
         if (drag?.kind === "pen") {
           penTool.onMouseUp();
           suppressNextClickRef.current = true;
+        }
+        if (drag?.kind === "move") {
+          const activePageId = activePageIdRef.current;
+          const detached = detachNodesOutsideParentBounds(
+            docRef.current,
+            drag.nodeIds,
+            activePageId,
+          );
+          if (detached.detachedIds.length > 0) {
+            docRef.current = detached.doc;
+            setDoc(detached.doc);
+            syncRendererDocument(renderer, detached.doc, activePageId);
+            console.info("[skia-canvas] selection.drag.detached_from_parent", {
+              nodeIds: detached.detachedIds,
+              count: detached.detachedIds.length,
+              reason: "center_outside_parent_bounds",
+            });
+          }
         }
         if (
           drag?.kind === "move" ||

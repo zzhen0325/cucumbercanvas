@@ -1,6 +1,5 @@
-import type { PenDocument, PenNode, GroupNode } from '@cucumber/pen-types';
-import type { CanvasOperation } from './types.js';
-import { CanvasOperationError, isContainerNode, isAgentContainer } from './context.js';
+import type { GroupNode, PenDocument, PenNode } from '@cucumber/pen-types';
+import { CanvasOperationError, isAgentContainer, isContainerNode } from './context.js';
 import {
   cloneDocument,
   findNode,
@@ -11,6 +10,7 @@ import {
   isBoundsInside,
   setActiveChildren,
 } from './document.js';
+import type { CanvasOperation } from './types.js';
 
 export function applyCanvasOperation(
   doc: PenDocument,
@@ -101,6 +101,128 @@ export function applyCanvasOperation(
   }
 
   return next;
+}
+
+export function detachNodesOutsideParentBounds(
+  doc: PenDocument,
+  nodeIds: string[],
+  activePageId?: string | null,
+): { doc: PenDocument; detachedIds: string[] } {
+  const next = cloneDocument(doc);
+  const requested = new Set(nodeIds);
+  const detachedIds: string[] = [];
+
+  for (const nodeId of nodeIds) {
+    if (hasRequestedAncestor(next, nodeId, requested, activePageId)) {
+      continue;
+    }
+
+    const node = findNode(next, nodeId, activePageId);
+    const parent = findParent(next, nodeId, activePageId);
+    if (!node || !parent || !isReparentableCanvasParent(parent)) {
+      continue;
+    }
+
+    const nodeBounds = getNodeBounds(node);
+    const parentBounds = getNodeBounds(parent);
+    const nodeCenter = {
+      x: nodeBounds.x + nodeBounds.width / 2,
+      y: nodeBounds.y + nodeBounds.height / 2,
+    };
+
+    if (
+      nodeCenter.x >= 0 &&
+      nodeCenter.y >= 0 &&
+      nodeCenter.x <= parentBounds.width &&
+      nodeCenter.y <= parentBounds.height
+    ) {
+      continue;
+    }
+
+    const parentOrigin = getSceneOrigin(next, parent.id, activePageId);
+    const newParent = findParent(next, parent.id, activePageId);
+    const newParentId = newParent?.id ?? null;
+    const newParentOrigin = newParent
+      ? getSceneOrigin(next, newParent.id, activePageId)
+      : { x: 0, y: 0 };
+    const updates = buildScenePreservingUpdates(
+      node,
+      parentOrigin,
+      newParentOrigin,
+    );
+
+    updateNodeInDoc(
+      next,
+      nodeId,
+      { ...node, ...updates } as PenNode,
+      activePageId,
+    );
+    moveNodeInDoc(next, nodeId, newParentId, undefined, activePageId);
+    detachedIds.push(nodeId);
+  }
+
+  return { doc: next, detachedIds };
+}
+
+function hasRequestedAncestor(
+  doc: PenDocument,
+  nodeId: string,
+  requested: Set<string>,
+  activePageId?: string | null,
+): boolean {
+  let parent = findParent(doc, nodeId, activePageId);
+  while (parent) {
+    if (requested.has(parent.id)) return true;
+    parent = findParent(doc, parent.id, activePageId);
+  }
+  return false;
+}
+
+function isReparentableCanvasParent(node: PenNode): boolean {
+  return node.type === 'frame' || node.type === 'group';
+}
+
+function getSceneOrigin(
+  doc: PenDocument,
+  nodeId: string,
+  activePageId?: string | null,
+): { x: number; y: number } {
+  const node = findNode(doc, nodeId, activePageId);
+  if (!node) {
+    throw new CanvasOperationError(
+      'node_not_found',
+      `Node ${nodeId} does not exist.`,
+    );
+  }
+
+  let x = node.x ?? 0;
+  let y = node.y ?? 0;
+  let parent = findParent(doc, nodeId, activePageId);
+  while (parent) {
+    x += parent.x ?? 0;
+    y += parent.y ?? 0;
+    parent = findParent(doc, parent.id, activePageId);
+  }
+  return { x, y };
+}
+
+function buildScenePreservingUpdates(
+  node: PenNode,
+  oldParentOrigin: { x: number; y: number },
+  newParentOrigin: { x: number; y: number },
+): Partial<PenNode> {
+  const updates: Record<string, unknown> = {
+    x: oldParentOrigin.x + (node.x ?? 0) - newParentOrigin.x,
+    y: oldParentOrigin.y + (node.y ?? 0) - newParentOrigin.y,
+  };
+  const line = node as PenNode & { x2?: number; y2?: number };
+  if (typeof line.x2 === 'number') {
+    updates.x2 = oldParentOrigin.x + line.x2 - newParentOrigin.x;
+  }
+  if (typeof line.y2 === 'number') {
+    updates.y2 = oldParentOrigin.y + line.y2 - newParentOrigin.y;
+  }
+  return updates as Partial<PenNode>;
 }
 
 function validateOperationActivePage(

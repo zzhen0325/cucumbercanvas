@@ -218,8 +218,17 @@ export function flattenToRenderNodes(
     const absH =
       nodeH > 0 ? nodeH : 'height' in resolved ? sizeToNumber(resolved.height, 100) : 100;
 
+    const renderNode = { ...resolved, x: absX, y: absY } as PenNode & {
+      x2?: number;
+      y2?: number;
+    };
+    if (renderNode.type === 'line') {
+      if (typeof renderNode.x2 === 'number') renderNode.x2 += offsetX;
+      if (typeof renderNode.y2 === 'number') renderNode.y2 += offsetY;
+    }
+
     result.push({
-      node: { ...resolved, x: absX, y: absY } as PenNode,
+      node: renderNode as PenNode,
       absX,
       absY,
       absW,

@@ -1,6 +1,6 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-27 10:01 CST
+Last updated: 2026-05-27 13:49 CST
 
 ## 2026-05-27
 
@@ -83,6 +83,7 @@ Status:
 - Advanced codegen assembly from protocol-only state to concrete design-as-code file output: `codegen_assemble` now returns framework-specific files for React (`App.tsx`, component files, CSS), HTML (`index.html`, CSS), and generic framework fallbacks, and the property panel now includes typography controls plus reusable component/ref metadata and inline color variable creation/binding.
 - Added a dedicated `codegen_export` MCP tool so the Agent can export the current live canvas selection, or explicit node IDs, directly into React (`.tsx` + CSS) or static HTML (`index.html` + CSS) design-as-code files with diagnostic logging.
 - Added the first Phase C prompt-to-canvas orchestration slice: `prompt_canvas_plan` creates deterministic section plans, `prompt_canvas_execute` writes root/section containers through the live canvas service with structured `[phase-c-orchestration]` logs, and `codegen_export` now emits Vue single-file component output alongside React and HTML.
+- Hardened Figma paste editing fidelity after real-canvas drag issues: pasted frame/group selections can be dragged from visible descendants, clipped children no longer steal hits outside their visible clip, line endpoints render correctly inside nested imported frames, and dragged layers automatically detach to the parent scope once their center leaves a frame/group while preserving scene coordinates.
 
 ## Next Targets
 
@@ -194,6 +195,13 @@ Status:
 - Failed: root `pnpm lint` remains blocked by unrelated existing diagnostics in `openpencil/**`, server formatting drift, `vercel.json`, and `apps/server/src/agent/deep-agent.ts`.
 - Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
 - Passed: `pnpm --filter @cucumber/web typecheck` (Next emitted the existing multi-lockfile workspace-root warning).
+- Passed: `pnpm --filter @cucumber/canvas-core test`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm --filter @cucumber/pen-renderer typecheck`.
+- Passed: `pnpm --filter @cucumber/web typecheck` (Next emitted the existing multi-lockfile workspace-root warning).
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/skia-canvas-selection-snapshot.test.tsx test/use-canvas-clipboard-import.test.tsx`.
+- Failed: root `pnpm lint` remains blocked by unrelated existing diagnostics in `openpencil/**`, `apps/server/src/agent/backends/dev.ts`, `apps/server/src/agent/persistence/index.ts`, and `apps/server/src/agent/deep-agent.ts`.
+- Failed: `pnpm --filter @cucumber/web test -- skia-canvas-selection-snapshot.test.tsx use-canvas-clipboard-import.test.tsx` was parsed by the package script as a broad web test run and hit the existing `test/projects.test.tsx` toast text assertion (`项目创建失败` vs `项目创建失败：Create failed.`); the corrected direct Vitest command above passed.
 - Passed: `pnpm exec biome check packages/canvas-core/src/import.ts packages/canvas-core/src/figma-native.ts apps/web/src/components/canvas/use-canvas-clipboard-import.ts`.
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/use-canvas-clipboard-import.test.tsx`.
 - Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/canvas-core.test.ts --testNamePattern "figma|svg|clipboard|layout"`; SVG parser cases are skipped in the default non-DOM environment.

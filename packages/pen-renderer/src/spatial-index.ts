@@ -1,6 +1,6 @@
+import type { PenEffect, PenFill, PenNode, PenStroke } from '@cucumber/pen-types';
 import RBush from 'rbush';
 import type { RenderNode } from './types.js';
-import type { PenEffect, PenFill, PenNode, PenStroke } from '@cucumber/pen-types';
 
 interface RTreeItem {
   minX: number;
@@ -35,11 +35,14 @@ export class SpatialIndex {
       if (('visible' in rn.node ? rn.node.visible : undefined) === false) continue;
       if (('locked' in rn.node ? rn.node.locked : undefined) === true) continue;
 
+      const bounds = getHittableBounds(rn);
+      if (!bounds) continue;
+
       const item: RTreeItem = {
-        minX: rn.absX,
-        minY: rn.absY,
-        maxX: rn.absX + rn.absW,
-        maxY: rn.absY + rn.absH,
+        minX: bounds.minX,
+        minY: bounds.minY,
+        maxX: bounds.maxX,
+        maxY: bounds.maxY,
         nodeId: rn.node.id,
         renderNode: rn,
         zIndex: i,
@@ -99,11 +102,13 @@ export class SpatialIndex {
     }
     if (('visible' in rn.node ? rn.node.visible : undefined) === false) return;
     if (('locked' in rn.node ? rn.node.locked : undefined) === true) return;
+    const bounds = getHittableBounds(rn);
+    if (!bounds) return;
     const item: RTreeItem = {
-      minX: rn.absX,
-      minY: rn.absY,
-      maxX: rn.absX + rn.absW,
-      maxY: rn.absY + rn.absH,
+      minX: bounds.minX,
+      minY: bounds.minY,
+      maxX: bounds.maxX,
+      maxY: bounds.maxY,
       nodeId: rn.node.id,
       renderNode: rn,
       zIndex,
@@ -123,6 +128,24 @@ export class SpatialIndex {
       this.items.delete(nodeId);
     }
   }
+}
+
+function getHittableBounds(
+  renderNode: RenderNode,
+): Pick<RTreeItem, 'minX' | 'minY' | 'maxX' | 'maxY'> | null {
+  let minX = renderNode.absX;
+  let minY = renderNode.absY;
+  let maxX = renderNode.absX + renderNode.absW;
+  let maxY = renderNode.absY + renderNode.absH;
+  const clip = renderNode.clipRect;
+  if (clip) {
+    minX = Math.max(minX, clip.x);
+    minY = Math.max(minY, clip.y);
+    maxX = Math.min(maxX, clip.x + clip.w);
+    maxY = Math.min(maxY, clip.y + clip.h);
+  }
+  if (maxX < minX || maxY < minY) return null;
+  return { minX, minY, maxX, maxY };
 }
 
 function isPointHittableRenderNode(renderNode: RenderNode): boolean {
