@@ -41,6 +41,10 @@ Last updated: 2026-05-27 CST
   resize and selected polygon rotate gestures with deterministic geometry and
   selection assertions. Production behavior already passed, so this was a
   coverage/docs-only closeout.
+- B0 property panel parity closed: focused inspector tests now cover effects
+  toggles/value updates, path paint/effects partial updates, and line-specific
+  limits; line nodes keep stroke/effects editing without exposing unsupported
+  fill controls.
 
 ## Current Session
 

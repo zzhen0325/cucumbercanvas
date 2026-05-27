@@ -67,7 +67,13 @@ function extractSolidStrokeColor(stroke?: CanvasStroke): string | undefined {
   return undefined;
 }
 
-function isPaintNode(node: PenNode): boolean {
+function supportsFill(node: PenNode): boolean {
+  return ["rectangle", "ellipse", "polygon", "path", "icon_font"].includes(
+    node.type,
+  );
+}
+
+function supportsStroke(node: PenNode): boolean {
   return [
     "rectangle",
     "ellipse",
@@ -1151,7 +1157,7 @@ function VariableBindingSection({
   const currentFill = extractSolidFillColor(getNodeFill(node));
   const selectedName = currentFill?.startsWith("$") ? currentFill.slice(1) : "";
   const canBindColor =
-    isPaintNode(node) || node.type === "frame" || node.type === "text";
+    supportsFill(node) || node.type === "frame" || node.type === "text";
 
   if (!canBindColor) return null;
 
@@ -1571,7 +1577,8 @@ export function CanvasPropertyPanel({
     [node, onUpdate],
   );
 
-  const supportsPaint = isPaintNode(node);
+  const canEditFill = supportsFill(node);
+  const canEditStroke = supportsStroke(node);
   const nodeName = node.name?.trim() || nodeTypeLabel(node.type);
 
   return (
@@ -1634,11 +1641,11 @@ export function CanvasPropertyPanel({
         {node.type === "text" ? (
           <TypographySection node={node} onUpdate={onUpdate} />
         ) : null}
-        {supportsPaint ? (
-          <>
-            <FillSection fills={getNodeFill(node)} onUpdate={onUpdate} />
-            <StrokeSection stroke={getNodeStroke(node)} onUpdate={onUpdate} />
-          </>
+        {canEditFill ? (
+          <FillSection fills={getNodeFill(node)} onUpdate={onUpdate} />
+        ) : null}
+        {canEditStroke ? (
+          <StrokeSection stroke={getNodeStroke(node)} onUpdate={onUpdate} />
         ) : null}
         {node.type === "frame" ? (
           <>

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import type { PenNode } from "@cucumber/canvas-core";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -53,19 +53,76 @@ const textNode: PenNode = {
   y: 0,
 };
 
+const pathNode: PenNode = {
+  d: "M0 0 C 20 10 40 10 60 0",
+  fill: [{ type: "solid", color: "#22c55e", opacity: 0.5 }],
+  height: 24,
+  id: "path-1",
+  name: "Bezier path",
+  stroke: {
+    align: "center",
+    fill: [{ type: "solid", color: "#14532d", opacity: 0.8 }],
+    thickness: 3,
+  },
+  type: "path",
+  width: 80,
+  x: 4,
+  y: 8,
+  anchors: [
+    {
+      handleIn: null,
+      handleOut: { x: 20, y: 10 },
+      x: 0,
+      y: 0,
+    },
+  ],
+};
+
+const lineNode: PenNode = {
+  effects: [{ type: "blur", radius: 2 }],
+  id: "line-1",
+  name: "Connector line",
+  stroke: {
+    align: "center",
+    fill: [{ type: "solid", color: "#f97316", opacity: 1 }],
+    thickness: 4,
+  },
+  type: "line",
+  x: 10,
+  x2: 106,
+  y: 12,
+  y2: 12,
+};
+
+const nodeWithEffects: PenNode = {
+  ...rectangleNode,
+  effects: [
+    {
+      blur: 8,
+      color: "#00000080",
+      offsetX: 2,
+      offsetY: 6,
+      spread: 1,
+      type: "shadow",
+    },
+    { radius: 3, type: "blur" },
+  ],
+};
+
 function renderPropertyPanel(
   node: PenNode = rectangleNode,
   overrides: Partial<React.ComponentProps<typeof CanvasPropertyPanel>> = {},
 ) {
+  const onUpdate = vi.fn();
   const props = {
     node,
     onBindAgent: vi.fn(),
-    onUpdate: vi.fn(),
+    onUpdate,
     ...overrides,
   } satisfies React.ComponentProps<typeof CanvasPropertyPanel>;
 
   const view = render(<CanvasPropertyPanel {...props} />);
-  return { ...props, ...view };
+  return { ...props, ...view, onUpdate };
 }
 
 describe("CanvasPropertyPanel", () => {
@@ -139,5 +196,118 @@ describe("CanvasPropertyPanel", () => {
     expect(screen.getByRole("heading", { name: "布局" })).toBeInTheDocument();
     expect(screen.getByRole("spinbutton", { name: "间距" })).toHaveValue(8);
     expect(screen.getByRole("spinbutton", { name: "内边距" })).toHaveValue(12);
+  });
+
+  it("updates effects by toggling shadow and blur with concrete payloads", async () => {
+    const user = userEvent.setup();
+    const { container, onUpdate } = renderPropertyPanel({
+      ...rectangleNode,
+      effects: undefined,
+    });
+
+    await user.click(screen.getByRole("button", { name: /^阴影/ }));
+    await user.click(screen.getByRole("button", { name: /^模糊/ }));
+
+    expect(onUpdate).toHaveBeenCalledWith({
+      effects: [
+        {
+          blur: 8,
+          color: "#00000040",
+          offsetX: 0,
+          offsetY: 4,
+          spread: 0,
+          type: "shadow",
+        },
+      ],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      effects: [{ radius: 4, type: "blur" }],
+    });
+    expect(container).not.toHaveTextContent(/\bnull\b|\bundefined\b/);
+  });
+
+  it("updates existing effect values without leaking empty fields", () => {
+    const { onUpdate } = renderPropertyPanel(nodeWithEffects);
+    const effectsSection = screen.getByRole("heading", { name: "效果" })
+      .parentElement?.parentElement;
+
+    expect(effectsSection).toBeTruthy();
+    fireEvent.change(
+      within(effectsSection as HTMLElement).getByRole("spinbutton", {
+        name: "X",
+      }),
+      { target: { value: "12" } },
+    );
+    fireEvent.change(
+      within(effectsSection as HTMLElement).getByRole("spinbutton", {
+        name: "半径",
+      }),
+      { target: { value: "6" } },
+    );
+
+    expect(onUpdate).toHaveBeenCalledWith({
+      effects: [
+        {
+          blur: 8,
+          color: "#00000080",
+          offsetX: 12,
+          offsetY: 6,
+          spread: 1,
+          type: "shadow",
+        },
+        { radius: 3, type: "blur" },
+      ],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      effects: [
+        {
+          blur: 8,
+          color: "#00000080",
+          offsetX: 2,
+          offsetY: 6,
+          spread: 1,
+          type: "shadow",
+        },
+        { radius: 6, type: "blur" },
+      ],
+    });
+    for (const [update] of onUpdate.mock.calls) {
+      expect(JSON.stringify(update)).not.toMatch(/null|undefined/);
+    }
+  });
+
+  it("exposes path paint and effects controls while emitting partial paint updates", () => {
+    const { onUpdate } = renderPropertyPanel(pathNode);
+
+    expect(screen.getByRole("heading", { name: "填充" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "描边" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "效果" })).toBeInTheDocument();
+
+    const fillSection = screen.getByRole("heading", { name: "填充" })
+      .parentElement?.parentElement;
+    expect(fillSection).toBeTruthy();
+    fireEvent.change(
+      within(fillSection as HTMLElement).getByRole("spinbutton"),
+      { target: { value: "65" } },
+    );
+
+    expect(onUpdate).toHaveBeenCalledWith({
+      fill: [{ type: "solid", color: "#22c55e", opacity: 0.65 }],
+    });
+    const [update] = onUpdate.mock.calls.at(-1) ?? [];
+    expect(update).not.toHaveProperty("d");
+    expect(update).not.toHaveProperty("anchors");
+  });
+
+  it("limits line inspector to supported stroke and effects controls", () => {
+    renderPropertyPanel(lineNode);
+
+    expect(
+      screen.queryByRole("heading", { name: "填充" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "描边" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "效果" })).toBeInTheDocument();
+    expect(screen.getByText("F97316")).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: "半径" })).toHaveValue(2);
   });
 });
