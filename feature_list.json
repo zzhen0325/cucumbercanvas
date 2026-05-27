@@ -28,7 +28,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "product-engineering",
-      "summary": "AI-native infinite canvas where Agent execution creates durable containerized outputs, and users arrange, refine, or continue from those results.",
+      "summary": "AI-native infinite canvas where Agent execution creates durable user-requested outputs without auto-materializing transient tool progress containers, and users arrange, refine, or continue from those results.",
       "artifacts": [
         "apps/web/src/components/canvas-editor.tsx",
         "apps/web/src/app/canvas/page.tsx",
@@ -201,7 +201,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "agent-engineering",
-      "summary": "Prompt-to-canvas planning, live canvas container materialization through Cucumber structured MCP tools, structured orchestration logs, and design-as-code export to React, HTML, and Vue.",
+      "summary": "Prompt-to-canvas planning, live canvas container materialization for requested structured deliverables, structured orchestration logs, and design-as-code export to React, HTML, and Vue.",
       "scope": "Prompt-to-canvas orchestration MCP tools, section-level concurrent execution, live canvas writes, and Vue codegen export alongside React/HTML.",
       "artifacts": [
         "docs/tech/cucumber-canvas-foundation.md",

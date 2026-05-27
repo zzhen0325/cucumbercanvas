@@ -473,7 +473,6 @@ function CanvasPageContent() {
         onSessionChange={handleSessionChange}
         onRequestCanvasImages={handleRequestCanvasImages}
         currentBrandKitId={brandKitId}
-        canvasApi={canvasApi}
         ws={ws}
         selectedCanvasElements={selectedCanvasElements}
       />

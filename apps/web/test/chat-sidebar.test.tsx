@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -169,6 +169,63 @@ describe("ChatSidebar", () => {
       expect.objectContaining({
         canvasId: "canvas-1",
         onEvent: expect.any(Function),
+      }),
+    );
+  });
+
+  it("keeps tool progress out of canvas containers while preserving artifact insertion", async () => {
+    const onImageGenerated = vi.fn();
+
+    render(
+      <ToastProvider>
+        <ChatSidebar
+          accessToken="token_abc"
+          canvasId="canvas-1"
+          open
+          onImageGenerated={onImageGenerated}
+          onToggle={() => {}}
+          ws={mockWs}
+        />
+      </ToastProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText(/start with an idea/i);
+    await userEvent.type(input, "make an image{Enter}");
+
+    await waitFor(() => expect(startStreamMock).toHaveBeenCalled());
+    const streamOptions = startStreamMock.mock.calls[0]?.[0];
+
+    act(() => {
+      streamOptions.onEvent({
+        runId: "run_123",
+        timestamp: "2026-03-24T00:00:00.000Z",
+        toolCallId: "tool_1",
+        toolName: "generate_image",
+        type: "tool.started",
+      });
+
+      streamOptions.onEvent({
+        artifacts: [
+          {
+            height: 512,
+            type: "image",
+            url: "https://example.test/generated.png",
+            width: 512,
+          },
+        ],
+        outputSummary: "Generated image",
+        runId: "run_123",
+        timestamp: "2026-03-24T00:00:01.000Z",
+        toolCallId: "tool_1",
+        toolName: "generate_image",
+        type: "tool.completed",
+      });
+    });
+
+    expect(onImageGenerated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "image",
+        url: "https://example.test/generated.png",
       }),
     );
   });

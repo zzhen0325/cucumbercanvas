@@ -1,6 +1,11 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-27 CST
+Last updated: 2026-05-28 CST
+
+## 2026-05-28
+
+- Agent runs no longer auto-create canvas process containers for every tool call; tool progress remains in chat/run stream events, while concrete image/video artifacts and backend live-canvas writes still sync to the canvas.
+- The main Agent prompt now explicitly keeps plans, critiques, tool-call status, and intermediate process traces out of canvas containers unless the user asks for a final structured visual deliverable.
 
 ## 2026-05-27
 
