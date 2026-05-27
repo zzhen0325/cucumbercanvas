@@ -59,6 +59,11 @@ Last updated: 2026-05-27 CST
   prompt-canvas-shaped Agent output document through `CanvasApi.setDocument`,
   and verifies durable root/section container metadata plus generated-root
   selection coherence in Playwright.
+- Agent-generation review follow-up closed: the real
+  `prompt_canvas_execute` server contract now asserts root/section
+  `agentBinding.toolName`, `createdByAgentId`, and `explain` trace context on
+  the actual persisted nodes, so the done row no longer relies on the Web
+  fixture alone for metadata coverage.
 
 ## Current Session
 

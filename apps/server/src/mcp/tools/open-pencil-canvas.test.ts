@@ -170,7 +170,16 @@ describe("OpenPencil-compatible canvas MCP tools", () => {
     expect(rootNodeId).toBeTruthy();
     expect(findNode(harness.state.doc, "manual-note")).toBeTruthy();
     expect(findNode(harness.state.doc, rootNodeId)).toMatchObject({
+      agentBinding: expect.objectContaining({
+        agentType: "composer",
+        status: "completed",
+        toolName: "prompt_canvas_execute",
+      }),
       containerRole: ["task", "visual"],
+      createdByAgentId: "phase-c-orchestrator",
+      explain: expect.stringContaining(
+        "Create a mobile onboarding screen with hero and form sections",
+      ),
       type: "frame",
     });
     const root = findNode(harness.state.doc, rootNodeId) as
@@ -189,6 +198,26 @@ describe("OpenPencil-compatible canvas MCP tools", () => {
         status: "completed",
       }),
     ]);
+    const sectionResults = executed.structuredContent?.sectionResults as Array<{
+      sectionId: string;
+      status: string;
+    }>;
+    for (const result of sectionResults) {
+      const section = root?.children?.find((node) =>
+        node.id.endsWith(result.sectionId),
+      );
+      expect(section).toMatchObject({
+        agentBinding: expect.objectContaining({
+          agentType: "designer",
+          status: "completed",
+          toolName: "prompt_canvas_execute",
+        }),
+        containerRole: ["visual"],
+        createdByAgentId: "phase-c-orchestrator",
+        explain: expect.stringContaining(result.sectionId),
+        type: "frame",
+      });
+    }
     expect(executed.structuredContent?.exportableNodeIds).toEqual([rootNodeId]);
   });
 
