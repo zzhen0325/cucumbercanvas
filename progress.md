@@ -4,6 +4,7 @@ Last updated: 2026-05-27 13:49 CST
 
 ## 2026-05-27
 
+- B0 OpenPencil Web canvas parity started: the implementation will use a durable parity matrix first, then close every discovered P0/P1 Web canvas main-path gap while recording desktop/CLI/Git/i18n/collaboration/plugin/native-codegen surfaces as roadmap-only.
 - Phase A OpenPencil editor migration completed for the live canvas: page-aware
   canvas operations, page tabs, editor toolbar, and boolean toolbar are in place.
 - Phase B OpenPencil design-system slice completed for the live canvas:
