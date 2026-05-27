@@ -333,7 +333,7 @@ const LayerRow = memo(function LayerRow({
           <DropdownMenu>
             <DropdownMenuTrigger
               aria-label="Layer actions"
-              className="invisible flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground group-hover/layer:visible focus-visible:visible"
+              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 outline-none transition-opacity hover:text-foreground hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 group-hover/layer:opacity-100 data-open:opacity-100 data-popup-open:opacity-100"
               onClick={(event) => event.stopPropagation()}
             >
               <MoreHorizontal className="h-4 w-4" />

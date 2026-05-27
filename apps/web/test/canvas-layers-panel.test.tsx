@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -209,6 +209,37 @@ describe("CanvasLayersPanel", () => {
     await user.click(
       await screen.findByRole("menuitem", { name: "Move into Frame" }),
     );
+
+    expect(api.moveNodeToIndex).toHaveBeenCalledWith("text-1", "frame-1", 1);
+  });
+
+  it("moves a layer through a keyboard-reachable hierarchy menu", async () => {
+    const user = userEvent.setup();
+    const api = renderLayersPanel();
+    const firstLayerActions = firstElement(
+      screen.getAllByRole("button", { name: "Layer actions" }),
+    );
+
+    expect(firstLayerActions).not.toHaveClass("invisible");
+
+    for (
+      let i = 0;
+      i < 8 && document.activeElement !== firstLayerActions;
+      i++
+    ) {
+      await user.tab();
+    }
+    expect(firstLayerActions).toHaveFocus();
+
+    await user.keyboard("{Enter}");
+    const moveIntoFrame = await screen.findByRole("menuitem", {
+      name: "Move into Frame",
+    });
+    act(() => {
+      moveIntoFrame.focus();
+    });
+    expect(moveIntoFrame).toHaveFocus();
+    await user.keyboard("{Enter}");
 
     expect(api.moveNodeToIndex).toHaveBeenCalledWith("text-1", "frame-1", 1);
   });
