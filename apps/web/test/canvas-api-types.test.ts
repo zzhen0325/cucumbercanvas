@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type {
   CanvasApi,
+  CanvasApiRuntimeState,
   CanvasTool,
   PenPage,
 } from "@/components/canvas/canvas-api";
@@ -60,6 +61,13 @@ type PhaseACanvasApiContract = [
   Expect<Equal<ReturnType<CanvasApi["getActiveTool"]>, CanvasTool>>,
   Expect<Equal<Parameters<CanvasApi["setActiveTool"]>, [tool: CanvasTool]>>,
   Expect<Equal<ReturnType<CanvasApi["setActiveTool"]>, void>>,
+  Expect<
+    Equal<
+      ReturnType<CanvasApi["getDocument"]>["selection"],
+      string[] | undefined
+    >
+  >,
+  Expect<Equal<CanvasApiRuntimeState["selection"], string[]>>,
 ];
 
 const phaseATools = [

@@ -7,7 +7,6 @@
     "@base-ui/react": "^1.3.0",
     "@cucumber/canvas-core": "workspace:*",
     "@cucumber/pen-core": "workspace:*",
-    "@cucumber/pen-engine": "workspace:*",
     "@cucumber/pen-renderer": "workspace:*",
     "@cucumber/pen-types": "workspace:*",
     "@cucumber/shared": "workspace:*",

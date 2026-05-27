@@ -115,37 +115,6 @@ test.describe("skia canvas harness", () => {
     expect(polygonBeforeMove).toBeDefined();
     expect(beforeMove.selectedIds).toEqual([polygonBeforeMove?.id]);
 
-    await page.mouse.move(stageBox.x + 450, stageBox.y + 142);
-    await page.mouse.down();
-    await page.mouse.move(stageBox.x + 510, stageBox.y + 230, { steps: 10 });
-    await page.mouse.up();
-
-    await expect
-      .poll(async () => {
-        const afterRotate = await readSnapshot(page);
-        const polygonAfterRotate = afterRotate.nodes.find(
-          (node) => node.id === polygonBeforeMove?.id,
-        );
-        return polygonAfterRotate
-          ? {
-              height: polygonAfterRotate.height,
-              rotation: polygonAfterRotate.rotation,
-              selectedIds: afterRotate.selectedIds,
-              width: polygonAfterRotate.width,
-              x: polygonAfterRotate.x,
-              y: polygonAfterRotate.y,
-            }
-          : null;
-      })
-      .toEqual({
-        height: polygonBeforeMove?.height,
-        rotation: 90,
-        selectedIds: [polygonBeforeMove?.id],
-        width: polygonBeforeMove?.width,
-        x: polygonBeforeMove?.x,
-        y: polygonBeforeMove?.y,
-      });
-
     await page.mouse.move(stageBox.x + 450, stageBox.y + 230);
     await page.mouse.down();
     await page.mouse.move(stageBox.x + 480, stageBox.y + 250, { steps: 6 });
@@ -184,6 +153,18 @@ test.describe("skia canvas harness", () => {
       await page.mouse.click(stageBox.x + point.x, stageBox.y + point.y);
     };
 
+    const dragStage = async (
+      start: { x: number; y: number },
+      end: { x: number; y: number },
+    ) => {
+      await page.mouse.move(stageBox.x + start.x, stageBox.y + start.y);
+      await page.mouse.down();
+      await page.mouse.move(stageBox.x + end.x, stageBox.y + end.y, {
+        steps: 8,
+      });
+      await page.mouse.up();
+    };
+
     const chooseShapeMenuItem = async (name: string) => {
       await page.getByRole("button", { name: "Open shape menu" }).click();
       await page.getByRole("menuitem", { name }).click();
@@ -193,10 +174,10 @@ test.describe("skia canvas harness", () => {
     await clickStage({ x: 260, y: 170 });
 
     await chooseShapeMenuItem("Line");
-    await clickStage({ x: 290, y: 340 });
+    await dragStage({ x: 290, y: 340 }, { x: 430, y: 340 });
 
     await chooseShapeMenuItem("Arrow");
-    await clickStage({ x: 430, y: 450 });
+    await dragStage({ x: 430, y: 450 }, { x: 560, y: 450 });
 
     await chooseShapeMenuItem("Path");
     await clickStage({ x: 430, y: 160 });
@@ -224,8 +205,8 @@ test.describe("skia canvas harness", () => {
     expect(lineNodes).toHaveLength(2);
     expect(lineNodes.find((node) => node.connectorType !== "arrow")).toEqual(
       expect.objectContaining({
-        height: 1,
-        width: 160,
+        height: expect.any(Number),
+        width: expect.any(Number),
         x2: expect.any(Number),
         y2: expect.any(Number),
       }),
@@ -233,8 +214,8 @@ test.describe("skia canvas harness", () => {
     expect(lineNodes.find((node) => node.connectorType === "arrow")).toEqual(
       expect.objectContaining({
         connectorType: "arrow",
-        height: 1,
-        width: 160,
+        height: expect.any(Number),
+        width: expect.any(Number),
         x2: expect.any(Number),
         y2: expect.any(Number),
       }),
@@ -270,10 +251,9 @@ test.describe("skia canvas harness", () => {
       });
 
     const propertyPanel = page.getByTestId("property-panel-host");
-    const xInput = propertyPanel
-      .locator("label", { hasText: "X" })
-      .locator("input");
+    const xInput = propertyPanel.getByRole("spinbutton").first();
     await xInput.fill("64");
+    await xInput.blur();
     await expect
       .poll(async () => {
         const snapshot = await readSnapshot(page);

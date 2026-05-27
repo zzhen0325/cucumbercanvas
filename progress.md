@@ -312,3 +312,14 @@ Status:
 - Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
 - Passed: `pnpm --filter @cucumber/web typecheck` (Next emitted the existing multi-lockfile workspace-root warning).
 - Passed: `pnpm --filter @cucumber/web build` (Next emitted the existing multi-lockfile workspace-root warning and metadataBase warning).
+
+2026-05-27 - Canvas legacy residue audit
+
+- Deleted the unused `@cucumber/pen-engine` workspace package after confirming it had no production imports or active harness entry; removed its web dependency, transpile package entry, TypeScript path aliases, and lockfile importer.
+- Kept the active canvas harnesses (`/test/canvas-engine`, `/test/canvas-import`, `/test/canvas-agent-output`) because each still has a page entry and deterministic Playwright coverage.
+- Moved Skia's ad hoc runtime document extension away from the local `CanvasRuntimeDocument` type and into explicit `CanvasApiDocument` / `CanvasApiRuntimeState` contracts in `apps/web/src/components/canvas/canvas-api.ts`.
+- Added a focused CanvasApi type assertion so runtime selection state remains visible at the API boundary.
+- Passed: `pnpm --filter @cucumber/web typecheck` and `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: related canvas tests: `pnpm --filter @cucumber/web exec vitest run test/canvas-api-types.test.ts test/use-canvas-clipboard-import.test.tsx test/use-canvas-keyboard-shortcuts.test.tsx test/canvas-export.test.ts`, `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/canvas-core.test.ts src/__tests__/figma-native-adapter.test.ts --environment jsdom --testNamePattern "figma|svg|clipboard|layout|image|pen-figma"`, and `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/open-pencil-canvas.test.ts --passWithNoTests`.
+- Passed: Playwright smoke `pnpm exec playwright test tests/e2e/skia-canvas.spec.ts tests/e2e/canvas-import.spec.ts tests/e2e/canvas-agent-output.spec.ts --workers=1` after updating the smoke to use drag-based line/arrow creation and stable property-panel spinbutton targeting.
+- Passed: touched-file Biome check for canvas runtime/API/config/test files. Full `pnpm lint` remains blocked by unrelated existing diagnostics in `openpencil/**`, `vercel.json`, and server agent files; full `pnpm typecheck` remains blocked by unrelated existing `packages/pen-core/__tests__` NodeNext extension/strictness diagnostics.

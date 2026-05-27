@@ -16,7 +16,6 @@
       "@cucumber/pen-types": ["../../packages/pen-types/src/index.ts"],
       "@cucumber/pen-core": ["../../packages/pen-core/src/index.ts"],
       "@cucumber/pen-figma": ["../../packages/pen-figma/src/index.ts"],
-      "@cucumber/pen-engine": ["../../packages/pen-engine/src/index.ts"],
       "@cucumber/pen-renderer": ["../../packages/pen-renderer/src/index.ts"]
     },
     "plugins": [

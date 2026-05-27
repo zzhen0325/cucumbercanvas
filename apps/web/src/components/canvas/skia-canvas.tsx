@@ -69,6 +69,8 @@ import { CanvasBooleanToolbar } from "./boolean-toolbar";
 import type {
   AlignMode,
   CanvasApi,
+  CanvasApiDocument,
+  CanvasApiRuntimeState,
   CanvasAppState,
   CanvasChangeListener,
   CanvasFileRecord,
@@ -183,23 +185,21 @@ function toSceneElements(
 }
 
 function toAppState(doc: PenDocument, selection?: string[]): CanvasAppState {
-  const runtimeDoc = doc as CanvasRuntimeDocument;
-  const selectedIds = selection ?? runtimeDoc.selection ?? [];
-  const viewport = runtimeDoc.viewport;
+  const runtimeState = getCanvasApiRuntimeState(doc, selection);
+  const { viewport } = runtimeState;
   return {
     zoom: { value: viewport?.zoom ?? 1 },
     scrollX: viewport?.x ?? 0,
     scrollY: viewport?.y ?? 0,
     viewBackgroundColor: viewport?.backgroundColor ?? "#ffffff",
     selectedElementIds: Object.fromEntries(
-      selectedIds.map((id: string) => [id, true]),
+      runtimeState.selection.map((id: string) => [id, true]),
     ),
   };
 }
 
 function toFiles(doc: PenDocument): Record<string, CanvasFileRecord> {
-  const assets = (doc as CanvasRuntimeDocument).assets;
-  if (!assets) return {};
+  const { assets } = getCanvasApiRuntimeState(doc);
   return Object.fromEntries(
     Object.entries(assets).map(([id, a]) => [
       id,
@@ -220,11 +220,7 @@ function defaultBounds(
   _type: string,
   _parentId?: string | null,
 ): CanvasBounds {
-  const vp = (doc as CanvasRuntimeDocument).viewport ?? {
-    x: 0,
-    y: 0,
-    zoom: 1,
-  };
+  const vp = getCanvasApiRuntimeState(doc).viewport;
   const cx = -((vp.x ?? 0) / (vp.zoom ?? 1)) + 200;
   const cy = -((vp.y ?? 0) / (vp.zoom ?? 1)) + 200;
   return { x: cx, y: cy, width: 300, height: 200 };
@@ -332,16 +328,23 @@ type TextEditState = {
   lineHeight: number | string;
 };
 
-type CanvasRuntimeDocument = PenDocument & {
-  assets?: Record<string, CanvasAsset>;
-  selection?: string[];
-  viewport?: {
-    x?: number;
-    y?: number;
-    zoom?: number;
-    backgroundColor?: string;
+function getCanvasApiRuntimeState(
+  doc: PenDocument,
+  fallbackSelection: readonly string[] = [],
+): CanvasApiRuntimeState {
+  const document = doc as CanvasApiDocument;
+  return {
+    document,
+    selection: document.selection ?? [...fallbackSelection],
+    assets: document.assets ?? {},
+    viewport: document.viewport ?? {
+      x: 0,
+      y: 0,
+      zoom: 1,
+      backgroundColor: "#ffffff",
+    },
   };
-};
+}
 
 function isPenNode(node: PenNode | undefined): node is PenNode {
   return Boolean(node);
@@ -361,7 +364,7 @@ function getDocumentSelection(
   doc: PenDocument,
   fallbackSelection: string[],
 ): string[] {
-  return (doc as CanvasRuntimeDocument).selection ?? fallbackSelection;
+  return getCanvasApiRuntimeState(doc, fallbackSelection).selection;
 }
 
 function filterSelectionForActivePage(
@@ -689,7 +692,7 @@ export const SkiaCanvas = memo(
           ...normalized,
           activePageId: nextActivePageId,
           selection: nextSelection,
-        } as CanvasRuntimeDocument;
+        } as CanvasApiDocument;
         if (previousActivePageId !== nextActivePageId) {
           console.info("[skia-canvas] page.active.reconciled", {
             previousActivePageId,
@@ -745,7 +748,7 @@ export const SkiaCanvas = memo(
         const next = {
           ...docRef.current,
           selection: validIds,
-        } as PenDocument & { selection: string[] };
+        } as CanvasApiDocument;
         docRef.current = next;
         setDoc(next);
         setEditorOverlay({ selectedIds: validIds });
@@ -1256,8 +1259,7 @@ export const SkiaCanvas = memo(
                   scene.x - drag.startPoint.x,
                   scene.y - drag.startPoint.y,
                 ) >= MIN_DRAW_SIZE
-              : bounds.width >= MIN_DRAW_SIZE &&
-                bounds.height >= MIN_DRAW_SIZE;
+              : bounds.width >= MIN_DRAW_SIZE && bounds.height >= MIN_DRAW_SIZE;
             if (isDrawableSize) {
               const node = createDrawableCanvasNode(
                 drag.shapeType,
@@ -1340,9 +1342,8 @@ export const SkiaCanvas = memo(
           setEditorOverlay({ marquee: null });
           suppressNextClickRef.current = true;
           console.info("[skia-canvas] selection.marquee.committed", {
-            selectedCount: (
-              (docRef.current as CanvasRuntimeDocument).selection ?? []
-            ).length,
+            selectedCount: getCanvasApiRuntimeState(docRef.current).selection
+              .length,
           });
         }
         dragRef.current = null;
@@ -1879,10 +1880,10 @@ export const SkiaCanvas = memo(
           {
             ...docRef.current,
             assets: {
-              ...((docRef.current as CanvasRuntimeDocument).assets ?? {}),
+              ...getCanvasApiRuntimeState(docRef.current).assets,
               [assetId]: asset,
             },
-          } as PenDocument,
+          } as CanvasApiDocument,
           {
             type: "insertNode",
             node,
@@ -1937,7 +1938,7 @@ export const SkiaCanvas = memo(
           ...result.document,
           activePageId: result.page.id,
           selection: [],
-        } as CanvasRuntimeDocument);
+        } as CanvasApiDocument);
         console.info("[skia-canvas] page.added", {
           pageId: result.page.id,
           name: result.page.name,
@@ -1967,7 +1968,7 @@ export const SkiaCanvas = memo(
           ...result.document,
           activePageId: result.page.id,
           selection: [],
-        } as CanvasRuntimeDocument);
+        } as CanvasApiDocument);
         console.info("[skia-canvas] page.duplicated", {
           sourcePageId: pageId,
           pageId: result.page.id,
@@ -2123,7 +2124,7 @@ export const SkiaCanvas = memo(
           const nextWithSelection = {
             ...next,
             selection: nextSelection,
-          } as CanvasRuntimeDocument;
+          } as CanvasApiDocument;
           commitDocument(nextWithSelection, { selection: nextSelection });
           setSelection(nextSelection, { notifyScene: false });
           console.info("[skia-canvas] boolean-operation.applied", {
@@ -2147,7 +2148,7 @@ export const SkiaCanvas = memo(
 
     const api = useMemo<CanvasApi>(
       () => ({
-        getDocument: () => docRef.current as unknown as CucumberCanvasDocument,
+        getDocument: () => docRef.current as CanvasApiDocument,
         setDocument: (raw: unknown) => {
           const { document: next, reconciledFrom } =
             normalizeRuntimeDocumentForCanvasSet(raw);
@@ -2220,11 +2221,8 @@ export const SkiaCanvas = memo(
             { ...opts, activePageId: activePageIdRef.current },
             {
               backgroundColor:
-                (
-                  docRef.current as PenDocument & {
-                    viewport?: { backgroundColor?: string };
-                  }
-                ).viewport?.backgroundColor ?? "#ffffff",
+                getCanvasApiRuntimeState(docRef.current).viewport
+                  .backgroundColor ?? "#ffffff",
             },
           ),
         getViewportBounds: () => {
@@ -2273,11 +2271,7 @@ export const SkiaCanvas = memo(
         },
         addFiles: (incoming) => {
           const assets = {
-            ...((
-              docRef.current as PenDocument & {
-                assets?: Record<string, CanvasAsset>;
-              }
-            ).assets ?? {}),
+            ...getCanvasApiRuntimeState(docRef.current).assets,
           };
           for (const file of incoming) {
             assets[file.id] = {
@@ -2288,7 +2282,7 @@ export const SkiaCanvas = memo(
               source: "upload",
             };
           }
-          commitDocument({ ...docRef.current, assets } as PenDocument);
+          commitDocument({ ...docRef.current, assets } as CanvasApiDocument);
           console.info("[skia-canvas] assets.added", {
             count: incoming.length,
           });
@@ -2745,6 +2739,7 @@ export const SkiaCanvas = memo(
         {editingText && textEditOverlay ? (
           <textarea
             aria-label="Edit canvas text"
+            // biome-ignore lint/a11y/noAutofocus: text editing opens from an explicit double-click and should focus the in-place editor immediately.
             autoFocus
             className="absolute z-30 box-border m-0 resize-none overflow-hidden rounded-sm border-2 border-sky-400 bg-white/95 px-px py-0 outline-none"
             defaultValue={editingText.content}

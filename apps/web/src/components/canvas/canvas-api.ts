@@ -42,6 +42,26 @@ export type CanvasFileRecord = {
   name?: string;
 };
 
+export type CanvasApiViewportState = {
+  x?: number;
+  y?: number;
+  zoom?: number;
+  backgroundColor?: string;
+};
+
+export type CanvasApiDocument = CucumberCanvasDocument & {
+  assets?: Record<string, CanvasAsset>;
+  selection?: string[];
+  viewport?: CanvasApiViewportState;
+};
+
+export type CanvasApiRuntimeState = {
+  document: CanvasApiDocument;
+  selection: string[];
+  assets: Record<string, CanvasAsset>;
+  viewport: CanvasApiViewportState;
+};
+
 export type CanvasAppState = {
   zoom: { value: number };
   scrollX: number;
@@ -71,7 +91,7 @@ export type CanvasTool =
   | "arrow";
 
 export type CanvasApi = {
-  getDocument: () => CucumberCanvasDocument;
+  getDocument: () => CanvasApiDocument;
   setDocument: (doc: unknown) => void;
   getActivePageId: () => string;
   setActivePage: (pageId: string) => void;

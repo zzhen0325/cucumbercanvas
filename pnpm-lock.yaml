@@ -151,9 +151,6 @@ importers:
       '@cucumber/pen-core':
         specifier: workspace:*
         version: link:../../packages/pen-core
-      '@cucumber/pen-engine':
-        specifier: workspace:*
-        version: link:../../packages/pen-engine
       '@cucumber/pen-renderer':
         specifier: workspace:*
         version: link:../../packages/pen-renderer
@@ -312,22 +309,6 @@ importers:
       paper:
         specifier: ^0.12.18
         version: 0.12.18
-    devDependencies:
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-
-  packages/pen-engine:
-    dependencies:
-      '@cucumber/pen-core':
-        specifier: workspace:*
-        version: link:../pen-core
-      '@cucumber/pen-types':
-        specifier: workspace:*
-        version: link:../pen-types
-      nanoid:
-        specifier: ^5.1.6
-        version: 5.1.11
     devDependencies:
       typescript:
         specifier: ^5.7.2
