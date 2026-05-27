@@ -79,7 +79,7 @@ describe("CanvasEditorToolbar", () => {
     await user.click(screen.getByRole("button", { name: "Open shape menu" }));
 
     expect(screen.queryByText("Insert icon")).not.toBeInTheDocument();
-    expect(props.onToolChange).not.toHaveBeenCalledWith("icon");
+    expect(props.onToolChange).not.toHaveBeenCalled();
   });
 });
 

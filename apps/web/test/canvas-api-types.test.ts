@@ -25,8 +25,7 @@ type PhaseACanvasTool =
   | "path"
   | "text"
   | "line"
-  | "arrow"
-  | "icon";
+  | "arrow";
 
 type PhaseACanvasApiContract = [
   Expect<Equal<CanvasTool, PhaseACanvasTool>>,
@@ -74,7 +73,6 @@ const phaseATools = [
   "text",
   "line",
   "arrow",
-  "icon",
 ] as const satisfies readonly CanvasTool[];
 
 describe("CanvasApi Phase A type contract", () => {
@@ -82,5 +80,6 @@ describe("CanvasApi Phase A type contract", () => {
     const _contract: PhaseACanvasApiContract | null = null;
     expect(_contract).toBeNull();
     expect(phaseATools).toContain("path");
+    expect(phaseATools).not.toContain("icon");
   });
 });

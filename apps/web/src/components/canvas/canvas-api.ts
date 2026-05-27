@@ -68,8 +68,7 @@ export type CanvasTool =
   | "path"
   | "text"
   | "line"
-  | "arrow"
-  | "icon";
+  | "arrow";
 
 export type CanvasApi = {
   getDocument: () => CucumberCanvasDocument;
