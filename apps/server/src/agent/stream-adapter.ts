@@ -10,7 +10,12 @@ import {
 } from "@langchain/core/messages";
 
 import { imageArtifactSchema, videoArtifactSchema } from "@cucumber/shared";
-import type { StreamEvent, ToolArtifact } from "@cucumber/shared";
+import type {
+  AgentRole,
+  AgentRunContextPayload,
+  StreamEvent,
+  ToolArtifact,
+} from "@cucumber/shared";
 
 import { createRunFailedEvent } from "./run-failure.js";
 
@@ -30,6 +35,7 @@ type AdaptDeepAgentStreamOptions = {
   conversationId: string;
   now?: () => string;
   runId: string;
+  runContext?: AgentRunContextPayload;
   sessionId: string;
   signal?: AbortSignal;
   stream: AsyncIterable<LangChainStreamEvent | unknown>;
@@ -60,6 +66,29 @@ export async function* adaptDeepAgentStream(
     timestamp: now(),
     type: "run.started",
   };
+
+  if (options.runContext) {
+    yield {
+      type: "run.context",
+      runId: options.runId,
+      timestamp: now(),
+      context: options.runContext,
+    };
+    yield {
+      type: "agent.stage",
+      runId: options.runId,
+      stageId: `${options.runId}:prompt_layering`,
+      stage: "prompt_layering",
+      status: "completed",
+      role: "orchestrator",
+      summary:
+        "Prompt layers, styleguide context, team roles, and model profile were prepared for this run.",
+      tasks: options.runContext.promptContext.layers.map(
+        (layer) => layer.title,
+      ),
+      timestamp: now(),
+    };
+  }
 
   if (options.signal?.aborted) {
     yield canceledEvent(options.runId, now);
@@ -209,6 +238,17 @@ export async function* adaptDeepAgentStream(
         }
 
         yield {
+          type: "agent.stage",
+          runId: options.runId,
+          stageId: `${toolCallId}:tool_execution`,
+          stage: stageFromTool(toolName),
+          status: "started",
+          role: roleFromTool(toolName),
+          summary: `Started ${toolName}.`,
+          timestamp: now(),
+        };
+
+        yield {
           runId: options.runId,
           timestamp: now(),
           toolCallId,
@@ -250,6 +290,17 @@ export async function* adaptDeepAgentStream(
           toolCallId,
           toolName,
           type: "tool.completed",
+        };
+
+        yield {
+          type: "agent.stage",
+          runId: options.runId,
+          stageId: `${toolCallId}:tool_execution`,
+          stage: stageFromTool(toolName),
+          status: "completed",
+          role: roleFromTool(toolName),
+          summary: summarizeOutput(output) ?? `Completed ${toolName}.`,
+          timestamp: now(),
         };
 
         // Clean up sub-agent parent tracking after its tool.completed is emitted.
@@ -555,7 +606,18 @@ function summarizeOutput(output: unknown): string | undefined {
       : serialized;
   }
 
-  if (typeof output === "string") return output || undefined;
+  if (typeof output === "string") {
+    const parsed = tryParseJson(output);
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      "summary" in parsed &&
+      typeof parsed.summary === "string"
+    ) {
+      return parsed.summary;
+    }
+    return output || undefined;
+  }
   return undefined;
 }
 
@@ -574,6 +636,54 @@ function isAbortError(error: unknown) {
     (error.name === "AbortError" ||
       error.message === "This operation was aborted")
   );
+}
+
+function roleFromTool(toolName: string): AgentRole {
+  if (toolName.includes("search") || toolName === "inspect_canvas") {
+    return "researcher";
+  }
+  if (toolName.includes("codegen") || toolName.includes("export")) {
+    return "coder_exporter";
+  }
+  if (toolName.includes("screenshot") || toolName.includes("snapshot")) {
+    return "critic";
+  }
+  if (toolName.includes("plan")) {
+    return "planner";
+  }
+  if (
+    toolName.includes("canvas") ||
+    toolName.includes("design") ||
+    toolName.includes("image") ||
+    toolName.includes("video")
+  ) {
+    return "designer";
+  }
+  return "orchestrator";
+}
+
+function stageFromTool(toolName: string) {
+  if (toolName.includes("search") || toolName === "inspect_canvas") {
+    return "research" as const;
+  }
+  if (toolName.includes("codegen") || toolName.includes("export")) {
+    return "export" as const;
+  }
+  if (toolName.includes("screenshot") || toolName.includes("snapshot")) {
+    return "critique" as const;
+  }
+  if (toolName.includes("plan")) {
+    return "planning" as const;
+  }
+  if (
+    toolName.includes("canvas") ||
+    toolName.includes("design") ||
+    toolName.includes("image") ||
+    toolName.includes("video")
+  ) {
+    return "design" as const;
+  }
+  return "tool_execution" as const;
 }
 
 function isStreamEvent(value: unknown): value is LangChainStreamEvent {

@@ -9,4 +9,5 @@ export * from "./job-contracts.js";
 export * from "./skill-contracts.js";
 export * from "./sse-protocol.js";
 export * from "./agent-settings.js";
+export * from "./agent-orchestration.js";
 export * from "./ws-protocol.js";

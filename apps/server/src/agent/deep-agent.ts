@@ -14,8 +14,8 @@ import {
   DEFAULT_GOOGLE_AGENT_MODEL,
   type ServerEnv,
 } from "../config/env.js";
-import type { ConnectionManager } from "../ws/connection-manager.js";
 import type { LiveCanvasService } from "../features/canvas/live-canvas-service.js";
+import type { ConnectionManager } from "../ws/connection-manager.js";
 import {
   type AgentBackendResult,
   createAgentBackend,
@@ -23,7 +23,7 @@ import {
 import { CUCUMBER_SYSTEM_PROMPT } from "./prompts/cucumber-main.js";
 import { createReasoningContentChatDeepSeek } from "./reasoning-content-deepseek.js";
 import { createReasoningContentChatOpenAI } from "./reasoning-content-openai.js";
-import { createVideoSubAgent } from "./sub-agents.js";
+import { createAgentTeamSubAgents, createVideoSubAgent } from "./sub-agents.js";
 import type {
   PersistImageFn,
   SubmitImageJobFn,
@@ -37,13 +37,17 @@ export type CucumberAgent = Pick<
   "stream" | "streamEvents"
 >;
 
+type DeepAgentBackend = NonNullable<
+  NonNullable<Parameters<typeof createDeepAgent>[0]>["backend"]
+>;
+
 export type CucumberAgentFactory = (options: {
   backendResult?: AgentBackendResult;
   brandKitId?: string | null;
   canvasId?: string;
   checkpointer?: BaseCheckpointSaver;
   connectionManager?: ConnectionManager;
-  createUserClient?: (accessToken: string) => any;
+  createUserClient?: (accessToken: string) => unknown;
   env: ServerEnv;
   liveCanvasService?: LiveCanvasService;
   model?: BaseLanguageModel | string;
@@ -61,7 +65,7 @@ export function createCucumberDeepAgent(options: {
   canvasId?: string;
   checkpointer?: BaseCheckpointSaver;
   connectionManager?: ConnectionManager;
-  createUserClient?: (accessToken: string) => any;
+  createUserClient?: (accessToken: string) => unknown;
   env: ServerEnv;
   liveCanvasService?: LiveCanvasService;
   model?: BaseLanguageModel | string;
@@ -120,12 +124,12 @@ export function createCucumberDeepAgent(options: {
   }
 
   return createDeepAgent({
-    backend: backendResult.factory as any,
+    backend: backendResult.factory as unknown as DeepAgentBackend,
     ...(options.checkpointer ? { checkpointer: options.checkpointer } : {}),
     model: resolvedModel,
     name: "cucumber",
     ...(options.store ? { store: options.store } : {}),
-    subagents: [createVideoSubAgent()],
+    subagents: [...createAgentTeamSubAgents(), createVideoSubAgent()],
     systemPrompt,
     tools: createMainAgentTools(backendResult.factory, {
       createUserClient,
@@ -206,11 +210,14 @@ function createStreamingChatModel(specifier: string): BaseLanguageModel {
   }
 
   switch (provider) {
-    case "google":
+    case "google": {
       // Prefer Vertex AI (service account) when configured; fall back to Developer API key
       if (hasVertexAI) {
-        const vertexProject = process.env.GOOGLE_VERTEX_PROJECT!;
-        const vertexLocation = process.env.GOOGLE_VERTEX_LOCATION!;
+        const vertexProject = process.env.GOOGLE_VERTEX_PROJECT;
+        const vertexLocation = process.env.GOOGLE_VERTEX_LOCATION;
+        if (!vertexProject || !vertexLocation) {
+          throw new Error("Vertex AI configuration is incomplete.");
+        }
         console.log(
           `[model] Using Vertex AI for: ${modelName} (project=${vertexProject}, location=${vertexLocation})`,
         );
@@ -221,19 +228,28 @@ function createStreamingChatModel(specifier: string): BaseLanguageModel {
           streaming: true,
         });
       }
+      const googleApiKey = process.env.GOOGLE_API_KEY;
+      if (!googleApiKey) {
+        throw new Error("Google model requested without GOOGLE_API_KEY.");
+      }
       return new ChatGoogleGenerativeAI({
         model: modelName,
-        apiKey: process.env.GOOGLE_API_KEY!,
+        apiKey: googleApiKey,
         streaming: true,
         thinkingConfig: {
           includeThoughts: true,
           thinkingBudget: -1, // dynamic — let the model decide
         },
       });
+    }
     case "deepseek": {
+      const deepseekApiKey = process.env.DEEPSEEK_API_KEY;
+      if (!deepseekApiKey) {
+        throw new Error("DeepSeek model requested without DEEPSEEK_API_KEY.");
+      }
       const deepseekConfig: Record<string, unknown> = {
         model: modelName,
-        apiKey: process.env.DEEPSEEK_API_KEY!,
+        apiKey: deepseekApiKey,
         streaming: true,
         // Disable DeepSeek thinking mode to avoid reasoning_content round-trip
         // failures during multi-turn agent/tool loops.

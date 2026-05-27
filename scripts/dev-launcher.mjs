@@ -8,10 +8,12 @@
  * the child trees directly and forwards shutdown signals to both apps.
  */
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 
+const DEFAULT_NODE_EXTRA_CA_CERTS = "/etc/ssl/cert.pem";
 const supportsProcessGroups = process.platform !== "win32";
 const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const rootDir = path.resolve(
@@ -26,6 +28,7 @@ let shutdownExitCode = 0;
 let forceKillTimer = null;
 
 loadRootEnv();
+configureNodeExtraCaCerts();
 
 function loadRootEnv() {
   const envPath = path.join(rootDir, ".env.local");
@@ -46,6 +49,21 @@ function loadRootEnv() {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(`[root-dev-launcher] failed to load ${envPath}: ${message}`);
   }
+}
+
+function configureNodeExtraCaCerts() {
+  if (process.env.NODE_EXTRA_CA_CERTS) {
+    return;
+  }
+
+  if (!existsSync(DEFAULT_NODE_EXTRA_CA_CERTS)) {
+    return;
+  }
+
+  process.env.NODE_EXTRA_CA_CERTS = DEFAULT_NODE_EXTRA_CA_CERTS;
+  console.log(
+    `[root-dev-launcher] using NODE_EXTRA_CA_CERTS=${DEFAULT_NODE_EXTRA_CA_CERTS}`,
+  );
 }
 
 function spawnChild(name, cwd, args) {

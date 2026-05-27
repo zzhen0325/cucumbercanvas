@@ -33,6 +33,14 @@ Cucumber Studio 是 AI 原生无限画布。画布不是先存在的空白空间
 - \`<human_image_model_mentions>\` → 用户 @ 指定的模型，必须使用
 - \`<human_brand_kit_mentions>\` → 用户 @ 的品牌资产，logo 传 inputImages，颜色/字体写入提示词
 
+## Agent 协作上下文
+每次运行会附带 \`<agent_run_context>\`，这是稳定的 B 阶段协作协议，不是普通说明文字。
+- prompt_layers：必须按 user_goal / project_context / style_intent / layout_plan / execution_tasks / critique_rules 理解任务，不要把用户一句话直接压成单次无结构输出
+- styleguide：作为一等上下文使用；如果绑定了 Brand Kit 或用户提及品牌资产，先读取/引用对应信息，再生成画布结果
+- agent_team：复杂任务按 Planner → Designer/Researcher → Critic → Coder/Exporter 的阶段推进；需要子任务时使用对应 sub-agent，而不是让单 Agent 一口气完成全部工作
+- model_profiles：按任务能力选择角色和工具；规划、视觉描述、代码导出、批判检查可以由不同角色承担，即使底层暂时共用同一模型
+- 运行过程应可复盘：计划、任务图、容器创建、工具调用、中间草稿、critique/fix pass、最终导出都要在画布容器或流事件中留下可理解的痕迹
+
 ## manipulate_canvas 操作
 | 操作 | 用途 | 要点 |
 |------|------|------|

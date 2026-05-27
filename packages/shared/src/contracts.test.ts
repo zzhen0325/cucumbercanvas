@@ -64,7 +64,7 @@ describe("@cucumber/shared contracts", () => {
       ],
     });
     expect(result.attachments).toHaveLength(1);
-    expect(result.attachments![0].assetId).toBe("asset-123");
+    expect(result.attachments?.[0]?.assetId).toBe("asset-123");
   });
 
   it("accepts optional image generation preference in run creation", () => {
@@ -338,6 +338,8 @@ describe("@cucumber/shared contracts", () => {
   it("includes the required minimum stream event union", () => {
     const eventTypes = [
       "run.started",
+      "run.context",
+      "agent.stage",
       "message.delta",
       "tool.started",
       "tool.completed",
@@ -355,6 +357,65 @@ describe("@cucumber/shared contracts", () => {
               runId: "run_123",
               sessionId: "session_123",
               conversationId: "conversation_123",
+              timestamp: "2026-03-23T12:00:00.000Z",
+            });
+            break;
+          case "run.context":
+            streamEventSchema.parse({
+              type,
+              runId: "run_123",
+              timestamp: "2026-03-23T12:00:00.000Z",
+              context: {
+                promptContext: {
+                  version: "agent-context-v1",
+                  layers: [
+                    {
+                      key: "user_goal",
+                      title: "User Goal",
+                      content: ["Create a launch canvas"],
+                      source: "user",
+                    },
+                  ],
+                },
+                modelProfiles: [
+                  {
+                    id: "openai:gpt-4.1",
+                    provider: "openai",
+                    model: "gpt-4.1",
+                    strengths: ["planning", "tool_use"],
+                    costTier: "medium",
+                    speedTier: "balanced",
+                    contextWindow: 128000,
+                    supportsToolCalls: true,
+                    supportsVision: true,
+                    recommendedRoles: ["planner", "designer"],
+                  },
+                ],
+                team: {
+                  id: "team_123",
+                  name: "Cucumber Agent Team",
+                  members: [
+                    {
+                      role: "planner",
+                      displayName: "Planner",
+                      responsibilities: ["Plan the canvas"],
+                      modelProfileId: "openai:gpt-4.1",
+                    },
+                  ],
+                },
+              },
+            });
+            break;
+          case "agent.stage":
+            streamEventSchema.parse({
+              type,
+              runId: "run_123",
+              stageId: "stage_123",
+              stage: "planning",
+              status: "completed",
+              role: "planner",
+              summary: "Plan created",
+              tasks: ["Create root container"],
               timestamp: "2026-03-23T12:00:00.000Z",
             });
             break;

@@ -4,6 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { isCucumberCanvasDocument } from "@cucumber/canvas-core";
 
 import type {
+  AgentRunContextPayload,
   ImageAttachment,
   ImageGenerationPreference,
   MessageMention,
@@ -40,6 +41,10 @@ import {
   createCucumberDeepAgent,
   createDefaultModelSpecifier,
 } from "./deep-agent.js";
+import {
+  buildAgentRunContext,
+  serializeAgentRunContextXml,
+} from "./orchestration-context.js";
 import type { AgentPersistenceService } from "./persistence/index.js";
 import { createRunFailedEvent } from "./run-failure.js";
 import { adaptDeepAgentStream } from "./stream-adapter.js";
@@ -64,6 +69,7 @@ export function buildUserMessage(
   mentions: MessageMention[] = [],
   videoGenerationPreference?: VideoGenerationPreference,
   canvasSummary?: string | null,
+  agentRunContext?: AgentRunContextPayload,
 ): { text: string } {
   const xmlBlocks: string[] = [];
 
@@ -89,6 +95,10 @@ export function buildUserMessage(
 
   const mentionXmlBlocks = buildMentionXmlBlocks(mentions);
   xmlBlocks.push(...mentionXmlBlocks);
+
+  if (agentRunContext) {
+    xmlBlocks.push(serializeAgentRunContextXml(agentRunContext));
+  }
 
   if (!xmlBlocks.length) return { text: prompt };
   return { text: `${prompt}\n\n${xmlBlocks.join("\n\n")}` };
@@ -868,13 +878,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
       try {
         let agent: CucumberAgent;
+        let brandKitId: string | null = null;
+        const runModelSpecifier = resolveRunModelSpecifier(
+          run,
+          options.model,
+          options.env,
+        );
         try {
-          const resolvedModel = run.modelOverride
-            ? run.modelOverride.includes(":")
-              ? run.modelOverride
-              : createDefaultModelSpecifier({ agentModel: run.modelOverride })
-            : options.model;
-
           // Build persistImage closure using the user's Supabase client.
           // Client creation is deferred into the closure so it only runs
           // when an image is actually generated (avoids throwing in tests
@@ -925,7 +935,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           }
 
           // Resolve brand kit ID from canvas → project in a single joined query
-          let brandKitId: string | null = null;
           if (run.canvasId && run.accessToken && options.createUserClient) {
             try {
               const client = options.createUserClient(
@@ -1029,7 +1038,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(options.liveCanvasService
               ? { liveCanvasService: options.liveCanvasService }
               : {}),
-            ...(resolvedModel ? { model: resolvedModel } : {}),
+            ...(runModelSpecifier ? { model: runModelSpecifier } : {}),
             ...(persistImage ? { persistImage } : {}),
             // execute 工具由 LocalShellBackend 自动提供，无需手动传递
             ...(submitImageJob ? { submitImageJob } : {}),
@@ -1051,6 +1060,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           return;
         }
 
+        let agentRunContext: AgentRunContextPayload | undefined;
         let stream: AsyncIterable<unknown>;
         try {
           // Auto-inject canvas state summary so the agent has immediate awareness
@@ -1077,6 +1087,20 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           }
 
           const hasAttachments = run.attachments && run.attachments.length > 0;
+          agentRunContext = buildAgentRunContext({
+            attachments: run.attachments ?? [],
+            ...(brandKitId ? { brandKitId } : {}),
+            canvasSummary,
+            mentions: run.mentions ?? [],
+            modelSpecifier: runModelSpecifier,
+            prompt: run.prompt,
+            workspaceSkills,
+          });
+          rlog.lap("agent_context_built", {
+            promptLayers: agentRunContext.promptContext.layers.length,
+            teamMembers: agentRunContext.team.members.length,
+            styleguide: agentRunContext.styleguide?.id ?? "none",
+          });
           let userMessage: HumanMessage;
           let attachmentDataMap: Record<string, string> = {};
 
@@ -1146,6 +1170,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               run.mentions,
               run.videoGenerationPreference,
               canvasSummary,
+              agentRunContext,
             );
 
             // Build assetId → data URI map for tool-level resolution
@@ -1165,6 +1190,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               run.mentions,
               run.videoGenerationPreference,
               canvasSummary,
+              agentRunContext,
             );
             userMessage = new HumanMessage(enrichedPrompt);
           }
@@ -1220,6 +1246,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             sessionId: run.sessionId,
             signal: run.controller.signal,
             stream,
+            runContext: agentRunContext,
           })) {
             run.status = mapEventToStatus(event);
             try {
@@ -1294,6 +1321,26 @@ function isTerminalEvent(event: StreamEvent) {
     event.type === "run.completed" ||
     event.type === "run.failed"
   );
+}
+
+function resolveRunModelSpecifier(
+  run: RuntimeRunRecord,
+  runtimeModel: BaseLanguageModel | string | undefined,
+  env: Pick<ServerEnv, "agentModel">,
+): string {
+  if (run.modelOverride) {
+    return run.modelOverride.includes(":")
+      ? run.modelOverride
+      : createDefaultModelSpecifier({ agentModel: run.modelOverride });
+  }
+
+  if (typeof runtimeModel === "string") {
+    return runtimeModel.includes(":")
+      ? runtimeModel
+      : createDefaultModelSpecifier({ agentModel: runtimeModel });
+  }
+
+  return createDefaultModelSpecifier(env);
 }
 
 function mapEventToStatus(event: StreamEvent): RuntimeRunStatus {

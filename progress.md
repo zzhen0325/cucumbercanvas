@@ -5,6 +5,10 @@ Last updated: 2026-05-27 CST
 ## 2026-05-27
 
 - B0 OpenPencil Web canvas parity started: the implementation will use a durable parity matrix first, then close every discovered P0/P1 Web canvas main-path gap while recording desktop/CLI/Git/i18n/collaboration/plugin/native-codegen surfaces as roadmap-only.
+- B-stage AI-native canvas collaboration started: Agent runs now build a typed `agent-context-v1` with prompt layers, run-scoped Styleguide context, AgentTeams roles, and model capability profiles before the model call.
+- B1 Prompt layering + Styleguide injection thin slice landed: runtime injects `<agent_run_context>` alongside existing canvas, attachment, mention, and generation preference XML so complex canvas work is constrained by stable user goal/project/style/layout/task/critique layers.
+- B2 process visualization event spine landed: shared stream events now include `run.context` and role-aware `agent.stage` events around prompt preparation and tool execution, giving the UI/replay layer typed planning/task/process milestones without scraping assistant text.
+- B3 AgentTeams foundation landed: the Deep Agents runtime now registers Planner, Designer, Critic, Coder/Exporter, and Researcher sub-agents in addition to the existing video specialist, and the system prompt instructs complex canvas generation to use the team protocol.
 - Phase A OpenPencil editor migration completed for the live canvas: page-aware
   canvas operations, page tabs, editor toolbar, and boolean toolbar are in place.
 - Phase B OpenPencil design-system slice completed for the live canvas:
@@ -155,14 +159,17 @@ Status:
 
 ## Next Targets
 
-1. Add deterministic browser/e2e smoke coverage for create container, bind Agent, insert generated content, refresh restore, and basic tool interactions.
-2. Add deterministic browser smoke coverage for selection export, refresh restore, layers/property edits, and persistence around Agent-created containers.
-3. Design the selected-result Agent overlay and quick-action contract for image upscale, outpaint, local edit, and variant generation.
-4. Continue P2.2 by collecting real Figma clipboard fixtures for native `pen-figma` regression coverage, especially nested instances, image fills, text style hints, and vector boolean edge cases.
-5. Expand deterministic browser/e2e coverage for system paste from SVG/Figma clipboard content, including nested component instances, the compatibility summary, and the fallback path now that the shared test webServer is healthy again.
-6. Decide whether to harden `apps/web/next.config.ts` for local multi-lockfile setups with `outputFileTracingRoot` / `allowedDevOrigins`, or keep those as known non-blocking dev warnings for now.
-7. Continue P1 canvas parity with richer path/icon editing, reference guides, advanced snapping, shape-specific handles, and more complete property controls.
-8. Build the next P2 layers on top of the new import provenance metadata: richer reusable component/ref editing, variables/design tokens, and export-to-project handoff flows.
+1. Render `run.context` and `agent.stage` in a canvas process/replay panel, including planning trace, task graph, critique/fix passes, and export artifacts.
+2. Persist run event history for replay/resume, then add human-in-the-loop controls for plan approval, styleguide edits, locked containers, redo requests, and critique accept/reject.
+3. Extend model profile/router from a single active-model profile to role-specific model selection once multiple configured models are available.
+4. Add deterministic browser/e2e smoke coverage for create container, bind Agent, insert generated content, refresh restore, and basic tool interactions.
+5. Add deterministic browser smoke coverage for selection export, refresh restore, layers/property edits, and persistence around Agent-created containers.
+6. Design the selected-result Agent overlay and quick-action contract for image upscale, outpaint, local edit, and variant generation.
+7. Continue P2.2 by collecting real Figma clipboard fixtures for native `pen-figma` regression coverage, especially nested instances, image fills, text style hints, and vector boolean edge cases.
+8. Expand deterministic browser/e2e coverage for system paste from SVG/Figma clipboard content, including nested component instances, the compatibility summary, and the fallback path now that the shared test webServer is healthy again.
+9. Decide whether to harden `apps/web/next.config.ts` for local multi-lockfile setups with `outputFileTracingRoot` / `allowedDevOrigins`, or keep those as known non-blocking dev warnings for now.
+10. Continue P1 canvas parity with richer path/icon editing, reference guides, advanced snapping, shape-specific handles, and more complete property controls.
+11. Build the next P2 layers on top of the new import provenance metadata: richer reusable component/ref editing, variables/design tokens, and export-to-project handoff flows.
 
 ## Handoff Notes
 

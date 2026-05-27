@@ -100,6 +100,7 @@ Agent work flows through:
 Detailed workflow and tool inventory:
 
 - `docs/tech/agent-runtime-workflow.md`: current agent execution flow, output types, tool inventory, sub-agents, and skill exposure model.
+- `docs/tech/agent-native-canvas-collaboration.md`: B-stage prompt layering, Styleguide injection, AgentTeams roles, model capability profiles, process events, and replay spine.
 
 When editing agent code:
 

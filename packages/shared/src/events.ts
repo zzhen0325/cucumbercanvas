@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+import {
+  agentStageEventSchema,
+  runContextEventSchema,
+} from "./agent-orchestration.js";
 import { toolArtifactSchema } from "./artifacts.js";
 import {
   conversationIdSchema,
@@ -11,8 +15,18 @@ import {
 } from "./contracts.js";
 import { cucumberErrorSchema } from "./errors.js";
 
-export { imageArtifactSchema, videoArtifactSchema, placementSchema, toolArtifactSchema } from "./artifacts.js";
-export type { ImageArtifact, VideoArtifact, Placement, ToolArtifact } from "./artifacts.js";
+export {
+  imageArtifactSchema,
+  videoArtifactSchema,
+  placementSchema,
+  toolArtifactSchema,
+} from "./artifacts.js";
+export type {
+  ImageArtifact,
+  VideoArtifact,
+  Placement,
+  ToolArtifact,
+} from "./artifacts.js";
 
 export const runStartedEventSchema = z.object({
   type: z.literal("run.started"),
@@ -85,6 +99,8 @@ export const canvasSyncEventSchema = z.object({
 
 export const streamEventSchema = z.discriminatedUnion("type", [
   runStartedEventSchema,
+  runContextEventSchema,
+  agentStageEventSchema,
   messageDeltaEventSchema,
   thinkingDeltaEventSchema,
   toolStartedEventSchema,

@@ -9,11 +9,30 @@
  * keep ports (e.g. 3001) occupied. This launcher fixes that.
  */
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 
+const DEFAULT_NODE_EXTRA_CA_CERTS = "/etc/ssl/cert.pem";
 const nodeArgs = ["--watch", "--env-file=../../.env.local", "--import", "tsx"];
 const supportsProcessGroups = process.platform !== "win32";
 
 const children = [];
+
+configureNodeExtraCaCerts();
+
+function configureNodeExtraCaCerts() {
+  if (process.env.NODE_EXTRA_CA_CERTS) {
+    return;
+  }
+
+  if (!existsSync(DEFAULT_NODE_EXTRA_CA_CERTS)) {
+    return;
+  }
+
+  process.env.NODE_EXTRA_CA_CERTS = DEFAULT_NODE_EXTRA_CA_CERTS;
+  console.log(
+    `[dev-launcher] using NODE_EXTRA_CA_CERTS=${DEFAULT_NODE_EXTRA_CA_CERTS}`,
+  );
+}
 
 function spawnChild(name, command, args, envOverride = {}) {
   const child = spawn(command, args, {
@@ -43,7 +62,9 @@ function killChildTree(child, signal) {
     child.kill(signal);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.warn(`[dev-launcher] failed to send ${signal} to ${child.name}: ${message}`);
+    console.warn(
+      `[dev-launcher] failed to send ${signal} to ${child.name}: ${message}`,
+    );
   }
 }
 

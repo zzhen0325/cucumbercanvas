@@ -1,6 +1,6 @@
 import { type SupabaseClient, createClient } from "@supabase/supabase-js";
 import type { FastifyRequest } from "fastify";
-import { importJWK, jwtVerify } from "jose";
+import { type JWK, decodeProtectedHeader, importJWK, jwtVerify } from "jose";
 
 import type { Database } from "@cucumber/shared";
 
@@ -74,34 +74,104 @@ function setCachedAuth(token: string, user: AuthenticatedUser): void {
 
 // --- Authenticator factory ---
 
-// Parse JWK JSON string into a CryptoKey at startup (async init)
-let jwtPublicKeyPromise: Promise<
-  Awaited<ReturnType<typeof importJWK>> | Uint8Array
-> | null = null;
+const JWKS_CACHE_TTL_MS = 10 * 60 * 1000;
 
-function initJwtKey(
+type JwtVerificationKey = Awaited<ReturnType<typeof importJWK>> | Uint8Array;
+type JwtKeyProvider = (token: string) => Promise<JwtVerificationKey | null>;
+type CachedJwks = { fetchedAt: number; keys: JWK[] };
+
+function createConfiguredJwtKeyProvider(
   env: Pick<ServerEnv, "supabaseJwtSecret">,
-): Promise<Awaited<ReturnType<typeof importJWK>> | Uint8Array> | null {
+): JwtKeyProvider | null {
   if (!env.supabaseJwtSecret) return null;
 
-  try {
-    const jwk = JSON.parse(env.supabaseJwtSecret);
-    return importJWK(jwk, jwk.alg ?? "ES256");
-  } catch {
-    // Not a JWK JSON — treat as HMAC symmetric secret
-    return Promise.resolve(new TextEncoder().encode(env.supabaseJwtSecret));
+  let jwkPromise: Promise<{
+    alg?: string;
+    key: Awaited<ReturnType<typeof importJWK>>;
+  }> | null = null;
+  let hmacKey: Uint8Array | null = null;
+
+  return async (token) => {
+    const header = readJwtProtectedHeader(token);
+    const alg = header?.alg;
+    if (!alg) return null;
+
+    try {
+      const jwk = JSON.parse(env.supabaseJwtSecret ?? "") as JWK;
+      jwkPromise ??= importJWK(jwk, jwk.alg ?? alg).then((key) => ({
+        alg: typeof jwk.alg === "string" ? jwk.alg : undefined,
+        key,
+      }));
+
+      const imported = await jwkPromise;
+      if (imported.alg && imported.alg !== alg) return null;
+      return imported.key;
+    } catch {
+      if (!isSymmetricJwtAlgorithm(alg)) return null;
+      hmacKey ??= new TextEncoder().encode(env.supabaseJwtSecret);
+      return hmacKey;
+    }
+  };
+}
+
+function createSupabaseJwksKeyProvider(
+  env: Pick<ServerEnv, "supabaseUrl">,
+): JwtKeyProvider | null {
+  if (!env.supabaseUrl) return null;
+
+  const supabaseUrl = env.supabaseUrl;
+  let cache: CachedJwks | null = null;
+
+  return async (token) => {
+    const header = readJwtProtectedHeader(token);
+    const alg = header?.alg;
+    const kid = header?.kid;
+    if (!alg || !kid || !isAsymmetricJwtAlgorithm(alg)) return null;
+
+    const keys = await loadJwks();
+    const jwk = keys.find(
+      (key) =>
+        key.kid === kid &&
+        (!key.alg || key.alg === alg) &&
+        isVerificationJwk(key),
+    );
+
+    if (!jwk) return null;
+    return importJWK(jwk, alg);
+  };
+
+  async function loadJwks(): Promise<JWK[]> {
+    const now = Date.now();
+    if (cache && now - cache.fetchedAt < JWKS_CACHE_TTL_MS) {
+      return cache.keys;
+    }
+
+    const response = await fetch(buildSupabaseJwksUrl(supabaseUrl));
+    if (!response.ok) {
+      throw new Error(`Supabase JWKS request failed with ${response.status}`);
+    }
+
+    const body = (await response.json()) as { keys?: unknown };
+    if (!Array.isArray(body.keys)) {
+      throw new Error("Supabase JWKS response did not include a keys array.");
+    }
+
+    const keys = body.keys.filter(isJwk);
+    cache = { fetchedAt: now, keys };
+    return keys;
   }
 }
 
 export function createSupabaseRequestAuthenticator(
   env: Pick<ServerEnv, "supabaseAnonKey" | "supabaseJwtSecret" | "supabaseUrl">,
 ): RequestAuthenticator {
-  jwtPublicKeyPromise = initJwtKey(env);
+  const jwtKeyProviders = [
+    createConfiguredJwtKeyProvider(env),
+    createSupabaseJwksKeyProvider(env),
+  ].filter((provider): provider is JwtKeyProvider => !!provider);
 
-  // Fallback: remote verification when JWT key is not configured
-  const createUserClient = jwtPublicKeyPromise
-    ? null
-    : createUserSupabaseClientFactory(env);
+  // Fallback: remote verification for legacy HS256 tokens when no JWT secret is configured.
+  const createUserClient = createUserSupabaseClientFactory(env);
 
   return {
     async authenticate(request) {
@@ -121,33 +191,23 @@ export function createSupabaseRequestAuthenticator(
       if (cached) return cached;
 
       // 2. Local JWT verification (preferred)
-      if (jwtPublicKeyPromise) {
+      if (jwtKeyProviders.length > 0) {
         try {
-          const key = await jwtPublicKeyPromise;
-          const { payload } = await jwtVerify(accessToken, key, {
-            audience: "authenticated",
-          });
-
-          const userId = payload.sub;
-          const email =
-            typeof payload.email === "string" ? payload.email : null;
-
-          if (!userId || !email) return null;
-
-          const user: AuthenticatedUser = {
+          const verifiedUser = await verifyJwtWithProviders(
             accessToken,
-            email,
-            id: userId,
-            userMetadata: isRecord(payload.user_metadata)
-              ? (payload.user_metadata as Record<string, unknown>)
-              : {},
-          };
+            jwtKeyProviders,
+            env,
+          );
 
-          setCachedAuth(accessToken, user);
-          return user;
-        } catch {
-          // Invalid / expired token
-          return null;
+          if (verifiedUser) {
+            setCachedAuth(accessToken, verifiedUser);
+            return verifiedUser;
+          }
+        } catch (error) {
+          console.warn("[auth] local Supabase JWT verification failed", {
+            message: error instanceof Error ? error.message : String(error),
+          });
+          throw new AuthVerificationUnavailableError(error);
         }
       }
 
@@ -187,6 +247,44 @@ export function createSupabaseRequestAuthenticator(
       return null;
     },
   };
+}
+
+async function verifyJwtWithProviders(
+  accessToken: string,
+  providers: JwtKeyProvider[],
+  env: Pick<ServerEnv, "supabaseUrl">,
+): Promise<AuthenticatedUser | null> {
+  for (const provider of providers) {
+    const key = await provider(accessToken);
+    if (!key) continue;
+
+    try {
+      const { payload } = await jwtVerify(accessToken, key, {
+        audience: "authenticated",
+        ...(env.supabaseUrl
+          ? { issuer: buildSupabaseJwtIssuer(env.supabaseUrl) }
+          : {}),
+      });
+
+      const userId = payload.sub;
+      const email = typeof payload.email === "string" ? payload.email : null;
+
+      if (!userId || !email) return null;
+
+      return {
+        accessToken,
+        email,
+        id: userId,
+        userMetadata: isRecord(payload.user_metadata)
+          ? (payload.user_metadata as Record<string, unknown>)
+          : {},
+      };
+    } catch {
+      // Invalid, expired, or signed by another key. Try the next configured provider.
+    }
+  }
+
+  return null;
 }
 
 export function createUserSupabaseClientFactory(
@@ -250,6 +348,16 @@ function readBearerToken(
   return token;
 }
 
+function readJwtProtectedHeader(
+  token: string,
+): ReturnType<typeof decodeProtectedHeader> | null {
+  try {
+    return decodeProtectedHeader(token);
+  } catch {
+    return null;
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -271,4 +379,37 @@ function isRemoteAuthVerificationFailure(error: Error): boolean {
 function getErrorStatus(error: Error): number | undefined {
   const maybeStatus = (error as { status?: unknown }).status;
   return typeof maybeStatus === "number" ? maybeStatus : undefined;
+}
+
+function buildSupabaseJwksUrl(supabaseUrl: string): string {
+  return `${supabaseUrl.replace(/\/+$/, "")}/auth/v1/.well-known/jwks.json`;
+}
+
+function buildSupabaseJwtIssuer(supabaseUrl: string): string {
+  return `${supabaseUrl.replace(/\/+$/, "")}/auth/v1`;
+}
+
+function isSymmetricJwtAlgorithm(alg: string): boolean {
+  return alg.startsWith("HS");
+}
+
+function isAsymmetricJwtAlgorithm(alg: string): boolean {
+  return (
+    alg.startsWith("ES") ||
+    alg.startsWith("PS") ||
+    alg.startsWith("RS") ||
+    alg === "EdDSA"
+  );
+}
+
+function isJwk(value: unknown): value is JWK {
+  return isRecord(value) && typeof value.kty === "string";
+}
+
+function isVerificationJwk(jwk: JWK): boolean {
+  return (
+    !Array.isArray(jwk.key_ops) ||
+    jwk.key_ops.length === 0 ||
+    jwk.key_ops.includes("verify")
+  );
 }

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-27T20:51:24+08:00",
+  "updatedAt": "2026-05-27T22:50:00+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -223,6 +223,25 @@
         "docs/tech/openpencil-web-canvas-parity.md",
         "docs/superpowers/specs/2026-05-27-openpencil-b0-web-canvas-parity-design.md",
         "docs/superpowers/plans/2026-05-27-openpencil-b0-web-canvas-parity.md"
+      ]
+    },
+    {
+      "id": "agent-native-canvas-collaboration",
+      "name": "AI-native canvas collaboration",
+      "status": "active",
+      "priority": "P0",
+      "owner": "agent-engineering",
+      "summary": "B-stage foundation that makes Agent canvas generation organized, constrained, observable, replayable, and resumable through prompt layering, run-scoped Styleguide injection, AgentTeams roles, model capability profiles, and process stream events.",
+      "scope": "Prompt layers, Styleguide context, model profiles, AgentTeams, run context events, role-aware stage events, and replay spine documentation.",
+      "artifacts": [
+        "packages/shared/src/agent-orchestration.ts",
+        "packages/shared/src/events.ts",
+        "apps/server/src/agent/orchestration-context.ts",
+        "apps/server/src/agent/sub-agents.ts",
+        "apps/server/src/agent/stream-adapter.ts",
+        "apps/server/src/agent/runtime.ts",
+        "apps/server/src/agent/prompts/cucumber-main.ts",
+        "docs/tech/agent-native-canvas-collaboration.md"
       ]
     }
   ]
