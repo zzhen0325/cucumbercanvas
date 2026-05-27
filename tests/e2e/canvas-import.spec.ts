@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { type Page, expect, test } from "@playwright/test";
 
 const TEST_PAGE_URL = "/test/canvas-import";
 
@@ -20,11 +20,79 @@ const NESTED_FIGMA_HTML = `
   </div>
 `;
 
+const SVG_WITH_UNSUPPORTED_CONTENT = `
+  <svg xmlns="http://www.w3.org/2000/svg" width="240" height="120" viewBox="0 0 240 120">
+    <rect id="editable-card" x="16" y="18" width="160" height="72" fill="#38bdf8" />
+    <foreignObject id="html-label" x="24" y="28" width="120" height="40">
+      <div xmlns="http://www.w3.org/1999/xhtml">Unsupported HTML label</div>
+    </foreignObject>
+  </svg>
+`;
+
+const ONE_BY_ONE_PNG_DATA_URL =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+
+async function waitForCanvasReady(page: Page) {
+  await expect(
+    page.getByRole("navigation", { name: "Canvas editor tools" }),
+  ).toBeVisible({ timeout: 30_000 });
+}
+
+async function chooseShapeTool(page: Page, toolName: string) {
+  await page.getByRole("button", { name: "Open shape menu" }).click();
+  await page.getByRole("menuitem", { name: toolName }).click();
+}
+
+async function dispatchPaste(
+  page: Page,
+  init: {
+    types: string[];
+    getData?: (type: string) => string;
+    files?: Array<{ name: string; type: string; dataUrl: string }>;
+  },
+) {
+  await page.evaluate(
+    async ({ types, files, dataByType }) => {
+      const dataTransfer = new DataTransfer();
+      for (const file of files ?? []) {
+        const response = await fetch(file.dataUrl);
+        const blob = await response.blob();
+        dataTransfer.items.add(
+          new File([blob], file.name, { type: file.type }),
+        );
+      }
+      for (const type of types) {
+        const value = dataByType[type];
+        if (value) {
+          dataTransfer.setData(type, value);
+        }
+      }
+      const event = new ClipboardEvent("paste", {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: dataTransfer,
+      });
+      document.body.dispatchEvent(event);
+    },
+    {
+      types: init.types,
+      files: init.files,
+      dataByType: Object.fromEntries(
+        init.types.map((type) => [type, init.getData?.(type) ?? ""]),
+      ),
+    },
+  );
+}
+
 test.describe("canvas import harness", () => {
+  test.describe.configure({ mode: "serial" });
+  test.setTimeout(60_000);
+
   test("draws native vector shapes with toolbar drag tools", async ({
     page,
   }) => {
     await page.goto(TEST_PAGE_URL);
+    await waitForCanvasReady(page);
 
     const stage = page.getByTestId("canvas-import-stage");
     const stageBox = await stage.boundingBox();
@@ -38,7 +106,7 @@ test.describe("canvas import harness", () => {
       start: { x: number; y: number },
       end: { x: number; y: number },
     ) => {
-      await page.getByRole("button", { name: toolName }).click();
+      await chooseShapeTool(page, toolName);
       await page.mouse.move(stageBox.x + start.x, stageBox.y + start.y);
       await page.mouse.down();
       await page.mouse.move(stageBox.x + end.x, stageBox.y + end.y, {
@@ -47,9 +115,9 @@ test.describe("canvas import harness", () => {
       await page.mouse.up();
     };
 
-    await drawShape("矩形", { x: 160, y: 160 }, { x: 300, y: 240 });
-    await drawShape("椭圆", { x: 220, y: 300 }, { x: 360, y: 400 });
-    await drawShape("多边形", { x: 420, y: 180 }, { x: 560, y: 300 });
+    await drawShape("Rectangle", { x: 160, y: 160 }, { x: 300, y: 240 });
+    await drawShape("Ellipse", { x: 220, y: 300 }, { x: 360, y: 400 });
+    await drawShape("Polygon", { x: 420, y: 180 }, { x: 560, y: 300 });
 
     await expect(page.getByTestId("document-snapshot")).toContainText(
       '"nodeCount": 3',
@@ -69,6 +137,7 @@ test.describe("canvas import harness", () => {
     page,
   }) => {
     await page.goto(TEST_PAGE_URL);
+    await waitForCanvasReady(page);
 
     await page.evaluate((html) => {
       const event = new Event("paste", {
@@ -102,10 +171,92 @@ test.describe("canvas import harness", () => {
       '"component_metadata_dropped"',
     );
     await expect(page.getByTestId("document-snapshot")).toContainText(
-      '"nodeCount": 1',
+      '"nodeCount": 5',
     );
     await expect(page.getByTestId("document-snapshot")).toContainText(
       '"originNodeId": "99:1"',
+    );
+  });
+
+  test("exposes SVG paste warning metadata for unsupported content", async ({
+    page,
+  }) => {
+    await page.goto(TEST_PAGE_URL);
+    await waitForCanvasReady(page);
+
+    await dispatchPaste(page, {
+      types: ["image/svg+xml", "text/plain"],
+      getData: (type) =>
+        type === "image/svg+xml" || type === "text/plain"
+          ? SVG_WITH_UNSUPPORTED_CONTENT
+          : "",
+    });
+
+    await expect(page.getByTestId("imported-selection-count")).toHaveText("1");
+    await expect(page.getByTestId("selected-meta")).toContainText(
+      '"source": "svg-import"',
+    );
+    await expect(page.getByTestId("selected-meta")).toContainText(
+      '"importSourceLabel": "SVG"',
+    );
+    await expect(page.getByTestId("selected-meta")).toContainText(
+      '"originNodeType": "rect"',
+    );
+    await expect(page.getByTestId("selected-meta")).toContainText(
+      '"originNodeId": "editable-card"',
+    );
+    await expect(page.getByTestId("selected-meta")).toContainText(
+      '"warningCount": 1',
+    );
+    await expect(page.getByTestId("selected-meta")).toContainText(
+      '"unsupported_tag"',
+    );
+  });
+
+  test("exposes raster paste asset metadata without inventing degradation warnings", async ({
+    page,
+  }) => {
+    await page.goto(TEST_PAGE_URL);
+    await waitForCanvasReady(page);
+
+    await dispatchPaste(page, {
+      types: [],
+      files: [
+        {
+          name: "one-pixel.png",
+          type: "image/png",
+          dataUrl: ONE_BY_ONE_PNG_DATA_URL,
+        },
+      ],
+    });
+
+    await expect(page.getByTestId("imported-selection-count")).toHaveText("1");
+    await expect(page.getByTestId("selected-meta")).toContainText(
+      '"source": "image-paste"',
+    );
+    await expect(page.getByTestId("selected-meta")).toContainText(
+      '"importSourceLabel": "Image"',
+    );
+    await expect(page.getByTestId("selected-meta")).toContainText(
+      '"originNodeType": "image/png"',
+    );
+    await expect(page.getByTestId("selected-meta")).toContainText(
+      '"originNodeId": "one-pixel.png"',
+    );
+    await expect(page.getByTestId("selected-meta")).not.toContainText(
+      '"warningCount"',
+    );
+    await expect(page.getByTestId("document-snapshot")).toContainText(
+      '"type": "image"',
+    );
+    await expect(page.getByTestId("document-snapshot")).toContainText(
+      '"assetId":',
+    );
+    await expect(page.getByTestId("document-snapshot")).toContainText(
+      '"mimeType": "image/png"',
+    );
+    await expect(page.getByTestId("document-snapshot")).toContainText(
+      '"name": "one-pixel.png"',
     );
   });
 });

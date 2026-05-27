@@ -876,17 +876,36 @@ function importNodeToPenNode(
 ): PenNode {
   const isRoot = result.rootNodeIds.includes(imported.id);
   const importedMeta = (imported.meta ?? {}) as Record<string, unknown>;
+  const warningCodes = getWarningCodes(result.warnings);
+  const exposeEmptyWarningMeta = result.source !== "image";
+  const degradationHints =
+    importedMeta.degradationHints ??
+    (warningCodes.length > 0
+      ? warningCodes
+      : exposeEmptyWarningMeta
+        ? []
+        : undefined);
+  const warningCount =
+    importedMeta.warningCount ??
+    (isRoot
+      ? result.warnings.length > 0
+        ? result.warnings.length
+        : exposeEmptyWarningMeta
+          ? 0
+          : undefined
+      : undefined);
   const meta: Record<string, unknown> = {
     ...importedMeta,
     source: getImportSourceMeta(result.source).nodeSource,
     importSessionId: result.importSessionId,
     importSourceLabel: result.sourceLabel,
-    degradationHints:
-      importedMeta.degradationHints ?? getWarningCodes(result.warnings),
-    warningCount:
-      importedMeta.warningCount ??
-      (isRoot ? result.warnings.length : undefined),
   };
+  if (degradationHints !== undefined) {
+    meta.degradationHints = degradationHints;
+  }
+  if (warningCount !== undefined) {
+    meta.warningCount = warningCount;
+  }
 
   const bounds = getImportNodeBounds(imported);
   const executableLayout = getExecutableAutoLayoutProps(
@@ -981,6 +1000,7 @@ function importNodeToPenNode(
       return {
         ...base,
         type: "image" as const,
+        assetId: imported.assetId,
         src: imported.src ?? "",
       } as unknown as PenNode;
     case "videoEmbed":

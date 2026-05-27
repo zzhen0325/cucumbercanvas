@@ -20,6 +20,10 @@ Last updated: 2026-05-27 CST
   readable failures, and an accessible hierarchy move path; the shape toolbar
   only exposes icon insertion when a real callback is wired, and property-panel
   parity remains P1 until effects/path/line-specific limits are verified.
+- B0 import parity closed for SVG/raster paste: the browser import harness now
+  verifies unsupported SVG warning metadata in selected diagnostics and raster
+  image paste asset metadata/node linkage without inventing warnings for
+  full-fidelity image imports.
 - B0 toolbar icon insertion parity closed: the production canvas page now wires
   the toolbar `Insert icon` affordance through `CanvasEditor`/`SkiaCanvas` to
   the existing Design System Icons tab/search, preserving

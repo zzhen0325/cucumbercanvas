@@ -22,7 +22,8 @@ export function CanvasImportHarness() {
   const importedSelection = selection.filter(
     (element) =>
       element.customData?.source === "figma-paste" ||
-      element.customData?.source === "svg-import",
+      element.customData?.source === "svg-import" ||
+      element.customData?.source === "image-paste",
   );
 
   return (
@@ -111,12 +112,28 @@ export function CanvasImportHarness() {
                 id: node.id,
                 type: node.type,
                 name: node.name,
+                assetId:
+                  "assetId" in node
+                    ? (node.assetId as string | undefined)
+                    : undefined,
+                src:
+                  "src" in node ? (node.src as string | undefined) : undefined,
+                width: "width" in node ? node.width : undefined,
+                height: "height" in node ? node.height : undefined,
                 childrenOrder:
                   "childrenOrder" in node ? node.childrenOrder : undefined,
                 meta:
                   "meta" in node
                     ? (node.meta as Record<string, unknown> | undefined)
                     : undefined,
+              })),
+              assets: Object.values(doc.assets ?? {}).map((asset) => ({
+                id: asset.id,
+                mimeType: asset.mimeType,
+                name: asset.name,
+                width: asset.width,
+                height: asset.height,
+                source: asset.source,
               })),
             },
             null,
