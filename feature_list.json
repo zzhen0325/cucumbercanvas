@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-27T09:22:00+08:00",
+  "updatedAt": "2026-05-27T09:53:00+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -181,6 +181,21 @@
         "apps/web/src/components/canvas-bottom-bar.tsx",
         "apps/web/src/components/canvas/skia-canvas.tsx",
         "apps/web/test/canvas-design-system-panel.test.tsx",
+        "docs/tech/canvas-design-integration.md"
+      ]
+    },
+    {
+      "id": "openpencil-phase-c-codegen-orchestration",
+      "name": "OpenPencil Phase C codegen and orchestration",
+      "status": "planned",
+      "priority": "P0",
+      "owner": "agent-engineering",
+      "summary": "Approved Phase C thin-slice design for prompt-to-canvas planning, bounded concurrent containerized canvas materialization, and design-as-code export to React, HTML, and Vue.",
+      "scope": "Prompt-to-canvas orchestration MCP tools, section-level concurrent execution, live canvas writes, and Vue codegen export alongside React/HTML.",
+      "artifacts": [
+        "docs/superpowers/specs/2026-05-27-openpencil-phase-c-codegen-orchestration-design.md",
+        "apps/server/src/mcp/tools/open-pencil-canvas.ts",
+        "apps/server/src/mcp/tools/open-pencil-canvas.test.ts",
         "docs/tech/canvas-design-integration.md"
       ]
     }
