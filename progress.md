@@ -1,6 +1,6 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-27 09:53 CST
+Last updated: 2026-05-27 10:01 CST
 
 ## 2026-05-27
 
@@ -12,6 +12,9 @@ Last updated: 2026-05-27 09:53 CST
 - Phase C OpenPencil codegen/orchestration design approved for an
   end-to-end thin slice: prompt-to-canvas planning, bounded concurrent
   container materialization, and React/HTML/Vue export.
+- Phase C OpenPencil thin slice started: prompt-to-canvas planning/execution
+  MCP tools now materialize live canvas containers, and direct codegen export
+  supports Vue alongside React and HTML.
 
 ## Current Session
 
@@ -79,6 +82,7 @@ Status:
 - Restored high-fidelity Figma paste around OpenPencil's full `pen-figma` module: added `@cucumber/pen-figma` as a vendored workspace package, routed native clipboard decode through its parser/converters, recursively attaches Cucumber import metadata, registers data URL image assets, and offsets full native PenNode trees on insertion so nested geometry stays aligned.
 - Advanced codegen assembly from protocol-only state to concrete design-as-code file output: `codegen_assemble` now returns framework-specific files for React (`App.tsx`, component files, CSS), HTML (`index.html`, CSS), and generic framework fallbacks, and the property panel now includes typography controls plus reusable component/ref metadata and inline color variable creation/binding.
 - Added a dedicated `codegen_export` MCP tool so the Agent can export the current live canvas selection, or explicit node IDs, directly into React (`.tsx` + CSS) or static HTML (`index.html` + CSS) design-as-code files with diagnostic logging.
+- Added the first Phase C prompt-to-canvas orchestration slice: `prompt_canvas_plan` creates deterministic section plans, `prompt_canvas_execute` writes root/section containers through the live canvas service with structured `[phase-c-orchestration]` logs, and `codegen_export` now emits Vue single-file component output alongside React and HTML.
 
 ## Next Targets
 
@@ -100,6 +104,9 @@ Status:
 
 ## Verification Log
 
+- Passed: `./node_modules/.bin/tsc -p apps/server/tsconfig.json --noEmit`.
+- Passed: `PATH="/Users/bytedance/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" ../../node_modules/.bin/vitest run src/mcp/tools/open-pencil-canvas.test.ts --passWithNoTests` from `apps/server` after adding Phase C prompt-to-canvas orchestration and Vue export coverage.
+- Passed: `./node_modules/.bin/biome check apps/server/src/mcp/tools/open-pencil-canvas.ts apps/server/src/mcp/tools/open-pencil-canvas.test.ts apps/server/src/agent/prompts/cucumber-main.ts docs/tech/canvas-design-integration.md progress.md feature_list.json`.
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-design-system-panel.test.tsx`.
 - Passed: `pnpm --filter @cucumber/web typecheck` (Next emitted the existing multi-lockfile workspace-root warning).
 - Passed: `pnpm exec biome check apps/web/src/components/canvas-design-system-panel.tsx apps/web/src/components/canvas/icon-library.ts apps/web/src/components/canvas-bottom-bar.tsx apps/web/src/components/canvas/skia-canvas.tsx apps/web/src/app/canvas/page.tsx apps/web/test/canvas-design-system-panel.test.tsx docs/tech/canvas-design-integration.md progress.md feature_list.json`.

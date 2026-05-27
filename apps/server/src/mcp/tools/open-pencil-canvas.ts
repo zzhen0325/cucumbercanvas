@@ -125,6 +125,25 @@ const setThemesSchema = z.object({
   replace: z.boolean().default(false),
 });
 
+const phaseCExportTargetSchema = z.enum(["react", "html", "vue"]);
+
+const promptCanvasPlanSchema = z.object({
+  prompt: z.string().trim().min(1),
+  surface: z
+    .enum(["desktop", "mobile", "dashboard", "flow", "auto"])
+    .default("auto"),
+  maxSections: z.number().int().min(1).max(6).default(4),
+  exportTargets: z.array(z.string()).min(1).default(["react", "html", "vue"]),
+  pageId: z.string().optional(),
+});
+
+const promptCanvasExecuteSchema = z.object({
+  planId: z.string().min(1),
+  concurrency: z.number().int().min(1).max(4).default(2),
+  commitMode: z.enum(["section", "final"]).default("section"),
+  pageId: z.string().optional(),
+});
+
 const codegenPlanSchema = z.object({
   plan: z.record(z.string(), z.unknown()),
   pageId: z.string().optional(),
@@ -155,7 +174,7 @@ const codegenCleanSchema = z.object({
 });
 
 const codegenExportSchema = z.object({
-  framework: z.enum(["react", "html"]),
+  framework: z.enum(["react", "html", "vue"]),
   nodeIds: z.array(z.string()).optional(),
   componentName: z.string().default("CucumberExport"),
 });
@@ -167,6 +186,9 @@ type FindEmptySpaceInput = z.infer<typeof findEmptySpaceSchema>;
 type PropertyName = z.infer<typeof propertyNameSchema>;
 type ReplacementRule = z.infer<typeof replacementRuleSchema>;
 type CodegenExportInput = z.infer<typeof codegenExportSchema>;
+type PromptCanvasSurface = z.infer<typeof promptCanvasPlanSchema>["surface"];
+type PhaseCExportTarget = z.infer<typeof phaseCExportTargetSchema>;
+type PromptCanvasSectionStatus = "completed" | "failed" | "skipped";
 
 type CodegenChunk = {
   chunkId: string;
@@ -183,6 +205,33 @@ type CodegenPlanRecord = {
 };
 
 const codegenPlans = new Map<string, CodegenPlanRecord>();
+
+type PromptCanvasSectionPlan = {
+  sectionId: string;
+  title: string;
+  role: string;
+  prompt: string;
+  region: CanvasBounds;
+  dependencies: string[];
+  expectedNodeBudget: number;
+};
+
+type PromptCanvasPlanRecord = {
+  planId: string;
+  prompt: string;
+  surface: PromptCanvasSurface;
+  exportTargets: PhaseCExportTarget[];
+  pageId?: string;
+  rootFrame: CanvasBounds & {
+    name: string;
+    layout: "vertical" | "horizontal" | "none";
+  };
+  sections: PromptCanvasSectionPlan[];
+  warnings: string[];
+  createdAt: number;
+};
+
+const promptCanvasPlans = new Map<string, PromptCanvasPlanRecord>();
 
 type ToolDeps = {
   liveCanvasService?: LiveCanvasService;
@@ -473,6 +522,39 @@ export function createOpenPencilCanvasMcpTools(
       },
     }),
     createNativeMcpTool({
+      name: "prompt_canvas_plan",
+      description:
+        "Phase C prompt-to-canvas planner. Decomposes a visual prompt into a bounded, deterministic container plan without writing the canvas.",
+      schema: promptCanvasPlanSchema,
+      execute: async (args) => {
+        const input = promptCanvasPlanSchema.parse(args);
+        const plan = createPromptCanvasPlan(input);
+        console.info("[phase-c-orchestration] plan.created", {
+          exportTargets: plan.exportTargets,
+          planId: plan.planId,
+          sectionCount: plan.sections.length,
+          surface: plan.surface,
+        });
+        return jsonResult({
+          success: true,
+          summary: `Created prompt canvas plan ${plan.planId} with ${plan.sections.length} section(s).`,
+          ...plan,
+        });
+      },
+    }),
+    createNativeMcpTool({
+      name: "prompt_canvas_execute",
+      description:
+        "Phase C prompt-to-canvas executor. Materializes a stored plan into the open live canvas as root and section containers with bounded concurrency.",
+      schema: promptCanvasExecuteSchema,
+      execute: async (args, context) => {
+        const input = promptCanvasExecuteSchema.parse(args);
+        const live = await readLiveContext(deps, context);
+        const result = await executePromptCanvasPlan(deps, live, input);
+        return jsonResult(result);
+      },
+    }),
+    createNativeMcpTool({
       name: "codegen_plan",
       description:
         "OpenPencil codegen route. Validate and store a code generation plan, returning a topologically sorted executionPlan.",
@@ -510,7 +592,7 @@ export function createOpenPencilCanvasMcpTools(
     createNativeMcpTool({
       name: "codegen_export",
       description:
-        "Export the current live canvas selection directly to design-as-code files. Defaults to current selection, or pass nodeIds explicitly. Supports React and HTML.",
+        "Export the current live canvas selection directly to design-as-code files. Defaults to current selection, or pass nodeIds explicitly. Supports React, HTML, and Vue.",
       schema: codegenExportSchema,
       execute: async (args, context) => {
         const input = codegenExportSchema.parse(args);
@@ -987,6 +1069,467 @@ function findEmptySpace(
   }
 }
 
+function createPromptCanvasPlan(
+  input: z.infer<typeof promptCanvasPlanSchema>,
+): PromptCanvasPlanRecord {
+  const exportTargets = input.exportTargets.map((target) => {
+    const parsed = phaseCExportTargetSchema.safeParse(target);
+    if (!parsed.success) {
+      throw new Error(`Unsupported Phase C export target: ${target}`);
+    }
+    return parsed.data;
+  });
+  const surface = inferPromptCanvasSurface(input.prompt, input.surface);
+  const rootFrame = buildPromptCanvasRootFrame(input.prompt, surface);
+  const sections = buildPromptCanvasSections(
+    input.prompt,
+    surface,
+    input.maxSections,
+    rootFrame,
+  );
+  const planId = `prompt_canvas_${randomUUID()}`;
+  const plan: PromptCanvasPlanRecord = {
+    createdAt: Date.now(),
+    exportTargets,
+    pageId: input.pageId,
+    planId,
+    prompt: input.prompt,
+    rootFrame,
+    sections,
+    surface,
+    warnings: [],
+  };
+  promptCanvasPlans.set(planId, plan);
+  return plan;
+}
+
+function inferPromptCanvasSurface(
+  prompt: string,
+  requested: PromptCanvasSurface,
+): PromptCanvasSurface {
+  if (requested !== "auto") return requested;
+  const normalized = prompt.toLowerCase();
+  if (/dashboard|analytics|metrics|admin/.test(normalized)) return "dashboard";
+  if (/mobile|app|onboarding|login|settings/.test(normalized)) return "mobile";
+  if (/flow|workflow|journey|pipeline|data/.test(normalized)) return "flow";
+  return "desktop";
+}
+
+function buildPromptCanvasRootFrame(
+  prompt: string,
+  surface: PromptCanvasSurface,
+): PromptCanvasPlanRecord["rootFrame"] {
+  const rootName = createPromptCanvasRootName(prompt, surface);
+  if (surface === "mobile") {
+    return {
+      height: 812,
+      layout: "vertical",
+      name: rootName,
+      width: 375,
+      x: 0,
+      y: 0,
+    };
+  }
+  if (surface === "flow") {
+    return {
+      height: 720,
+      layout: "horizontal",
+      name: rootName,
+      width: 1280,
+      x: 0,
+      y: 0,
+    };
+  }
+  return {
+    height: surface === "dashboard" ? 860 : 960,
+    layout: "vertical",
+    name: rootName,
+    width: 1200,
+    x: 0,
+    y: 0,
+  };
+}
+
+function createPromptCanvasRootName(
+  prompt: string,
+  surface: PromptCanvasSurface,
+): string {
+  const normalized = prompt.toLowerCase();
+  if (normalized.includes("saas") && normalized.includes("dashboard")) {
+    return "SaaS Dashboard Canvas";
+  }
+  if (surface === "dashboard") return "Dashboard Canvas";
+  if (surface === "mobile") return "Mobile App Canvas";
+  if (surface === "flow") return "Workflow Canvas";
+  return `${titleCase(prompt.split(/\s+/).slice(0, 4).join(" "))} Canvas`;
+}
+
+function buildPromptCanvasSections(
+  prompt: string,
+  surface: PromptCanvasSurface,
+  maxSections: number,
+  rootFrame: PromptCanvasPlanRecord["rootFrame"],
+): PromptCanvasSectionPlan[] {
+  const roles = inferSectionRoles(prompt, surface).slice(0, maxSections);
+  const innerX = surface === "mobile" ? 20 : 40;
+  const innerWidth = Math.max(1, rootFrame.width - innerX * 2);
+  const gap = surface === "mobile" ? 16 : 24;
+  const defaultHeight =
+    surface === "mobile"
+      ? 220
+      : Math.max(160, Math.floor(rootFrame.height / 4));
+
+  let currentY = surface === "mobile" ? 24 : 40;
+  return roles.map((role, index) => {
+    const height = sectionHeightForRole(role, surface, defaultHeight);
+    const sectionId = `section-${index + 1}-${slugifySectionId(role)}`;
+    const section: PromptCanvasSectionPlan = {
+      dependencies:
+        index === 0
+          ? []
+          : [`section-${index}-${slugifySectionId(roles[index - 1] ?? role)}`],
+      expectedNodeBudget: role === "metrics" ? 8 : 5,
+      prompt: `${prompt}\n\nCreate the ${role} section as editable Cucumber canvas nodes.`,
+      region: {
+        height,
+        width: innerWidth,
+        x: innerX,
+        y: currentY,
+      },
+      role,
+      sectionId,
+      title: titleCase(role),
+    };
+    currentY += height + gap;
+    return section;
+  });
+}
+
+function inferSectionRoles(
+  prompt: string,
+  surface: PromptCanvasSurface,
+): string[] {
+  const normalized = prompt.toLowerCase();
+  if (surface === "dashboard") {
+    const roles = ["navigation", "metrics"];
+    if (/activity|detail|feed|table/.test(normalized)) roles.push("activity");
+    else roles.push("details");
+    return roles;
+  }
+  if (surface === "mobile") {
+    const roles = ["hero"];
+    if (/form|login|onboarding|input|settings/.test(normalized))
+      roles.push("form");
+    else roles.push("content");
+    roles.push("actions");
+    return roles;
+  }
+  if (surface === "flow") return ["input", "process", "output", "review"];
+  return ["navigation", "hero", "content", "cta"];
+}
+
+function sectionHeightForRole(
+  role: string,
+  surface: PromptCanvasSurface,
+  defaultHeight: number,
+): number {
+  if (surface === "mobile") {
+    if (role === "hero") return 280;
+    if (role === "form") return 300;
+    return 140;
+  }
+  if (role === "navigation") return 96;
+  if (role === "metrics") return 220;
+  if (role === "activity" || role === "details") return 320;
+  return defaultHeight;
+}
+
+async function executePromptCanvasPlan(
+  deps: ToolDeps,
+  live: LiveContext,
+  input: z.infer<typeof promptCanvasExecuteSchema>,
+): Promise<Record<string, unknown>> {
+  const plan = promptCanvasPlans.get(input.planId);
+  if (!plan) throw new Error(`Prompt canvas plan not found: ${input.planId}`);
+
+  const liveCanvasService = requireLiveCanvasService(deps);
+  const pageId = input.pageId ?? plan.pageId;
+  let doc = structuredClone(live.doc);
+  const placement = findEmptySpace(doc, {
+    direction: "bottom",
+    height: plan.rootFrame.height,
+    padding: 96,
+    width: plan.rootFrame.width,
+    ...(pageId ? { pageId } : {}),
+  });
+  const root = createPromptRootNode(plan, placement);
+  setDocChildren(
+    doc,
+    insertNodeInTree(getDocChildren(doc, pageId), null, root),
+    pageId,
+  );
+  await liveCanvasService.setDocument(live.user, live.canvasId, doc);
+
+  console.info("[phase-c-orchestration] execute.started", {
+    canvasId: live.canvasId,
+    commitMode: input.commitMode,
+    concurrency: input.concurrency,
+    pageId,
+    planId: plan.planId,
+    rootNodeId: root.id,
+    userId: live.user.id,
+  });
+
+  const sectionResults: Array<{
+    insertedNodeIds: string[];
+    sectionId: string;
+    status: PromptCanvasSectionStatus;
+    warnings: string[];
+  }> = [];
+
+  const generatedSections = await generatePromptSectionsWithConcurrency(
+    plan,
+    root,
+    input.concurrency,
+  );
+
+  for (const generated of generatedSections) {
+    const section = generated.section;
+    doc = await liveCanvasService.getDocument(live.user, live.canvasId);
+    if (!findNode(doc, root.id)) {
+      throw new Error(
+        `Prompt canvas root container was removed before section ${section.sectionId} could be written.`,
+      );
+    }
+
+    setDocChildren(
+      doc,
+      insertNodeInTree(getDocChildren(doc, pageId), root.id, generated.node),
+      pageId,
+    );
+    await liveCanvasService.setDocument(live.user, live.canvasId, doc);
+    sectionResults.push({
+      insertedNodeIds: [generated.node.id],
+      sectionId: section.sectionId,
+      status: "completed",
+      warnings: [],
+    });
+    console.info("[phase-c-orchestration] section.completed", {
+      canvasId: live.canvasId,
+      insertedNodeIds: [generated.node.id],
+      pageId,
+      planId: plan.planId,
+      rootNodeId: root.id,
+      sectionId: section.sectionId,
+      userId: live.user.id,
+    });
+  }
+
+  promptCanvasPlans.delete(input.planId);
+  return {
+    success: true,
+    summary: `Executed prompt canvas plan ${input.planId} into ${sectionResults.length} section container(s).`,
+    rootNodeId: root.id,
+    insertedNodeIds: [
+      root.id,
+      ...sectionResults.flatMap((result) => result.insertedNodeIds),
+    ],
+    sectionResults,
+    exportableNodeIds: [root.id],
+  };
+}
+
+async function generatePromptSectionsWithConcurrency(
+  plan: PromptCanvasPlanRecord,
+  root: PenNode,
+  concurrency: number,
+): Promise<
+  Array<{ index: number; node: PenNode; section: PromptCanvasSectionPlan }>
+> {
+  const results: Array<{
+    index: number;
+    node: PenNode;
+    section: PromptCanvasSectionPlan;
+  }> = [];
+  const pending = plan.sections.map((section, index) => ({ index, section }));
+  const completed = new Set<string>();
+  const running = new Set<string>();
+
+  while (pending.length > 0 || running.size > 0) {
+    const ready = pending.filter((entry) =>
+      entry.section.dependencies.every((dependency) =>
+        completed.has(dependency),
+      ),
+    );
+    if (ready.length === 0 && running.size === 0) {
+      const blocked = pending
+        .map((entry) => entry.section.sectionId)
+        .join(", ");
+      throw new Error(
+        `Prompt canvas plan has unsatisfied section dependencies: ${blocked}`,
+      );
+    }
+
+    const batch = ready.slice(0, Math.max(1, concurrency - running.size));
+    for (const entry of batch) {
+      pending.splice(pending.indexOf(entry), 1);
+      running.add(entry.section.sectionId);
+    }
+
+    const generated = await Promise.all(
+      batch.map(async (entry) => ({
+        index: entry.index,
+        node: createPromptSectionNode(plan, entry.section, root),
+        section: entry.section,
+      })),
+    );
+
+    for (const entry of generated) {
+      running.delete(entry.section.sectionId);
+      completed.add(entry.section.sectionId);
+      results.push(entry);
+    }
+  }
+
+  return results.sort((a, b) => a.index - b.index);
+}
+
+function createPromptRootNode(
+  plan: PromptCanvasPlanRecord,
+  placement: CanvasBounds,
+): PenNode {
+  return {
+    id: `phase-c-${plan.planId}-root`,
+    type: "frame",
+    name: plan.rootFrame.name,
+    x: placement.x,
+    y: placement.y,
+    width: plan.rootFrame.width,
+    height: plan.rootFrame.height,
+    layout: plan.rootFrame.layout,
+    gap: 24,
+    padding: [32, 32],
+    fill: [{ type: "solid", color: "#f8fafc" }],
+    stroke: {
+      fill: [{ type: "solid", color: "#2563eb" }],
+      thickness: 1,
+    },
+    cornerRadius: 16,
+    children: [],
+    containerRole: ["task", "visual"],
+    explain: `Phase C prompt canvas root for: ${plan.prompt}`,
+    agentBinding: {
+      agentType: "composer",
+      name: "Phase C Orchestrator",
+      role: "designer",
+      status: "completed",
+      toolName: "prompt_canvas_execute",
+    },
+    createdByAgentId: "phase-c-orchestrator",
+  };
+}
+
+function createPromptSectionNode(
+  plan: PromptCanvasPlanRecord,
+  section: PromptCanvasSectionPlan,
+  root: PenNode,
+): PenNode {
+  const rootBounds = getNodeBounds(root);
+  const x = rootBounds.x + section.region.x;
+  const y = rootBounds.y + section.region.y;
+  const titleId = `phase-c-${plan.planId}-${section.sectionId}-title`;
+  return {
+    id: `phase-c-${plan.planId}-${section.sectionId}`,
+    type: "frame",
+    name: section.title,
+    x,
+    y,
+    width: section.region.width,
+    height: section.region.height,
+    layout: "vertical",
+    gap: 12,
+    padding: [20, 24],
+    fill: [{ type: "solid", color: fillForSectionRole(section.role) }],
+    stroke: {
+      fill: [{ type: "solid", color: "#cbd5e1" }],
+      thickness: 1,
+    },
+    cornerRadius: 12,
+    containerRole: ["visual"],
+    explain: `Phase C section ${section.sectionId}: ${section.prompt}`,
+    agentBinding: {
+      agentType: "designer",
+      name: `Section Agent: ${section.title}`,
+      role: "designer",
+      status: "completed",
+      toolName: "prompt_canvas_execute",
+    },
+    createdByAgentId: "phase-c-orchestrator",
+    children: [
+      {
+        id: titleId,
+        type: "text",
+        name: `${section.title} Title`,
+        content: section.title,
+        x: x + 24,
+        y: y + 20,
+        width: Math.max(120, section.region.width - 48),
+        height: 36,
+        fontSize: 24,
+        fontWeight: 700,
+        fill: [{ type: "solid", color: "#0f172a" }],
+      },
+      {
+        id: `${titleId}-summary`,
+        type: "text",
+        name: `${section.title} Summary`,
+        content: section.prompt.split("\n")[0] ?? section.title,
+        x: x + 24,
+        y: y + 64,
+        width: Math.max(120, section.region.width - 48),
+        height: 48,
+        fontSize: 15,
+        fill: [{ type: "solid", color: "#475569" }],
+      },
+    ],
+  };
+}
+
+function fillForSectionRole(role: string): string {
+  switch (role) {
+    case "navigation":
+      return "#e0f2fe";
+    case "metrics":
+      return "#dcfce7";
+    case "activity":
+    case "details":
+      return "#fef3c7";
+    case "form":
+      return "#ede9fe";
+    case "hero":
+      return "#ffe4e6";
+    default:
+      return "#ffffff";
+  }
+}
+
+function titleCase(value: string): string {
+  return value
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function slugifySectionId(value: string): string {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "section"
+  );
+}
+
 function createCodegenPlan(
   plan: Record<string, unknown>,
   pageId?: string,
@@ -1196,7 +1739,9 @@ function exportSelectedNodes(
   const files =
     input.framework === "react"
       ? exportNodesToReactFiles(nodes, componentName)
-      : exportNodesToHtmlFiles(nodes, componentName);
+      : input.framework === "vue"
+        ? exportNodesToVueFiles(nodes, componentName)
+        : exportNodesToHtmlFiles(nodes, componentName);
   return {
     files,
     framework: input.framework,
@@ -1235,6 +1780,24 @@ function exportNodesToHtmlFiles(
     },
     {
       path: "styles.css",
+      content: buildExportCss(componentName, bounds),
+    },
+  ];
+}
+
+function exportNodesToVueFiles(
+  nodes: PenNode[],
+  componentName: string,
+): Array<{ path: string; content: string }> {
+  const bounds = unionBounds(nodes.map(getNodeBounds));
+  const markup = nodes.map((node) => renderHtmlNode(node, bounds)).join("\n");
+  return [
+    {
+      path: `${componentName}.vue`,
+      content: `<template>\n  <main class="${componentName}Root">\n${indent(markup, 4)}\n  </main>\n</template>\n\n<script setup lang="ts">\n</script>\n\n<style scoped src="./${componentName}.css"></style>\n`,
+    },
+    {
+      path: `${componentName}.css`,
       content: buildExportCss(componentName, bounds),
     },
   ];

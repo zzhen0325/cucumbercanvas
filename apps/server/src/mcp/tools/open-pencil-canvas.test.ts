@@ -32,6 +32,166 @@ function createLiveCanvasHarness(initialDoc: PenDocument) {
 }
 
 describe("OpenPencil-compatible canvas MCP tools", () => {
+  it("lists Phase C prompt-to-canvas orchestration tools", () => {
+    const harness = createLiveCanvasHarness(createEmptyDocument());
+    const server = createInMemoryMcpServer(
+      createOpenPencilCanvasMcpTools({
+        liveCanvasService: harness.liveCanvasService as never,
+      }),
+    );
+
+    expect(server.getTool("prompt_canvas_plan")).toBeTruthy();
+    expect(server.getTool("prompt_canvas_execute")).toBeTruthy();
+  });
+
+  it("creates a deterministic prompt_canvas_plan with bounded sections", async () => {
+    const harness = createLiveCanvasHarness(createEmptyDocument());
+    const server = createInMemoryMcpServer(
+      createOpenPencilCanvasMcpTools({
+        liveCanvasService: harness.liveCanvasService as never,
+      }),
+    );
+
+    const planned = await server.callTool(
+      "prompt_canvas_plan",
+      {
+        exportTargets: ["react", "html", "vue"],
+        maxSections: 3,
+        prompt:
+          "Create a SaaS dashboard canvas with navigation, metrics, and activity details",
+        surface: "dashboard",
+      },
+      userContext,
+    );
+
+    expect(planned.structuredContent).toMatchObject({
+      success: true,
+      summary: expect.stringContaining("Created prompt canvas plan"),
+    });
+    expect(planned.structuredContent?.planId).toMatch(/^prompt_canvas_/);
+    expect(planned.structuredContent?.rootFrame).toMatchObject({
+      height: expect.any(Number),
+      layout: "vertical",
+      name: expect.stringContaining("SaaS Dashboard"),
+      width: 1200,
+    });
+    expect(planned.structuredContent?.sections).toEqual([
+      expect.objectContaining({
+        dependencies: [],
+        region: expect.objectContaining({ width: 1120 }),
+        role: "navigation",
+        sectionId: "section-1-navigation",
+      }),
+      expect.objectContaining({
+        dependencies: ["section-1-navigation"],
+        role: "metrics",
+        sectionId: "section-2-metrics",
+      }),
+      expect.objectContaining({
+        dependencies: ["section-2-metrics"],
+        role: "activity",
+        sectionId: "section-3-activity",
+      }),
+    ]);
+  });
+
+  it("rejects invalid prompt_canvas_plan input with concrete messages", async () => {
+    const harness = createLiveCanvasHarness(createEmptyDocument());
+    const server = createInMemoryMcpServer(
+      createOpenPencilCanvasMcpTools({
+        liveCanvasService: harness.liveCanvasService as never,
+      }),
+    );
+
+    await expect(
+      server.callTool(
+        "prompt_canvas_plan",
+        {
+          exportTargets: ["swiftui"],
+          maxSections: 3,
+          prompt: "Design a settings screen",
+          surface: "mobile",
+        },
+        userContext,
+      ),
+    ).rejects.toThrow("Unsupported Phase C export target: swiftui");
+  });
+
+  it("executes a prompt_canvas_plan into durable section containers", async () => {
+    const doc = createEmptyDocument();
+    const existing: PenDocument["children"] = [
+      {
+        id: "manual-note",
+        type: "text",
+        content: "Keep this manual context",
+        x: 10,
+        y: 20,
+        width: 240,
+        height: 32,
+      },
+    ];
+    doc.children = existing;
+    if (doc.pages?.[0]) doc.pages[0].children = existing;
+
+    const harness = createLiveCanvasHarness(doc);
+    const server = createInMemoryMcpServer(
+      createOpenPencilCanvasMcpTools({
+        liveCanvasService: harness.liveCanvasService as never,
+      }),
+    );
+
+    const planned = await server.callTool(
+      "prompt_canvas_plan",
+      {
+        exportTargets: ["react", "html", "vue"],
+        maxSections: 2,
+        prompt: "Create a mobile onboarding screen with hero and form sections",
+        surface: "mobile",
+      },
+      userContext,
+    );
+    const planId = planned.structuredContent?.planId as string;
+
+    const executed = await server.callTool(
+      "prompt_canvas_execute",
+      {
+        commitMode: "section",
+        concurrency: 2,
+        planId,
+      },
+      userContext,
+    );
+
+    expect(executed.structuredContent).toMatchObject({
+      success: true,
+      summary: expect.stringContaining("Executed prompt canvas plan"),
+    });
+    const rootNodeId = executed.structuredContent?.rootNodeId as string;
+    expect(rootNodeId).toBeTruthy();
+    expect(findNode(harness.state.doc, "manual-note")).toBeTruthy();
+    expect(findNode(harness.state.doc, rootNodeId)).toMatchObject({
+      containerRole: ["task", "visual"],
+      type: "frame",
+    });
+    const root = findNode(harness.state.doc, rootNodeId) as
+      | (PenDocument["children"][number] & {
+          children?: PenDocument["children"];
+        })
+      | undefined;
+    expect(root?.children?.length).toBeGreaterThanOrEqual(2);
+    expect(executed.structuredContent?.sectionResults).toEqual([
+      expect.objectContaining({
+        sectionId: "section-1-hero",
+        status: "completed",
+      }),
+      expect.objectContaining({
+        sectionId: "section-2-form",
+        status: "completed",
+      }),
+    ]);
+    expect(executed.structuredContent?.exportableNodeIds).toEqual([rootNodeId]);
+  });
+
   it("applies batch_design DSL operations to the live Cucumber canvas", async () => {
     const harness = createLiveCanvasHarness(createEmptyDocument());
     const server = createInMemoryMcpServer(
@@ -360,6 +520,33 @@ describe("OpenPencil-compatible canvas MCP tools", () => {
           path: "index.html",
         }),
         expect.objectContaining({ path: "styles.css" }),
+      ]),
+    );
+
+    const vueExport = await server.callTool(
+      "codegen_export",
+      {
+        componentName: "selected-card",
+        framework: "vue",
+        nodeIds: ["export-card"],
+      },
+      userContext,
+    );
+    expect(vueExport.structuredContent).toMatchObject({
+      framework: "vue",
+      nodeIds: ["export-card"],
+      success: true,
+    });
+    expect(vueExport.structuredContent?.files).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          content: expect.stringContaining("<template>"),
+          path: "SelectedCard.vue",
+        }),
+        expect.objectContaining({
+          content: expect.stringContaining(".SelectedCardRoot"),
+          path: "SelectedCard.css",
+        }),
       ]),
     );
   });

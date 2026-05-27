@@ -58,7 +58,8 @@ Cucumber Studio 是 AI 原生无限画布。画布不是先存在的空白空间
 - import_figma_clipboard：把 Figma clipboard HTML 导入为可编辑节点，优先走 native fig-kiwi 解析
 - search_all_unique_properties / replace_all_matching_properties：批量盘点或替换颜色、字体、字号、圆角、间距等样式
 - get_variables / set_variables / set_themes：读取或写入设计变量和主题轴；绑定变量时使用 \`$variableName\`
-- read_nodes / codegen_plan / codegen_submit_chunk / codegen_assemble / codegen_export / codegen_clean：用于设计转代码的分块读取、计划、提交、组装，以及把当前选区直接导出为 React/HTML
+- prompt_canvas_plan / prompt_canvas_execute：用于 Phase C 端到端视觉 prompt 编排，先把需求拆成空间化 section plan，再分段写入容器化画布结果，适合 dashboard、landing page、app screen、workflow 等结构化视觉产出
+- read_nodes / codegen_plan / codegen_submit_chunk / codegen_assemble / codegen_export / codegen_clean：用于设计转代码的分块读取、计划、提交、组装，以及把当前选区直接导出为 React/HTML/Vue
 这些工具直接作用于当前 live canvas；用于大批量结构化编辑时比多次 manipulate_canvas 更稳定。
 
 ## 强制规则

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-27T09:53:00+08:00",
+  "updatedAt": "2026-05-27T10:01:00+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -41,7 +41,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "agent-engineering",
-      "summary": "Deep Agents/LangChain runtime with SSE streaming, MCP-compatible typed tools, live editor canvas document access, OpenPencil-compatible batch canvas read/write, Figma import, style/variable, and design-as-code codegen route tools with assembled file outputs plus direct selection export to React/HTML, persistence, and workspace skill execution.",
+      "summary": "Deep Agents/LangChain runtime with SSE streaming, MCP-compatible typed tools, live editor canvas document access, OpenPencil-compatible batch canvas read/write, Figma import, style/variable, Phase C prompt-to-canvas planning/execution, and design-as-code codegen route tools with assembled file outputs plus direct selection export to React/HTML/Vue, persistence, and workspace skill execution.",
       "artifacts": [
         "apps/server/src/agent/deep-agent.ts",
         "apps/server/src/agent/runtime.ts",
@@ -187,15 +187,17 @@
     {
       "id": "openpencil-phase-c-codegen-orchestration",
       "name": "OpenPencil Phase C codegen and orchestration",
-      "status": "planned",
+      "status": "active",
       "priority": "P0",
       "owner": "agent-engineering",
-      "summary": "Approved Phase C thin-slice design for prompt-to-canvas planning, bounded concurrent containerized canvas materialization, and design-as-code export to React, HTML, and Vue.",
+      "summary": "Phase C thin slice with prompt-to-canvas planning, live canvas container materialization through MCP tools, structured orchestration logs, and design-as-code export to React, HTML, and Vue.",
       "scope": "Prompt-to-canvas orchestration MCP tools, section-level concurrent execution, live canvas writes, and Vue codegen export alongside React/HTML.",
       "artifacts": [
         "docs/superpowers/specs/2026-05-27-openpencil-phase-c-codegen-orchestration-design.md",
+        "docs/superpowers/plans/2026-05-27-openpencil-phase-c-codegen-orchestration.md",
         "apps/server/src/mcp/tools/open-pencil-canvas.ts",
         "apps/server/src/mcp/tools/open-pencil-canvas.test.ts",
+        "apps/server/src/agent/prompts/cucumber-main.ts",
         "docs/tech/canvas-design-integration.md"
       ]
     }

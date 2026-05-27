@@ -91,3 +91,29 @@ active `PenDocument` rather than keeping a parallel UI-only registry.
 All panel mutations log through `[canvas-design-system]` with component,
 variable, theme, icon, node, and active page context for local and production
 diagnosis.
+
+## Phase C Codegen And Prompt-To-Canvas Orchestration
+
+The live MCP canvas tool set now includes the first Phase C prompt-to-canvas
+thin slice. `prompt_canvas_plan` converts a visual prompt into a deterministic
+root-frame and section plan without mutating the document. `prompt_canvas_execute`
+materializes a stored plan into the open live canvas as a root container plus
+editable section containers.
+
+The browser editor remains the document authority. Execution reads the latest
+live `PenDocument`, inserts the root frame, then serializes section writes
+through `LiveCanvasService` so successful sections preserve existing manual
+canvas content. Every generated root and section is a normal `PenNode` with
+container roles, explanatory text, and Agent binding metadata for later
+inspection and follow-up editing.
+
+Phase C orchestration logs use `[phase-c-orchestration]` and include canvas,
+user, plan, root, section, concurrency, commit mode, and inserted-node context.
+Failures throw concrete messages rather than falling back to stale persistence
+or returning opaque placeholder output.
+
+Direct `codegen_export` now supports React, static HTML, and Vue for selected
+nodes or explicit node IDs. Vue export reuses the existing DOM/CSS mapping and
+emits a `.vue` single-file component plus CSS, which keeps the first
+multi-platform codegen slice practical while native targets remain out of
+scope.
