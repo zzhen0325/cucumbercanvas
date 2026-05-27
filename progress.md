@@ -64,6 +64,24 @@ Last updated: 2026-05-27 CST
   `agentBinding.toolName`, `createdByAgentId`, and `explain` trace context on
   the actual persisted nodes, so the done row no longer relies on the Web
   fixture alone for metadata coverage.
+- B0 MCP parity closed: live OpenPencil-compatible canvas MCP tools now keep
+  node/parent/snapshot/placement reads scoped to the requested page, reject
+  missing pages, page-local anchors, and file-backed calls with concrete
+  errors, apply `batch_design` atomically including invalid parent/delete
+  rejection, and expose page management plus B0 layered design
+  (`design_skeleton`, `design_content`, `design_refine`) tools against the live
+  editor document, including scoped new-page placeholder replacement,
+  intentional empty-frame preservation, and conflicting content-ID
+  normalization.
+- B0 export parity closed: Web SVG export now computes concrete warning
+  metadata for unsupported node types, missing image sources, image fills,
+  gradient fills, and rich-text flattening; screenshot RPC returns those
+  warnings to Agent-visible callers, and MCP `codegen_export` returns warning
+  metadata alongside React/HTML/Vue files.
+- B0 verification parity closed: the Skia canvas browser harness now covers
+  layers selection/locking, property-panel edits, selection export warning
+  metadata, and remount persistence, and the final Playwright matrix runs that
+  path together with import and Agent-output smokes.
 
 ## Current Session
 
@@ -156,7 +174,12 @@ Status:
 
 - Passed: `pnpm exec playwright test tests/e2e/skia-canvas.spec.ts`.
 - Passed: `pnpm exec playwright test tests/e2e/canvas-agent-output.spec.ts`.
-- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/open-pencil-canvas.test.ts`.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/open-pencil-canvas.test.ts` (20 tests).
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-export.test.ts` (15 tests).
+- Passed: `pnpm exec playwright test tests/e2e/skia-canvas.spec.ts -g "smokes layers" --workers=1`.
+- Passed: `pnpm exec playwright test tests/e2e/skia-canvas.spec.ts tests/e2e/canvas-import.spec.ts tests/e2e/canvas-agent-output.spec.ts --workers=1` (8 tests).
+- Passed: `pnpm exec biome check apps/server/src/mcp/tools/open-pencil-canvas.ts apps/server/src/mcp/tools/open-pencil-canvas.test.ts apps/web/src/components/canvas/canvas-export.ts apps/web/test/canvas-export.test.ts apps/web/src/components/canvas-editor.tsx`.
 - Passed: `pnpm exec biome check apps/web/src/app/test/canvas-agent-output/page.tsx apps/web/src/app/test/canvas-agent-output/canvas-agent-output-harness.tsx tests/e2e/canvas-agent-output.spec.ts docs/tech/openpencil-web-canvas-parity.md progress.md feature_list.json` (Biome checked the configured source/spec files; Markdown/JSON docs are ignored by the current Biome config).
 - Passed: `pnpm exec biome check tests/e2e/skia-canvas.spec.ts docs/tech/openpencil-web-canvas-parity.md progress.md` (Biome checked the configured spec file; Markdown docs are ignored by the current Biome config).
 - Failed: `pnpm --filter @cucumber/web typecheck` remains blocked by the unchanged out-of-scope `apps/web/src/components/canvas/skia-canvas.tsx:388` `PenNode` to `Record<string, unknown>` cast diagnostic.

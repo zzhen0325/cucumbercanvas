@@ -31,6 +31,68 @@ function createLiveCanvasHarness(initialDoc: PenDocument) {
   return { liveCanvasService, state };
 }
 
+function createTwoPageDocument(): PenDocument {
+  return {
+    ...createEmptyDocument(),
+    activePageId: "page-a",
+    children: [],
+    pages: [
+      {
+        id: "page-a",
+        name: "Page A",
+        children: [
+          {
+            id: "a-card",
+            type: "frame",
+            name: "Active page card",
+            x: 0,
+            y: 0,
+            width: 120,
+            height: 80,
+            children: [],
+          },
+        ],
+      },
+      {
+        id: "page-b",
+        name: "Page B",
+        children: [
+          {
+            id: "b-parent",
+            type: "frame",
+            name: "Requested page parent",
+            x: 200,
+            y: 40,
+            width: 100,
+            height: 80,
+            children: [
+              {
+                id: "b-child",
+                type: "text",
+                content: "Page B child",
+                x: 208,
+                y: 52,
+                width: 80,
+                height: 24,
+              },
+            ],
+          },
+          {
+            id: "b-distant",
+            type: "frame",
+            name: "Distant B node",
+            x: 1000,
+            y: 400,
+            width: 50,
+            height: 50,
+            children: [],
+          },
+        ],
+      },
+    ],
+  };
+}
+
 describe("OpenPencil-compatible canvas MCP tools", () => {
   it("lists Phase C prompt-to-canvas orchestration tools", () => {
     const harness = createLiveCanvasHarness(createEmptyDocument());
@@ -42,6 +104,14 @@ describe("OpenPencil-compatible canvas MCP tools", () => {
 
     expect(server.getTool("prompt_canvas_plan")).toBeTruthy();
     expect(server.getTool("prompt_canvas_execute")).toBeTruthy();
+    expect(server.getTool("design_skeleton")).toBeTruthy();
+    expect(server.getTool("design_content")).toBeTruthy();
+    expect(server.getTool("design_refine")).toBeTruthy();
+    expect(server.getTool("add_page")).toBeTruthy();
+    expect(server.getTool("remove_page")).toBeTruthy();
+    expect(server.getTool("rename_page")).toBeTruthy();
+    expect(server.getTool("reorder_page")).toBeTruthy();
+    expect(server.getTool("duplicate_page")).toBeTruthy();
   });
 
   it("creates a deterministic prompt_canvas_plan with bounded sections", async () => {
@@ -266,6 +336,146 @@ describe("OpenPencil-compatible canvas MCP tools", () => {
     });
   });
 
+  it("rejects failed batch_design operations without persisting partial edits", async () => {
+    const initialDoc = createEmptyDocument();
+    const harness = createLiveCanvasHarness(initialDoc);
+    const server = createInMemoryMcpServer(
+      createOpenPencilCanvasMcpTools({
+        liveCanvasService: harness.liveCanvasService as never,
+      }),
+    );
+
+    await expect(
+      server.callTool(
+        "batch_design",
+        {
+          operations: [
+            'panel=I(null,{type:"frame",name:"Should Roll Back",x:0,y:0,width:120,height:80,children:[]})',
+            "Z(panel,{})",
+          ].join("\n"),
+        },
+        userContext,
+      ),
+    ).rejects.toThrow("Unsupported batch_design operation");
+
+    expect(harness.state.doc).toBe(initialDoc);
+    expect(findNode(harness.state.doc, "panel")).toBeUndefined();
+    expect(harness.state.doc.pages?.[0]?.children).toEqual([]);
+  });
+
+  it("rejects invalid batch_design parent and delete targets without pretending success", async () => {
+    const initialDoc = createEmptyDocument();
+    const harness = createLiveCanvasHarness(initialDoc);
+    const server = createInMemoryMcpServer(
+      createOpenPencilCanvasMcpTools({
+        liveCanvasService: harness.liveCanvasService as never,
+      }),
+    );
+
+    await expect(
+      server.callTool(
+        "batch_design",
+        {
+          operations:
+            'panel=I("missing-parent",{type:"frame",name:"Never Persisted",width:120,height:80,children:[]})',
+        },
+        userContext,
+      ),
+    ).rejects.toThrow(
+      "Parent missing-parent was not found on page page-default.",
+    );
+
+    await expect(
+      server.callTool(
+        "batch_design",
+        {
+          operations: 'D("missing-node")',
+        },
+        userContext,
+      ),
+    ).rejects.toThrow("Delete target not found: missing-node");
+
+    expect(harness.state.doc).toBe(initialDoc);
+    expect(harness.state.doc.pages?.[0]?.children).toEqual([]);
+  });
+
+  it("rejects batch_design moves into the moved node subtree", async () => {
+    const initialDoc = createEmptyDocument();
+    const children: PenDocument["children"] = [
+      {
+        children: [
+          {
+            children: [],
+            height: 80,
+            id: "child-frame",
+            type: "frame",
+            width: 120,
+            x: 20,
+            y: 20,
+          },
+        ],
+        height: 180,
+        id: "parent-frame",
+        type: "frame",
+        width: 240,
+        x: 0,
+        y: 0,
+      },
+    ];
+    initialDoc.children = children;
+    if (initialDoc.pages?.[0]) initialDoc.pages[0].children = children;
+    const harness = createLiveCanvasHarness(initialDoc);
+    const server = createInMemoryMcpServer(
+      createOpenPencilCanvasMcpTools({
+        liveCanvasService: harness.liveCanvasService as never,
+      }),
+    );
+
+    await expect(
+      server.callTool(
+        "batch_design",
+        {
+          operations: 'M("parent-frame","child-frame")',
+        },
+        userContext,
+      ),
+    ).rejects.toThrow(
+      "Move target parent-frame cannot be moved into its own descendant child-frame.",
+    );
+
+    expect(harness.state.doc).toBe(initialDoc);
+    expect(findNode(harness.state.doc, "parent-frame")).toBeTruthy();
+    expect(findNode(harness.state.doc, "child-frame")).toBeTruthy();
+  });
+
+  it("rejects filePath on live-editor-only batch MCP tools", async () => {
+    const harness = createLiveCanvasHarness(createEmptyDocument());
+    const server = createInMemoryMcpServer(
+      createOpenPencilCanvasMcpTools({
+        liveCanvasService: harness.liveCanvasService as never,
+      }),
+    );
+
+    await expect(
+      server.callTool(
+        "batch_design",
+        {
+          filePath: "/tmp/design.op",
+          operations: 'panel=I(null,{type:"frame",children:[]})',
+        },
+        userContext,
+      ),
+    ).rejects.toThrow(
+      "batch_design in Cucumber MCP works against the open live editor; filePath is not supported.",
+    );
+
+    await expect(
+      server.callTool("batch_get", { filePath: "/tmp/design.op" }, userContext),
+    ).rejects.toThrow(
+      "batch_get in Cucumber MCP works against the open live editor; filePath is not supported.",
+    );
+  });
+
   it("reads nodes with batch_get by pattern and bounded depth", async () => {
     const doc = createEmptyDocument();
     const children: PenDocument["children"] = [
@@ -316,6 +526,385 @@ describe("OpenPencil-compatible canvas MCP tools", () => {
     expect(nodes[0]?.id).toBe("frame-1");
     expect(nodes[0]?.children).toEqual([
       expect.objectContaining({ id: "text-1" }),
+    ]);
+  });
+
+  it("keeps page-scoped MCP reads and placement anchored to the requested page", async () => {
+    const harness = createLiveCanvasHarness(createTwoPageDocument());
+    const server = createInMemoryMcpServer(
+      createOpenPencilCanvasMcpTools({
+        liveCanvasService: harness.liveCanvasService as never,
+      }),
+    );
+
+    const byId = await server.callTool(
+      "batch_get",
+      {
+        nodeIds: ["b-parent"],
+        pageId: "page-b",
+        readDepth: 0,
+      },
+      userContext,
+    );
+    expect(byId.structuredContent?.nodes).toEqual([
+      expect.objectContaining({ id: "b-parent" }),
+    ]);
+
+    const byParent = await server.callTool(
+      "batch_get",
+      {
+        parentId: "b-parent",
+        pageId: "page-b",
+        readDepth: 0,
+      },
+      userContext,
+    );
+    expect(byParent.structuredContent?.nodes).toEqual([
+      expect.objectContaining({ id: "b-child" }),
+    ]);
+
+    const snapshot = await server.callTool(
+      "snapshot_layout",
+      {
+        maxDepth: 0,
+        pageId: "page-b",
+        parentId: "b-parent",
+      },
+      userContext,
+    );
+    expect(snapshot.structuredContent?.nodes).toEqual([
+      expect.objectContaining({ id: "b-child" }),
+    ]);
+
+    const placement = await server.callTool(
+      "find_empty_space",
+      {
+        direction: "right",
+        height: 40,
+        nodeId: "b-parent",
+        padding: 10,
+        pageId: "page-b",
+        width: 60,
+      },
+      userContext,
+    );
+    expect(placement.structuredContent?.region).toMatchObject({
+      x: 310,
+      y: 40,
+      width: 60,
+      height: 40,
+    });
+  });
+
+  it("rejects missing pages and page-scoped missing anchors with concrete errors", async () => {
+    const harness = createLiveCanvasHarness(createTwoPageDocument());
+    const server = createInMemoryMcpServer(
+      createOpenPencilCanvasMcpTools({
+        liveCanvasService: harness.liveCanvasService as never,
+      }),
+    );
+
+    await expect(
+      server.callTool("batch_get", { pageId: "missing-page" }, userContext),
+    ).rejects.toThrow("Page missing-page does not exist.");
+
+    await expect(
+      server.callTool(
+        "batch_get",
+        { nodeIds: ["a-card"], pageId: "page-b" },
+        userContext,
+      ),
+    ).rejects.toThrow("Node a-card was not found on page page-b.");
+
+    await expect(
+      server.callTool(
+        "batch_get",
+        { pageId: "page-b", parentId: "a-card" },
+        userContext,
+      ),
+    ).rejects.toThrow("Parent a-card was not found on page page-b.");
+
+    await expect(
+      server.callTool(
+        "snapshot_layout",
+        { pageId: "page-b", parentId: "a-card" },
+        userContext,
+      ),
+    ).rejects.toThrow("Parent a-card was not found on page page-b.");
+
+    await expect(
+      server.callTool(
+        "find_empty_space",
+        {
+          direction: "right",
+          height: 40,
+          nodeId: "a-card",
+          padding: 10,
+          pageId: "page-b",
+          width: 60,
+        },
+        userContext,
+      ),
+    ).rejects.toThrow("Node a-card was not found on page page-b.");
+  });
+
+  it("manages live canvas pages with OpenPencil-compatible page tools", async () => {
+    const harness = createLiveCanvasHarness(createTwoPageDocument());
+    const server = createInMemoryMcpServer(
+      createOpenPencilCanvasMcpTools({
+        liveCanvasService: harness.liveCanvasService as never,
+      }),
+    );
+
+    const added = await server.callTool(
+      "add_page",
+      { name: "Generated Page" },
+      userContext,
+    );
+    expect(added.structuredContent).toMatchObject({
+      success: true,
+      pageCount: 3,
+      page: expect.objectContaining({ name: "Generated Page" }),
+    });
+    const addedPageId = added.structuredContent?.pageId as string;
+
+    await server.callTool(
+      "rename_page",
+      { name: "Renamed Page", pageId: addedPageId },
+      userContext,
+    );
+    expect(
+      harness.state.doc.pages?.find((page) => page.id === addedPageId)?.name,
+    ).toBe("Renamed Page");
+
+    const duplicated = await server.callTool(
+      "duplicate_page",
+      { name: "Duplicated B", pageId: "page-b" },
+      userContext,
+    );
+    expect(duplicated.structuredContent).toMatchObject({
+      success: true,
+      pageCount: 4,
+      page: expect.objectContaining({ name: "Duplicated B" }),
+    });
+    const duplicatedPageId = duplicated.structuredContent?.pageId as string;
+    expect(
+      harness.state.doc.pages?.find((page) => page.id === duplicatedPageId)
+        ?.children[0]?.id,
+    ).not.toBe("b-parent");
+
+    await server.callTool(
+      "reorder_page",
+      { index: 0, pageId: duplicatedPageId },
+      userContext,
+    );
+    expect(harness.state.doc.pages?.[0]?.id).toBe(duplicatedPageId);
+
+    const removed = await server.callTool(
+      "remove_page",
+      { pageId: duplicatedPageId },
+      userContext,
+    );
+    expect(removed.structuredContent).toMatchObject({
+      success: true,
+      pageCount: 3,
+    });
+    expect(
+      harness.state.doc.pages?.some((page) => page.id === duplicatedPageId),
+    ).toBe(false);
+  });
+
+  it("supports OpenPencil layered design tools on the live requested page", async () => {
+    const harness = createLiveCanvasHarness(createTwoPageDocument());
+    const server = createInMemoryMcpServer(
+      createOpenPencilCanvasMcpTools({
+        liveCanvasService: harness.liveCanvasService as never,
+      }),
+    );
+
+    const skeleton = await server.callTool(
+      "design_skeleton",
+      {
+        pageId: "page-b",
+        rootFrame: {
+          height: 720,
+          layout: "vertical",
+          name: "Landing Page",
+          width: 1200,
+        },
+        sections: [
+          { height: 320, name: "Hero", role: "hero" },
+          { height: 240, name: "Proof", role: "features" },
+        ],
+      },
+      userContext,
+    );
+    expect(skeleton.structuredContent).toMatchObject({
+      success: true,
+      rootId: expect.any(String),
+      sections: [
+        expect.objectContaining({ name: "Hero" }),
+        expect.objectContaining({ name: "Proof" }),
+      ],
+    });
+    const rootId = skeleton.structuredContent?.rootId as string;
+    const sections = skeleton.structuredContent?.sections as Array<{
+      id: string;
+    }>;
+
+    const content = await server.callTool(
+      "design_content",
+      {
+        children: [
+          {
+            type: "text",
+            content: "Cucumber Studio",
+            width: 420,
+            height: 48,
+          },
+        ],
+        pageId: "page-b",
+        sectionId: sections[0]?.id,
+      },
+      userContext,
+    );
+    expect(content.structuredContent).toMatchObject({
+      success: true,
+      insertedCount: 1,
+      sectionId: sections[0]?.id,
+    });
+
+    const refine = await server.callTool(
+      "design_refine",
+      { pageId: "page-b", rootId },
+      userContext,
+    );
+    expect(refine.structuredContent).toMatchObject({
+      success: true,
+      rootId,
+      totalNodeCount: 4,
+    });
+    expect(findNode(harness.state.doc, rootId, "page-b")).toBeTruthy();
+    expect(findNode(harness.state.doc, rootId, "page-a")).toBeUndefined();
+  });
+
+  it("replaces new-page placeholders and normalizes design_content ids", async () => {
+    const harness = createLiveCanvasHarness(createEmptyDocument());
+    const server = createInMemoryMcpServer(
+      createOpenPencilCanvasMcpTools({
+        liveCanvasService: harness.liveCanvasService as never,
+      }),
+    );
+
+    const added = await server.callTool(
+      "add_page",
+      { name: "Layered Page" },
+      userContext,
+    );
+    const pageId = added.structuredContent?.pageId as string;
+    expect(
+      harness.state.doc.pages?.find((page) => page.id === pageId)?.children,
+    ).toHaveLength(1);
+
+    const skeleton = await server.callTool(
+      "design_skeleton",
+      {
+        pageId,
+        rootFrame: {
+          height: 600,
+          layout: "vertical",
+          name: "Generated Landing",
+          width: 1000,
+        },
+        sections: [{ name: "Hero", role: "hero" }],
+      },
+      userContext,
+    );
+    const rootId = skeleton.structuredContent?.rootId as string;
+    const sections = skeleton.structuredContent?.sections as Array<{
+      id: string;
+    }>;
+    const pageChildren =
+      harness.state.doc.pages?.find((page) => page.id === pageId)?.children ??
+      [];
+    expect(pageChildren).toHaveLength(1);
+    expect(pageChildren[0]).toMatchObject({
+      id: rootId,
+      name: "Generated Landing",
+    });
+
+    const content = await server.callTool(
+      "design_content",
+      {
+        children: [
+          {
+            id: rootId,
+            type: "text",
+            content: "Conflicting supplied id",
+          },
+        ],
+        pageId,
+        sectionId: sections[0]?.id,
+      },
+      userContext,
+    );
+    expect(content.structuredContent).toMatchObject({
+      postProcessed: true,
+      warnings: [
+        expect.stringContaining(`Replaced conflicting node id "${rootId}"`),
+      ],
+    });
+    const inserted = content.structuredContent?.snapshot as {
+      children?: Array<{ content?: string; id?: string }>;
+    };
+    expect(inserted.children?.[0]).toMatchObject({
+      content: "Conflicting supplied id",
+    });
+    expect(inserted.children?.[0]?.id).not.toBe(rootId);
+  });
+
+  it("preserves intentional empty frames when creating a layered skeleton", async () => {
+    const doc = createEmptyDocument();
+    const children: PenDocument["children"] = [
+      {
+        id: "intentional-empty",
+        type: "frame",
+        name: "Intentional Empty Slot",
+        x: 24,
+        y: 36,
+        width: 480,
+        height: 320,
+        fill: [{ type: "solid", color: "#f1f5f9" }],
+        children: [],
+      },
+    ];
+    doc.children = children;
+    if (doc.pages?.[0]) doc.pages[0].children = children;
+    const harness = createLiveCanvasHarness(doc);
+    const server = createInMemoryMcpServer(
+      createOpenPencilCanvasMcpTools({
+        liveCanvasService: harness.liveCanvasService as never,
+      }),
+    );
+
+    const skeleton = await server.callTool(
+      "design_skeleton",
+      {
+        rootFrame: {
+          height: 600,
+          layout: "vertical",
+          name: "Second Root",
+          width: 1000,
+        },
+        sections: [{ name: "Hero", role: "hero" }],
+      },
+      userContext,
+    );
+    const rootId = skeleton.structuredContent?.rootId as string;
+
+    expect(harness.state.doc.pages?.[0]?.children).toEqual([
+      expect.objectContaining({ id: "intentional-empty" }),
+      expect.objectContaining({ id: rootId, name: "Second Root" }),
     ]);
   });
 
@@ -575,6 +1164,105 @@ describe("OpenPencil-compatible canvas MCP tools", () => {
         expect.objectContaining({
           content: expect.stringContaining(".SelectedCardRoot"),
           path: "SelectedCard.css",
+        }),
+      ]),
+    );
+  });
+
+  it("returns concrete warnings for degraded direct codegen export content", async () => {
+    const doc = createEmptyDocument() as PenDocument & { selection: string[] };
+    const children = [
+      {
+        id: "export-warning-card",
+        type: "frame",
+        name: "Export Warning Card",
+        x: 0,
+        y: 0,
+        width: 320,
+        height: 180,
+        children: [
+          {
+            id: "gradient-rect",
+            type: "rectangle",
+            x: 20,
+            y: 20,
+            width: 120,
+            height: 80,
+            fill: [
+              {
+                type: "linear_gradient",
+                stops: [
+                  { color: "#0f172a", offset: 0 },
+                  { color: "#d3f256", offset: 1 },
+                ],
+              },
+            ],
+          },
+          {
+            id: "image-missing-src",
+            type: "image",
+            x: 160,
+            y: 20,
+            width: 120,
+            height: 80,
+            src: "",
+          },
+          {
+            id: "rich-copy",
+            type: "text",
+            x: 20,
+            y: 120,
+            width: 240,
+            height: 40,
+            content: [{ text: "Layered", fontWeight: 700 }, { text: " copy" }],
+          },
+          {
+            id: "unsupported-widget",
+            type: "sticky_note",
+            x: 250,
+            y: 120,
+            width: 80,
+            height: 40,
+          },
+        ],
+      },
+    ] as PenDocument["children"];
+    doc.children = children;
+    doc.selection = ["export-warning-card"];
+    if (doc.pages?.[0]) doc.pages[0].children = children;
+    const harness = createLiveCanvasHarness(doc);
+    const server = createInMemoryMcpServer(
+      createOpenPencilCanvasMcpTools({
+        liveCanvasService: harness.liveCanvasService as never,
+      }),
+    );
+
+    const result = await server.callTool(
+      "codegen_export",
+      {
+        componentName: "warning-card",
+        framework: "react",
+      },
+      userContext,
+    );
+
+    expect(result.structuredContent?.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "unsupported-gradient-fill",
+          nodeId: "gradient-rect",
+        }),
+        expect.objectContaining({
+          code: "missing-image-source",
+          nodeId: "image-missing-src",
+        }),
+        expect.objectContaining({
+          code: "unsupported-rich-text",
+          nodeId: "rich-copy",
+        }),
+        expect.objectContaining({
+          code: "unsupported-node-type",
+          nodeId: "unsupported-widget",
         }),
       ]),
     );

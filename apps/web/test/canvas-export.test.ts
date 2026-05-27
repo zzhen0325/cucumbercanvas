@@ -2,6 +2,7 @@ import type { CucumberCanvasDocument } from "@cucumber/canvas-core";
 import { describe, expect, it } from "vitest";
 
 import {
+  analyzeDocumentExportWarnings,
   calculateDocumentBounds,
   calculateExportSize,
   exportDocumentImage,
@@ -144,5 +145,251 @@ describe("canvas export", () => {
     expect(svg).toContain('x="300" y="420"');
     expect(svg).toContain("Page B only");
     expect(svg).not.toContain("Page A only");
+  });
+
+  it("warns when unsupported node types are exported as rectangles", () => {
+    const warnings = analyzeDocumentExportWarnings({
+      version: "cucumber-canvas-v1",
+      children: [
+        {
+          id: "sticky-note-a",
+          type: "sticky_note",
+          x: 0,
+          y: 0,
+          width: 120,
+          height: 80,
+        },
+      ],
+    } as unknown as CucumberCanvasDocument);
+
+    expect(warnings).toEqual([
+      {
+        code: "unsupported-node-type",
+        nodeId: "sticky-note-a",
+        message:
+          'Node "sticky-note-a" uses unsupported type "sticky_note" and will be exported as a rectangle.',
+      },
+    ]);
+  });
+
+  it("warns when canonical nodes do not have first-class SVG export support", () => {
+    const warnings = analyzeDocumentExportWarnings({
+      version: "cucumber-canvas-v1",
+      children: [
+        {
+          id: "video-a",
+          type: "videoEmbed",
+          x: 0,
+          y: 0,
+          src: "https://example.com/clip.mp4",
+        },
+      ],
+    });
+
+    expect(warnings).toEqual([
+      {
+        code: "unsupported-node-type",
+        nodeId: "video-a",
+        message:
+          'Node "video-a" uses unsupported type "videoEmbed" and will be exported as a rectangle.',
+      },
+    ]);
+  });
+
+  it("warns when image nodes do not have a usable source", () => {
+    const warnings = analyzeDocumentExportWarnings({
+      version: "cucumber-canvas-v1",
+      children: [
+        {
+          id: "image-without-src",
+          type: "image",
+          x: 0,
+          y: 0,
+          width: 120,
+          height: 80,
+          src: "",
+        },
+      ],
+    } as unknown as CucumberCanvasDocument);
+
+    expect(warnings).toEqual([
+      {
+        code: "missing-image-source",
+        nodeId: "image-without-src",
+        message:
+          'Image node "image-without-src" is missing a usable source and may not appear in the export.',
+      },
+    ]);
+  });
+
+  it("warns when image fills are degraded to shape fallback fills", () => {
+    const warnings = analyzeDocumentExportWarnings({
+      version: "cucumber-canvas-v1",
+      children: [
+        {
+          id: "rect-with-image-fill",
+          type: "rectangle",
+          x: 0,
+          y: 0,
+          width: 120,
+          height: 80,
+          fill: [
+            {
+              type: "image",
+              url: "https://example.com/texture.png",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(warnings).toEqual([
+      {
+        code: "unsupported-image-fill",
+        nodeId: "rect-with-image-fill",
+        message:
+          'Node "rect-with-image-fill" uses an image fill that is not preserved by SVG export and will be exported with a fallback fill.',
+      },
+    ]);
+  });
+
+  it("warns when gradient fills are degraded to fallback fills", () => {
+    const warnings = analyzeDocumentExportWarnings({
+      version: "cucumber-canvas-v1",
+      children: [
+        {
+          id: "rect-with-gradient-fill",
+          type: "rectangle",
+          x: 0,
+          y: 0,
+          width: 120,
+          height: 80,
+          fill: [
+            {
+              type: "linear_gradient",
+              stops: [
+                { color: "#0f172a", offset: 0 },
+                { color: "#d3f256", offset: 1 },
+              ],
+            },
+          ],
+        },
+      ],
+    } as unknown as CucumberCanvasDocument);
+
+    expect(warnings).toEqual([
+      {
+        code: "unsupported-gradient-fill",
+        nodeId: "rect-with-gradient-fill",
+        message:
+          'Node "rect-with-gradient-fill" uses a gradient fill that is not preserved by SVG export and will be exported with a fallback fill.',
+      },
+    ]);
+  });
+
+  it("warns when rich text segments are flattened by SVG export", () => {
+    const warnings = analyzeDocumentExportWarnings({
+      version: "cucumber-canvas-v1",
+      children: [
+        {
+          id: "rich-text-a",
+          type: "text",
+          x: 0,
+          y: 0,
+          width: 240,
+          height: 80,
+          content: [{ text: "Bold", fontWeight: 700 }, { text: " normal" }],
+        },
+      ],
+    } as unknown as CucumberCanvasDocument);
+
+    expect(warnings).toEqual([
+      {
+        code: "unsupported-rich-text",
+        nodeId: "rich-text-a",
+        message:
+          'Text node "rich-text-a" uses rich text segments that are not preserved by SVG export and will be exported as plain text.',
+      },
+    ]);
+  });
+
+  it("limits export warnings to the requested active page", () => {
+    const warnings = analyzeDocumentExportWarnings(multiPageDoc, {
+      activePageId: "page-b",
+    });
+
+    expect(warnings).toEqual([]);
+  });
+
+  it("limits export warnings to the requested bounds", () => {
+    const warnings = analyzeDocumentExportWarnings(
+      {
+        version: "cucumber-canvas-v1",
+        children: [
+          {
+            id: "visible-gradient",
+            type: "rectangle",
+            x: 0,
+            y: 0,
+            width: 120,
+            height: 80,
+            fill: [{ type: "linear_gradient" }],
+          },
+          {
+            id: "outside-gradient",
+            type: "rectangle",
+            x: 500,
+            y: 500,
+            width: 120,
+            height: 80,
+            fill: [{ type: "linear_gradient" }],
+          },
+        ],
+      } as unknown as CucumberCanvasDocument,
+      { bounds: { x: 0, y: 0, width: 200, height: 200 } },
+    );
+
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        code: "unsupported-gradient-fill",
+        nodeId: "visible-gradient",
+      }),
+    ]);
+  });
+
+  it("does not warn for supported text, rectangle, and image nodes", () => {
+    const warnings = analyzeDocumentExportWarnings({
+      version: "cucumber-canvas-v1",
+      children: [
+        {
+          id: "text-a",
+          type: "text",
+          x: 0,
+          y: 0,
+          width: 120,
+          height: 40,
+          content: "Ready",
+        },
+        {
+          id: "rect-a",
+          type: "rectangle",
+          x: 150,
+          y: 0,
+          width: 120,
+          height: 80,
+        },
+        {
+          id: "image-a",
+          type: "image",
+          x: 300,
+          y: 0,
+          width: 120,
+          height: 80,
+          src: "https://example.com/asset.png",
+        },
+      ],
+    } as unknown as CucumberCanvasDocument);
+
+    expect(warnings).toEqual([]);
   });
 });

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-27T18:50:11+08:00",
+  "updatedAt": "2026-05-27T20:02:08+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -41,7 +41,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "agent-engineering",
-      "summary": "Deep Agents/LangChain runtime with SSE streaming, MCP-compatible typed tools, live editor canvas document access, OpenPencil-compatible batch canvas read/write, Figma import, style/variable, Phase C prompt-to-canvas planning/execution, and design-as-code codegen route tools with assembled file outputs plus direct selection export to React/HTML/Vue, persistence, and workspace skill execution.",
+      "summary": "Deep Agents/LangChain runtime with SSE streaming, MCP-compatible typed tools, live editor canvas document access, OpenPencil-compatible page-aware atomic batch canvas read/write, page management, layered design skeleton/content/refine tools with scoped placeholder replacement and content ID normalization, Figma import, style/variable, Phase C prompt-to-canvas planning/execution, and design-as-code codegen route tools with assembled file outputs plus direct selection export to React/HTML/Vue and degradation warnings, persistence, and workspace skill execution.",
       "artifacts": [
         "apps/server/src/agent/deep-agent.ts",
         "apps/server/src/agent/runtime.ts",
@@ -217,7 +217,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "product-engineering",
-      "summary": "Parity-matrix-first B0 implementation that audits OpenPencil Web canvas main-path capabilities, closes P0/P1 editor/import/design-system/Agent/MCP/export gaps, and records desktop/CLI/Git/i18n/collaboration/plugin/native-codegen surfaces as roadmap-only.",
+      "summary": "Parity-matrix-first B0 implementation that audits OpenPencil Web canvas main-path capabilities, has closed editor/import/design-system/Agent/MCP/export/verification gaps, and records desktop/CLI/Git/i18n/collaboration/plugin/native-codegen surfaces as roadmap-only.",
       "scope": "Web canvas parity matrix plus P0/P1 implementation for editor, import, design system, Agent generation, MCP, export, and verification.",
       "artifacts": [
         "docs/tech/openpencil-web-canvas-parity.md",

@@ -6,11 +6,14 @@ type CanvasHarnessSnapshot = {
     connectorType?: string;
     content?: string;
     d?: string;
+    fill?: unknown;
     height?: number;
     id: string;
+    locked?: boolean;
     path?: string;
     rotation?: number;
     type: string;
+    visible?: boolean;
     width?: number;
     x: number;
     x2?: number;
@@ -245,5 +248,93 @@ test.describe("skia canvas harness", () => {
     expect(snapshot.selectedIds).toEqual([
       snapshot.nodes.find((node) => node.type === "path")?.id,
     ]);
+  });
+
+  test("smokes layers, property edits, export warnings, and remount persistence", async ({
+    page,
+  }) => {
+    await page.goto("/test/canvas-engine");
+
+    await page.getByTestId("seed-main-path-document").click();
+    await expect
+      .poll(async () => {
+        const snapshot = await readSnapshot(page);
+        return {
+          nodeCount: snapshot.nodeCount,
+          selectedIds: snapshot.selectedIds,
+        };
+      })
+      .toEqual({
+        nodeCount: 2,
+        selectedIds: ["smoke-rect"],
+      });
+
+    const propertyPanel = page.getByTestId("property-panel-host");
+    const xInput = propertyPanel
+      .locator("label", { hasText: "X" })
+      .locator("input");
+    await xInput.fill("64");
+    await expect
+      .poll(async () => {
+        const snapshot = await readSnapshot(page);
+        return snapshot.nodes.find((node) => node.id === "smoke-rect")?.x;
+      })
+      .toBe(64);
+
+    await page.getByTestId("remount-main-path-document").click();
+    await expect
+      .poll(async () => {
+        const snapshot = await readSnapshot(page);
+        const rect = snapshot.nodes.find((node) => node.id === "smoke-rect");
+        return {
+          nodeCount: snapshot.nodeCount,
+          rectX: rect?.x,
+        };
+      })
+      .toEqual({
+        nodeCount: 2,
+        rectX: 64,
+      });
+
+    await page.getByTestId("open-main-path-layers").click();
+    const titleLayer = page.getByTestId("layer-row-smoke-title");
+    await expect(titleLayer).toBeVisible();
+    await titleLayer.getByRole("button", { name: "Smoke title" }).click();
+    await expect
+      .poll(async () => (await readSnapshot(page)).selectedIds)
+      .toEqual(["smoke-title"]);
+
+    await page
+      .getByTestId("layer-row-smoke-title")
+      .getByRole("button", { name: "Lock layer" })
+      .click();
+    await expect
+      .poll(async () => {
+        const snapshot = await readSnapshot(page);
+        return snapshot.nodes.find((node) => node.id === "smoke-title")?.locked;
+      })
+      .toBe(true);
+    await page.getByRole("button", { name: "Close layers panel" }).click();
+
+    await page.getByTestId("export-main-path-document").click();
+    await expect(page.getByTestId("main-path-export-result")).toContainText(
+      '"unsupported-gradient-fill"',
+    );
+    await expect(page.getByTestId("main-path-export-result")).toContainText(
+      '"includesTitle": true',
+    );
+    await expect
+      .poll(async () => {
+        const snapshot = await readSnapshot(page);
+        const title = snapshot.nodes.find((node) => node.id === "smoke-title");
+        return {
+          nodeCount: snapshot.nodeCount,
+          titleLocked: title?.locked,
+        };
+      })
+      .toEqual({
+        nodeCount: 2,
+        titleLocked: true,
+      });
   });
 });

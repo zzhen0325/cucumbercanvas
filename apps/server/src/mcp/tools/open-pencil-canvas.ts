@@ -3,12 +3,19 @@ import {
   type CanvasBounds,
   type PenDocument,
   type PenNode,
+  addCanvasPage,
   createNodeId,
+  deleteCanvasPage,
+  duplicateCanvasPage,
   findNode,
+  getActiveChildren,
   getNodeBounds,
   insertCanvasImportResult,
   isCucumberCanvasDocument,
+  normalizeCanvasPages,
   parseClipboardImport,
+  renameCanvasPage,
+  resolveActivePageId,
 } from "@cucumber/canvas-core";
 import { z } from "zod";
 
@@ -21,6 +28,8 @@ import type {
 import { schemaToJsonSchema } from "../utils.js";
 
 const batchDesignSchema = z.object({
+  canvasWidth: z.number().positive().optional(),
+  filePath: z.string().optional(),
   operations: z
     .string()
     .min(1)
@@ -28,9 +37,11 @@ const batchDesignSchema = z.object({
       "OpenPencil-style DSL. One operation per line: binding=I(parent,{...}), binding=C(source,parent,{...}), U(path,{...}), binding=R(path,{...}), M(node,parent,index?), D(node).",
     ),
   pageId: z.string().optional().describe("Optional page id to edit."),
+  postProcess: z.boolean().optional(),
 });
 
 const batchGetSchema = z.object({
+  filePath: z.string().optional(),
   patterns: z
     .array(
       z.object({
@@ -43,6 +54,8 @@ const batchGetSchema = z.object({
   nodeIds: z.array(z.string()).optional(),
   parentId: z.string().optional(),
   readDepth: z.number().int().min(0).max(8).default(1),
+  resolve_refs: z.boolean().optional(),
+  resolveRefs: z.boolean().optional(),
   searchDepth: z.number().int().min(0).max(20).default(20),
   pageId: z.string().optional(),
 });
@@ -58,9 +71,87 @@ const findEmptySpaceSchema = z.object({
   direction: z.enum(["top", "right", "bottom", "left"]),
   width: z.number().positive(),
   height: z.number().positive(),
-  padding: z.number().min(0).default(80),
+  padding: z.number().min(0).default(50),
   nodeId: z.string().optional(),
   pageId: z.string().optional(),
+});
+
+const pageNodeSchema = z.record(z.string(), z.unknown());
+
+const addPageSchema = z.object({
+  children: z.array(pageNodeSchema).optional(),
+  filePath: z.string().optional(),
+  name: z.string().trim().min(1).optional(),
+});
+
+const removePageSchema = z.object({
+  filePath: z.string().optional(),
+  pageId: z.string().min(1),
+});
+
+const renamePageSchema = z.object({
+  filePath: z.string().optional(),
+  name: z.string().trim().min(1),
+  pageId: z.string().min(1),
+});
+
+const reorderPageSchema = z.object({
+  filePath: z.string().optional(),
+  index: z.number().int().min(0),
+  pageId: z.string().min(1),
+});
+
+const duplicatePageSchema = z.object({
+  filePath: z.string().optional(),
+  name: z.string().trim().min(1).optional(),
+  pageId: z.string().min(1),
+});
+
+const designSkeletonSchema = z.object({
+  canvasWidth: z.number().positive().optional(),
+  filePath: z.string().optional(),
+  pageId: z.string().optional(),
+  rootFrame: z.object({
+    fill: z.array(z.record(z.string(), z.unknown())).optional(),
+    gap: z.number().optional(),
+    height: z.number().positive(),
+    layout: z.enum(["vertical", "horizontal"]).optional(),
+    name: z.string().trim().min(1).optional(),
+    padding: z.unknown().optional(),
+    width: z.number().positive(),
+  }),
+  sections: z
+    .array(
+      z.object({
+        alignItems: z.string().optional(),
+        fill: z.array(z.record(z.string(), z.unknown())).optional(),
+        gap: z.number().optional(),
+        height: z.union([z.number().positive(), z.string()]).optional(),
+        justifyContent: z.string().optional(),
+        layout: z.enum(["vertical", "horizontal"]).optional(),
+        name: z.string().trim().min(1),
+        padding: z.unknown().optional(),
+        role: z.string().optional(),
+      }),
+    )
+    .min(1),
+  styleGuide: z.record(z.string(), z.unknown()).optional(),
+});
+
+const designContentSchema = z.object({
+  canvasWidth: z.number().positive().optional(),
+  children: z.array(pageNodeSchema).min(1),
+  filePath: z.string().optional(),
+  pageId: z.string().optional(),
+  postProcess: z.boolean().default(true),
+  sectionId: z.string().min(1),
+});
+
+const designRefineSchema = z.object({
+  canvasWidth: z.number().positive().optional(),
+  filePath: z.string().optional(),
+  pageId: z.string().optional(),
+  rootId: z.string().min(1),
 });
 
 const importFigmaClipboardSchema = z.object({
@@ -183,6 +274,9 @@ type BatchDesignInput = z.infer<typeof batchDesignSchema>;
 type BatchGetInput = z.infer<typeof batchGetSchema>;
 type SnapshotLayoutInput = z.infer<typeof snapshotLayoutSchema>;
 type FindEmptySpaceInput = z.infer<typeof findEmptySpaceSchema>;
+type DesignSkeletonInput = z.infer<typeof designSkeletonSchema>;
+type DesignContentInput = z.infer<typeof designContentSchema>;
+type DesignRefineInput = z.infer<typeof designRefineSchema>;
 type PropertyName = z.infer<typeof propertyNameSchema>;
 type ReplacementRule = z.infer<typeof replacementRuleSchema>;
 type CodegenExportInput = z.infer<typeof codegenExportSchema>;
@@ -257,6 +351,27 @@ type OpResult = {
   nodeId: string;
 };
 
+type LayeredSectionResult = {
+  contentWidth: number;
+  guidelines: string;
+  id: string;
+  name: string;
+  suggestedRoles: string[];
+};
+
+const CODEGEN_RENDERED_NODE_TYPES = new Set([
+  "frame",
+  "rectangle",
+  "text",
+  "image",
+  "line",
+  "ellipse",
+  "polygon",
+  "path",
+  "icon_font",
+  "videoEmbed",
+]);
+
 export function createOpenPencilCanvasMcpTools(
   deps: ToolDeps,
 ): CucumberMcpTool[] {
@@ -268,6 +383,7 @@ export function createOpenPencilCanvasMcpTools(
       schema: batchDesignSchema,
       execute: async (args, context) => {
         const input = batchDesignSchema.parse(args);
+        ensureLiveCanvasOnly(input.filePath, "batch_design");
         const live = await readLiveContext(deps, context);
         const result = applyBatchDesign(live.doc, input);
         const liveCanvasService = deps.liveCanvasService;
@@ -283,20 +399,15 @@ export function createOpenPencilCanvasMcpTools(
         );
         console.info("[open-pencil-canvas] batch_design applied", {
           canvasId: live.canvasId,
-          errors: result.errors.length,
           nodeCount: countNodes(getDocChildren(result.doc, input.pageId)),
           operations: splitOperations(input.operations).length,
           userId: live.user.id,
         });
         return jsonResult({
-          success: result.errors.length === 0,
-          summary:
-            result.errors.length === 0
-              ? `Applied ${result.results.length} OpenPencil canvas operations.`
-              : `Applied ${result.results.length} OpenPencil canvas operations with ${result.errors.length} issue(s).`,
+          success: true,
+          summary: `Applied ${result.results.length} OpenPencil canvas operations.`,
           results: result.results,
           nodeCount: countNodes(getDocChildren(result.doc, input.pageId)),
-          ...(result.errors.length > 0 ? { errors: result.errors } : {}),
         });
       },
     }),
@@ -307,6 +418,7 @@ export function createOpenPencilCanvasMcpTools(
       schema: batchGetSchema,
       execute: async (args, context) => {
         const input = batchGetSchema.parse(args);
+        ensureLiveCanvasOnly(input.filePath, "batch_get");
         const live = await readLiveContext(deps, context);
         const nodes = applyBatchGet(live.doc, input);
         console.info("[open-pencil-canvas] batch_get read", {
@@ -347,6 +459,269 @@ export function createOpenPencilCanvasMcpTools(
         return jsonResult({
           summary: `Found empty ${input.width}x${input.height} region at (${region.x}, ${region.y}).`,
           region,
+        });
+      },
+    }),
+    createNativeMcpTool({
+      name: "add_page",
+      description:
+        "OpenPencil-compatible page operation. Add a page to the live Cucumber canvas.",
+      schema: addPageSchema,
+      execute: async (args, context) => {
+        const input = addPageSchema.parse(args);
+        ensureLiveCanvasOnly(input.filePath, "add_page");
+        const live = await readLiveContext(deps, context);
+        const children = input.children
+          ? input.children.map((child) => coerceInputNode(child, "add_page"))
+          : [createDefaultPageFrame()];
+        const result = addCanvasPage(live.doc, {
+          children,
+          name: input.name,
+        });
+        await requireLiveCanvasService(deps).setDocument(
+          live.user,
+          live.canvasId,
+          result.document,
+        );
+        console.info("[open-pencil-canvas] page added", {
+          canvasId: live.canvasId,
+          pageCount: result.document.pages?.length ?? 1,
+          pageId: result.page.id,
+          userId: live.user.id,
+        });
+        return jsonResult({
+          success: true,
+          summary: `Added page ${result.page.name}.`,
+          pageId: result.page.id,
+          page: result.page,
+          pageCount: result.document.pages?.length ?? 1,
+        });
+      },
+    }),
+    createNativeMcpTool({
+      name: "remove_page",
+      description:
+        "OpenPencil-compatible page operation. Remove a page from the live Cucumber canvas.",
+      schema: removePageSchema,
+      execute: async (args, context) => {
+        const input = removePageSchema.parse(args);
+        ensureLiveCanvasOnly(input.filePath, "remove_page");
+        const live = await readLiveContext(deps, context);
+        const result = deleteCanvasPage(live.doc, input.pageId);
+        await requireLiveCanvasService(deps).setDocument(
+          live.user,
+          live.canvasId,
+          result.document,
+        );
+        console.info("[open-pencil-canvas] page removed", {
+          canvasId: live.canvasId,
+          pageCount: result.document.pages?.length ?? 1,
+          pageId: input.pageId,
+          userId: live.user.id,
+        });
+        return jsonResult({
+          success: true,
+          summary: `Removed page ${input.pageId}.`,
+          pageCount: result.document.pages?.length ?? 1,
+          activePageId: result.document.activePageId,
+        });
+      },
+    }),
+    createNativeMcpTool({
+      name: "rename_page",
+      description:
+        "OpenPencil-compatible page operation. Rename a live Cucumber canvas page.",
+      schema: renamePageSchema,
+      execute: async (args, context) => {
+        const input = renamePageSchema.parse(args);
+        ensureLiveCanvasOnly(input.filePath, "rename_page");
+        const live = await readLiveContext(deps, context);
+        const result = renameCanvasPage(live.doc, input.pageId, input.name);
+        await requireLiveCanvasService(deps).setDocument(
+          live.user,
+          live.canvasId,
+          result.document,
+        );
+        console.info("[open-pencil-canvas] page renamed", {
+          canvasId: live.canvasId,
+          pageId: input.pageId,
+          userId: live.user.id,
+        });
+        return jsonResult({
+          success: true,
+          summary: `Renamed page ${input.pageId} to ${result.page.name}.`,
+          pageId: result.page.id,
+          page: result.page,
+          pageCount: result.document.pages?.length ?? 1,
+        });
+      },
+    }),
+    createNativeMcpTool({
+      name: "reorder_page",
+      description:
+        "OpenPencil-compatible page operation. Move a live Cucumber canvas page to a zero-based index.",
+      schema: reorderPageSchema,
+      execute: async (args, context) => {
+        const input = reorderPageSchema.parse(args);
+        ensureLiveCanvasOnly(input.filePath, "reorder_page");
+        const live = await readLiveContext(deps, context);
+        const result = reorderCanvasPageToIndex(
+          live.doc,
+          input.pageId,
+          input.index,
+        );
+        await requireLiveCanvasService(deps).setDocument(
+          live.user,
+          live.canvasId,
+          result.document,
+        );
+        console.info("[open-pencil-canvas] page reordered", {
+          canvasId: live.canvasId,
+          index: input.index,
+          pageId: input.pageId,
+          userId: live.user.id,
+        });
+        return jsonResult({
+          success: true,
+          summary: `Moved page ${input.pageId}.`,
+          pageId: result.page.id,
+          page: result.page,
+          pageCount: result.document.pages?.length ?? 1,
+        });
+      },
+    }),
+    createNativeMcpTool({
+      name: "duplicate_page",
+      description:
+        "OpenPencil-compatible page operation. Duplicate a live Cucumber canvas page with fresh node IDs.",
+      schema: duplicatePageSchema,
+      execute: async (args, context) => {
+        const input = duplicatePageSchema.parse(args);
+        ensureLiveCanvasOnly(input.filePath, "duplicate_page");
+        const live = await readLiveContext(deps, context);
+        const duplicated = duplicateCanvasPage(live.doc, input.pageId);
+        const result = input.name
+          ? renameCanvasPage(
+              duplicated.document,
+              duplicated.page.id,
+              input.name,
+            )
+          : duplicated;
+        await requireLiveCanvasService(deps).setDocument(
+          live.user,
+          live.canvasId,
+          result.document,
+        );
+        console.info("[open-pencil-canvas] page duplicated", {
+          canvasId: live.canvasId,
+          pageCount: result.document.pages?.length ?? 1,
+          pageId: result.page.id,
+          sourcePageId: input.pageId,
+          userId: live.user.id,
+        });
+        return jsonResult({
+          success: true,
+          summary: `Duplicated page ${input.pageId}.`,
+          pageId: result.page.id,
+          page: result.page,
+          pageCount: result.document.pages?.length ?? 1,
+        });
+      },
+    }),
+    createNativeMcpTool({
+      name: "design_skeleton",
+      description:
+        "OpenPencil layered design operation. Create a root frame plus section frames in the live canvas.",
+      schema: designSkeletonSchema,
+      execute: async (args, context) => {
+        const input = designSkeletonSchema.parse(args);
+        ensureLiveCanvasOnly(input.filePath, "design_skeleton");
+        const live = await readLiveContext(deps, context);
+        const result = applyDesignSkeleton(live.doc, input);
+        await requireLiveCanvasService(deps).setDocument(
+          live.user,
+          live.canvasId,
+          result.doc,
+        );
+        console.info("[open-pencil-canvas] design skeleton created", {
+          canvasId: live.canvasId,
+          pageId: input.pageId,
+          rootId: result.rootId,
+          sectionCount: result.sections.length,
+          userId: live.user.id,
+        });
+        return jsonResult({
+          success: true,
+          summary: `Created layered design skeleton with ${result.sections.length} section(s).`,
+          rootId: result.rootId,
+          sections: result.sections,
+          nextSteps: result.nextSteps,
+        });
+      },
+    }),
+    createNativeMcpTool({
+      name: "design_content",
+      description:
+        "OpenPencil layered design operation. Insert content nodes into a section frame in the live canvas.",
+      schema: designContentSchema,
+      execute: async (args, context) => {
+        const input = designContentSchema.parse(args);
+        ensureLiveCanvasOnly(input.filePath, "design_content");
+        const live = await readLiveContext(deps, context);
+        const result = applyDesignContent(live.doc, input);
+        await requireLiveCanvasService(deps).setDocument(
+          live.user,
+          live.canvasId,
+          result.doc,
+        );
+        console.info("[open-pencil-canvas] design content inserted", {
+          canvasId: live.canvasId,
+          insertedCount: result.insertedCount,
+          pageId: input.pageId,
+          sectionId: input.sectionId,
+          userId: live.user.id,
+        });
+        return jsonResult({
+          success: true,
+          summary: `Inserted ${result.insertedCount} layered design node(s).`,
+          sectionId: input.sectionId,
+          insertedCount: result.insertedCount,
+          totalNodeCount: result.totalNodeCount,
+          warnings: result.warnings,
+          snapshot: result.snapshot,
+          postProcessed: result.postProcessed,
+        });
+      },
+    }),
+    createNativeMcpTool({
+      name: "design_refine",
+      description:
+        "OpenPencil layered design operation. Validate and snapshot a layered design tree in the live canvas.",
+      schema: designRefineSchema,
+      execute: async (args, context) => {
+        const input = designRefineSchema.parse(args);
+        ensureLiveCanvasOnly(input.filePath, "design_refine");
+        const live = await readLiveContext(deps, context);
+        const result = applyDesignRefine(live.doc, input);
+        await requireLiveCanvasService(deps).setDocument(
+          live.user,
+          live.canvasId,
+          result.doc,
+        );
+        console.info("[open-pencil-canvas] design refined", {
+          canvasId: live.canvasId,
+          fixCount: result.fixes.length,
+          pageId: input.pageId,
+          rootId: input.rootId,
+          userId: live.user.id,
+        });
+        return jsonResult({
+          success: true,
+          summary: `Refined layered design ${input.rootId}.`,
+          rootId: input.rootId,
+          totalNodeCount: result.totalNodeCount,
+          fixes: result.fixes,
+          layoutSnapshot: result.layoutSnapshot,
         });
       },
     }),
@@ -709,31 +1084,352 @@ function jsonResult(payload: Record<string, unknown>): McpToolCallResult {
   };
 }
 
+function ensureLiveCanvasOnly(filePath: string | undefined, toolName: string) {
+  if (!filePath) return;
+  throw new Error(
+    `${toolName} in Cucumber MCP works against the open live editor; filePath is not supported.`,
+  );
+}
+
+function createDefaultPageFrame(): PenNode {
+  return {
+    id: createNodeId("frame"),
+    type: "frame",
+    name: "Frame",
+    x: 0,
+    y: 0,
+    width: 1200,
+    height: 800,
+    fill: [{ type: "solid", color: "#FFFFFF" }],
+    children: [],
+  } as PenNode;
+}
+
+function coerceInputNode(
+  input: Record<string, unknown>,
+  toolName: string,
+  options: {
+    usedIds?: Set<string>;
+    warnings?: string[];
+  } = {},
+): PenNode {
+  const type = input.type;
+  if (typeof type !== "string" || !type.trim()) {
+    throw new Error(`${toolName} node is missing a concrete type.`);
+  }
+  const suppliedId =
+    typeof input.id === "string" && input.id.trim() ? input.id : undefined;
+  const idConflict = suppliedId ? options.usedIds?.has(suppliedId) : false;
+  const id = suppliedId && !idConflict ? suppliedId : createNodeId(type);
+  if (suppliedId && idConflict) {
+    options.warnings?.push(
+      `Replaced conflicting node id "${suppliedId}" with "${id}".`,
+    );
+  }
+  options.usedIds?.add(id);
+  const next: Record<string, unknown> = { ...input, id, type };
+  if ("children" in input) {
+    if (!Array.isArray(input.children)) {
+      throw new Error(
+        `${toolName} node ${id} has invalid children; expected an array.`,
+      );
+    }
+    next.children = input.children.map((child) => {
+      if (!isRecord(child)) {
+        throw new Error(
+          `${toolName} node ${id} contains a non-object child node.`,
+        );
+      }
+      return coerceInputNode(child, toolName, options);
+    });
+  }
+  return next as unknown as PenNode;
+}
+
+function reorderCanvasPageToIndex(
+  doc: PenDocument,
+  pageId: string,
+  index: number,
+): { document: PenDocument; page: NonNullable<PenDocument["pages"]>[number] } {
+  const normalized = normalizeCanvasPages(doc);
+  const pages = [...(normalized.pages ?? [])];
+  const fromIndex = pages.findIndex((page) => page.id === pageId);
+  if (fromIndex === -1) {
+    throw new Error(`Page ${pageId} does not exist.`);
+  }
+  const [page] = pages.splice(fromIndex, 1);
+  if (!page) {
+    throw new Error(`Page ${pageId} does not exist.`);
+  }
+  const toIndex = Math.min(index, pages.length);
+  pages.splice(toIndex, 0, page);
+  return {
+    document: {
+      ...normalized,
+      activePageId: resolveActivePageId(normalized),
+      children: [],
+      pages,
+    },
+    page,
+  };
+}
+
+function applyDesignSkeleton(
+  sourceDoc: PenDocument,
+  input: DesignSkeletonInput,
+): {
+  doc: PenDocument;
+  nextSteps: string;
+  rootId: string;
+  sections: LayeredSectionResult[];
+} {
+  const doc = structuredClone(sourceDoc);
+  const canvasWidth = input.canvasWidth ?? input.rootFrame.width;
+  const rootId = createNodeId("skeleton");
+  const sectionNodes: PenNode[] = [];
+  const sections: LayeredSectionResult[] = [];
+
+  for (const section of input.sections) {
+    const sectionId = createNodeId("section");
+    const sectionNode = {
+      id: sectionId,
+      type: "frame",
+      name: section.name,
+      width: "fill_container",
+      height: section.height ?? "fit_content",
+      layout: section.layout ?? "vertical",
+      children: [],
+      ...(section.alignItems ? { alignItems: section.alignItems } : {}),
+      ...(section.fill ? { fill: section.fill } : {}),
+      ...(section.gap !== undefined ? { gap: section.gap } : {}),
+      ...(section.justifyContent
+        ? { justifyContent: section.justifyContent }
+        : {}),
+      ...(section.padding !== undefined ? { padding: section.padding } : {}),
+      ...(section.role ? { role: section.role } : {}),
+    } as unknown as PenNode;
+    sectionNodes.push(sectionNode);
+    sections.push({
+      id: sectionId,
+      name: section.name,
+      contentWidth: computeLayeredContentWidth(section.padding, canvasWidth),
+      guidelines: createLayeredSectionGuidelines(section.name, section.role),
+      suggestedRoles: suggestLayeredRoles(section.name, section.role),
+    });
+  }
+
+  const rootNode = {
+    id: rootId,
+    type: "frame",
+    name: input.rootFrame.name ?? "Page",
+    x: 0,
+    y: 0,
+    width: input.rootFrame.width,
+    height: input.rootFrame.height,
+    layout: input.rootFrame.layout ?? "vertical",
+    children: sectionNodes,
+    ...(input.rootFrame.fill ? { fill: input.rootFrame.fill } : {}),
+    ...(input.rootFrame.gap !== undefined ? { gap: input.rootFrame.gap } : {}),
+    ...(input.rootFrame.padding !== undefined
+      ? { padding: input.rootFrame.padding }
+      : {}),
+  } as unknown as PenNode;
+
+  const children = getDocChildren(doc, input.pageId);
+  const emptyFrameIndex = children.findIndex(isDefaultPagePlaceholderFrame);
+  const nextChildren =
+    emptyFrameIndex === -1
+      ? [...children, rootNode]
+      : children.map((child, index) =>
+          index === emptyFrameIndex ? rootNode : child,
+        );
+  setDocChildren(doc, nextChildren, input.pageId);
+
+  return {
+    doc,
+    rootId,
+    sections,
+    nextSteps: `Skeleton created with ${sections.length} sections. Call design_content for each section, then design_refine for validation.`,
+  };
+}
+
+function applyDesignContent(
+  sourceDoc: PenDocument,
+  input: DesignContentInput,
+): {
+  doc: PenDocument;
+  insertedCount: number;
+  postProcessed: boolean;
+  snapshot: Record<string, unknown>;
+  totalNodeCount: number;
+  warnings: string[];
+} {
+  const doc = structuredClone(sourceDoc);
+  const children = getDocChildren(doc, input.pageId);
+  const section = findNodeInTree(children, input.sectionId);
+  if (!section) {
+    throw new Error(`Section not found on requested page: ${input.sectionId}`);
+  }
+  if (section.type !== "frame") {
+    throw new Error(`Section ${input.sectionId} must be a frame node.`);
+  }
+  const warnings: string[] = [];
+  const usedIds = new Set(flattenNodes(children).map((node) => node.id));
+  const inserted = input.children.map((child) =>
+    coerceInputNode(child, "design_content", { usedIds, warnings }),
+  );
+  const sectionWithChildren = section as PenNode & { children?: PenNode[] };
+  sectionWithChildren.children = [
+    ...getNodeChildren(sectionWithChildren),
+    ...inserted,
+  ];
+  setDocChildren(doc, children, input.pageId);
+  return {
+    doc,
+    insertedCount: countNodes(inserted),
+    totalNodeCount: countNodes(getNodeChildren(sectionWithChildren)),
+    warnings,
+    snapshot: readNodeWithDepth(sectionWithChildren, 2),
+    postProcessed: input.postProcess,
+  };
+}
+
+function applyDesignRefine(
+  sourceDoc: PenDocument,
+  input: DesignRefineInput,
+): {
+  doc: PenDocument;
+  fixes: Array<{ fix: string; nodeId: string; nodeName?: string }>;
+  layoutSnapshot: Record<string, unknown>[];
+  totalNodeCount: number;
+} {
+  const doc = structuredClone(sourceDoc);
+  const children = getDocChildren(doc, input.pageId);
+  const root = findNodeInTree(children, input.rootId);
+  if (!root) {
+    throw new Error(`Root node not found on requested page: ${input.rootId}`);
+  }
+  setDocChildren(doc, children, input.pageId);
+  return {
+    doc,
+    totalNodeCount: countNodes([root]),
+    fixes: [],
+    layoutSnapshot: [
+      {
+        id: root.id,
+        name: root.name,
+        type: root.type,
+        childCount: getNodeChildren(root).length,
+        ...getNodeBounds(root),
+      },
+      ...buildLayoutSnapshot(doc, {
+        maxDepth: 3,
+        pageId: input.pageId,
+        parentId: input.rootId,
+        problemsOnly: false,
+      }),
+    ],
+  };
+}
+
+function computeLayeredContentWidth(
+  padding: unknown,
+  canvasWidth: number,
+): number {
+  const parsed = parseLayeredPadding(padding);
+  return Math.max(0, canvasWidth - parsed.left - parsed.right);
+}
+
+function parseLayeredPadding(padding: unknown): {
+  left: number;
+  right: number;
+} {
+  if (typeof padding === "number") {
+    return { left: padding, right: padding };
+  }
+  if (
+    Array.isArray(padding) &&
+    padding.every((value) => typeof value === "number")
+  ) {
+    const values = padding as number[];
+    if (values.length === 2) {
+      const horizontal = values[1] ?? 0;
+      return { left: horizontal, right: horizontal };
+    }
+    if (values.length === 4) {
+      return { left: values[3] ?? 0, right: values[1] ?? 0 };
+    }
+  }
+  return { left: 0, right: 0 };
+}
+
+function createLayeredSectionGuidelines(name: string, role?: string): string {
+  const normalized = `${name} ${role ?? ""}`.toLowerCase();
+  if (normalized.includes("hero")) {
+    return "Use one clear heading group, one supporting copy group, and one primary visual or action group.";
+  }
+  if (normalized.includes("nav")) {
+    return "Use logo, navigation links, and primary action groups with stable horizontal spacing.";
+  }
+  if (normalized.includes("feature") || normalized.includes("proof")) {
+    return "Use repeated content groups with consistent sizing and scan-friendly hierarchy.";
+  }
+  return "Insert bounded content groups that match the section role and preserve layout hierarchy.";
+}
+
+function suggestLayeredRoles(name: string, role?: string): string[] {
+  const normalized = `${name} ${role ?? ""}`.toLowerCase();
+  if (normalized.includes("hero")) return ["heading", "body", "button"];
+  if (normalized.includes("nav")) return ["logo", "nav-link", "button"];
+  if (normalized.includes("feature") || normalized.includes("proof")) {
+    return ["card", "heading", "body"];
+  }
+  return ["frame", "heading", "body"];
+}
+
+function isDefaultPagePlaceholderFrame(node: PenNode): boolean {
+  const fill = (node as unknown as { fill?: Array<{ color?: string }> }).fill;
+  return (
+    node.type === "frame" &&
+    node.name === "Frame" &&
+    node.x === 0 &&
+    node.y === 0 &&
+    node.width === 1200 &&
+    node.height === 800 &&
+    fill?.[0]?.color === "#FFFFFF" &&
+    getNodeChildren(node).length === 0
+  );
+}
+
 function applyBatchDesign(
   sourceDoc: PenDocument,
   input: BatchDesignInput,
 ): {
   doc: PenDocument;
-  errors: Array<{ line: string; error: string }>;
   results: OpResult[];
 } {
   const doc = structuredClone(sourceDoc);
   const bindings = new Map<string, string>();
   const results: OpResult[] = [];
-  const errors: Array<{ line: string; error: string }> = [];
 
   for (const line of splitOperations(input.operations)) {
     try {
       executeDesignLine(line, doc, bindings, results, input.pageId);
     } catch (error) {
-      errors.push({
-        line: line.length > 200 ? `${line.slice(0, 200)}...` : line,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      const message = error instanceof Error ? error.message : String(error);
+      const displayLine = line.length > 200 ? `${line.slice(0, 200)}...` : line;
+      if (message.startsWith("Cannot parse operation")) {
+        throw new Error(
+          `Unsupported batch_design operation at line "${displayLine}": ${message}`,
+        );
+      }
+      throw new Error(
+        `batch_design failed at line "${displayLine}": ${message}`,
+      );
     }
   }
 
-  return { doc, errors, results };
+  return { doc, results };
 }
 
 function applyBatchGet(
@@ -742,19 +1438,28 @@ function applyBatchGet(
 ): Record<string, unknown>[] {
   const readDepth = input.readDepth ?? 1;
   const searchDepth = input.searchDepth ?? 20;
+  const pageChildren = getDocChildren(doc, input.pageId);
 
   if (!input.patterns?.length && !input.nodeIds?.length) {
     const rootNodes = input.parentId
-      ? getNodeChildren(findNode(doc, input.parentId))
-      : getDocChildren(doc, input.pageId);
+      ? getNodeChildren(
+          requireNodeOnPage(pageChildren, input.parentId, input.pageId, doc, {
+            label: "Parent",
+          }),
+        )
+      : pageChildren;
     return rootNodes.map((node) => readNodeWithDepth(node, readDepth));
   }
 
   const results: PenNode[] = [];
   const seen = new Set<string>();
   const searchRoot = input.parentId
-    ? getNodeChildren(findNode(doc, input.parentId))
-    : getDocChildren(doc, input.pageId);
+    ? getNodeChildren(
+        requireNodeOnPage(pageChildren, input.parentId, input.pageId, doc, {
+          label: "Parent",
+        }),
+      )
+    : pageChildren;
 
   for (const pattern of input.patterns ?? []) {
     for (const node of searchNodes(searchRoot, pattern, searchDepth)) {
@@ -766,8 +1471,9 @@ function applyBatchGet(
 
   for (const id of input.nodeIds ?? []) {
     if (seen.has(id)) continue;
-    const node = findNode(doc, id);
-    if (!node) continue;
+    const node = requireNodeOnPage(pageChildren, id, input.pageId, doc, {
+      label: "Node",
+    });
     seen.add(id);
     results.push(node);
   }
@@ -1001,9 +1707,14 @@ function buildLayoutSnapshot(
   doc: PenDocument,
   input: SnapshotLayoutInput,
 ): Record<string, unknown>[] {
+  const pageChildren = getDocChildren(doc, input.pageId);
   const roots = input.parentId
-    ? getNodeChildren(findNode(doc, input.parentId))
-    : getDocChildren(doc, input.pageId);
+    ? getNodeChildren(
+        requireNodeOnPage(pageChildren, input.parentId, input.pageId, doc, {
+          label: "Parent",
+        }),
+      )
+    : pageChildren;
   const nodes = flattenToDepth(roots, input.maxDepth ?? 2);
   const snapshot = nodes.map((node) => {
     const bounds = getNodeBounds(node);
@@ -1031,7 +1742,14 @@ function findEmptySpace(
   input: FindEmptySpaceInput,
 ): CanvasBounds {
   const nodes = getDocChildren(doc, input.pageId);
-  const anchorNode = input.nodeId ? findNode(doc, input.nodeId) : undefined;
+  const anchorNode = input.nodeId
+    ? findNodeInTree(nodes, input.nodeId)
+    : undefined;
+  if (input.nodeId && !anchorNode) {
+    throw new Error(
+      `Node ${input.nodeId} was not found on page ${resolveActivePageId(doc, input.pageId)}.`,
+    );
+  }
   const anchor = anchorNode
     ? getNodeBounds(anchorNode)
     : unionBounds(flattenNodes(nodes).map(getNodeBounds));
@@ -1067,6 +1785,32 @@ function findEmptySpace(
         height: input.height,
       };
   }
+}
+
+function requireNodeOnPage(
+  pageChildren: PenNode[],
+  nodeId: string,
+  pageId: string | undefined,
+  doc: PenDocument,
+  options: { label: "Node" | "Parent" },
+): PenNode {
+  const node = findNodeInTree(pageChildren, nodeId);
+  if (!node) {
+    throw new Error(
+      `${options.label} ${nodeId} was not found on page ${resolveActivePageId(doc, pageId)}.`,
+    );
+  }
+  return node;
+}
+
+function ensureInsertParentExists(
+  pageChildren: PenNode[],
+  parentId: string | null,
+  pageId: string | undefined,
+  doc: PenDocument,
+): void {
+  if (parentId === null) return;
+  requireNodeOnPage(pageChildren, parentId, pageId, doc, { label: "Parent" });
 }
 
 function createPromptCanvasPlan(
@@ -1717,6 +2461,7 @@ function exportSelectedNodes(
   files: Array<{ path: string; content: string }>;
   framework: string;
   nodeIds: string[];
+  warnings: Array<{ code: string; message: string; nodeId: string }>;
 } {
   const runtimeDoc = doc as RuntimeDocument;
   const selectedIds = input.nodeIds?.length
@@ -1746,7 +2491,65 @@ function exportSelectedNodes(
     files,
     framework: input.framework,
     nodeIds: nodes.map((node) => node.id),
+    warnings: collectCodegenExportWarnings(nodes),
   };
+}
+
+function collectCodegenExportWarnings(
+  nodes: PenNode[],
+): Array<{ code: string; message: string; nodeId: string }> {
+  return flattenNodes(nodes).flatMap((node) => {
+    const warnings: Array<{ code: string; message: string; nodeId: string }> =
+      [];
+    const record = node as unknown as Record<string, unknown>;
+    if (!CODEGEN_RENDERED_NODE_TYPES.has(node.type)) {
+      warnings.push({
+        code: "unsupported-node-type",
+        nodeId: node.id,
+        message: `Node "${node.id}" uses unsupported type "${node.type}" and will be exported as a generic element.`,
+      });
+    }
+    if (
+      node.type === "image" &&
+      (typeof record.src !== "string" || record.src.trim().length === 0)
+    ) {
+      warnings.push({
+        code: "missing-image-source",
+        nodeId: node.id,
+        message: `Image node "${node.id}" is missing a usable source and may not appear in codegen export.`,
+      });
+    }
+    if (Array.isArray(record.fill)) {
+      const fills = record.fill.filter(isRecord);
+      if (fills.some((fill) => fill.type === "image")) {
+        warnings.push({
+          code: "unsupported-image-fill",
+          nodeId: node.id,
+          message: `Node "${node.id}" uses an image fill that is not preserved by design-as-code export and will use a CSS fallback.`,
+        });
+      }
+      if (
+        fills.some(
+          (fill) =>
+            fill.type === "linear_gradient" || fill.type === "radial_gradient",
+        )
+      ) {
+        warnings.push({
+          code: "unsupported-gradient-fill",
+          nodeId: node.id,
+          message: `Node "${node.id}" uses a gradient fill that is not preserved by design-as-code export and will use a CSS fallback.`,
+        });
+      }
+    }
+    if (node.type === "text" && Array.isArray(record.content)) {
+      warnings.push({
+        code: "unsupported-rich-text",
+        nodeId: node.id,
+        message: `Text node "${node.id}" uses rich text segments that are flattened in design-as-code export.`,
+      });
+    }
+    return warnings;
+  });
 }
 
 function exportNodesToReactFiles(
@@ -2092,7 +2895,7 @@ function executeDesignLine(
 ): void {
   const assignMatch = line.match(/^(\w+)\s*=\s*([ICR])\((.+)\)$/s);
   const bindlessAssignMatch = !assignMatch && line.match(/^([ICR])\((.+)\)$/s);
-  const callMatch = line.match(/^([UDM])\((.+)\)$/s);
+  const callMatch = line.match(/^([UM])\((.+)\)$/s);
   const deleteMatch = line.match(/^D\((.+)\)$/s);
 
   const effectiveAssign =
@@ -2115,9 +2918,11 @@ function executeDesignLine(
       case "I": {
         const { data, parent } = parseInsertArgs(argsStr, bindings);
         const node = materializeNode(data);
+        const currentChildren = getDocChildren(doc, pageId);
+        ensureInsertParentExists(currentChildren, parent, pageId, doc);
         setDocChildren(
           doc,
-          insertNodeInTree(getDocChildren(doc, pageId), parent, node),
+          insertNodeInTree(currentChildren, parent, node),
           pageId,
         );
         bindings.set(binding, node.id);
@@ -2126,7 +2931,9 @@ function executeDesignLine(
       }
       case "C": {
         const { data, parent, sourceId } = parseCopyArgs(argsStr, bindings);
-        const source = findNodeInTree(getDocChildren(doc, pageId), sourceId);
+        const currentChildren = getDocChildren(doc, pageId);
+        ensureInsertParentExists(currentChildren, parent, pageId, doc);
+        const source = findNodeInTree(currentChildren, sourceId);
         if (!source) throw new Error(`Copy source not found: ${sourceId}`);
         const cloned = cloneNodeWithNewIds(source);
         Object.assign(cloned, stripReservedNodeFields(data));
@@ -2138,7 +2945,7 @@ function executeDesignLine(
         }
         setDocChildren(
           doc,
-          insertNodeInTree(getDocChildren(doc, pageId), parent, cloned),
+          insertNodeInTree(currentChildren, parent, cloned),
           pageId,
         );
         bindings.set(binding, cloned.id);
@@ -2193,9 +3000,19 @@ function executeDesignLine(
       }
       case "M": {
         const { index, nodeId, parent } = parseMoveArgs(argsStr, bindings);
-        const node = findNodeInTree(getDocChildren(doc, pageId), nodeId);
+        const currentChildren = getDocChildren(doc, pageId);
+        ensureInsertParentExists(currentChildren, parent, pageId, doc);
+        const node = findNodeInTree(currentChildren, nodeId);
         if (!node) throw new Error(`Move target not found: ${nodeId}`);
-        let children = removeNodeFromTree(getDocChildren(doc, pageId), nodeId);
+        if (parent === nodeId) {
+          throw new Error(`Move target ${nodeId} cannot be moved into itself.`);
+        }
+        if (parent && findNodeInTree(getNodeChildren(node), parent)) {
+          throw new Error(
+            `Move target ${nodeId} cannot be moved into its own descendant ${parent}.`,
+          );
+        }
+        let children = removeNodeFromTree(currentChildren, nodeId);
         children = insertNodeInTree(children, parent, node, index);
         setDocChildren(doc, children, pageId);
         break;
@@ -2208,11 +3025,11 @@ function executeDesignLine(
 
   if (deleteMatch?.[1]) {
     const nodeId = resolveRef(deleteMatch[1].trim(), bindings);
-    setDocChildren(
-      doc,
-      removeNodeFromTree(getDocChildren(doc, pageId), nodeId),
-      pageId,
-    );
+    const currentChildren = getDocChildren(doc, pageId);
+    if (!findNodeInTree(currentChildren, nodeId)) {
+      throw new Error(`Delete target not found: ${nodeId}`);
+    }
+    setDocChildren(doc, removeNodeFromTree(currentChildren, nodeId), pageId);
     return;
   }
 
@@ -2539,11 +3356,7 @@ function splitTopLevel(str: string): string[] {
 }
 
 function getDocChildren(doc: PenDocument, pageId?: string): PenNode[] {
-  if (pageId && doc.pages) {
-    return doc.pages.find((page) => page.id === pageId)?.children ?? [];
-  }
-  if (doc.pages?.[0]) return doc.pages[0].children;
-  return doc.children ?? [];
+  return getActiveChildren(doc, pageId);
 }
 
 function setDocChildren(
@@ -2551,15 +3364,15 @@ function setDocChildren(
   children: PenNode[],
   pageId?: string,
 ): void {
-  if (pageId && doc.pages) {
-    const page = doc.pages.find((candidate) => candidate.id === pageId);
-    if (!page) throw new Error(`Page not found: ${pageId}`);
+  if (doc.pages && doc.pages.length > 0) {
+    const resolvedPageId = resolveActivePageId(doc, pageId);
+    const page = doc.pages.find((candidate) => candidate.id === resolvedPageId);
+    if (!page) throw new Error(`Page ${resolvedPageId} does not exist.`);
     page.children = children;
+    doc.children = [];
     return;
   }
-  if (doc.pages?.[0]) {
-    doc.pages[0].children = children;
-  }
+  resolveActivePageId(doc, pageId);
   doc.children = children;
 }
 

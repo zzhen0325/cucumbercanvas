@@ -19,8 +19,21 @@ export type CanvasExportSize = {
   scale: number;
 };
 
+export type CanvasExportWarningCode =
+  | "unsupported-node-type"
+  | "missing-image-source"
+  | "unsupported-image-fill"
+  | "unsupported-gradient-fill"
+  | "unsupported-rich-text";
+
+export type CanvasExportWarning = {
+  code: CanvasExportWarningCode;
+  nodeId: string;
+  message: string;
+};
+
 type ExportableNode = {
-  fill?: Array<{ color?: string }>;
+  fill?: Array<{ color?: string; type?: string; url?: string }>;
   stroke?: {
     color?: string;
     fill?: Array<{ color?: string }>;
@@ -36,6 +49,18 @@ type ExportableNode = {
   points?: number;
   d?: string;
 };
+
+const SVG_RENDERED_NODE_TYPES = new Set([
+  "frame",
+  "rectangle",
+  "text",
+  "image",
+  "line",
+  "ellipse",
+  "polygon",
+  "path",
+  "icon_font",
+]);
 
 export function calculateDocumentBounds(
   doc: CucumberCanvasDocument,
@@ -70,6 +95,76 @@ export function calculateExportSize(
     height: Math.max(1, Math.round(normalized.height * scale)),
     scale,
   };
+}
+
+export function analyzeDocumentExportWarnings(
+  doc: CucumberCanvasDocument,
+  opts?: Pick<CanvasExportOptions, "activePageId" | "bounds">,
+): CanvasExportWarning[] {
+  return flattenNodes(doc, opts?.activePageId)
+    .filter((node) => node.visible !== false)
+    .filter((node) =>
+      opts?.bounds ? boundsIntersect(getNodeBounds(node), opts.bounds) : true,
+    )
+    .flatMap((node) => {
+      const warnings: CanvasExportWarning[] = [];
+      if (!SVG_RENDERED_NODE_TYPES.has(node.type)) {
+        warnings.push({
+          code: "unsupported-node-type",
+          nodeId: node.id,
+          message: `Node "${node.id}" uses unsupported type "${node.type}" and will be exported as a rectangle.`,
+        });
+      }
+      if (
+        node.type === "image" &&
+        (typeof node.src !== "string" || node.src.trim().length === 0)
+      ) {
+        warnings.push({
+          code: "missing-image-source",
+          nodeId: node.id,
+          message: `Image node "${node.id}" is missing a usable source and may not appear in the export.`,
+        });
+      }
+      const n = node as ExportableNode;
+      if (
+        node.type !== "image" &&
+        n.fill?.some((fill) => fill.type === "image")
+      ) {
+        warnings.push({
+          code: "unsupported-image-fill",
+          nodeId: node.id,
+          message: `Node "${node.id}" uses an image fill that is not preserved by SVG export and will be exported with a fallback fill.`,
+        });
+      }
+      if (
+        n.fill?.some(
+          (fill) =>
+            fill.type === "linear_gradient" || fill.type === "radial_gradient",
+        )
+      ) {
+        warnings.push({
+          code: "unsupported-gradient-fill",
+          nodeId: node.id,
+          message: `Node "${node.id}" uses a gradient fill that is not preserved by SVG export and will be exported with a fallback fill.`,
+        });
+      }
+      if (node.type === "text" && Array.isArray(n.content)) {
+        warnings.push({
+          code: "unsupported-rich-text",
+          nodeId: node.id,
+          message: `Text node "${node.id}" uses rich text segments that are not preserved by SVG export and will be exported as plain text.`,
+        });
+      }
+      return warnings;
+    });
+}
+
+function boundsIntersect(a: CanvasBounds, b: CanvasBounds): boolean {
+  const left = Math.max(a.x, b.x);
+  const top = Math.max(a.y, b.y);
+  const right = Math.min(a.x + a.width, b.x + b.width);
+  const bottom = Math.min(a.y + a.height, b.y + b.height);
+  return right > left && bottom > top;
 }
 
 export async function exportDocumentImage(
@@ -114,7 +209,7 @@ function renderDocumentSvg(
         : "";
       if (node.type === "text") {
         const fontSize = (n.fontSize ?? 16) * scale;
-        const textContent = typeof n.content === "string" ? n.content : "";
+        const textContent = extractPlainText(n.content);
         return `<text x="${x}" y="${y + fontSize}" font-size="${fontSize}" fill="${escapeAttr(n.color ?? "#111827")}"${transform}>${escapeText(textContent)}</text>`;
       }
       if (node.type === "image") {
@@ -219,6 +314,26 @@ function escapeText(value: string): string {
     /[&<>]/g,
     (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[ch] ?? ch,
   );
+}
+
+function extractPlainText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((segment) =>
+        typeof segment === "string"
+          ? segment
+          : isRecord(segment) && typeof segment.text === "string"
+            ? segment.text
+            : "",
+      )
+      .join("");
+  }
+  return "";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function escapeAttr(value: string): string {

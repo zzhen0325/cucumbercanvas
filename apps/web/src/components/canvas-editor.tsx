@@ -16,6 +16,7 @@ import { getServerBaseUrl } from "../lib/env";
 import { saveCanvas, uploadThumbnail } from "../lib/server-api";
 import type { CanvasApi, CanvasSceneElement } from "./canvas/canvas-api";
 import {
+  analyzeDocumentExportWarnings,
   calculateDocumentBounds,
   calculateExportSize,
 } from "./canvas/canvas-export";
@@ -75,7 +76,7 @@ function resolveScreenshotBounds(
   if (params.mode === "viewport") {
     return api.getViewportBounds();
   }
-  return calculateDocumentBounds(api.getDocument());
+  return calculateDocumentBounds(api.getDocument(), api.getActivePageId());
 }
 
 export function CanvasEditor({
@@ -228,10 +229,15 @@ export function CanvasEditor({
           maxWidthOrHeight: screenshotParams.max_dimension,
           mimeType: "image/svg+xml",
         });
+        const warnings = analyzeDocumentExportWarnings(api.getDocument(), {
+          activePageId: api.getActivePageId(),
+          bounds,
+        });
         const dataUrl = await blobToDataUrl(blob);
         console.info("[canvas-editor] screenshot exported", {
           canvasId,
           mode: screenshotParams.mode,
+          warningCount: warnings.length,
           bounds,
           width: exportSize.width,
           height: exportSize.height,
@@ -241,6 +247,7 @@ export function CanvasEditor({
           width: exportSize.width,
           height: exportSize.height,
           actualBounds: bounds,
+          warnings,
         };
       },
     );
