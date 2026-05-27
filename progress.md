@@ -1,6 +1,6 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-27 17:10 CST
+Last updated: 2026-05-27 17:32 CST
 
 ## 2026-05-27
 
@@ -27,6 +27,11 @@ Last updated: 2026-05-27 17:10 CST
 - Toolbar icon insertion review follow-up fixed: repeated toolbar activations
   now carry an explicit tab request key, so an already-open Design System panel
   returns to Icons/search after the user manually switches to another tab.
+- B0 editor draw/select/move coverage narrowed: the Skia harness browser smoke
+  now covers rectangle/ellipse/polygon drag creation, text/line/arrow click
+  creation, path pen creation, selected-id snapshotting, and selected polygon
+  move. The matrix row remains P1 because resize and rotate handle gestures are
+  still under-verified.
 
 ## Current Session
 

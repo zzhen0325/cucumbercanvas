@@ -69,11 +69,23 @@ export function CanvasEngineHarness() {
           {JSON.stringify(
             {
               nodeCount: flattenNodes(doc).length,
+              selectedIds:
+                "selection" in doc && Array.isArray(doc.selection)
+                  ? doc.selection
+                  : [],
               nodes: flattenNodes(doc).map((node) => ({
+                connectorType:
+                  "_connectorType" in node ? node._connectorType : undefined,
+                content: "content" in node ? node.content : undefined,
+                d: "d" in node ? node.d : undefined,
                 id: node.id,
+                path: "path" in node ? node.path : undefined,
+                rotation: "rotation" in node ? node.rotation : undefined,
                 type: node.type,
                 x: node.x,
+                x2: "x2" in node ? node.x2 : undefined,
                 y: node.y,
+                y2: "y2" in node ? node.y2 : undefined,
                 width: "width" in node ? node.width : undefined,
                 height: "height" in node ? node.height : undefined,
               })),

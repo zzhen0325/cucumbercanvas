@@ -1,4 +1,4 @@
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig, devices } from "@playwright/test";
 
 /**
  * Playwright Test Configuration
@@ -8,8 +8,9 @@ import { defineConfig, devices } from '@playwright/test';
  * @see https://playwright.dev/docs/test-configuration
  */
 export default defineConfig({
-  // Test directory - matches cc-e2e generated structure
-  testDir: './playwright-tests/tests',
+  // Test directory includes generated cc-e2e specs and hand-written canvas smoke specs.
+  testDir: ".",
+  testMatch: ["playwright-tests/tests/**/*.ts", "tests/e2e/**/*.spec.ts"],
 
   // Run tests in parallel
   fullyParallel: true,
@@ -24,32 +25,29 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
 
   // Reporter configuration
-  reporter: [
-    ['html', { open: 'never' }],
-    ['list'],
-  ],
+  reporter: [["html", { open: "never" }], ["list"]],
 
   // Shared settings for all projects
   use: {
     // Base URL for navigation
-    baseURL: 'http://localhost:3000',
+    baseURL: "http://localhost:3000",
 
     // Collect trace when retrying the failed test
-    trace: 'on-first-retry',
+    trace: "on-first-retry",
 
     // Capture screenshot on failure
-    screenshot: 'only-on-failure',
+    screenshot: "only-on-failure",
   },
 
   // Global setup
-  globalSetup: './playwright-tests/global-setup.ts',
+  globalSetup: "./playwright-tests/global-setup.ts",
 
   // Browser projects
   projects: [
     {
-      name: 'chromium',
+      name: "chromium",
       use: {
-        ...devices['Desktop Chrome'],
+        ...devices["Desktop Chrome"],
       },
     },
   ],
@@ -58,8 +56,8 @@ export default defineConfig({
   // NOTE: Set reuseExistingServer to true for local development
   // The server will NOT be auto-started if already running
   webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:3000',
+    command: "npm run dev",
+    url: "http://localhost:3000",
     reuseExistingServer: !process.env.CI,
     timeout: 120 * 1000,
   },
