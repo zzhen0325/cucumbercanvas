@@ -178,9 +178,8 @@ const LayerRow = memo(function LayerRow({
   useEffect(() => {
     setDraftTitle(elLabel(el));
   }, [el]);
-  const handleClick = useCallback(
-    (event?: React.MouseEvent) =>
-      onSelect(el.id, Boolean(event?.shiftKey || event?.metaKey)),
+  const handleSelect = useCallback(
+    (additive = false) => onSelect(el.id, additive),
     [onSelect, el.id],
   );
   const depth = el.depth ?? 0;
@@ -193,14 +192,11 @@ const LayerRow = memo(function LayerRow({
       onDragOver={(event) => onDragOver(el.id, event)}
       onDrop={() => onDrop(el.id)}
     >
-      <button
-        type="button"
+      <div
         className={`group/layer flex h-11 w-full items-center gap-2.5 rounded-lg px-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
           selected ? "bg-muted" : "hover:bg-muted"
         } ${el.visible === false ? "opacity-55" : ""}`}
         style={{ paddingLeft: 8 + depth * 14 }}
-        onClick={(event) => handleClick(event)}
-        onDoubleClick={() => setEditing(true)}
       >
         <button
           type="button"
@@ -233,6 +229,7 @@ const LayerRow = memo(function LayerRow({
               onRename(el.id, draftTitle.trim() || elLabel(el));
             }}
             onKeyDown={(event) => {
+              event.stopPropagation();
               if (event.key === "Enter") {
                 setEditing(false);
                 onRename(el.id, draftTitle.trim() || elLabel(el));
@@ -244,9 +241,17 @@ const LayerRow = memo(function LayerRow({
             }}
           />
         ) : (
-          <span className="flex-1 truncate text-[11px] text-foreground min-w-0">
+          <button
+            type="button"
+            className="min-w-0 flex-1 truncate text-left text-[11px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleSelect(Boolean(event.shiftKey || event.metaKey));
+            }}
+            onDoubleClick={() => setEditing(true)}
+          >
             {elLabel(el)}
-          </span>
+          </button>
         )}
         <div className="flex items-center gap-0.5">
           <button
@@ -303,6 +308,7 @@ const LayerRow = memo(function LayerRow({
           </button>
           <DropdownMenu>
             <DropdownMenuTrigger
+              aria-label="Layer actions"
               className="invisible flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground group-hover/layer:visible focus-visible:visible"
               onClick={(event) => event.stopPropagation()}
             >
@@ -374,7 +380,7 @@ const LayerRow = memo(function LayerRow({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-      </button>
+      </div>
     </div>
   );
 });
@@ -392,8 +398,29 @@ export function CanvasLayersPanel({
   const [files, setFiles] = useState<Record<string, CanvasFileRecord>>({});
   const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
   const [collapsedIds, setCollapsedIds] = useState<Record<string, boolean>>({});
+  const [actionError, setActionError] = useState<string | null>(null);
   const dragIdRef = useRef<string | null>(null);
   const orderedElementsRef = useRef<CanvasSceneElement[]>([]);
+
+  const runLayerAction = useCallback(
+    (actionName: string, action: () => void) => {
+      try {
+        setActionError(null);
+        action();
+      } catch (error) {
+        const message =
+          error instanceof Error && error.message.trim()
+            ? error.message
+            : `Layer action failed while trying to ${actionName}.`;
+        console.error("[canvas-layers-panel] layer action failed", {
+          actionName,
+          message,
+        });
+        setActionError(message);
+      }
+    },
+    [],
+  );
 
   /* -- Refresh elements on open + subscribe to changes -- */
   const applySceneSnapshot = useCallback(
@@ -457,60 +484,73 @@ export function CanvasLayersPanel({
     (id: string, additive = false) => {
       if (!canvasApi) return;
       if (!additive) {
-        canvasApi.setSelection([id]);
+        runLayerAction("select layer", () => canvasApi.setSelection([id]));
         return;
       }
       const nextSelected = selectedIds[id]
         ? Object.keys(selectedIds).filter((selectedId) => selectedId !== id)
         : [...Object.keys(selectedIds), id];
-      canvasApi.setSelection(nextSelected);
+      runLayerAction("select layers", () =>
+        canvasApi.setSelection(nextSelected),
+      );
     },
-    [canvasApi, selectedIds],
+    [canvasApi, runLayerAction, selectedIds],
   );
 
   const toggleLock = useCallback(
     (id: string) => {
-      canvasApi?.toggleNodeLocked(id);
+      if (!canvasApi) return;
+      runLayerAction("toggle layer lock", () => canvasApi.toggleNodeLocked(id));
     },
-    [canvasApi],
+    [canvasApi, runLayerAction],
   );
 
   const toggleVisible = useCallback(
     (id: string) => {
-      canvasApi?.toggleNodeVisible(id);
+      if (!canvasApi) return;
+      runLayerAction("toggle layer visibility", () =>
+        canvasApi.toggleNodeVisible(id),
+      );
     },
-    [canvasApi],
+    [canvasApi, runLayerAction],
   );
 
   const reorderElement = useCallback(
     (id: string, direction: "forward" | "backward" | "front" | "back") => {
-      canvasApi?.reorderNode(id, direction);
+      if (!canvasApi) return;
+      runLayerAction("reorder layer", () =>
+        canvasApi.reorderNode(id, direction),
+      );
     },
-    [canvasApi],
+    [canvasApi, runLayerAction],
   );
 
   const renameElement = useCallback(
     (id: string, title: string) => {
       const updates: Parameters<CanvasApi["updateNode"]>[1] = { name: title };
-      canvasApi?.updateNode(id, updates);
+      if (!canvasApi) return;
+      runLayerAction("rename layer", () => canvasApi.updateNode(id, updates));
     },
-    [canvasApi],
+    [canvasApi, runLayerAction],
   );
 
   const deleteElement = useCallback(
     (id: string) => {
-      canvasApi?.deleteNode(id);
+      if (!canvasApi) return;
+      runLayerAction("delete layer", () => canvasApi.deleteNode(id));
     },
-    [canvasApi],
+    [canvasApi, runLayerAction],
   );
 
   const duplicateElement = useCallback(
     (id: string) => {
       if (!canvasApi) return;
-      canvasApi.setSelection([id]);
-      canvasApi.duplicateSelection();
+      runLayerAction("duplicate layer", () => {
+        canvasApi.setSelection([id]);
+        canvasApi.duplicateSelection();
+      });
     },
-    [canvasApi],
+    [canvasApi, runLayerAction],
   );
 
   const toggleCollapse = useCallback((id: string) => {
@@ -545,9 +585,11 @@ export function CanvasLayersPanel({
       );
       const targetIndex = siblings.findIndex((el) => el.id === targetId);
       if (targetIndex < 0) return;
-      canvasApi.moveNodeToIndex(draggedId, targetParentId, targetIndex);
+      runLayerAction("move layer", () =>
+        canvasApi.moveNodeToIndex(draggedId, targetParentId, targetIndex),
+      );
     },
-    [canvasApi],
+    [canvasApi, runLayerAction],
   );
 
   const childrenByParent = elements.reduce<Record<string, number>>(
@@ -596,6 +638,15 @@ export function CanvasLayersPanel({
 
       {/* Separator */}
       <div className="h-px bg-border" />
+
+      {actionError ? (
+        <div
+          className="mx-2 mt-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-xs text-destructive"
+          role="alert"
+        >
+          {actionError}
+        </div>
+      ) : null}
 
       {/* Layer list -- uses content-visibility for large canvas performance */}
       <div

@@ -1,6 +1,6 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-27 13:49 CST
+Last updated: 2026-05-27 16:15 CST
 
 ## 2026-05-27
 
@@ -16,6 +16,10 @@ Last updated: 2026-05-27 13:49 CST
 - Phase C OpenPencil thin slice started: prompt-to-canvas planning/execution
   MCP tools now materialize live canvas containers, and direct codegen export
   supports Vue alongside React and HTML.
+- B0 editor-ui parity advanced: layers and property-panel P1 rows now have
+  dedicated coverage, layer failures surface readable messages, and the shape
+  toolbar menu exposes an icon insertion affordance pending production parent
+  wiring.
 
 ## Current Session
 
@@ -106,6 +110,9 @@ Status:
 
 ## Verification Log
 
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-editor-toolbar.test.tsx test/canvas-layers-panel.test.tsx test/canvas-property-panel.test.tsx`.
+- Passed: `pnpm exec biome check apps/web/src/components/canvas/editor-toolbar.tsx apps/web/src/components/canvas/shape-tool-dropdown.tsx apps/web/src/components/canvas-layers-panel.tsx apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx apps/web/test/canvas-editor-toolbar.test.tsx apps/web/test/canvas-layers-panel.test.tsx apps/web/test/canvas-property-panel.test.tsx docs/tech/openpencil-web-canvas-parity.md progress.md`.
+- Failed: `pnpm --filter @cucumber/web typecheck` remains blocked by the out-of-scope `apps/web/src/components/canvas/skia-canvas.tsx:388` `PenNode` to `Record<string, unknown>` cast diagnostic.
 - Passed: `./node_modules/.bin/tsc -p apps/server/tsconfig.json --noEmit`.
 - Passed: `PATH="/Users/bytedance/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" ../../node_modules/.bin/vitest run src/mcp/tools/open-pencil-canvas.test.ts --passWithNoTests` from `apps/server` after adding Phase C prompt-to-canvas orchestration and Vue export coverage.
 - Passed: `./node_modules/.bin/biome check apps/server/src/mcp/tools/open-pencil-canvas.ts apps/server/src/mcp/tools/open-pencil-canvas.test.ts apps/server/src/agent/prompts/cucumber-main.ts docs/tech/canvas-design-integration.md progress.md feature_list.json`.

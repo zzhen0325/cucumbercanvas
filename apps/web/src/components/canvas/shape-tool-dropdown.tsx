@@ -9,6 +9,7 @@ import {
   Minus,
   PenTool,
   Pentagon,
+  Smile,
   Square,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -53,6 +54,7 @@ const shapeToolSet = new Set<CanvasTool>(
 
 export type ShapeToolDropdownProps = {
   activeTool: CanvasTool;
+  onInsertIcon?: () => void;
   onImportImage: () => void;
   onImportSvg: () => void;
   onToolChange: (tool: CanvasTool) => void;
@@ -60,6 +62,7 @@ export type ShapeToolDropdownProps = {
 
 export function ShapeToolDropdown({
   activeTool,
+  onInsertIcon,
   onImportImage,
   onImportSvg,
   onToolChange,
@@ -125,6 +128,18 @@ export function ShapeToolDropdown({
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
+          <DropdownMenuItem
+            onClick={() => {
+              if (onInsertIcon) {
+                onInsertIcon();
+                return;
+              }
+              onToolChange("icon");
+            }}
+          >
+            <Smile className="size-4" />
+            Insert icon
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={onImportImage}>
             <ImageIcon className="size-4" />
             Import image

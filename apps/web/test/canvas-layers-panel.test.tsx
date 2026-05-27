@@ -1,0 +1,211 @@
+// @vitest-environment jsdom
+
+import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
+
+import { CanvasLayersPanel } from "@/components/canvas-layers-panel";
+import type {
+  CanvasApi,
+  CanvasAppState,
+  CanvasSceneElement,
+} from "@/components/canvas/canvas-api";
+
+const appState: CanvasAppState = {
+  scrollX: 0,
+  scrollY: 0,
+  selectedElementIds: { "rect-1": true },
+  viewBackgroundColor: "#ffffff",
+  zoom: { value: 1 },
+};
+
+const sceneElements: CanvasSceneElement[] = [
+  {
+    id: "frame-1",
+    type: "frame",
+    x: 0,
+    y: 0,
+    width: 400,
+    height: 300,
+  },
+  {
+    customData: { containerId: "frame-1" },
+    depth: 1,
+    height: 80,
+    id: "rect-1",
+    type: "rectangle",
+    width: 120,
+    x: 24,
+    y: 32,
+  },
+  {
+    height: 40,
+    id: "text-1",
+    text: "Footer note",
+    type: "text",
+    width: 180,
+    x: 0,
+    y: 340,
+  },
+];
+
+function createCanvasApi(
+  overrides: Partial<CanvasApi> = {},
+): CanvasApi & { emitChange: () => void } {
+  let changeListener: Parameters<CanvasApi["onChange"]>[0] | null = null;
+  const api = {
+    addFiles: vi.fn(),
+    addPage: vi.fn(),
+    alignSelection: vi.fn(),
+    applyBooleanOperation: vi.fn(),
+    bindAgentToContainer: vi.fn(),
+    canRedo: vi.fn(),
+    canUndo: vi.fn(),
+    copySelection: vi.fn(),
+    createContainer: vi.fn(),
+    deleteNode: vi.fn(),
+    deletePage: vi.fn(),
+    deleteSelection: vi.fn(),
+    duplicatePage: vi.fn(),
+    duplicateSelection: vi.fn(),
+    emitChange: () => {
+      changeListener?.(sceneElements, appState, {});
+    },
+    exportImage: vi.fn(),
+    flushPendingSave: vi.fn(),
+    getActivePageId: vi.fn(),
+    getActiveTool: vi.fn(),
+    getAppState: vi.fn(() => appState),
+    getDocument: vi.fn(),
+    getFiles: vi.fn(() => ({})),
+    getPages: vi.fn(),
+    getSceneElements: vi.fn(() => sceneElements),
+    getViewportBounds: vi.fn(),
+    groupSelection: vi.fn(),
+    importSvgMarkup: vi.fn(),
+    insertImageArtifact: vi.fn(),
+    insertNode: vi.fn(),
+    insertVideoArtifact: vi.fn(),
+    moveNodeToIndex: vi.fn(),
+    onChange: vi.fn((listener) => {
+      changeListener = listener;
+      return vi.fn();
+    }),
+    pasteClipboard: vi.fn(),
+    pasteFromSystemClipboard: vi.fn(),
+    redo: vi.fn(),
+    renamePage: vi.fn(),
+    reorderNode: vi.fn(),
+    reorderPage: vi.fn(),
+    scrollToContent: vi.fn(),
+    setActivePage: vi.fn(),
+    setActiveTool: vi.fn(),
+    setDocument: vi.fn(),
+    setSelection: vi.fn(),
+    toggleNodeLocked: vi.fn(),
+    toggleNodeVisible: vi.fn(),
+    undo: vi.fn(),
+    ungroupSelection: vi.fn(),
+    updateNode: vi.fn(),
+    updateScene: vi.fn(),
+    ...overrides,
+  } as CanvasApi & { emitChange: () => void };
+  return api;
+}
+
+function renderLayersPanel(api = createCanvasApi()) {
+  render(<CanvasLayersPanel canvasApi={api} onClose={vi.fn()} open />);
+  return api;
+}
+
+function firstElement<T extends Element>(elements: T[]): T {
+  const element = elements[0];
+  if (!element) throw new Error("Expected at least one matching element.");
+  return element;
+}
+
+describe("CanvasLayersPanel", () => {
+  it("selects layers and toggles lock and visibility through CanvasApi", async () => {
+    const user = userEvent.setup();
+    const api = renderLayersPanel();
+
+    await user.click(screen.getByText("Footer note"));
+    await user.click(
+      firstElement(screen.getAllByRole("button", { name: "Lock layer" })),
+    );
+    await user.click(
+      firstElement(
+        screen.getAllByRole("button", { name: "Toggle layer visibility" }),
+      ),
+    );
+
+    expect(api.setSelection).toHaveBeenCalledWith(["text-1"]);
+    expect(api.setSelection).toHaveBeenCalledTimes(1);
+    expect(api.toggleNodeLocked).toHaveBeenCalledWith("text-1");
+    expect(api.toggleNodeVisible).toHaveBeenCalledWith("text-1");
+  });
+
+  it("renames, duplicates, and deletes layers from the action menu", async () => {
+    const user = userEvent.setup();
+    const api = renderLayersPanel();
+
+    await user.dblClick(screen.getByText("Footer note"));
+    const renameInput = screen.getByDisplayValue("Footer note");
+    await user.clear(renameInput);
+    await user.type(renameInput, "Footer summary{Enter}");
+
+    await user.click(
+      firstElement(screen.getAllByRole("button", { name: "Layer actions" })),
+    );
+    await user.click(await screen.findByRole("menuitem", { name: "复制" }));
+    await user.click(
+      firstElement(screen.getAllByRole("button", { name: "Layer actions" })),
+    );
+    await user.click(await screen.findByRole("menuitem", { name: "删除" }));
+
+    expect(api.updateNode).toHaveBeenCalledWith("text-1", {
+      name: "Footer summary",
+    });
+    expect(api.setSelection).toHaveBeenCalledWith(["text-1"]);
+    expect(api.duplicateSelection).toHaveBeenCalledOnce();
+    expect(api.deleteNode).toHaveBeenCalledWith("text-1");
+  });
+
+  it("moves a dragged layer to the target parent index", async () => {
+    const api = renderLayersPanel();
+    const source = screen.getByText("Rectangle").closest("div");
+    const target = screen.getByText("Frame").closest("div");
+
+    expect(source).not.toBeNull();
+    expect(target).not.toBeNull();
+
+    fireEvent.dragStart(source as HTMLElement);
+    fireEvent.dragOver(target as HTMLElement);
+    fireEvent.drop(target as HTMLElement);
+
+    expect(api.moveNodeToIndex).toHaveBeenCalledWith("rect-1", null, 0);
+  });
+
+  it("surfaces readable CanvasApi failures without leaking raw error codes", async () => {
+    const user = userEvent.setup();
+    const api = renderLayersPanel(
+      createCanvasApi({
+        toggleNodeVisible: vi.fn(() => {
+          throw new Error("Could not hide layer because the document is busy.");
+        }),
+      }),
+    );
+
+    await user.click(
+      firstElement(
+        screen.getAllByRole("button", { name: "Toggle layer visibility" }),
+      ),
+    );
+
+    expect(api.toggleNodeVisible).toHaveBeenCalledWith("text-1");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not hide layer because the document is busy.",
+    );
+    expect(screen.getByRole("alert")).not.toHaveTextContent(/null|undefined/);
+  });
+});

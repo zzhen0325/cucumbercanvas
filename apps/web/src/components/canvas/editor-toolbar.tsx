@@ -33,6 +33,7 @@ export type CanvasEditorToolbarProps = {
   selectedCount: number;
   onCreateContainer: () => void;
   onDelete: () => void;
+  onInsertIcon?: () => void;
   onImportImage: () => void;
   onImportSvg: () => void;
   onRedo: () => void;
@@ -47,6 +48,7 @@ export function CanvasEditorToolbar({
   selectedCount,
   onCreateContainer,
   onDelete,
+  onInsertIcon,
   onImportImage,
   onImportSvg,
   onRedo,
@@ -82,6 +84,7 @@ export function CanvasEditorToolbar({
       />
       <ShapeToolDropdown
         activeTool={activeTool}
+        onInsertIcon={onInsertIcon}
         onImportImage={onImportImage}
         onImportSvg={onImportSvg}
         onToolChange={onToolChange}

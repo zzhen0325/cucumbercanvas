@@ -18,6 +18,7 @@ function renderEditorToolbar(
     selectedCount: 1,
     onCreateContainer: vi.fn(),
     onDelete: vi.fn(),
+    onInsertIcon: vi.fn(),
     onImportImage: vi.fn(),
     onImportSvg: vi.fn(),
     onRedo: vi.fn(),
@@ -44,7 +45,7 @@ describe("CanvasEditorToolbar", () => {
     expect(props.onToolChange).toHaveBeenCalledWith("text");
   });
 
-  it("chooses shape tools and exposes import actions from the shape menu", async () => {
+  it("chooses shape tools and exposes insert/import actions from the shape menu", async () => {
     const user = userEvent.setup();
     const props = renderEditorToolbar();
 
@@ -59,9 +60,14 @@ describe("CanvasEditorToolbar", () => {
     );
     await user.click(screen.getByRole("button", { name: "Open shape menu" }));
     await user.click(
+      await screen.findByRole("menuitem", { name: "Insert icon" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Open shape menu" }));
+    await user.click(
       await screen.findByRole("menuitem", { name: "Import SVG" }),
     );
 
+    expect(props.onInsertIcon).toHaveBeenCalledOnce();
     expect(props.onImportImage).toHaveBeenCalledOnce();
     expect(props.onImportSvg).toHaveBeenCalledOnce();
   });
