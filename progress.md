@@ -1,6 +1,6 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-27 17:32 CST
+Last updated: 2026-05-27 CST
 
 ## 2026-05-27
 
@@ -32,6 +32,11 @@ Last updated: 2026-05-27 17:32 CST
   creation, path pen creation, selected-id snapshotting, and selected polygon
   move. The matrix row remains P1 because resize and rotate handle gestures are
   still under-verified.
+- B0 editor draw/select/move/resize/rotate coverage closed: the real
+  `/test/canvas-engine` Playwright smoke now covers selected rectangle SE
+  resize and selected polygon rotate gestures with deterministic geometry and
+  selection assertions. Production behavior already passed, so this was a
+  coverage/docs-only closeout.
 
 ## Current Session
 
@@ -122,6 +127,9 @@ Status:
 
 ## Verification Log
 
+- Passed: `pnpm exec playwright test tests/e2e/skia-canvas.spec.ts`.
+- Passed: `pnpm exec biome check tests/e2e/skia-canvas.spec.ts docs/tech/openpencil-web-canvas-parity.md progress.md` (Biome checked the configured spec file; Markdown docs are ignored by the current Biome config).
+- Failed: `pnpm --filter @cucumber/web typecheck` remains blocked by the unchanged out-of-scope `apps/web/src/components/canvas/skia-canvas.tsx:388` `PenNode` to `Record<string, unknown>` cast diagnostic.
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-editor-toolbar.test.tsx test/canvas-layers-panel.test.tsx test/canvas-property-panel.test.tsx`.
 - Passed: `pnpm exec biome check apps/web/src/components/canvas/shape-tool-dropdown.tsx apps/web/src/components/canvas-layers-panel.tsx apps/web/test/canvas-editor-toolbar.test.tsx apps/web/test/canvas-layers-panel.test.tsx docs/tech/openpencil-web-canvas-parity.md progress.md`.
 - Failed: `pnpm --filter @cucumber/web typecheck` remains blocked by the unchanged out-of-scope `apps/web/src/components/canvas/skia-canvas.tsx:388` `PenNode` to `Record<string, unknown>` cast diagnostic.

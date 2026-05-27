@@ -59,6 +59,43 @@ test.describe("skia canvas harness", () => {
     };
 
     await drawShape("Rectangle", { x: 170, y: 160 }, { x: 340, y: 260 });
+
+    const beforeResize = await readSnapshot(page);
+    const rectangleBeforeResize = beforeResize.nodes.find(
+      (node) => node.type === "rectangle",
+    );
+    expect(rectangleBeforeResize).toBeDefined();
+    expect(beforeResize.selectedIds).toEqual([rectangleBeforeResize?.id]);
+
+    await page.mouse.move(stageBox.x + 340, stageBox.y + 260);
+    await page.mouse.down();
+    await page.mouse.move(stageBox.x + 390, stageBox.y + 300, { steps: 8 });
+    await page.mouse.up();
+
+    await expect
+      .poll(async () => {
+        const afterResize = await readSnapshot(page);
+        const rectangleAfterResize = afterResize.nodes.find(
+          (node) => node.id === rectangleBeforeResize?.id,
+        );
+        return rectangleAfterResize
+          ? {
+              height: rectangleAfterResize.height,
+              selectedIds: afterResize.selectedIds,
+              width: rectangleAfterResize.width,
+              x: rectangleAfterResize.x,
+              y: rectangleAfterResize.y,
+            }
+          : null;
+      })
+      .toEqual({
+        height: (rectangleBeforeResize?.height ?? 0) + 40,
+        selectedIds: [rectangleBeforeResize?.id],
+        width: (rectangleBeforeResize?.width ?? 0) + 50,
+        x: rectangleBeforeResize?.x,
+        y: rectangleBeforeResize?.y,
+      });
+
     await drawShape("Ellipse", { x: 220, y: 300 }, { x: 360, y: 410 });
     await drawShape("Polygon", { x: 400, y: 170 }, { x: 500, y: 290 });
 
@@ -74,6 +111,37 @@ test.describe("skia canvas harness", () => {
     );
     expect(polygonBeforeMove).toBeDefined();
     expect(beforeMove.selectedIds).toEqual([polygonBeforeMove?.id]);
+
+    await page.mouse.move(stageBox.x + 450, stageBox.y + 142);
+    await page.mouse.down();
+    await page.mouse.move(stageBox.x + 510, stageBox.y + 230, { steps: 10 });
+    await page.mouse.up();
+
+    await expect
+      .poll(async () => {
+        const afterRotate = await readSnapshot(page);
+        const polygonAfterRotate = afterRotate.nodes.find(
+          (node) => node.id === polygonBeforeMove?.id,
+        );
+        return polygonAfterRotate
+          ? {
+              height: polygonAfterRotate.height,
+              rotation: polygonAfterRotate.rotation,
+              selectedIds: afterRotate.selectedIds,
+              width: polygonAfterRotate.width,
+              x: polygonAfterRotate.x,
+              y: polygonAfterRotate.y,
+            }
+          : null;
+      })
+      .toEqual({
+        height: polygonBeforeMove?.height,
+        rotation: 90,
+        selectedIds: [polygonBeforeMove?.id],
+        width: polygonBeforeMove?.width,
+        x: polygonBeforeMove?.x,
+        y: polygonBeforeMove?.y,
+      });
 
     await page.mouse.move(stageBox.x + 450, stageBox.y + 230);
     await page.mouse.down();
