@@ -48,6 +48,12 @@ Last updated: 2026-05-27 CST
 - Property panel review follow-up tightened effects coverage so enabling or
   disabling shadow/blur from existing effects arrays preserves the unrelated
   effect. Existing production behavior passed those tests without changes.
+- B0 design-system parity closed: focused panel tests now cover unsafe
+  component unset protection when refs point to a reusable frame, unsafe
+  variable delete protection while a node fill references `$accent`, theme-axis
+  removal, and lucide icon insertion renderability through the icon node plus
+  `lookupCanvasIcon` contract. Existing production behavior passed without
+  runtime changes.
 
 ## Current Session
 

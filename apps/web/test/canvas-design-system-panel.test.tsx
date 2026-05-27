@@ -172,6 +172,108 @@ describe("CanvasDesignSystemPanel", () => {
     ]);
   });
 
+  it("prevents unsetting a component while ref instances point to it", async () => {
+    const user = userEvent.setup();
+    const reusableFrame: PenNode = {
+      id: "frame-1",
+      type: "frame",
+      name: "Hero Card",
+      reusable: true,
+      x: 0,
+      y: 0,
+      width: 320,
+      height: 180,
+      children: [],
+    };
+    const refInstance: PenNode = {
+      id: "ref-1",
+      type: "ref",
+      name: "Hero Card instance",
+      ref: "frame-1",
+      x: 400,
+      y: 0,
+    };
+    const api = createCanvasApi(createDoc([reusableFrame, refInstance]));
+
+    render(<CanvasDesignSystemPanel canvasApi={api} open onClose={vi.fn()} />);
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Remove Hero Card from components",
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "该组件仍有页面实例，请先删除或重定向实例后再取消复用。",
+      ),
+    ).toBeInTheDocument();
+    expect(api.updateNode).not.toHaveBeenCalledWith("frame-1", {
+      reusable: false,
+    });
+  });
+
+  it("prevents deleting a variable while node fills still reference it", async () => {
+    const user = userEvent.setup();
+    const rect: PenNode = {
+      id: "rect-1",
+      type: "rectangle",
+      name: "Card",
+      x: 10,
+      y: 10,
+      width: 120,
+      height: 80,
+      fill: [{ type: "solid", color: "$accent" }],
+    };
+    const doc = createDoc([rect]);
+    doc.variables = {
+      accent: { type: "color", value: "#ff3366" },
+    };
+    const api = createCanvasApi(doc);
+
+    render(<CanvasDesignSystemPanel canvasApi={api} open onClose={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "变量" }));
+    await user.click(
+      screen.getByRole("button", { name: "Delete variable accent" }),
+    );
+
+    expect(
+      screen.getByText("变量 accent 仍被画布节点引用，请先解绑后再删除。"),
+    ).toBeInTheDocument();
+    expect(api.setDocument).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        variables: {},
+      }),
+    );
+  });
+
+  it("removes existing theme axes from the document", async () => {
+    const user = userEvent.setup();
+    const doc = createDoc();
+    doc.themes = {
+      density: ["compact", "comfortable"],
+      mode: ["light", "dark"],
+    };
+    const api = createCanvasApi(doc);
+
+    render(<CanvasDesignSystemPanel canvasApi={api} open onClose={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "变量" }));
+    await user.click(
+      screen.getByRole("button", { name: "Delete theme axis density" }),
+    );
+
+    expect(api.setDocument).toHaveBeenCalledWith(
+      expect.objectContaining({
+        themes: {
+          mode: ["light", "dark"],
+        },
+      }),
+    );
+    expect(screen.getByText("主题轴 density 已删除。")).toBeInTheDocument();
+  });
+
   it("inserts library icons as renderable icon_font nodes", async () => {
     const user = userEvent.setup();
     const api = createCanvasApi(createDoc());
@@ -192,9 +294,16 @@ describe("CanvasDesignSystemPanel", () => {
         iconFontFamily: "lucide",
         width: 48,
         height: 48,
+        fill: [{ type: "solid", color: "#111827" }],
       }),
     );
     expect(lookupCanvasIcon("mail")).toMatchObject({
+      d: expect.stringContaining("M4 4h16"),
+      iconId: "lucide:mail",
+      style: "stroke",
+    });
+    expect(lookupCanvasIcon("lucide:mail")).toMatchObject({
+      d: expect.stringContaining("M4 4h16"),
       iconId: "lucide:mail",
       style: "stroke",
     });
