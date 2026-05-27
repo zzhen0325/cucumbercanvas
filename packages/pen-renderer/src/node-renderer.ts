@@ -747,7 +747,22 @@ export class SkiaNodeRenderer {
     const c = parseColor(ck, strokeColor);
     c[3] = (c[3] ?? 1) *opacity;
     paint.setColor(c);
+    paint.setStrokeCap(ck.StrokeCap.Round);
     canvas.drawLine(x, y, x2, y2, paint);
+    if ((lNode as unknown as { _connectorType?: string })._connectorType === 'arrow') {
+      const dx = x2 - x;
+      const dy = y2 - y;
+      if (Math.hypot(dx, dy) > 0) {
+        const angle = Math.atan2(dy, dx);
+        const size = Math.max(strokeWidth * 3.5, 10);
+        const leftX = x2 - Math.cos(angle - Math.PI / 6) * size;
+        const leftY = y2 - Math.sin(angle - Math.PI / 6) * size;
+        const rightX = x2 - Math.cos(angle + Math.PI / 6) * size;
+        const rightY = y2 - Math.sin(angle + Math.PI / 6) * size;
+        canvas.drawLine(x2, y2, leftX, leftY, paint);
+        canvas.drawLine(x2, y2, rightX, rightY, paint);
+      }
+    }
     paint.delete();
   }
 

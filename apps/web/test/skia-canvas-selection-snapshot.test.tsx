@@ -14,6 +14,10 @@ const penRendererMockState = vi.hoisted(() => ({
     () => { x: number; y: number; w: number; h: number } | null
   >(() => null),
   hitTest: vi.fn<() => unknown | null>(() => null),
+  screenToScene: vi.fn((clientX: number, clientY: number) => ({
+    x: clientX,
+    y: clientY,
+  })),
 }));
 
 vi.mock("paper", () => ({
@@ -36,7 +40,7 @@ vi.mock("@cucumber/pen-renderer", () => ({
     hitTestSelectionControl = vi.fn(() => null);
   },
   loadCanvasKit: vi.fn(async () => ({})),
-  screenToScene: vi.fn(() => ({ x: 0, y: 0 })),
+  screenToScene: penRendererMockState.screenToScene,
 }));
 
 vi.mock("@/components/toast", () => ({
@@ -60,12 +64,26 @@ describe("SkiaCanvas selection snapshots", () => {
     penRendererMockState.hitTest.mockReturnValue(null);
     penRendererMockState.getNodeBounds.mockReset();
     penRendererMockState.getNodeBounds.mockReturnValue(null);
+    penRendererMockState.screenToScene.mockReset();
+    penRendererMockState.screenToScene.mockImplementation(
+      (clientX: number, clientY: number) => ({
+        x: clientX,
+        y: clientY,
+      }),
+    );
   });
 
   it("emits coherent onChange snapshots when a canvas action creates and selects a node", async () => {
     const originalResizeObserver = globalThis.ResizeObserver;
+    const originalSetPointerCapture = HTMLElement.prototype.setPointerCapture;
+    const originalReleasePointerCapture =
+      HTMLElement.prototype.releasePointerCapture;
+    const originalHasPointerCapture = HTMLElement.prototype.hasPointerCapture;
     globalThis.ResizeObserver =
       MockResizeObserver as unknown as typeof ResizeObserver;
+    HTMLElement.prototype.setPointerCapture = vi.fn();
+    HTMLElement.prototype.releasePointerCapture = vi.fn();
+    HTMLElement.prototype.hasPointerCapture = vi.fn(() => true);
     const apiRef: { current: CanvasApi | null } = { current: null };
 
     try {
@@ -295,8 +313,7 @@ describe("SkiaCanvas selection snapshots", () => {
       expect(editor.value).toBe("Draft title");
 
       await act(async () => {
-        editor.value = "Final title";
-        editor.dispatchEvent(new Event("blur", { bubbles: true }));
+        fireEvent.blur(editor, { target: { value: "Final title" } });
       });
 
       const savedTextNode =
@@ -308,6 +325,143 @@ describe("SkiaCanvas selection snapshots", () => {
       });
     } finally {
       globalThis.ResizeObserver = originalResizeObserver;
+    }
+  });
+
+  it("draws lines, arrows, and frames from the pointer drag bounds", async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    const originalSetPointerCapture = HTMLElement.prototype.setPointerCapture;
+    const originalReleasePointerCapture =
+      HTMLElement.prototype.releasePointerCapture;
+    const originalHasPointerCapture = HTMLElement.prototype.hasPointerCapture;
+    globalThis.ResizeObserver =
+      MockResizeObserver as unknown as typeof ResizeObserver;
+    HTMLElement.prototype.setPointerCapture = vi.fn();
+    HTMLElement.prototype.releasePointerCapture = vi.fn();
+    HTMLElement.prototype.hasPointerCapture = vi.fn(() => true);
+    const apiRef: { current: CanvasApi | null } = { current: null };
+
+    try {
+      const { container } = render(
+        <SkiaCanvas
+          initialContent={initialDocument}
+          onApiReady={(readyApi) => {
+            apiRef.current = readyApi;
+          }}
+        />,
+      );
+
+      await waitFor(() => expect(apiRef.current).not.toBeNull());
+      await waitFor(() =>
+        expect(container.querySelector("canvas")).not.toBeNull(),
+      );
+      const readyApi = apiRef.current;
+      if (!readyApi) throw new Error("Canvas API was not initialized.");
+      const stage = container.querySelector("canvas") as HTMLElement;
+
+      await act(async () => {
+        apiRef.current?.setActiveTool("line");
+      });
+      await waitFor(() => expect(apiRef.current?.getActiveTool()).toBe("line"));
+      await act(async () => {
+        fireEvent.pointerDown(stage, {
+          button: 0,
+          clientX: 10,
+          clientY: 20,
+          pointerId: 1,
+        });
+        fireEvent.pointerMove(stage, {
+          clientX: 110,
+          clientY: 70,
+          pointerId: 1,
+        });
+        fireEvent.pointerUp(stage, {
+          clientX: 110,
+          clientY: 70,
+          pointerId: 1,
+        });
+      });
+
+      await act(async () => {
+        apiRef.current?.setActiveTool("arrow");
+      });
+      await waitFor(() =>
+        expect(apiRef.current?.getActiveTool()).toBe("arrow"),
+      );
+      await act(async () => {
+        fireEvent.pointerDown(stage, {
+          button: 0,
+          clientX: 200,
+          clientY: 90,
+          pointerId: 2,
+        });
+        fireEvent.pointerMove(stage, {
+          clientX: 260,
+          clientY: 150,
+          pointerId: 2,
+        });
+        fireEvent.pointerUp(stage, {
+          clientX: 260,
+          clientY: 150,
+          pointerId: 2,
+        });
+      });
+
+      await act(async () => {
+        apiRef.current?.setActiveTool("container");
+      });
+      await waitFor(() =>
+        expect(apiRef.current?.getActiveTool()).toBe("container"),
+      );
+      await act(async () => {
+        fireEvent.pointerDown(stage, {
+          button: 0,
+          clientX: 50,
+          clientY: 60,
+          pointerId: 3,
+        });
+        fireEvent.pointerMove(stage, {
+          clientX: 250,
+          clientY: 210,
+          pointerId: 3,
+        });
+        fireEvent.pointerUp(stage, {
+          clientX: 250,
+          clientY: 210,
+          pointerId: 3,
+        });
+      });
+
+      const nodes = readyApi.getDocument().pages?.[0]?.children ?? [];
+      expect(nodes).toHaveLength(3);
+      expect(nodes[0]).toMatchObject({
+        type: "line",
+        x: 10,
+        y: 20,
+        x2: 110,
+        y2: 70,
+      });
+      expect(nodes[1]).toMatchObject({
+        type: "line",
+        x: 200,
+        y: 90,
+        x2: 260,
+        y2: 150,
+        _connectorType: "arrow",
+      });
+      expect(nodes[2]).toMatchObject({
+        type: "frame",
+        x: 50,
+        y: 60,
+        width: 200,
+        height: 150,
+        clipContent: true,
+      });
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver;
+      HTMLElement.prototype.setPointerCapture = originalSetPointerCapture;
+      HTMLElement.prototype.releasePointerCapture = originalReleasePointerCapture;
+      HTMLElement.prototype.hasPointerCapture = originalHasPointerCapture;
     }
   });
 });

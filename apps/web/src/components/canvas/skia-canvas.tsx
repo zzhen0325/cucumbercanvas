@@ -15,7 +15,6 @@ import {
   copyCanvasSelection,
   createNodeId,
   deleteCanvasPage,
-  detachNodesOutsideParentBounds,
   duplicateCanvasNodes,
   duplicateCanvasPage,
   findNode,
@@ -34,6 +33,7 @@ import {
   pasteCanvasClipboard,
   renameCanvasPage,
   reorderCanvasPage,
+  reparentNodesByDropPoint,
   resolveActivePageId,
   resolveContext,
 } from "@cucumber/canvas-core";
@@ -309,6 +309,7 @@ function reconcileActivePageId(
 }
 
 type DrawableShapeTool = "rect" | "ellipse" | "polygon";
+type DrawableCanvasTool = DrawableShapeTool | "container" | "line" | "arrow";
 type ResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
 
 const MIN_DRAW_SIZE = 2;
@@ -385,7 +386,7 @@ function projectTextEditStateToViewport(
 }
 
 function getTextContent(node: PenNode): string {
-  const record = node as Record<string, unknown>;
+  const record = node as unknown as Record<string, unknown>;
   const content = record.content;
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -461,6 +462,7 @@ export const SkiaCanvas = memo(
       selectionColor: CANVAS_SELECTION_COLOR,
       marquee: null,
       shapePreview: null,
+      linePreview: null,
       penPreview: null,
     });
     const suppressNextClickRef = useRef(false);
@@ -534,7 +536,7 @@ export const SkiaCanvas = memo(
         }
       | {
           kind: "drawShape";
-          shapeType: DrawableShapeTool;
+          shapeType: DrawableCanvasTool;
           startPoint: { x: number; y: number };
         }
       | {
@@ -1004,7 +1006,7 @@ export const SkiaCanvas = memo(
           return;
         }
 
-        if (isDrawableShapeTool(tool)) {
+        if (isDragDrawableTool(tool)) {
           const scene = screenToScene(
             event.clientX,
             event.clientY,
@@ -1017,12 +1019,16 @@ export const SkiaCanvas = memo(
             startPoint: scene,
           };
           setEditorOverlay({
-            shapePreview: {
-              type: tool,
-              bounds: { x: scene.x, y: scene.y, width: 0, height: 0 },
-              fillColor:
-                tool === "rect" ? DEFAULT_RECT_FILL : DEFAULT_SHAPE_FILL,
-            },
+            shapePreview: getDrawableToolPreview(tool, {
+              x: scene.x,
+              y: scene.y,
+              width: 0,
+              height: 0,
+            }),
+            linePreview:
+              tool === "line" || tool === "arrow"
+                ? { start: scene, end: scene, arrow: tool === "arrow" }
+                : null,
           });
           event.currentTarget.setPointerCapture(event.pointerId);
           return;
@@ -1044,26 +1050,7 @@ export const SkiaCanvas = memo(
           return;
         }
 
-        // Other drawing tools keep the legacy click-to-create behavior for now.
-        if (tool === "container") {
-          const scene = screenToScene(
-            event.clientX,
-            event.clientY,
-            rect,
-            renderer.getViewport(),
-          );
-          const bounds = defaultBounds(docRef.current, "container");
-          createContainer({
-            x: scene.x - bounds.width / 2,
-            y: scene.y - bounds.height / 2,
-            width: bounds.width,
-            height: bounds.height,
-          });
-          setActiveTool("select");
-          return;
-        }
-
-        if (tool === "text" || tool === "line" || tool === "arrow") {
+        if (tool === "text") {
           const scene = screenToScene(
             event.clientX,
             event.clientY,
@@ -1130,18 +1117,24 @@ export const SkiaCanvas = memo(
             renderer.getViewport(),
           );
           setEditorOverlay({
-            shapePreview: {
-              type: drag.shapeType,
-              bounds: normalizeDrawBounds(
+            shapePreview: getDrawableToolPreview(
+              drag.shapeType,
+              normalizeDrawBounds(
                 drag.startPoint,
                 scene,
-                event.shiftKey,
+                event.shiftKey &&
+                  drag.shapeType !== "line" &&
+                  drag.shapeType !== "arrow",
               ),
-              fillColor:
-                drag.shapeType === "rect"
-                  ? DEFAULT_RECT_FILL
-                  : DEFAULT_SHAPE_FILL,
-            },
+            ),
+            linePreview:
+              drag.shapeType === "line" || drag.shapeType === "arrow"
+                ? {
+                    start: drag.startPoint,
+                    end: scene,
+                    arrow: drag.shapeType === "arrow",
+                  }
+                : null,
           });
           return;
         }
@@ -1252,13 +1245,26 @@ export const SkiaCanvas = memo(
             const bounds = normalizeDrawBounds(
               drag.startPoint,
               scene,
-              event.shiftKey,
+              event.shiftKey &&
+                drag.shapeType !== "line" &&
+                drag.shapeType !== "arrow",
             );
-            if (
-              bounds.width >= MIN_DRAW_SIZE &&
-              bounds.height >= MIN_DRAW_SIZE
-            ) {
-              const node = createDrawableShapeNode(drag.shapeType, bounds);
+            const isLineTool =
+              drag.shapeType === "line" || drag.shapeType === "arrow";
+            const isDrawableSize = isLineTool
+              ? Math.hypot(
+                  scene.x - drag.startPoint.x,
+                  scene.y - drag.startPoint.y,
+                ) >= MIN_DRAW_SIZE
+              : bounds.width >= MIN_DRAW_SIZE &&
+                bounds.height >= MIN_DRAW_SIZE;
+            if (isDrawableSize) {
+              const node = createDrawableCanvasNode(
+                drag.shapeType,
+                bounds,
+                drag.startPoint,
+                scene,
+              );
               const next = applyCanvasOperation(docRef.current, {
                 type: "insertNode",
                 node,
@@ -1271,6 +1277,8 @@ export const SkiaCanvas = memo(
                 type: drag.shapeType,
                 width: Math.round(bounds.width),
                 height: Math.round(bounds.height),
+                startPoint: drag.startPoint,
+                endPoint: scene,
               });
             } else {
               console.info("[skia-canvas] shape.draw.cancelled", {
@@ -1279,7 +1287,7 @@ export const SkiaCanvas = memo(
               });
             }
           }
-          setEditorOverlay({ shapePreview: null });
+          setEditorOverlay({ shapePreview: null, linePreview: null });
           setActiveTool("select");
           suppressNextClickRef.current = true;
         }
@@ -1289,20 +1297,32 @@ export const SkiaCanvas = memo(
         }
         if (drag?.kind === "move") {
           const activePageId = activePageIdRef.current;
-          const detached = detachNodesOutsideParentBounds(
-            docRef.current,
-            drag.nodeIds,
-            activePageId,
-          );
-          if (detached.detachedIds.length > 0) {
-            docRef.current = detached.doc;
-            setDoc(detached.doc);
-            syncRendererDocument(renderer, detached.doc, activePageId);
-            console.info("[skia-canvas] selection.drag.detached_from_parent", {
-              nodeIds: detached.detachedIds,
-              count: detached.detachedIds.length,
-              reason: "center_outside_parent_bounds",
-            });
+          const rect = canvasContainerRef.current?.getBoundingClientRect();
+          if (renderer && rect) {
+            const dropPoint = screenToScene(
+              event.clientX,
+              event.clientY,
+              rect,
+              renderer.getViewport(),
+            );
+            const reparented = reparentNodesByDropPoint(
+              docRef.current,
+              drag.nodeIds,
+              dropPoint,
+              activePageId,
+            );
+            if (reparented.movedIds.length > 0) {
+              docRef.current = reparented.doc;
+              setDoc(reparented.doc);
+              syncRendererDocument(renderer, reparented.doc, activePageId);
+              console.info("[skia-canvas] selection.drag.reparented", {
+                nodeIds: reparented.movedIds,
+                count: reparented.movedIds.length,
+                targetParentId: reparented.targetParentId,
+                dropPoint,
+                reason: "pointer_drop_point",
+              });
+            }
           }
         }
         if (
@@ -1500,31 +1520,7 @@ export const SkiaCanvas = memo(
           width: opts?.width ?? defaultB.width,
           height: opts?.height ?? defaultB.height,
         };
-        const container = {
-          id,
-          type: "frame" as const,
-          name: opts?.name ?? "New container",
-          x: b.x,
-          y: b.y,
-          width: b.width,
-          height: b.height,
-          fill: [{ type: "solid" as const, color: "rgba(255,255,255,0.78)" }],
-          stroke: {
-            thickness: 2,
-            fill: [{ type: "solid" as const, color: "#6c5ce7" }],
-          },
-          opacity: 1,
-          children: [] as PenNode[],
-          containerRole: ["visual", "task", "context"] as ContainerRole[],
-          contextSlots: {},
-          inheritPolicy: "merge" as const,
-          permissions: {
-            owner: "user",
-            canRead: [] as string[],
-            canWrite: [] as string[],
-            isolationLevel: "open" as const,
-          },
-        } satisfies PenNode;
+        const container = createFrameNode(id, b, opts?.name ?? "New container");
         const next = applyCanvasOperation(docRef.current, {
           type: "insertNode",
           node: container,
@@ -2875,6 +2871,27 @@ function isDrawableShapeTool(tool: CanvasTool): tool is DrawableShapeTool {
   return tool === "rect" || tool === "ellipse" || tool === "polygon";
 }
 
+function isDragDrawableTool(tool: CanvasTool): tool is DrawableCanvasTool {
+  return (
+    isDrawableShapeTool(tool) ||
+    tool === "container" ||
+    tool === "line" ||
+    tool === "arrow"
+  );
+}
+
+function getDrawableToolPreview(
+  tool: DrawableCanvasTool,
+  bounds: CanvasBounds,
+): EditorOverlayState["shapePreview"] {
+  if (tool === "line" || tool === "arrow") return null;
+  return {
+    type: tool === "container" ? "rect" : tool,
+    bounds,
+    fillColor: tool === "rect" ? DEFAULT_RECT_FILL : DEFAULT_SHAPE_FILL,
+  };
+}
+
 function normalizeDrawBounds(
   start: { x: number; y: number },
   end: { x: number; y: number },
@@ -2956,10 +2973,19 @@ function calculateResizeBounds(
   return { x, y, width, height, rotation: origin.rotation };
 }
 
-function createDrawableShapeNode(
-  type: DrawableShapeTool,
+function createDrawableCanvasNode(
+  type: DrawableCanvasTool,
   bounds: CanvasBounds,
+  start: { x: number; y: number },
+  end: { x: number; y: number },
 ): PenNode {
+  if (type === "container") {
+    return createFrameNode(createNodeId("container"), bounds, "New container");
+  }
+  if (type === "line" || type === "arrow") {
+    return createLineNode(type, start, end);
+  }
+
   const id = createNodeId(type === "rect" ? "rectangle" : type);
   const shared = {
     id,
@@ -2996,4 +3022,61 @@ function createDrawableShapeNode(
     name: "Polygon",
     polygonCount: 3,
   } as PenNode;
+}
+
+function createFrameNode(
+  id: string,
+  bounds: CanvasBounds,
+  name: string,
+): PenNode {
+  return {
+    id,
+    type: "frame",
+    name,
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    clipContent: true,
+    fill: [{ type: "solid", color: "rgba(255,255,255,0.78)" }],
+    stroke: {
+      thickness: 2,
+      fill: [{ type: "solid", color: "#6c5ce7" }],
+    },
+    opacity: 1,
+    children: [],
+    containerRole: ["visual", "task", "context"] as ContainerRole[],
+    contextSlots: {},
+    inheritPolicy: "merge",
+    permissions: {
+      owner: "user",
+      canRead: [],
+      canWrite: [],
+      isolationLevel: "open",
+    },
+  } as PenNode;
+}
+
+function createLineNode(
+  type: "line" | "arrow",
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+): PenNode {
+  const id = createNodeId(type);
+  return {
+    id,
+    type: "line",
+    name: type === "arrow" ? "Arrow" : "Line",
+    x: start.x,
+    y: start.y,
+    width: Math.max(Math.abs(end.x - start.x), 1),
+    height: Math.max(Math.abs(end.y - start.y), 1),
+    x2: end.x,
+    y2: end.y,
+    stroke: {
+      thickness: 3,
+      fill: [{ type: "solid", color: "#111827" }],
+    },
+    ...(type === "arrow" ? { _connectorType: "arrow" } : null),
+  } as unknown as PenNode;
 }

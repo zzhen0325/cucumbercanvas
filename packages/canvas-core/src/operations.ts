@@ -10,7 +10,7 @@ import {
   isBoundsInside,
   setActiveChildren,
 } from './document.js';
-import type { CanvasOperation } from './types.js';
+import type { CanvasBounds, CanvasOperation } from './types.js';
 
 export function applyCanvasOperation(
   doc: PenDocument,
@@ -162,6 +162,153 @@ export function detachNodesOutsideParentBounds(
   }
 
   return { doc: next, detachedIds };
+}
+
+export function reparentNodesByDropPoint(
+  doc: PenDocument,
+  nodeIds: string[],
+  dropPoint: { x: number; y: number },
+  activePageId?: string | null,
+): { doc: PenDocument; movedIds: string[]; targetParentId: string | null } {
+  const next = cloneDocument(doc);
+  const requested = new Set(nodeIds);
+  const targetParent = findFrameAtScenePoint(
+    next,
+    dropPoint,
+    requested,
+    activePageId,
+  );
+  const targetParentId = targetParent?.id ?? null;
+  const movedIds: string[] = [];
+
+  const targetParentRecord = targetParent as
+    | (PenNode & { clipContent?: boolean; children?: PenNode[] })
+    | null;
+  if (
+    targetParentRecord &&
+    (targetParentRecord.clipContent !== true ||
+      !Array.isArray(targetParentRecord.children))
+  ) {
+    updateNodeInDoc(
+      next,
+      targetParentRecord.id,
+      {
+        ...targetParentRecord,
+        clipContent: true,
+        children:
+          Array.isArray(targetParentRecord.children)
+            ? targetParentRecord.children
+            : [],
+      } as PenNode,
+      activePageId,
+    );
+  }
+
+  for (const nodeId of nodeIds) {
+    if (hasRequestedAncestor(next, nodeId, requested, activePageId)) {
+      continue;
+    }
+
+    const node = findNode(next, nodeId, activePageId);
+    if (!node || node.locked) continue;
+
+    const currentParent = findParent(next, nodeId, activePageId);
+    const currentParentId = currentParent?.id ?? null;
+    if (currentParentId === targetParentId) {
+      continue;
+    }
+
+    const oldParentOrigin = currentParent
+      ? getSceneOrigin(next, currentParent.id, activePageId)
+      : { x: 0, y: 0 };
+    const newParentOrigin = targetParentId
+      ? getSceneOrigin(next, targetParentId, activePageId)
+      : { x: 0, y: 0 };
+    const updates = buildScenePreservingUpdates(
+      node,
+      oldParentOrigin,
+      newParentOrigin,
+    );
+
+    updateNodeInDoc(
+      next,
+      nodeId,
+      { ...node, ...updates } as PenNode,
+      activePageId,
+    );
+    moveNodeInDoc(next, nodeId, targetParentId, undefined, activePageId);
+    movedIds.push(nodeId);
+  }
+
+  return { doc: next, movedIds, targetParentId };
+}
+
+function findFrameAtScenePoint(
+  doc: PenDocument,
+  point: { x: number; y: number },
+  excludedNodeIds: Set<string>,
+  activePageId?: string | null,
+): PenNode | null {
+  let target: PenNode | null = null;
+
+  const visit = (nodes: PenNode[]) => {
+    for (const node of nodes) {
+      if (
+        node.type === 'frame' &&
+        !isNodeOrAncestorExcluded(doc, node.id, excludedNodeIds, activePageId)
+      ) {
+        const bounds = getSceneBounds(doc, node.id, activePageId);
+        if (bounds && isPointInsideBounds(point, bounds)) {
+          target = node;
+        }
+      }
+      if ('children' in node && Array.isArray(node.children)) {
+        visit(node.children as PenNode[]);
+      }
+    }
+  };
+
+  visit(getActiveChildren(doc, activePageId));
+  return target;
+}
+
+function isNodeOrAncestorExcluded(
+  doc: PenDocument,
+  nodeId: string,
+  excludedNodeIds: Set<string>,
+  activePageId?: string | null,
+): boolean {
+  if (excludedNodeIds.has(nodeId)) return true;
+  let parent = findParent(doc, nodeId, activePageId);
+  while (parent) {
+    if (excludedNodeIds.has(parent.id)) return true;
+    parent = findParent(doc, parent.id, activePageId);
+  }
+  return false;
+}
+
+function getSceneBounds(
+  doc: PenDocument,
+  nodeId: string,
+  activePageId?: string | null,
+): CanvasBounds | null {
+  const node = findNode(doc, nodeId, activePageId);
+  if (!node) return null;
+  const bounds = getNodeBounds(node);
+  const origin = getSceneOrigin(doc, nodeId, activePageId);
+  return { ...bounds, x: origin.x, y: origin.y };
+}
+
+function isPointInsideBounds(
+  point: { x: number; y: number },
+  bounds: CanvasBounds,
+): boolean {
+  return (
+    point.x >= bounds.x &&
+    point.y >= bounds.y &&
+    point.x <= bounds.x + bounds.width &&
+    point.y <= bounds.y + bounds.height
+  );
 }
 
 function hasRequestedAncestor(

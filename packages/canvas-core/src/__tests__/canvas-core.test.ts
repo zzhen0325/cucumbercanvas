@@ -26,6 +26,7 @@ import {
   mergeSymbolProps,
   normalizeLegacyImportCoordinates,
   parseClipboardImport,
+  reparentNodesByDropPoint,
   resolveContext,
 } from "../index.js";
 
@@ -536,6 +537,86 @@ describe("cucumber canvas core", () => {
       y: 70,
       x2: 320,
       y2: 70,
+    });
+  });
+
+  it("reparents dragged root nodes into frames by mouse drop point and enables clipping", () => {
+    let doc = createEmptyDocument();
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: {
+        id: "frame",
+        type: "frame",
+        x: 100,
+        y: 50,
+        width: 160,
+        height: 120,
+        children: [],
+      } as PenNode,
+    });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: {
+        id: "rect",
+        type: "rectangle",
+        x: 140,
+        y: 80,
+        width: 40,
+        height: 40,
+      } as PenNode,
+    });
+
+    const reparented = reparentNodesByDropPoint(doc, ["rect"], {
+      x: 130,
+      y: 70,
+    });
+
+    expect(reparented.movedIds).toEqual(["rect"]);
+    expect(findParent(reparented.doc, "rect")?.id).toBe("frame");
+    expect(findNode(reparented.doc, "frame")).toMatchObject({
+      clipContent: true,
+    });
+    expect(findNode(reparented.doc, "rect")).toMatchObject({
+      x: 40,
+      y: 30,
+    });
+  });
+
+  it("detaches dragged children by mouse drop point even when their center remains inside", () => {
+    let doc = createEmptyDocument();
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: {
+        id: "frame",
+        type: "frame",
+        x: 100,
+        y: 50,
+        width: 160,
+        height: 120,
+        clipContent: true,
+        children: [
+          {
+            id: "rect",
+            type: "rectangle",
+            x: 20,
+            y: 20,
+            width: 100,
+            height: 80,
+          } as PenNode,
+        ],
+      } as PenNode,
+    });
+
+    const reparented = reparentNodesByDropPoint(doc, ["rect"], {
+      x: 90,
+      y: 60,
+    });
+
+    expect(reparented.movedIds).toEqual(["rect"]);
+    expect(findParent(reparented.doc, "rect")).toBeUndefined();
+    expect(findNode(reparented.doc, "rect")).toMatchObject({
+      x: 120,
+      y: 70,
     });
   });
 

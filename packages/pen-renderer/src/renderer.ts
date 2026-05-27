@@ -25,6 +25,7 @@ import { parseColor } from "./paint-utils.js";
 import { SpatialIndex } from "./spatial-index.js";
 import type {
   EditorOverlayState,
+  EditorLineOverlay,
   EditorPenPreviewOverlay,
   EditorShapeOverlay,
   PenRendererOptions,
@@ -96,6 +97,7 @@ export class PenRenderer {
     selectionColor: DEFAULT_SELECTION_COLOR,
     marquee: null,
     shapePreview: null,
+    linePreview: null,
     penPreview: null,
   };
 
@@ -500,6 +502,7 @@ export class PenRenderer {
       canvas,
       this.editorOverlays.shapePreview ?? null,
     );
+    this.drawLinePreviewOverlay(canvas, this.editorOverlays.linePreview ?? null);
 
     for (const rn of this.getSelectedOverlayRenderNodes()) {
       if (rn.node.type === "text") continue;
@@ -677,6 +680,53 @@ export class PenRenderer {
 
     fillPaint.delete();
     strokePaint.delete();
+  }
+
+  private drawLinePreviewOverlay(
+    canvas: ReturnType<Surface["getCanvas"]>,
+    preview: EditorLineOverlay | null,
+  ) {
+    if (!preview) return;
+    const dx = preview.end.x - preview.start.x;
+    const dy = preview.end.y - preview.start.y;
+    if (Math.hypot(dx, dy) <= 0) return;
+
+    const ck = this.ck;
+    const color = this.editorOverlays.selectionColor ?? DEFAULT_SELECTION_COLOR;
+    const invZoom = 1 / this._zoom;
+    const paint = new ck.Paint();
+    paint.setStyle(ck.PaintStyle.Stroke);
+    paint.setAntiAlias(true);
+    paint.setStrokeWidth(2 * invZoom);
+    paint.setStrokeCap(ck.StrokeCap.Round);
+    paint.setColor(parseColor(ck, color));
+    const dash = ck.PathEffect.MakeDash([5 * invZoom, 4 * invZoom], 0);
+    if (dash) paint.setPathEffect(dash);
+
+    canvas.drawLine(
+      preview.start.x,
+      preview.start.y,
+      preview.end.x,
+      preview.end.y,
+      paint,
+    );
+
+    if (preview.arrow) {
+      const angle = Math.atan2(dy, dx);
+      const size = 10 * invZoom;
+      const left = {
+        x: preview.end.x - Math.cos(angle - Math.PI / 6) * size,
+        y: preview.end.y - Math.sin(angle - Math.PI / 6) * size,
+      };
+      const right = {
+        x: preview.end.x - Math.cos(angle + Math.PI / 6) * size,
+        y: preview.end.y - Math.sin(angle + Math.PI / 6) * size,
+      };
+      canvas.drawLine(preview.end.x, preview.end.y, left.x, left.y, paint);
+      canvas.drawLine(preview.end.x, preview.end.y, right.x, right.y, paint);
+    }
+
+    paint.delete();
   }
 
   private drawPenPreviewOverlay(

@@ -58,6 +58,12 @@ export interface EditorShapeOverlay {
   fillColor: string;
 }
 
+export interface EditorLineOverlay {
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+  arrow?: boolean;
+}
+
 export interface EditorPenPreviewOverlay {
   points: PenPathAnchor[];
   cursorPos: { x: number; y: number } | null;
@@ -69,6 +75,7 @@ export interface EditorOverlayState {
   selectionColor?: string;
   marquee?: EditorMarqueeOverlay | null;
   shapePreview?: EditorShapeOverlay | null;
+  linePreview?: EditorLineOverlay | null;
   penPreview?: EditorPenPreviewOverlay | null;
 }
 

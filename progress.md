@@ -151,6 +151,7 @@ Status:
 - Added a dedicated `codegen_export` MCP tool so the Agent can export the current live canvas selection, or explicit node IDs, directly into React (`.tsx` + CSS) or static HTML (`index.html` + CSS) design-as-code files with diagnostic logging.
 - Added the first Phase C prompt-to-canvas orchestration slice: `prompt_canvas_plan` creates deterministic section plans, `prompt_canvas_execute` writes root/section containers through the live canvas service with structured `[phase-c-orchestration]` logs, and `codegen_export` now emits Vue single-file component output alongside React and HTML.
 - Hardened Figma paste editing fidelity after real-canvas drag issues: pasted frame/group selections can be dragged from visible descendants, clipped children no longer steal hits outside their visible clip, line endpoints render correctly inside nested imported frames, and dragged layers automatically detach to the parent scope once their center leaves a frame/group while preserving scene coordinates.
+- Fixed native canvas drawing/reparent ergonomics: line, arrow, and Frame tools now drag out geometry with live previews instead of click-inserting default shapes; arrows render arrowheads, Frames default to clipped artboards, and dragged nodes enter/leave Frames by mouse drop position while preserving scene coordinates.
 
 ## Next Targets
 
