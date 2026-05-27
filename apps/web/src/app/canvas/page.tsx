@@ -32,7 +32,12 @@ import { LoadingScreen } from "../../components/loading-screen";
 import { useJobFallbackPolling } from "../../hooks/use-job-fallback-polling";
 import { useWebSocket } from "../../hooks/use-websocket";
 import { useAuth } from "../../lib/auth-context";
-import { ApiAuthError, fetchCanvas, fetchProject } from "../../lib/server-api";
+import {
+  ApiApplicationError,
+  ApiAuthError,
+  fetchCanvas,
+  fetchProject,
+} from "../../lib/server-api";
 
 type CanvasImportSummary = {
   sourceLabel: string;
@@ -315,7 +320,15 @@ function CanvasPageContent() {
           signOutRef.current().then(() => routerRef.current.replace("/login"));
           return;
         }
-        setError("Failed to load canvas.");
+        console.error("[canvas-page] failed to load canvas", {
+          canvasId,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+        setError(
+          err instanceof ApiApplicationError
+            ? err.message
+            : "Unable to load this canvas. Check the server logs for the underlying cause.",
+        );
         setPageLoading(false);
       });
     // Intentionally omitting accessTokenRef (stable ref) and signOutRef/routerRef

@@ -1,14 +1,23 @@
+import {
+  CanvasPageOperationError,
+  normalizeCanvasDocument,
+} from "@cucumber/canvas-core";
 import type { CanvasContent, CanvasDetail, Json } from "@cucumber/shared";
-import { normalizeCanvasDocument } from "@cucumber/canvas-core";
 
-import type { AuthenticatedUser, UserSupabaseClient } from "../../supabase/user.js";
+import type {
+  AuthenticatedUser,
+  UserSupabaseClient,
+} from "../../supabase/user.js";
 
 export class CanvasServiceError extends Error {
   readonly statusCode: number;
-  readonly code: "canvas_not_found" | "canvas_save_failed";
+  readonly code:
+    | "canvas_not_found"
+    | "canvas_save_failed"
+    | "invalid_canvas_document";
 
   constructor(
-    code: "canvas_not_found" | "canvas_save_failed",
+    code: "canvas_not_found" | "canvas_save_failed" | "invalid_canvas_document",
     message: string,
     statusCode: number,
   ) {
@@ -47,30 +56,84 @@ export function createCanvasService(options: {
         .single();
 
       if (error || !data) {
-        throw new CanvasServiceError("canvas_not_found", "Canvas not found.", 404);
+        throw new CanvasServiceError(
+          "canvas_not_found",
+          "Canvas not found.",
+          404,
+        );
       }
 
+      const content = normalizePersistedCanvasDocument(data.content, canvasId);
       return {
         id: data.id,
         name: data.name,
         projectId: data.project_id,
-        content: normalizeCanvasDocument(data.content) as unknown as CanvasContent,
+        content: content as unknown as CanvasContent,
       };
     },
 
     async saveCanvasContent(user, canvasId, content) {
       const client = options.createUserClient(user.accessToken);
+      const normalizedContent = normalizeIncomingCanvasDocument(
+        content,
+        canvasId,
+      );
 
       const { error } = await client
         .from("canvases")
-        .update({ content: content as unknown as Json })
+        .update({ content: normalizedContent as unknown as Json })
         .eq("id", canvasId);
 
       if (error) {
-        throw new CanvasServiceError("canvas_save_failed", "Unable to save canvas.", 500);
+        throw new CanvasServiceError(
+          "canvas_save_failed",
+          "Unable to save canvas.",
+          500,
+        );
       }
     },
   };
+}
+
+function normalizePersistedCanvasDocument(raw: unknown, canvasId: string) {
+  try {
+    return normalizeCanvasDocument(raw);
+  } catch (error) {
+    if (error instanceof CanvasPageOperationError) {
+      console.error("[canvas-service] invalid persisted canvas document", {
+        canvasId,
+        reason: error.message,
+      });
+      throw new CanvasServiceError(
+        "invalid_canvas_document",
+        "Canvas data is invalid: expected a Cucumber PenDocument with pages and activePageId. Existing legacy canvas data needs a data repair before it can be opened.",
+        500,
+      );
+    }
+    throw error;
+  }
+}
+
+function normalizeIncomingCanvasDocument(
+  content: CanvasContent,
+  canvasId: string,
+) {
+  try {
+    return normalizeCanvasDocument(content);
+  } catch (error) {
+    if (error instanceof CanvasPageOperationError) {
+      console.warn("[canvas-service] rejected invalid canvas document save", {
+        canvasId,
+        reason: error.message,
+      });
+      throw new CanvasServiceError(
+        "invalid_canvas_document",
+        "Canvas data is invalid: expected a Cucumber PenDocument with pages and activePageId.",
+        400,
+      );
+    }
+    throw error;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -155,7 +218,12 @@ async function resolveFilesFromStorage(
 
   // Separate OSS files from inline files
   const updatedFiles: CanvasFileRecord = {};
-  const ossEntries: Array<{ fileId: string; fileData: Record<string, unknown>; bucket: string; objectPath: string }> = [];
+  const ossEntries: Array<{
+    fileId: string;
+    fileData: Record<string, unknown>;
+    bucket: string;
+    objectPath: string;
+  }> = [];
 
   for (const [fileId, fileData] of Object.entries(files)) {
     const dataURL = fileData.dataURL as string | undefined;
@@ -217,19 +285,29 @@ function parseDataURL(dataURL: string): { buffer: Buffer; mimeType: string } {
   if (!match) {
     throw new Error("Invalid data URL");
   }
+  const [, mimeType, data] = match;
+  if (!mimeType || !data) {
+    throw new Error("Invalid data URL");
+  }
   return {
-    mimeType: match[1]!,
-    buffer: Buffer.from(match[2]!, "base64"),
+    mimeType,
+    buffer: Buffer.from(data, "base64"),
   };
 }
 
 function mimeToExt(mimeType: string): string {
   switch (mimeType) {
-    case "image/png": return "png";
-    case "image/jpeg": return "jpg";
-    case "image/webp": return "webp";
-    case "image/svg+xml": return "svg";
-    case "image/gif": return "gif";
-    default: return "bin";
+    case "image/png":
+      return "png";
+    case "image/jpeg":
+      return "jpg";
+    case "image/webp":
+      return "webp";
+    case "image/svg+xml":
+      return "svg";
+    case "image/gif":
+      return "gif";
+    default:
+      return "bin";
   }
 }
