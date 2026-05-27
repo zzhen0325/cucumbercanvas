@@ -52,6 +52,7 @@ import {
 } from "@cucumber/pen-renderer";
 import type { ContainerRole, PenDocument, PenNode } from "@cucumber/pen-types";
 import type { CanvasKit } from "canvaskit-wasm";
+import type React from "react";
 import {
   forwardRef,
   memo,
@@ -315,6 +316,21 @@ const CANVAS_SELECTION_COLOR = "#37BFF9";
 const DEFAULT_RECT_FILL = "#d3f256";
 const DEFAULT_SHAPE_FILL = "#f8fafc";
 
+type TextEditState = {
+  nodeId: string;
+  x: number;
+  y: number;
+  width: number;
+  minHeight: number;
+  content: string;
+  fontSize: number;
+  fontFamily: string;
+  fontWeight: string;
+  textAlign: React.CSSProperties["textAlign"];
+  color: string;
+  lineHeight: number | string;
+};
+
 type CanvasRuntimeDocument = PenDocument & {
   assets?: Record<string, CanvasAsset>;
   selection?: string[];
@@ -353,6 +369,44 @@ function filterSelectionForActivePage(
   activePageId?: string | null,
 ): string[] {
   return selection.filter((id) => Boolean(findNode(doc, id, activePageId)));
+}
+
+function projectTextEditStateToViewport(
+  editingText: TextEditState,
+  viewport: { zoom: number; panX: number; panY: number },
+) {
+  return {
+    left: editingText.x * viewport.zoom + viewport.panX,
+    top: editingText.y * viewport.zoom + viewport.panY,
+    width: Math.max(editingText.width * viewport.zoom, 1),
+    minHeight: Math.max(editingText.minHeight * viewport.zoom, 1),
+    fontSize: Math.max(editingText.fontSize * viewport.zoom, 1),
+  };
+}
+
+function getTextContent(node: PenNode): string {
+  const record = node as Record<string, unknown>;
+  const content = record.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((segment) =>
+        segment && typeof segment === "object" && "text" in segment
+          ? String((segment as { text?: unknown }).text ?? "")
+          : "",
+      )
+      .join("");
+  }
+  return "";
+}
+
+function getFirstSolidFillColor(node: PenNode, fallback = "#111827"): string {
+  const fills = (node as { fill?: Array<{ type?: string; color?: string }> })
+    .fill;
+  const first = Array.isArray(fills) ? fills[0] : undefined;
+  return first?.type === "solid" && typeof first.color === "string"
+    ? first.color
+    : fallback;
 }
 
 // ---------------------------------------------------------------------------
@@ -394,6 +448,7 @@ export const SkiaCanvas = memo(
     const [historyIndex, setHistoryIndex] = useState(-1);
     const [activeTool, setActiveTool] = useState<CanvasTool>("select");
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
+    const [editingText, setEditingText] = useState<TextEditState | null>(null);
     const editorOverlayRef = useRef<EditorOverlayState>({
       selectedIds: [],
       selectionColor: CANVAS_SELECTION_COLOR,
@@ -1277,16 +1332,107 @@ export const SkiaCanvas = memo(
       ],
     );
 
+    const beginTextEdit = useCallback(
+      (node: PenNode) => {
+        const renderer = rendererRef.current;
+        if (!renderer || node.type !== "text") return false;
+        const bounds = renderer.getNodeBounds(node.id);
+        if (!bounds) return false;
+        const textNode = node as PenNode & {
+          fontSize?: number;
+          fontFamily?: string;
+          fontWeight?: string | number;
+          textAlign?: React.CSSProperties["textAlign"];
+          lineHeight?: number | string;
+        };
+        setSelection([node.id]);
+        setEditingText({
+          nodeId: node.id,
+          x: bounds.x,
+          y: bounds.y,
+          width: bounds.w,
+          minHeight: bounds.h,
+          content: getTextContent(node),
+          fontSize: textNode.fontSize ?? 16,
+          fontFamily:
+            textNode.fontFamily ??
+            'Inter, -apple-system, "Noto Sans SC", "PingFang SC", system-ui, sans-serif',
+          fontWeight: String(textNode.fontWeight ?? 400),
+          textAlign: textNode.textAlign ?? "left",
+          color: getFirstSolidFillColor(node),
+          lineHeight: textNode.lineHeight ?? 1.4,
+        });
+        console.info("[skia-canvas] text.edit.started", { nodeId: node.id });
+        return true;
+      },
+      [setSelection],
+    );
+
+    const commitTextEdit = useCallback(
+      (nextContent: string) => {
+        const currentEdit = editingText;
+        if (!currentEdit) return;
+        setEditingText(null);
+        if (nextContent === currentEdit.content) {
+          console.info("[skia-canvas] text.edit.cancelled", {
+            nodeId: currentEdit.nodeId,
+            reason: "unchanged",
+          });
+          return;
+        }
+        const activePageId = activePageIdRef.current;
+        const existingNode = findNode(
+          docRef.current,
+          currentEdit.nodeId,
+          activePageId,
+        );
+        if (!existingNode) {
+          console.warn("[skia-canvas] text.edit.commit.skipped", {
+            nodeId: currentEdit.nodeId,
+            reason: "node_not_found",
+            activePageId,
+          });
+          return;
+        }
+        const next = applyCanvasOperation(docRef.current, {
+          type: "updateNode",
+          nodeId: currentEdit.nodeId,
+          updates: { content: nextContent } as Partial<PenNode>,
+          activePageId,
+        });
+        commitDocument(next, { selection: [currentEdit.nodeId] });
+        setSelection([currentEdit.nodeId], { notifyScene: false });
+        console.info("[skia-canvas] text.edit.committed", {
+          nodeId: currentEdit.nodeId,
+          previousLength: currentEdit.content.length,
+          nextLength: nextContent.length,
+        });
+      },
+      [commitDocument, editingText, setSelection],
+    );
+
     const handleDoubleClick = useCallback(
       (event: React.MouseEvent<HTMLDivElement>) => {
-        if (effectiveTool !== "path") return;
-        if (penTool.onDblClick()) {
+        if (effectiveTool === "path" && penTool.onDblClick()) {
+          event.preventDefault();
+          event.stopPropagation();
+          suppressNextClickRef.current = true;
+          return;
+        }
+        if (effectiveTool !== "select") return;
+        const target = event.target as HTMLElement;
+        if (target.closest("input, textarea, [contenteditable]")) return;
+        const renderer = rendererRef.current;
+        if (!renderer) return;
+        const hit = renderer.hitTest(event.clientX, event.clientY);
+        if (!hit || hit.type !== "text") return;
+        if (beginTextEdit(hit)) {
           event.preventDefault();
           event.stopPropagation();
           suppressNextClickRef.current = true;
         }
       },
-      [effectiveTool, penTool],
+      [beginTextEdit, effectiveTool, penTool],
     );
 
     // -----------------------------------------------------------------------
@@ -2569,6 +2715,13 @@ export const SkiaCanvas = memo(
         : effectiveTool === "select"
           ? "cursor-default"
           : "cursor-crosshair";
+    const textEditOverlay =
+      editingText && rendererRef.current
+        ? projectTextEditStateToViewport(
+            editingText,
+            rendererRef.current.getViewport(),
+          )
+        : null;
 
     return (
       <div
@@ -2585,6 +2738,53 @@ export const SkiaCanvas = memo(
       >
         {/* CanvasKit canvas container */}
         <div ref={canvasContainerRef} className="absolute inset-0" />
+
+        {editingText && textEditOverlay ? (
+          <textarea
+            aria-label="Edit canvas text"
+            autoFocus
+            className="absolute z-30 box-border m-0 resize-none overflow-hidden rounded-sm border-2 border-sky-400 bg-white/95 px-px py-0 outline-none"
+            defaultValue={editingText.content}
+            style={{
+              left: textEditOverlay.left,
+              top: textEditOverlay.top,
+              width: textEditOverlay.width,
+              minHeight: textEditOverlay.minHeight,
+              fontSize: textEditOverlay.fontSize,
+              fontFamily: editingText.fontFamily,
+              fontWeight: editingText.fontWeight,
+              textAlign: editingText.textAlign,
+              color: editingText.color,
+              lineHeight: editingText.lineHeight,
+            }}
+            onBlur={(event) => commitTextEdit(event.currentTarget.value)}
+            onClick={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                console.info("[skia-canvas] text.edit.cancelled", {
+                  nodeId: editingText.nodeId,
+                  reason: "escape",
+                });
+                setEditingText(null);
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+              }
+              if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                event.currentTarget.blur();
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+              }
+              event.stopPropagation();
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            onPointerMove={(event) => event.stopPropagation()}
+            onPointerUp={(event) => event.stopPropagation()}
+            onWheel={(event) => event.stopPropagation()}
+          />
+        ) : null}
 
         {/* Toolbar overlays */}
         <CanvasEditorToolbar
