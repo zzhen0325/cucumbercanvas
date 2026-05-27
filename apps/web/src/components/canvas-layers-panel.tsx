@@ -141,6 +141,7 @@ const LayerRow = memo(function LayerRow({
   selected,
   collapsed,
   canCollapse,
+  moveTargets,
   onSelect,
   onToggleLock,
   onToggleVisible,
@@ -152,12 +153,18 @@ const LayerRow = memo(function LayerRow({
   onDragStart,
   onDragOver,
   onDrop,
+  onMoveToParentIndex,
 }: {
   el: CanvasSceneElement;
   files: Record<string, CanvasFileRecord>;
   selected: boolean;
   collapsed: boolean;
   canCollapse: boolean;
+  moveTargets: Array<{
+    label: string;
+    targetIndex: number;
+    targetParentId: string | null;
+  }>;
   onSelect: (id: string, additive?: boolean) => void;
   onToggleLock: (id: string) => void;
   onToggleVisible: (id: string) => void;
@@ -172,6 +179,11 @@ const LayerRow = memo(function LayerRow({
   onDragStart: (id: string) => void;
   onDragOver: (id: string, event: React.DragEvent<HTMLDivElement>) => void;
   onDrop: (id: string) => void;
+  onMoveToParentIndex: (
+    id: string,
+    targetParentId: string | null,
+    targetIndex: number,
+  ) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState(elLabel(el));
@@ -363,6 +375,30 @@ const LayerRow = memo(function LayerRow({
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
+                {moveTargets.length > 0 ? (
+                  moveTargets.map((target) => (
+                    <DropdownMenuItem
+                      key={`${target.targetParentId ?? "root"}-${target.targetIndex}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onMoveToParentIndex(
+                          el.id,
+                          target.targetParentId,
+                          target.targetIndex,
+                        );
+                      }}
+                    >
+                      {target.label}
+                    </DropdownMenuItem>
+                  ))
+                ) : (
+                  <DropdownMenuItem disabled>
+                    No hierarchy move targets
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
                 <DropdownMenuItem
                   onClick={(event) => {
                     event.stopPropagation();
@@ -547,6 +583,18 @@ export function CanvasLayersPanel({
     [canvasApi, runLayerAction],
   );
 
+  const moveElementToParentIndex = useCallback(
+    (id: string, targetParentId: string | null, targetIndex: number) => {
+      if (!canvasApi) return;
+      runLayerAction(
+        "move layer",
+        { targetId: id, targetIndex, targetParentId },
+        () => canvasApi.moveNodeToIndex(id, targetParentId, targetIndex),
+      );
+    },
+    [canvasApi, runLayerAction],
+  );
+
   const renameElement = useCallback(
     (id: string, title: string) => {
       const updates: Parameters<CanvasApi["updateNode"]>[1] = { name: title };
@@ -641,6 +689,43 @@ export function CanvasLayersPanel({
     }
     return true;
   });
+  const containerElements = elements.filter(
+    (el) => el.type === "frame" || el.type === "group",
+  );
+
+  const getLayerParentId = (el: CanvasSceneElement): string | null =>
+    (el.customData?.containerId as string | null | undefined) ?? null;
+
+  const getMoveTargets = (el: CanvasSceneElement) => {
+    const currentParentId = getLayerParentId(el);
+    const targets: Array<{
+      label: string;
+      targetIndex: number;
+      targetParentId: string | null;
+    }> = [];
+
+    if (currentParentId !== null) {
+      const rootCount = elements.filter(
+        (candidate) => getLayerParentId(candidate) === null,
+      ).length;
+      targets.push({
+        label: "Move to canvas root",
+        targetIndex: rootCount,
+        targetParentId: null,
+      });
+    }
+
+    for (const container of containerElements) {
+      if (container.id === el.id || container.id === currentParentId) continue;
+      targets.push({
+        label: `Move into ${elLabel(container)}`,
+        targetIndex: childrenByParent[container.id] ?? 0,
+        targetParentId: container.id,
+      });
+    }
+
+    return targets;
+  };
 
   if (!open) return null;
 
@@ -694,6 +779,7 @@ export function CanvasLayersPanel({
               selected={!!selectedIds[el.id]}
               collapsed={!!collapsedIds[el.id]}
               canCollapse={Boolean(childrenByParent[el.id])}
+              moveTargets={getMoveTargets(el)}
               onSelect={selectElement}
               onToggleLock={toggleLock}
               onToggleVisible={toggleVisible}
@@ -705,6 +791,7 @@ export function CanvasLayersPanel({
               onDragStart={handleDragStart}
               onDragOver={handleDragOver}
               onDrop={handleDrop}
+              onMoveToParentIndex={moveElementToParentIndex}
             />
           ))
         )}

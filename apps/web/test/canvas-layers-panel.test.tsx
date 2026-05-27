@@ -124,6 +124,12 @@ function firstElement<T extends Element>(elements: T[]): T {
   return element;
 }
 
+function elementAt<T extends Element>(elements: T[], index: number): T {
+  const element = elements[index];
+  if (!element) throw new Error(`Expected matching element at index ${index}.`);
+  return element;
+}
+
 describe("CanvasLayersPanel", () => {
   it("selects layers and toggles lock and visibility through CanvasApi", async () => {
     const user = userEvent.setup();
@@ -191,6 +197,74 @@ describe("CanvasLayersPanel", () => {
     fireEvent.drop(target);
 
     expect(api.moveNodeToIndex).toHaveBeenCalledWith("rect-1", null, 0);
+  });
+
+  it("moves a layer into an available parent through the action menu", async () => {
+    const user = userEvent.setup();
+    const api = renderLayersPanel();
+
+    await user.click(
+      firstElement(screen.getAllByRole("button", { name: "Layer actions" })),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Move into Frame" }),
+    );
+
+    expect(api.moveNodeToIndex).toHaveBeenCalledWith("text-1", "frame-1", 1);
+  });
+
+  it("shows readable disabled hierarchy move state when no target exists", async () => {
+    const user = userEvent.setup();
+    renderLayersPanel();
+
+    await user.click(
+      elementAt(screen.getAllByRole("button", { name: "Layer actions" }), 2),
+    );
+
+    expect(
+      await screen.findByRole("menuitem", {
+        name: "No hierarchy move targets",
+      }),
+    ).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("surfaces readable hierarchy move failures", async () => {
+    const user = userEvent.setup();
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const api = renderLayersPanel(
+      createCanvasApi({
+        moveNodeToIndex: vi.fn(() => {
+          throw new Error("Could not move layer into Frame.");
+        }),
+      }),
+    );
+
+    await user.click(
+      firstElement(screen.getAllByRole("button", { name: "Layer actions" })),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Move into Frame" }),
+    );
+
+    expect(api.moveNodeToIndex).toHaveBeenCalledWith("text-1", "frame-1", 1);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not move layer into Frame.",
+    );
+    expect(consoleError).toHaveBeenCalledWith(
+      "[canvas-layers-panel] layer action failed",
+      expect.objectContaining({
+        actionName: "move layer",
+        error: expect.any(Error),
+        message: "Could not move layer into Frame.",
+        targetId: "text-1",
+        targetIndex: 1,
+        targetParentId: "frame-1",
+      }),
+    );
+
+    consoleError.mockRestore();
   });
 
   it("surfaces readable CanvasApi failures without leaking raw error codes", async () => {

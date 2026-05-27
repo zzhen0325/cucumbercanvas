@@ -16,10 +16,10 @@ Last updated: 2026-05-27 16:15 CST
 - Phase C OpenPencil thin slice started: prompt-to-canvas planning/execution
   MCP tools now materialize live canvas containers, and direct codegen export
   supports Vue alongside React and HTML.
-- B0 editor-ui parity advanced: layers and property-panel P1 rows now have
-  dedicated coverage, layer failures surface readable messages, and the shape
-  toolbar menu can expose icon insertion only when a real callback is wired,
-  avoiding an inert production icon tool while parent wiring remains pending.
+- B0 editor-ui parity advanced: the layers row now has dedicated coverage,
+  readable failures, and an accessible hierarchy move path; the shape toolbar
+  only exposes icon insertion when a real callback is wired, and property-panel
+  parity remains P1 until effects/path/line-specific limits are verified.
 
 ## Current Session
 
@@ -110,6 +110,9 @@ Status:
 
 ## Verification Log
 
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-editor-toolbar.test.tsx test/canvas-layers-panel.test.tsx test/canvas-property-panel.test.tsx`.
+- Passed: `pnpm exec biome check apps/web/src/components/canvas/shape-tool-dropdown.tsx apps/web/src/components/canvas-layers-panel.tsx apps/web/test/canvas-editor-toolbar.test.tsx apps/web/test/canvas-layers-panel.test.tsx docs/tech/openpencil-web-canvas-parity.md progress.md`.
+- Failed: `pnpm --filter @cucumber/web typecheck` remains blocked by the unchanged out-of-scope `apps/web/src/components/canvas/skia-canvas.tsx:388` `PenNode` to `Record<string, unknown>` cast diagnostic.
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-editor-toolbar.test.tsx test/canvas-layers-panel.test.tsx test/canvas-property-panel.test.tsx`.
 - Passed: `pnpm exec biome check apps/web/src/components/canvas/editor-toolbar.tsx apps/web/src/components/canvas/shape-tool-dropdown.tsx apps/web/src/components/canvas-layers-panel.tsx apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx apps/web/test/canvas-editor-toolbar.test.tsx apps/web/test/canvas-layers-panel.test.tsx apps/web/test/canvas-property-panel.test.tsx docs/tech/openpencil-web-canvas-parity.md progress.md`.
 - Failed: `pnpm --filter @cucumber/web typecheck` remains blocked by the out-of-scope `apps/web/src/components/canvas/skia-canvas.tsx:388` `PenNode` to `Record<string, unknown>` cast diagnostic.
