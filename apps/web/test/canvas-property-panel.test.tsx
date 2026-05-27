@@ -94,19 +94,20 @@ const lineNode: PenNode = {
   y2: 12,
 };
 
+const existingShadow = {
+  blur: 8,
+  color: "#00000080",
+  offsetX: 2,
+  offsetY: 6,
+  spread: 1,
+  type: "shadow" as const,
+};
+
+const existingBlur = { radius: 3, type: "blur" as const };
+
 const nodeWithEffects: PenNode = {
   ...rectangleNode,
-  effects: [
-    {
-      blur: 8,
-      color: "#00000080",
-      offsetX: 2,
-      offsetY: 6,
-      spread: 1,
-      type: "shadow",
-    },
-    { radius: 3, type: "blur" },
-  ],
+  effects: [existingShadow, existingBlur],
 };
 
 function renderPropertyPanel(
@@ -224,6 +225,71 @@ describe("CanvasPropertyPanel", () => {
       effects: [{ radius: 4, type: "blur" }],
     });
     expect(container).not.toHaveTextContent(/\bnull\b|\bundefined\b/);
+  });
+
+  it("preserves other effects when disabling an existing shadow or blur", async () => {
+    const user = userEvent.setup();
+    const { onUpdate, rerender } = renderPropertyPanel(nodeWithEffects);
+
+    await user.click(screen.getByRole("button", { name: /^阴影/ }));
+
+    expect(onUpdate).toHaveBeenCalledWith({
+      effects: [existingBlur],
+    });
+
+    onUpdate.mockClear();
+    rerender(
+      <CanvasPropertyPanel
+        node={nodeWithEffects}
+        onBindAgent={vi.fn()}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /^模糊/ }));
+
+    expect(onUpdate).toHaveBeenCalledWith({
+      effects: [existingShadow],
+    });
+  });
+
+  it("preserves existing effects when enabling shadow or blur", async () => {
+    const user = userEvent.setup();
+    const { onUpdate, rerender } = renderPropertyPanel({
+      ...rectangleNode,
+      effects: [existingBlur],
+    });
+
+    await user.click(screen.getByRole("button", { name: /^阴影/ }));
+
+    expect(onUpdate).toHaveBeenCalledWith({
+      effects: [
+        existingBlur,
+        {
+          blur: 8,
+          color: "#00000040",
+          offsetX: 0,
+          offsetY: 4,
+          spread: 0,
+          type: "shadow",
+        },
+      ],
+    });
+
+    onUpdate.mockClear();
+    rerender(
+      <CanvasPropertyPanel
+        node={{ ...rectangleNode, effects: [existingShadow] }}
+        onBindAgent={vi.fn()}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /^模糊/ }));
+
+    expect(onUpdate).toHaveBeenCalledWith({
+      effects: [existingShadow, { radius: 4, type: "blur" }],
+    });
   });
 
   it("updates existing effect values without leaking empty fields", () => {

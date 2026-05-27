@@ -45,6 +45,9 @@ Last updated: 2026-05-27 CST
   toggles/value updates, path paint/effects partial updates, and line-specific
   limits; line nodes keep stroke/effects editing without exposing unsupported
   fill controls.
+- Property panel review follow-up tightened effects coverage so enabling or
+  disabling shadow/blur from existing effects arrays preserves the unrelated
+  effect. Existing production behavior passed those tests without changes.
 
 ## Current Session
 
