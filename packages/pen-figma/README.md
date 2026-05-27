@@ -1,6 +1,6 @@
 # @zseven-w/pen-figma
 
-Figma `.fig` file parser and converter for [OpenPencil](https://github.com/ZSeven-W/openpencil). Import Figma designs directly into the OpenPencil document model — binary file parsing, multi-page support, clipboard paste, and full style conversion.
+Figma `.fig` file parser and converter for [Cucumber](https://github.com/ZSeven-W/cucumber). Import Figma designs directly into the Cucumber document model — binary file parsing, multi-page support, clipboard paste, and full style conversion.
 
 ## Install
 
@@ -12,7 +12,7 @@ bun add @zseven-w/pen-figma
 
 ## Overview
 
-This package handles the complete pipeline from Figma's proprietary binary format to OpenPencil's `PenDocument`:
+This package handles the complete pipeline from Figma's proprietary binary format to Cucumber's `PenDocument`:
 
 ```
 .fig binary → Kiwi schema decode → FigmaNodeChange[] → tree building → PenNode[] → PenDocument
@@ -21,7 +21,7 @@ This package handles the complete pipeline from Figma's proprietary binary forma
 It supports:
 
 - Binary `.fig` files (Kiwi schema + zstd/zip compression)
-- Figma clipboard HTML (copy from Figma → paste in OpenPencil)
+- Figma clipboard HTML (copy from Figma → paste in Cucumber)
 - All node types: frames, groups, components, instances, shapes, text, vectors, images
 - Full style conversion: fills, strokes, effects, gradients, auto-layout, typography
 
@@ -53,7 +53,7 @@ const document = figmaToPenDocument(figFile, pages[0]);
 
 ### Clipboard paste
 
-Detect and convert Figma clipboard data (when users copy from Figma and paste into OpenPencil):
+Detect and convert Figma clipboard data (when users copy from Figma and paste into Cucumber):
 
 ```typescript
 import {

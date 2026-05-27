@@ -133,8 +133,6 @@ type ImageToolConfig = {
 type ImageGenerateResult = {
   summary: string;
   title?: string;
-  groupId?: string;
-  placeholderId?: string;
   elementId?: string;
   imageUrl?: string;
   mimeType?: string;
@@ -406,8 +404,6 @@ export type SubmitImageJobFn = (input: {
   placementHeight?: number;
 }) => Promise<{
   jobId: string;
-  groupId?: string;
-  placeholderId?: string;
   elementId?: string;
   imageUrl?: string;
   width?: number;
@@ -565,10 +561,6 @@ export async function runImageGenerate(
           // Expose jobId so frontend can poll for late-arriving results
           // (worker may still succeed after agent poll timeout)
           jobId: jobResult.jobId,
-          ...(jobResult.groupId != null ? { groupId: jobResult.groupId } : {}),
-          ...(jobResult.placeholderId != null
-            ? { placeholderId: jobResult.placeholderId }
-            : {}),
           jobType: "image_generation" as const,
         };
       }
@@ -577,10 +569,6 @@ export async function runImageGenerate(
       const result: ImageGenerateResult = {
         summary: `Generated image (${jobResult.width ?? 0}x${jobResult.height ?? 0}) via ${model}`,
         title: request.title,
-        ...(jobResult.groupId != null ? { groupId: jobResult.groupId } : {}),
-        ...(jobResult.placeholderId != null
-          ? { placeholderId: jobResult.placeholderId }
-          : {}),
         ...(jobResult.elementId != null
           ? { elementId: jobResult.elementId }
           : {}),

@@ -2,13 +2,17 @@
 //
 // One-direction diff: compute the patches needed to transform `base` into `next`.
 
-import type { PenNode, PenDocument } from '@cucumber/pen-types';
-import { indexNodesById, nodeFieldsEqual, stripChildren, jsonEqual } from './merge-helpers.js';
+import type { PenDocument, PenNode } from "@cucumber/pen-types";
+import {
+  indexNodesById,
+  jsonEqual,
+  nodeFieldsEqual,
+  stripChildren,
+} from "./merge-helpers.js";
 
 export interface NodePatch {
-  op: 'add' | 'remove' | 'modify' | 'move';
-  /** null for legacy single-page documents (no pages array) */
-  pageId: string | null;
+  op: "add" | "remove" | "modify" | "move";
+  pageId: string;
   nodeId: string;
   /** for `add` / `move`: target parent id; null = top-level on the page */
   parentId?: string | null;
@@ -33,7 +37,10 @@ export interface NodePatch {
  *        (if any changed → `modify`); a single id may produce both a `move`
  *        and a `modify`.
  */
-export function diffDocuments(base: PenDocument, next: PenDocument): NodePatch[] {
+export function diffDocuments(
+  base: PenDocument,
+  next: PenDocument,
+): NodePatch[] {
   const baseIdx = indexNodesById(base);
   const nextIdx = indexNodesById(next);
   const allIds = new Set<string>([...baseIdx.keys(), ...nextIdx.keys()]);
@@ -46,7 +53,7 @@ export function diffDocuments(base: PenDocument, next: PenDocument): NodePatch[]
     if (!b && n) {
       // Added.
       patches.push({
-        op: 'add',
+        op: "add",
         pageId: n.pageId,
         nodeId: id,
         parentId: n.parentId,
@@ -59,7 +66,7 @@ export function diffDocuments(base: PenDocument, next: PenDocument): NodePatch[]
     if (b && !n) {
       // Removed.
       patches.push({
-        op: 'remove',
+        op: "remove",
         pageId: b.pageId,
         nodeId: id,
       });
@@ -70,10 +77,13 @@ export function diffDocuments(base: PenDocument, next: PenDocument): NodePatch[]
       // Present in both. Check for `move` (parent or page changed) and `modify`
       // (atomic fields changed). They are independent — one node may produce
       // both kinds of patches.
-      const moved = b.parentId !== n.parentId || b.pageId !== n.pageId || b.index !== n.index;
+      const moved =
+        b.parentId !== n.parentId ||
+        b.pageId !== n.pageId ||
+        b.index !== n.index;
       if (moved) {
         patches.push({
-          op: 'move',
+          op: "move",
           pageId: n.pageId,
           nodeId: id,
           parentId: n.parentId,
@@ -83,7 +93,7 @@ export function diffDocuments(base: PenDocument, next: PenDocument): NodePatch[]
       if (!nodeFieldsEqual(b.node, n.node)) {
         const { changed, before } = diffFields(b.node, n.node);
         patches.push({
-          op: 'modify',
+          op: "modify",
           pageId: n.pageId,
           nodeId: id,
           fields: changed,
@@ -107,7 +117,10 @@ function diffFields(
 ): { changed: Partial<PenNode>; before: Partial<PenNode> } {
   const baseStripped = stripChildren(base) as Record<string, unknown>;
   const nextStripped = stripChildren(next) as Record<string, unknown>;
-  const allKeys = new Set<string>([...Object.keys(baseStripped), ...Object.keys(nextStripped)]);
+  const allKeys = new Set<string>([
+    ...Object.keys(baseStripped),
+    ...Object.keys(nextStripped),
+  ]);
   const changed: Record<string, unknown> = {};
   const before: Record<string, unknown> = {};
   for (const key of allKeys) {

@@ -1,26 +1,37 @@
-import type { PenNode, ContainerProps, SizingBehavior, Padding } from '@cucumber/pen-types';
-export type { Padding } from '@cucumber/pen-types';
-import { isOverlayNode } from '../node-helpers.js';
+import type {
+  ContainerProps,
+  Padding,
+  PenNode,
+  SizingBehavior,
+} from "@cucumber/pen-types";
+export type { Padding } from "@cucumber/pen-types";
+import { isOverlayNode } from "../node-helpers.js";
 import {
-  parseSizing,
-  estimateTextWidth,
-  estimateTextWidthPrecise,
-  estimateTextHeight,
-  estimateLineWidth,
-  resolveTextContent,
   countExplicitTextLines,
   defaultLineHeight,
-} from './text-measure.js';
+  estimateLineWidth,
+  estimateTextHeight,
+  estimateTextWidth,
+  estimateTextWidthPrecise,
+  parseSizing,
+  resolveTextContent,
+} from "./text-measure.js";
 
 // ---------------------------------------------------------------------------
 // Padding
 // ---------------------------------------------------------------------------
 
 export function resolvePadding(
-  padding: number | [number, number] | [number, number, number, number] | string | undefined,
+  padding:
+    | number
+    | [number, number]
+    | [number, number, number, number]
+    | string
+    | undefined,
 ): Padding {
-  if (!padding || typeof padding === 'string') return { top: 0, right: 0, bottom: 0, left: 0 };
-  if (typeof padding === 'number')
+  if (!padding || typeof padding === "string")
+    return { top: 0, right: 0, bottom: 0, left: 0 };
+  if (typeof padding === "number")
     return { top: padding, right: padding, bottom: padding, left: padding };
   if (padding.length === 2)
     return {
@@ -43,8 +54,8 @@ export function resolvePadding(
 
 export function isNodeVisible(node: PenNode): boolean {
   return (
-    ('visible' in node ? node.visible : undefined) !== false &&
-    ('enabled' in node ? node.enabled : undefined) !== false
+    ("visible" in node ? node.visible : undefined) !== false &&
+    ("enabled" in node ? node.enabled : undefined) !== false
   );
 }
 
@@ -52,7 +63,7 @@ export function isNodeVisible(node: PenNode): boolean {
 // Root fill-width fallback
 // ---------------------------------------------------------------------------
 
-const DEFAULT_FRAME_ID = 'root-frame';
+const DEFAULT_FRAME_ID = "root-frame";
 
 /** Resolve root fill-width fallback. Pass root children to avoid store coupling. */
 let _rootChildrenProvider: (() => PenNode[]) | null = null;
@@ -66,27 +77,31 @@ export function getRootFillWidthFallback(): number {
   const roots = _rootChildrenProvider?.() ?? [];
   const rootFrame = roots.find(
     (n) =>
-      n.type === 'frame' &&
+      n.type === "frame" &&
       n.id === DEFAULT_FRAME_ID &&
-      'width' in n &&
-      typeof n.width === 'number' &&
+      "width" in n &&
+      typeof n.width === "number" &&
       n.width > 0,
   );
   if (
     rootFrame &&
-    'width' in rootFrame &&
-    typeof rootFrame.width === 'number' &&
+    "width" in rootFrame &&
+    typeof rootFrame.width === "number" &&
     rootFrame.width > 0
   ) {
     return rootFrame.width;
   }
   const anyTopFrame = roots.find(
-    (n) => n.type === 'frame' && 'width' in n && typeof n.width === 'number' && n.width > 0,
+    (n) =>
+      n.type === "frame" &&
+      "width" in n &&
+      typeof n.width === "number" &&
+      n.width > 0,
   );
   if (
     anyTopFrame &&
-    'width' in anyTopFrame &&
-    typeof anyTopFrame.width === 'number' &&
+    "width" in anyTopFrame &&
+    typeof anyTopFrame.width === "number" &&
     anyTopFrame.width > 0
   ) {
     return anyTopFrame.width;
@@ -98,15 +113,17 @@ export function getRootFillWidthFallback(): number {
 // Layout inference — shared logic for detecting implicit layout
 // ---------------------------------------------------------------------------
 
-export function inferLayout(node: PenNode): 'horizontal' | undefined {
-  if (node.type !== 'frame') return undefined;
+export function inferLayout(node: PenNode): "horizontal" | undefined {
+  if (node.type !== "frame") return undefined;
   const c = node as PenNode & ContainerProps;
-  if (c.gap != null || c.justifyContent || c.alignItems) return 'horizontal';
-  if (c.padding != null) return 'horizontal';
-  if ('children' in node && node.children?.length) {
+  if (c.gap != null || c.justifyContent || c.alignItems) return "horizontal";
+  if (c.padding != null) return "horizontal";
+  if ("children" in node && node.children?.length) {
     for (const child of node.children) {
-      if ('width' in child && child.width === 'fill_container') return 'horizontal';
-      if ('height' in child && child.height === 'fill_container') return 'horizontal';
+      if ("width" in child && child.width === "fill_container")
+        return "horizontal";
+      if ("height" in child && child.height === "fill_container")
+        return "horizontal";
     }
   }
   return undefined;
@@ -117,7 +134,7 @@ export function inferLayout(node: PenNode): 'horizontal' | undefined {
 // ---------------------------------------------------------------------------
 
 export function fitContentWidth(node: PenNode, parentAvail?: number): number {
-  if (!('children' in node) || !node.children?.length) return 0;
+  if (!("children" in node) || !node.children?.length) return 0;
   const visibleChildren = node.children.filter(
     (child) => isNodeVisible(child) && !isOverlayNode(child),
   );
@@ -125,18 +142,23 @@ export function fitContentWidth(node: PenNode, parentAvail?: number): number {
   const c = node as PenNode & ContainerProps;
   const layout = c.layout || inferLayout(node);
   const pad = resolvePadding(c.padding);
-  const nodeGap = typeof c.gap === 'number' ? c.gap : 0;
-  if (layout === 'horizontal') {
+  const nodeGap = typeof c.gap === "number" ? c.gap : 0;
+  if (layout === "horizontal") {
     const gapTotal = nodeGap * Math.max(0, visibleChildren.length - 1);
     const childAvail =
       parentAvail !== undefined
         ? Math.max(0, parentAvail - pad.left - pad.right - gapTotal)
         : undefined;
-    const childTotal = visibleChildren.reduce((sum, ch) => sum + getNodeWidth(ch, childAvail), 0);
+    const childTotal = visibleChildren.reduce(
+      (sum, ch) => sum + getNodeWidth(ch, childAvail),
+      0,
+    );
     return childTotal + gapTotal + pad.left + pad.right;
   }
   const childAvail =
-    parentAvail !== undefined ? Math.max(0, parentAvail - pad.left - pad.right) : undefined;
+    parentAvail !== undefined
+      ? Math.max(0, parentAvail - pad.left - pad.right)
+      : undefined;
   const maxChildW = visibleChildren.reduce(
     (max, ch) => Math.max(max, getNodeWidth(ch, childAvail)),
     0,
@@ -145,7 +167,7 @@ export function fitContentWidth(node: PenNode, parentAvail?: number): number {
 }
 
 export function fitContentHeight(node: PenNode, parentAvailW?: number): number {
-  if (!('children' in node) || !node.children?.length) return 0;
+  if (!("children" in node) || !node.children?.length) return 0;
   const visibleChildren = node.children.filter(
     (child) => isNodeVisible(child) && !isOverlayNode(child),
   );
@@ -153,10 +175,11 @@ export function fitContentHeight(node: PenNode, parentAvailW?: number): number {
   const c = node as PenNode & ContainerProps;
   const layout = c.layout || inferLayout(node);
   const pad = resolvePadding(c.padding);
-  const nodeGap = typeof c.gap === 'number' ? c.gap : 0;
+  const nodeGap = typeof c.gap === "number" ? c.gap : 0;
   const nodeW = getNodeWidth(node, parentAvailW);
-  const childAvailW = nodeW > 0 ? Math.max(0, nodeW - pad.left - pad.right) : parentAvailW;
-  if (layout === 'vertical') {
+  const childAvailW =
+    nodeW > 0 ? Math.max(0, nodeW - pad.left - pad.right) : parentAvailW;
+  if (layout === "vertical") {
     const childTotal = visibleChildren.reduce(
       (sum, ch) => sum + getNodeHeight(ch, undefined, childAvailW),
       0,
@@ -176,67 +199,75 @@ export function fitContentHeight(node: PenNode, parentAvailW?: number): number {
 // ---------------------------------------------------------------------------
 
 export function getNodeWidth(node: PenNode, parentAvail?: number): number {
-  if ('width' in node) {
+  if ("width" in node) {
     const s = parseSizing(node.width);
-    if (typeof s === 'number' && s > 0) return s;
-    if (s === 'fill') {
+    if (typeof s === "number" && s > 0) return s;
+    if (s === "fill") {
       if (parentAvail && parentAvail > 0) return parentAvail;
-      if (node.type !== 'text') {
+      if (node.type !== "text") {
         const fallbackFillW = getRootFillWidthFallback();
         if (fallbackFillW > 0) return fallbackFillW;
       }
-      if ('children' in node && node.children?.length) {
+      if ("children" in node && node.children?.length) {
         const intrinsic = fitContentWidth(node);
         if (intrinsic > 0) return intrinsic;
       }
-      if (node.type === 'text') {
+      if (node.type === "text") {
         const fontSize = node.fontSize ?? 16;
         const letterSpacing = node.letterSpacing ?? 0;
         const fontWeight = node.fontWeight;
         const content = resolveTextContent(node);
         return Math.max(
-          Math.ceil(estimateTextWidth(content, fontSize, letterSpacing, fontWeight)),
+          Math.ceil(
+            estimateTextWidth(content, fontSize, letterSpacing, fontWeight),
+          ),
           1,
         );
       }
     }
-    if (s === 'fit') {
+    if (s === "fit") {
       const fit = fitContentWidth(node, parentAvail);
       if (fit > 0) return fit;
     }
   }
-  if ('children' in node && node.children?.length) {
+  if ("children" in node && node.children?.length) {
     const fit = fitContentWidth(node, parentAvail);
     if (fit > 0) return fit;
   }
-  if (node.type === 'text') {
+  if (node.type === "text") {
     const fontSize = node.fontSize ?? 16;
     const letterSpacing = node.letterSpacing ?? 0;
     const fontWeight = node.fontWeight;
     const content = resolveTextContent(node);
     return Math.max(
-      Math.ceil(estimateTextWidthPrecise(content, fontSize, letterSpacing, fontWeight)),
+      Math.ceil(
+        estimateTextWidthPrecise(content, fontSize, letterSpacing, fontWeight),
+      ),
       1,
     );
   }
   return 0;
 }
 
-export function getNodeHeight(node: PenNode, parentAvail?: number, parentAvailW?: number): number {
-  if ('height' in node) {
+export function getNodeHeight(
+  node: PenNode,
+  parentAvail?: number,
+  parentAvailW?: number,
+): number {
+  if ("height" in node) {
     const s = parseSizing(node.height);
-    if (typeof s === 'number' && s > 0) return s;
-    if (s === 'fill' && parentAvail) return parentAvail;
-    if (s === 'fit') {
+    if (typeof s === "number" && s > 0) return s;
+    if (s === "fill" && parentAvail) return parentAvail;
+    if (s === "fit") {
       const fit = fitContentHeight(node, parentAvailW);
       if (fit > 0) return fit;
     }
   }
-  if ('children' in node && node.children?.length) {
+  if ("children" in node && node.children?.length) {
     const fit = fitContentHeight(node, parentAvailW);
     if (fit > 0) return fit;
   }
-  if (node.type === 'text') {
+  if (node.type === "text") {
     return estimateTextHeight(node, parentAvailW);
   }
   return 0;
@@ -246,13 +277,16 @@ export function getNodeHeight(node: PenNode, parentAvail?: number, parentAvailW?
 // Auto-layout position computation
 // ---------------------------------------------------------------------------
 
-export function computeLayoutPositions(parent: PenNode, children: PenNode[]): PenNode[] {
+export function computeLayoutPositions(
+  parent: PenNode,
+  children: PenNode[],
+): PenNode[] {
   if (children.length === 0) return children;
   const visibleChildren = children.filter((child) => isNodeVisible(child));
   if (visibleChildren.length === 0) return [];
   const c = parent as PenNode & ContainerProps;
   const layout = c.layout || inferLayout(parent);
-  if (!layout || layout === 'none') return visibleChildren;
+  if (!layout || layout === "none") return visibleChildren;
 
   const overlayNodes = visibleChildren.filter(isOverlayNode);
   const layoutChildren = visibleChildren.filter((ch) => !isOverlayNode(ch));
@@ -260,40 +294,47 @@ export function computeLayoutPositions(parent: PenNode, children: PenNode[]): Pe
 
   const pW = parseSizing(c.width);
   const pH = parseSizing(c.height);
-  const parentW = typeof pW === 'number' && pW > 0 ? pW : getNodeWidth(parent) || 100;
-  const parentH = typeof pH === 'number' && pH > 0 ? pH : getNodeHeight(parent) || 100;
+  const parentW =
+    typeof pW === "number" && pW > 0 ? pW : getNodeWidth(parent) || 100;
+  const parentH =
+    typeof pH === "number" && pH > 0 ? pH : getNodeHeight(parent) || 100;
   const pad = resolvePadding(c.padding);
-  const gap = typeof c.gap === 'number' ? c.gap : 0;
+  const gap = typeof c.gap === "number" ? c.gap : 0;
   const justify = normalizeJustifyContent(c.justifyContent);
   const align = normalizeAlignItems(c.alignItems);
 
-  const isVertical = layout === 'vertical';
+  const isVertical = layout === "vertical";
   const availW = parentW - pad.left - pad.right;
   const availH = parentH - pad.top - pad.bottom;
   const availMain = isVertical ? availH : availW;
   const totalGapSpace = gap * Math.max(0, layoutChildren.length - 1);
 
   const mainSizing = layoutChildren.map((ch) => {
-    const prop = isVertical ? 'height' : 'width';
+    const prop = isVertical ? "height" : "width";
     if (prop in ch) {
       const s = parseSizing(
-        (ch as PenNode & { width?: SizingBehavior; height?: SizingBehavior })[prop],
+        (ch as PenNode & { width?: SizingBehavior; height?: SizingBehavior })[
+          prop
+        ],
       );
-      if (s === 'fill') return 'fill' as const;
+      if (s === "fill") return "fill" as const;
     }
-    return isVertical ? getNodeHeight(ch, availH, availW) : getNodeWidth(ch, availW);
+    return isVertical
+      ? getNodeHeight(ch, availH, availW)
+      : getNodeWidth(ch, availW);
   });
   const fixedTotal = mainSizing.reduce<number>(
-    (sum, s) => sum + (typeof s === 'number' ? s : 0),
+    (sum, s) => sum + (typeof s === "number" ? s : 0),
     0,
   );
-  const fillCount = mainSizing.filter((s) => s === 'fill').length;
+  const fillCount = mainSizing.filter((s) => s === "fill").length;
   const remainingMain = Math.max(0, availMain - fixedTotal - totalGapSpace);
   const fillSize = fillCount > 0 ? remainingMain / fillCount : 0;
 
   const sizes = layoutChildren.map((ch, i) => {
-    let mainSize = mainSizing[i] === 'fill' ? fillSize : (mainSizing[i] as number);
-    if (isVertical && ch.type === 'text' && mainSizing[i] !== 'fill') {
+    let mainSize =
+      mainSizing[i] === "fill" ? fillSize : (mainSizing[i] as number);
+    if (isVertical && ch.type === "text" && mainSizing[i] !== "fill") {
       const content = resolveTextContent(ch);
       if (countExplicitTextLines(content) <= 1) {
         const fontSize = ch.fontSize ?? 16;
@@ -307,7 +348,9 @@ export function computeLayoutPositions(parent: PenNode, children: PenNode[]): Pe
     }
     return {
       w: isVertical ? getNodeWidth(ch, availW) : mainSize,
-      h: isVertical ? mainSize : getNodeHeight(ch, availH, isVertical ? availW : mainSize),
+      h: isVertical
+        ? mainSize
+        : getNodeHeight(ch, availH, isVertical ? availW : mainSize),
     };
   });
 
@@ -318,19 +361,23 @@ export function computeLayoutPositions(parent: PenNode, children: PenNode[]): Pe
   let effectiveGap = gap;
 
   switch (justify) {
-    case 'center':
+    case "center":
       mainPos = freeSpace / 2;
       break;
-    case 'end':
+    case "end":
       mainPos = freeSpace;
       break;
-    case 'space_between':
+    case "space_between":
       effectiveGap =
-        layoutChildren.length > 1 ? (availMain - totalMain) / (layoutChildren.length - 1) : 0;
+        layoutChildren.length > 1
+          ? (availMain - totalMain) / (layoutChildren.length - 1)
+          : 0;
       break;
-    case 'space_around': {
+    case "space_around": {
       const spacing =
-        layoutChildren.length > 0 ? (availMain - totalMain) / layoutChildren.length : 0;
+        layoutChildren.length > 0
+          ? (availMain - totalMain) / layoutChildren.length
+          : 0;
       mainPos = spacing / 2;
       effectiveGap = spacing;
       break;
@@ -346,7 +393,7 @@ export function computeLayoutPositions(parent: PenNode, children: PenNode[]): Pe
     let crossPos = 0;
 
     let effectiveChildCross = childCross;
-    if (align === 'center' && !isVertical && child.type === 'text') {
+    if (align === "center" && !isVertical && child.type === "text") {
       const fontSize = child.fontSize ?? 16;
       const lineHeight = child.lineHeight ?? defaultLineHeight(fontSize);
       const content = resolveTextContent(child);
@@ -357,10 +404,10 @@ export function computeLayoutPositions(parent: PenNode, children: PenNode[]): Pe
     }
 
     switch (align) {
-      case 'center':
+      case "center":
         crossPos = (crossAvail - effectiveChildCross) / 2;
         break;
-      case 'end':
+      case "end":
         crossPos = crossAvail - childCross;
         break;
       default:
@@ -368,13 +415,19 @@ export function computeLayoutPositions(parent: PenNode, children: PenNode[]): Pe
     }
 
     const clampCrossSize =
-      !isVertical && align === 'center' && child.type === 'text' ? effectiveChildCross : childCross;
+      !isVertical && align === "center" && child.type === "text"
+        ? effectiveChildCross
+        : childCross;
     if (crossAvail >= clampCrossSize) {
       crossPos = Math.max(0, Math.min(crossPos, crossAvail - clampCrossSize));
     }
 
-    const computedX = Math.round(isVertical ? pad.left + crossPos : pad.left + mainPos);
-    const computedY = Math.round(isVertical ? pad.top + mainPos : pad.top + crossPos);
+    const computedX = Math.round(
+      isVertical ? pad.left + crossPos : pad.left + mainPos,
+    );
+    const computedY = Math.round(
+      isVertical ? pad.top + mainPos : pad.top + crossPos,
+    );
 
     mainPos += (isVertical ? size.h : size.w) + effectiveGap;
 
@@ -386,13 +439,13 @@ export function computeLayoutPositions(parent: PenNode, children: PenNode[]): Pe
       height: size.h,
     };
 
-    if (isVertical && align === 'center' && child.type === 'text') {
+    if (isVertical && align === "center" && child.type === "text") {
       const hasExplicitAlign =
-        'textAlign' in child && child.textAlign && child.textAlign !== 'left';
+        "textAlign" in child && child.textAlign && child.textAlign !== "left";
       if (!hasExplicitAlign) {
         out.width = availW;
         out.x = Math.round(pad.left);
-        out.textAlign = 'center';
+        out.textAlign = "center";
       }
     }
 
@@ -407,31 +460,31 @@ export function computeLayoutPositions(parent: PenNode, children: PenNode[]): Pe
 
 function normalizeJustifyContent(
   value: unknown,
-): 'start' | 'center' | 'end' | 'space_between' | 'space_around' {
-  if (typeof value !== 'string') return 'start';
+): "start" | "center" | "end" | "space_between" | "space_around" {
+  if (typeof value !== "string") return "start";
   const v = value.trim().toLowerCase();
   switch (v) {
-    case 'start':
-    case 'flex-start':
-    case 'left':
-    case 'top':
-      return 'start';
-    case 'center':
-    case 'middle':
-      return 'center';
-    case 'end':
-    case 'flex-end':
-    case 'right':
-    case 'bottom':
-      return 'end';
-    case 'space_between':
-    case 'space-between':
-      return 'space_between';
-    case 'space_around':
-    case 'space-around':
-      return 'space_around';
+    case "start":
+    case "flex-start":
+    case "left":
+    case "top":
+      return "start";
+    case "center":
+    case "middle":
+      return "center";
+    case "end":
+    case "flex-end":
+    case "right":
+    case "bottom":
+      return "end";
+    case "space_between":
+    case "space-between":
+      return "space_between";
+    case "space_around":
+    case "space-around":
+      return "space_around";
     default:
-      return 'start';
+      return "start";
   }
 }
 
@@ -444,7 +497,7 @@ function normalizeJustifyContent(
  * fall through to the `start` default when they meant something else.
  *
  * `baseline` specifically is treated as `end`:
- *   OpenPencil's layout engine doesn't implement text-baseline
+ *   Cucumber's layout engine doesn't implement text-baseline
  *   alignment (there's no font-metrics pipeline in the position step).
  *   LLMs routinely emit `alignItems: 'baseline'` from web CSS reflex
  *   for patterns like "big number + small unit" (e.g. "72 BPM"), where
@@ -456,28 +509,28 @@ function normalizeJustifyContent(
  *   through to `start` (the old behavior) would top-align the unit,
  *   which is visually wrong.
  */
-function normalizeAlignItems(value: unknown): 'start' | 'center' | 'end' {
-  if (typeof value !== 'string') return 'start';
+function normalizeAlignItems(value: unknown): "start" | "center" | "end" {
+  if (typeof value !== "string") return "start";
   const v = value.trim().toLowerCase();
   switch (v) {
-    case 'start':
-    case 'flex-start':
-    case 'left':
-    case 'top':
-      return 'start';
-    case 'center':
-    case 'middle':
-      return 'center';
-    case 'end':
-    case 'flex-end':
-    case 'right':
-    case 'bottom':
-    case 'baseline':
-    case 'last baseline':
-    case 'first baseline':
-      return 'end';
+    case "start":
+    case "flex-start":
+    case "left":
+    case "top":
+      return "start";
+    case "center":
+    case "middle":
+      return "center";
+    case "end":
+    case "flex-end":
+    case "right":
+    case "bottom":
+    case "baseline":
+    case "last baseline":
+    case "first baseline":
+      return "end";
     default:
-      return 'start';
+      return "start";
   }
 }
 

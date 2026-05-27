@@ -111,8 +111,10 @@
 
 - 前端画布打开后通过 WebSocket 发送 `canvas.bind`，把当前浏览器连接绑定到 `canvasId`
 - `CanvasEditor` 注册 `canvas.document.get` / `canvas.document.set` / `canvas.screenshot` RPC
-- `inspect_canvas` 和 `manipulate_canvas` 通过 `LiveCanvasService` 读取/写入当前打开的编辑器文档
+- `LiveCanvasService` 是 Agent 画布读写的边界，负责通过 RPC 读取和写入当前打开的编辑器文档
+- `inspect_canvas`、`manipulate_canvas` 和 Cucumber structured canvas MCP tools 都依赖这条 live canvas 链路，Agent 操作画布前必须优先读取当前 live canvas 状态
 - 没有打开对应画布页面时，画布工具返回 `live_canvas_unavailable`，不会回退写数据库
+- 画布文档只支持带 `pages` 和有效 `activePageId` 的 Cucumber `PenDocument`；旧 flat-map/root-children 数据不在运行时迁移或重置，遇到时直接抛出具体错误
 
 系统提示词会在基础 prompt 之上继续追加：
 

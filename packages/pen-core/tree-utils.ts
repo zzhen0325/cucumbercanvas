@@ -1,26 +1,33 @@
-import { nanoid } from 'nanoid';
-import type { PenDocument, PenNode, PenNodeBase, PenPage, RefNode } from '@cucumber/pen-types';
+import type {
+  PenDocument,
+  PenNode,
+  PenNodeBase,
+  PenPage,
+  RefNode,
+} from "@cucumber/pen-types";
+import { nanoid } from "nanoid";
 
-export const DEFAULT_FRAME_ID = 'root-frame';
-export const DEFAULT_PAGE_ID = 'page-1';
+export const DEFAULT_FRAME_ID = "root-frame";
+export const DEFAULT_PAGE_ID = "page-1";
 
 export function createEmptyDocument(): PenDocument {
   const children: PenNode[] = [
     {
       id: DEFAULT_FRAME_ID,
-      type: 'frame',
-      name: 'Frame',
+      type: "frame",
+      name: "Frame",
       x: 0,
       y: 0,
       width: 1200,
       height: 800,
-      fill: [{ type: 'solid', color: '#FFFFFF' }],
+      fill: [{ type: "solid", color: "#FFFFFF" }],
       children: [],
     },
   ];
   return {
-    version: '1.0.0',
-    pages: [{ id: DEFAULT_PAGE_ID, name: 'Page 1', children }],
+    version: "1.0.0",
+    activePageId: DEFAULT_PAGE_ID,
+    pages: [{ id: DEFAULT_PAGE_ID, name: "Page 1", children }],
     children: [],
   };
 }
@@ -30,17 +37,28 @@ export function createEmptyDocument(): PenDocument {
 // ---------------------------------------------------------------------------
 
 /** Get the active page object. */
-export function getActivePage(doc: PenDocument, activePageId: string | null): PenPage | undefined {
-  if (!doc.pages || doc.pages.length === 0) return undefined;
-  if (!activePageId) return doc.pages[0];
-  return doc.pages.find((p) => p.id === activePageId) ?? doc.pages[0];
+export function getActivePage(
+  doc: PenDocument,
+  activePageId: string | null,
+): PenPage {
+  const pages = requirePages(doc);
+  const pageId = activePageId ?? doc.activePageId;
+  if (!pageId) {
+    throw new Error("PenDocument must include an activePageId.");
+  }
+  const page = pages.find((p) => p.id === pageId);
+  if (!page) {
+    throw new Error(`PenDocument active page ${pageId} does not exist.`);
+  }
+  return page;
 }
 
-/** Get children for the active page (falls back to doc.children for legacy docs). */
-export function getActivePageChildren(doc: PenDocument, activePageId: string | null): PenNode[] {
-  const page = getActivePage(doc, activePageId);
-  if (page) return page.children;
-  return doc.children;
+/** Get children for the active page. */
+export function getActivePageChildren(
+  doc: PenDocument,
+  activePageId: string | null,
+): PenNode[] {
+  return getActivePage(doc, activePageId).children;
 }
 
 /** Return a new document with the active page's children replaced. */
@@ -49,39 +67,20 @@ export function setActivePageChildren(
   activePageId: string | null,
   children: PenNode[],
 ): PenDocument {
-  if (doc.pages && doc.pages.length > 0) {
-    const page = getActivePage(doc, activePageId);
-    if (!page) return { ...doc, children };
-    return {
-      ...doc,
-      pages: doc.pages.map((p) => (p.id === page.id ? { ...p, children } : p)),
-    };
-  }
-  return { ...doc, children };
+  const page = getActivePage(doc, activePageId);
+  return {
+    ...doc,
+    activePageId: page.id,
+    pages: requirePages(doc).map((p) =>
+      p.id === page.id ? { ...p, children } : p,
+    ),
+    children: [],
+  };
 }
 
 /** Get all children across all pages (for cross-page component resolution). */
 export function getAllChildren(doc: PenDocument): PenNode[] {
-  if (doc.pages && doc.pages.length > 0) {
-    return doc.pages.flatMap((p) => p.children);
-  }
-  return doc.children;
-}
-
-/** Migrate a legacy document (no pages) to page-based format. */
-export function migrateToPages(doc: PenDocument): PenDocument {
-  if (doc.pages && doc.pages.length > 0) return doc;
-  return {
-    ...doc,
-    pages: [
-      {
-        id: DEFAULT_PAGE_ID,
-        name: 'Page 1',
-        children: doc.children,
-      },
-    ],
-    children: [],
-  };
+  return requirePages(doc).flatMap((p) => p.children);
 }
 
 /** Recursively ensure all nodes in the tree have an `id`. */
@@ -90,7 +89,7 @@ function ensureNodeIdsInTree(nodes: PenNode[]): void {
     if (!node.id) {
       (node as PenNodeBase).id = nanoid();
     }
-    if ('children' in node && node.children) {
+    if ("children" in node && node.children) {
       ensureNodeIdsInTree(node.children);
     }
   }
@@ -98,20 +97,27 @@ function ensureNodeIdsInTree(nodes: PenNode[]): void {
 
 /** Ensure all nodes in a document have IDs (mutates in place). */
 export function ensureDocumentNodeIds(doc: PenDocument): PenDocument {
-  if (doc.pages) {
-    for (const page of doc.pages) {
-      if (!page.id) page.id = nanoid();
-      ensureNodeIdsInTree(page.children);
-    }
+  for (const page of requirePages(doc)) {
+    if (!page.id) page.id = nanoid();
+    ensureNodeIdsInTree(page.children);
   }
-  ensureNodeIdsInTree(doc.children);
   return doc;
 }
 
-export function findNodeInTree(nodes: PenNode[], id: string): PenNode | undefined {
+function requirePages(doc: PenDocument): PenPage[] {
+  if (!Array.isArray(doc.pages) || doc.pages.length === 0) {
+    throw new Error("PenDocument must include non-empty pages.");
+  }
+  return doc.pages;
+}
+
+export function findNodeInTree(
+  nodes: PenNode[],
+  id: string,
+): PenNode | undefined {
   for (const node of nodes) {
     if (node.id === id) return node;
-    if ('children' in node && node.children) {
+    if ("children" in node && node.children) {
       const found = findNodeInTree(node.children, id);
       if (found) return found;
     }
@@ -119,9 +125,12 @@ export function findNodeInTree(nodes: PenNode[], id: string): PenNode | undefine
   return undefined;
 }
 
-export function findParentInTree(nodes: PenNode[], id: string): PenNode | undefined {
+export function findParentInTree(
+  nodes: PenNode[],
+  id: string,
+): PenNode | undefined {
   for (const node of nodes) {
-    if ('children' in node && node.children) {
+    if ("children" in node && node.children) {
       for (const child of node.children) {
         if (child.id === id) return node;
       }
@@ -136,7 +145,7 @@ export function removeNodeFromTree(nodes: PenNode[], id: string): PenNode[] {
   return nodes
     .filter((n) => n.id !== id)
     .map((n) => {
-      if ('children' in n && n.children) {
+      if ("children" in n && n.children) {
         return { ...n, children: removeNodeFromTree(n.children, id) };
       }
       return n;
@@ -170,7 +179,7 @@ export function updateNodeInTree(
       return nextNodes;
     }
 
-    if ('children' in node && node.children?.length) {
+    if ("children" in node && node.children?.length) {
       const nextChildren = updateNodeInTree(node.children, id, updates);
       if (nextChildren !== node.children) {
         const nextNodes = [...nodes];
@@ -190,7 +199,7 @@ export function flattenNodes(nodes: PenNode[]): PenNode[] {
   const result: PenNode[] = [];
   for (const node of nodes) {
     result.push(node);
-    if ('children' in node && node.children) {
+    if ("children" in node && node.children) {
       result.push(...flattenNodes(node.children));
     }
   }
@@ -215,7 +224,7 @@ export function insertNodeInTree(
 
   return nodes.map((n) => {
     if (n.id === parentId) {
-      const children = 'children' in n && n.children ? [...n.children] : [];
+      const children = "children" in n && n.children ? [...n.children] : [];
       if (index !== undefined) {
         children.splice(index, 0, node);
       } else {
@@ -223,7 +232,7 @@ export function insertNodeInTree(
       }
       return { ...n, children } as PenNode;
     }
-    if ('children' in n && n.children) {
+    if ("children" in n && n.children) {
       return {
         ...n,
         children: insertNodeInTree(n.children, parentId, node, index),
@@ -233,9 +242,14 @@ export function insertNodeInTree(
   });
 }
 
-export function isDescendantOf(nodes: PenNode[], nodeId: string, ancestorId: string): boolean {
+export function isDescendantOf(
+  nodes: PenNode[],
+  nodeId: string,
+  ancestorId: string,
+): boolean {
   const ancestor = findNodeInTree(nodes, ancestorId);
-  if (!ancestor || !('children' in ancestor) || !ancestor.children) return false;
+  if (!ancestor || !("children" in ancestor) || !ancestor.children)
+    return false;
   for (const child of ancestor.children) {
     if (child.id === nodeId) return true;
     if (isDescendantOf([child], nodeId, child.id)) return true;
@@ -250,13 +264,19 @@ export function getNodeBounds(
 ): { x: number; y: number; w: number; h: number } {
   const x = node.x ?? 0;
   const y = node.y ?? 0;
-  let w = 'width' in node && typeof node.width === 'number' ? node.width : 0;
-  let h = 'height' in node && typeof node.height === 'number' ? node.height : 0;
-  if (node.type === 'ref' && !w) {
+  let w = "width" in node && typeof node.width === "number" ? node.width : 0;
+  let h = "height" in node && typeof node.height === "number" ? node.height : 0;
+  if (node.type === "ref" && !w) {
     const refComp = findNodeInTree(allNodes, (node as RefNode).ref);
     if (refComp) {
-      w = 'width' in refComp && typeof refComp.width === 'number' ? refComp.width : 100;
-      h = 'height' in refComp && typeof refComp.height === 'number' ? refComp.height : 100;
+      w =
+        "width" in refComp && typeof refComp.width === "number"
+          ? refComp.width
+          : 100;
+      h =
+        "height" in refComp && typeof refComp.height === "number"
+          ? refComp.height
+          : 100;
     }
   }
   return { x, y, w: w || 100, h: h || 100 };
@@ -318,13 +338,13 @@ export function scaleChildrenInPlace(
     const updated: Record<string, unknown> = { ...child };
     if (child.x !== undefined) updated.x = child.x * scaleX;
     if (child.y !== undefined) updated.y = child.y * scaleY;
-    if ('width' in child && typeof child.width === 'number') {
+    if ("width" in child && typeof child.width === "number") {
       updated.width = child.width * scaleX;
     }
-    if ('height' in child && typeof child.height === 'number') {
+    if ("height" in child && typeof child.height === "number") {
       updated.height = child.height * scaleY;
     }
-    if ('children' in child && child.children) {
+    if ("children" in child && child.children) {
       updated.children = scaleChildrenInPlace(child.children, scaleX, scaleY);
     }
     return updated as unknown as PenNode;
@@ -341,10 +361,15 @@ export function deepCloneNode<T extends PenNode>(node: T): T {
 }
 
 /** Clone a single node tree, assigning new IDs to every node. */
-export function cloneNodeWithNewIds(node: PenNode, idGenerator: () => string = nanoid): PenNode {
+export function cloneNodeWithNewIds(
+  node: PenNode,
+  idGenerator: () => string = nanoid,
+): PenNode {
   const cloned = { ...node, id: idGenerator() } as PenNode;
-  if ('children' in cloned && cloned.children) {
-    cloned.children = cloned.children.map((c) => cloneNodeWithNewIds(c, idGenerator));
+  if ("children" in cloned && cloned.children) {
+    cloned.children = cloned.children.map((c) =>
+      cloneNodeWithNewIds(c, idGenerator),
+    );
   }
   return cloned;
 }
@@ -352,13 +377,17 @@ export function cloneNodeWithNewIds(node: PenNode, idGenerator: () => string = n
 /** Clone multiple nodes with new IDs. Optionally strip `reusable` flag and apply position offset. */
 export function cloneNodesWithNewIds(
   nodes: PenNode[],
-  options: { offset?: number; stripReusable?: boolean; idGenerator?: () => string } = {},
+  options: {
+    offset?: number;
+    stripReusable?: boolean;
+    idGenerator?: () => string;
+  } = {},
 ): PenNode[] {
   const { offset = 0, stripReusable = true, idGenerator = nanoid } = options;
   return structuredClone(nodes).map((node) => {
     const withNewId = cloneNodeWithNewIds(node, idGenerator);
-    if (stripReusable && 'reusable' in withNewId) {
-      delete (withNewId as unknown as Record<string, unknown>).reusable;
+    if (stripReusable && "reusable" in withNewId) {
+      (withNewId as unknown as Record<string, unknown>).reusable = undefined;
     }
     if (offset !== 0) {
       withNewId.x = (withNewId.x ?? 0) + offset;
@@ -369,7 +398,10 @@ export function cloneNodesWithNewIds(
 }
 
 /** Recursively rotate all children's relative positions and angles. */
-export function rotateChildrenInPlace(children: PenNode[], angleDeltaDeg: number): PenNode[] {
+export function rotateChildrenInPlace(
+  children: PenNode[],
+  angleDeltaDeg: number,
+): PenNode[] {
   const rad = (angleDeltaDeg * Math.PI) / 180;
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
@@ -380,7 +412,7 @@ export function rotateChildrenInPlace(children: PenNode[], angleDeltaDeg: number
     updated.x = x * cos - y * sin;
     updated.y = x * sin + y * cos;
     updated.rotation = ((child.rotation ?? 0) + angleDeltaDeg) % 360;
-    if ('children' in child && child.children) {
+    if ("children" in child && child.children) {
       updated.children = rotateChildrenInPlace(child.children, angleDeltaDeg);
     }
     return updated as unknown as PenNode;
@@ -391,22 +423,22 @@ export function rotateChildrenInPlace(children: PenNode[], angleDeltaDeg: number
  * Recursively render a node tree summary for AI prompts.
  * Shows node IDs, types, names, dimensions, roles, and child counts with indentation.
  */
-export function nodeTreeToSummary(nodes: PenNode[], depth: number = 0): string {
-  if (nodes.length === 0) return '';
+export function nodeTreeToSummary(nodes: PenNode[], depth = 0): string {
+  if (nodes.length === 0) return "";
 
-  const indent = '  '.repeat(depth);
+  const indent = "  ".repeat(depth);
   return nodes
     .map((node) => {
       const n = node as unknown as Record<string, unknown>;
-      const dims = `${n.width ?? '?'}x${n.height ?? '?'}`;
+      const dims = `${n.width ?? "?"}x${n.height ?? "?"}`;
       const childCount = (n.children as PenNode[] | undefined)?.length ?? 0;
-      const role = n.role ? ` [${n.role}]` : '';
-      const line = `${indent}- [${node.id}] ${node.type} "${node.name ?? ''}" (${dims})${role}${childCount > 0 ? ` [${childCount} children]` : ''}`;
+      const role = n.role ? ` [${n.role}]` : "";
+      const line = `${indent}- [${node.id}] ${node.type} "${node.name ?? ""}" (${dims})${role}${childCount > 0 ? ` [${childCount} children]` : ""}`;
       const children = n.children as PenNode[] | undefined;
       if (children && children.length > 0) {
-        return line + '\n' + nodeTreeToSummary(children, depth + 1);
+        return `${line}\n${nodeTreeToSummary(children, depth + 1)}`;
       }
       return line;
     })
-    .join('\n');
+    .join("\n");
 }

@@ -2,7 +2,7 @@
 
 Last updated: 2026-05-27 CST
 
-This note defines the B-stage foundation for moving from an editable OpenPencil main path to an AI-native canvas collaboration system.
+This note defines the B-stage foundation for moving from an editable Cucumber main path to an AI-native canvas collaboration system.
 
 ## Product boundary
 

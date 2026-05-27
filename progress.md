@@ -4,20 +4,22 @@ Last updated: 2026-05-27 CST
 
 ## 2026-05-27
 
-- B0 OpenPencil Web canvas parity started: the implementation will use a durable parity matrix first, then close every discovered P0/P1 Web canvas main-path gap while recording desktop/CLI/Git/i18n/collaboration/plugin/native-codegen surfaces as roadmap-only.
+- Cucumber canvas and Agent structure cleanup landed: the removed local reference tree stays deleted, ignored pen package `node_modules` residue is removed, structured canvas tooling now uses Cucumber module naming, and runtime canvas paths now fail fast when content is not a `PenDocument` with `pages` plus a valid `activePageId`.
+- The next development order is now documented as canvas foundation and performance first, then canvas tools/container types, then Agent live-canvas read/write completeness, then Agent runtime workflow tuning.
+- B0 Cucumber canvas foundation cleanup supersedes the old parity-oriented notes; current docs treat Cucumber's canvas stack as its own product substrate rather than a deleted local reference source.
 - B-stage AI-native canvas collaboration started: Agent runs now build a typed `agent-context-v1` with prompt layers, run-scoped Styleguide context, AgentTeams roles, and model capability profiles before the model call.
 - B1 Prompt layering + Styleguide injection thin slice landed: runtime injects `<agent_run_context>` alongside existing canvas, attachment, mention, and generation preference XML so complex canvas work is constrained by stable user goal/project/style/layout/task/critique layers.
 - B2 process visualization event spine landed: shared stream events now include `run.context` and role-aware `agent.stage` events around prompt preparation and tool execution, giving the UI/replay layer typed planning/task/process milestones without scraping assistant text.
 - B3 AgentTeams foundation landed: the Deep Agents runtime now registers Planner, Designer, Critic, Coder/Exporter, and Researcher sub-agents in addition to the existing video specialist, and the system prompt instructs complex canvas generation to use the team protocol.
-- Phase A OpenPencil editor migration completed for the live canvas: page-aware
+- Phase A Cucumber canvas editor controls completed for the live canvas: page-aware
   canvas operations, page tabs, editor toolbar, and boolean toolbar are in place.
-- Phase B OpenPencil design-system slice completed for the live canvas:
+- Phase B Cucumber canvas design-system slice completed for the live canvas:
   component instances, document variables/themes, and a render-backed icon
   library are available from the canvas bottom bar.
-- Phase C OpenPencil codegen/orchestration design approved for an
+- Phase C Cucumber structured canvas orchestration design approved for an
   end-to-end thin slice: prompt-to-canvas planning, bounded concurrent
   container materialization, and React/HTML/Vue export.
-- Phase C OpenPencil thin slice started: prompt-to-canvas planning/execution
+- Phase C Cucumber structured canvas thin slice started: prompt-to-canvas planning/execution
   MCP tools now materialize live canvas containers, and direct codegen export
   supports Vue alongside React and HTML.
 - B0 editor-ui parity advanced: the layers row now has dedicated coverage,
@@ -68,13 +70,13 @@ Last updated: 2026-05-27 CST
   `agentBinding.toolName`, `createdByAgentId`, and `explain` trace context on
   the actual persisted nodes, so the done row no longer relies on the Web
   fixture alone for metadata coverage.
-- B0 MCP parity closed: live OpenPencil-compatible canvas MCP tools now keep
+- B0 MCP parity closed: live Cucumber structured canvas canvas MCP tools now keep
   node/parent/snapshot/placement reads scoped to the requested page, reject
   missing pages, page-local anchors, and file-backed calls with concrete
   errors, apply `batch_design` atomically including invalid parent/delete
   rejection, and expose page management plus B0 layered design
   (`design_skeleton`, `design_content`, `design_refine`) tools against the live
-  editor document, including scoped new-page placeholder replacement,
+  editor document, including scoped new-page materialization,
   intentional empty-frame preservation, and conflicting content-ID
   normalization.
 - B0 export parity closed: Web SVG export now computes concrete warning
@@ -119,9 +121,9 @@ Status:
 - Added the first P2 import slice: system clipboard parsing for SVG/Figma-like payloads, normalization into `CucumberCanvasDocument` nodes/assets inside `@cucumber/canvas-core`, centered placement on the current viewport, warning toasts, and history-tracked insertion.
 - Upgraded the P2 import slice with stronger provenance metadata (`importSessionId`, source/origin fields, degradation hints, warning counts), richer Figma HTML fallback grouping, aggregated compatibility warnings, and a page-level import summary that surfaces warning counts instead of only a single toast.
 - Added focused coverage for import metadata persistence in `canvas-core` and for the web clipboard-import hook behavior around paste interception and clipboard API fallback.
-- Started the first P2.2 high-fidelity Figma clipboard pass: `@cucumber/canvas-core` now has a native-first fig-kiwi parser path that extracts base64 clipboard buffers, decodes the binary payload, maps common Figma frame/text/shape/vector/image nodes into `CanvasNode`, and only falls back to the previous HTML/SVG path when native decode is unavailable or invalid.
+- Started the first P2.2 high-fidelity Figma clipboard pass: `@cucumber/canvas-core` now has a native-first fig-kiwi parser path that extracts base64 clipboard buffers, decodes the binary payload, maps common Figma frame/text/shape/vector/image nodes into `PenNode`, and only falls back to the previous HTML/SVG path when native decode is unavailable or invalid.
 - Added parser support files and dependency wiring for native Figma clipboard decode inside `packages/canvas-core`, plus focused tests that cover clipboard extraction and invalid-native-payload fallback behavior.
-- Continued P2.2 with a second batch focused on `SYMBOL / INSTANCE` fidelity: native import now collects symbol trees, merges inherited master props into instances, and replays direct override / derived data onto inlined instance children before mapping them into editable `CanvasNode` output.
+- Continued P2.2 with a second batch focused on `SYMBOL / INSTANCE` fidelity: native import now collects symbol trees, merges inherited master props into instances, and replays direct override / derived data onto inlined instance children before mapping them into editable `PenNode` output.
 - Added focused `canvas-core` coverage for symbol prop merging and instance override replay so the new instance path is verified without requiring full clipboard binary fixtures.
 - Continued P2.2 with a third batch focused on nested instance fidelity: native import now resolves multi-segment `guidPath` entries, maps virtual outer-path GUIDs onto actual nested instance nodes, and forwards the remaining override / derived payload into child instances for recursive replay.
 - Added focused `canvas-core` coverage for nested instance path propagation so multi-layer override payloads are verified without needing a large clipboard binary fixture.
@@ -131,11 +133,11 @@ Status:
 - Taught the editor to consume imported auto-layout metadata: `@cucumber/canvas-core` now exposes a pure reflow helper that reapplies imported layout hints onto child geometry, while `SkiaCanvas` uses it for imported layout roots on bounds changes and the property panel now surfaces/imports those hints with a manual "应用布局" action.
 - Switched agent canvas tooling to the live editor path: opened canvases bind their WebSocket connection with `canvas.bind`, expose document get/set RPC, and `inspect_canvas` / `manipulate_canvas` now require the live editor instead of mutating legacy Excalidraw payloads.
 - Added the production migration path that resets non-`cucumber-canvas-v1` canvas content to the canonical Cucumber canvas document default, matching the decision to drop legacy Excalidraw canvas data.
-- Ported the OpenPencil-style rubber-band vector shape drawing interaction into `SkiaCanvas` for rectangle, ellipse, and polygon tools, including in-canvas preview, shift-constrained square drawing, native node insertion, and diagnostic logs.
+- Ported the Cucumber canvas rubber-band vector shape drawing interaction into `SkiaCanvas` for rectangle, ellipse, and polygon tools, including in-canvas preview, shift-constrained square drawing, native node insertion, and diagnostic logs.
 - Fixed the canvas toolbar arrow active state and normalized quick-insert shape paint payloads so newly inserted shapes render/edit through the same native fill/stroke schema as dragged shapes.
 - Added e2e coverage for the canvas harness shape tools so native rectangle, ellipse, and polygon drag creation is regression-tested alongside clipboard import coverage.
-- Corrected the active production editor path: `CanvasEditor` currently uses `SkiaCanvas`, so the same OpenPencil-style drag-to-draw interaction is now implemented in the Skia toolbar/runtime as well, with a dedicated `/test/canvas-engine` harness and smoke coverage.
-- Copied the OpenPencil-style bounded screenshot/export capability into the live Cucumber canvas path: `screenshot_canvas` now resolves `full`, `viewport`, and explicit `region` requests into scene-space bounds, returns `actualBounds`, and exports the requested bounding box instead of always sending the whole canvas.
+- Corrected the active production editor path: `CanvasEditor` currently uses `SkiaCanvas`, so the same Cucumber canvas drag-to-draw interaction is now implemented in the Skia toolbar/runtime as well, with a dedicated `/test/canvas-engine` harness and smoke coverage.
+- Copied the Cucumber canvas bounded screenshot/export capability into the live Cucumber canvas path: `screenshot_canvas` now resolves `full`, `viewport`, and explicit `region` requests into scene-space bounds, returns `actualBounds`, and exports the requested bounding box instead of always sending the whole canvas.
 - Added a shared bounds-aware `canvas-export` helper used by both `SkiaCanvas` and `SkiaCanvas`, plus focused coverage for document bounds, export scaling, and explicit bounding-box SVG output.
 - Updated screenshot artifact persistence to preserve SVG screenshots as `image/svg+xml` instead of labeling all canvas captures as PNG.
 - Tightened the Skia editor interaction chain after the render/layout review: Figma/system paste now lets native paste events carry HTML payloads when the internal canvas clipboard is empty, imported `rect` nodes normalize to renderable `rectangle` nodes, and single-quoted Figma clipboard attributes are decoded.
@@ -143,14 +145,14 @@ Status:
 - Moved Skia canvas editing overlays out of React DOM and into the shared CanvasKit renderer: selection bounds, resize/rotate handles, marquee selection, shape drag previews, and pen previews now draw in the same render pass as canvas content, while resize/rotate hit-testing runs through renderer scene coordinates.
 - Removed the legacy React DOM / Excalidraw / Pixi shadow runtime remnants: deleted the old `@cucumber/engine`, `@cucumber/container`, `@cucumber/renderer`, and `@cucumber/ui` workspace packages, removed legacy shadow e2e harnesses and old migration plan docs, and kept the production Skia/CanvasKit canvas path as the only active renderer.
 - Added focused keyboard shortcut coverage for paste behavior, plus targeted Figma clipboard extraction/import regression checks.
-- Added the first OpenPencil-compatible live canvas agent tool slice: `batch_design`, `batch_get`, `snapshot_layout`, and `find_empty_space` are now registered as MCP tools, operate through `LiveCanvasService`, and let the main Agent perform DSL-style batch editing/reading against the current Cucumber `PenDocument` without changing the durable canvas schema.
-- Continued the OpenPencil migration with Figma/style/codegen parity slices: the live MCP tool set now includes `import_figma_clipboard`, OpenPencil-style `read_nodes`, variables/theme tools, recursive style search/replace, and in-memory codegen plan/submit/assemble/clean routes, while the Skia property panel can bind selected node colors to document variables.
+- Added the first Cucumber structured canvas live canvas agent tool slice: `batch_design`, `batch_get`, `snapshot_layout`, and `find_empty_space` are now registered as MCP tools, operate through `LiveCanvasService`, and let the main Agent perform DSL-style batch editing/reading against the current Cucumber `PenDocument` without changing the durable canvas schema.
+- Continued the Cucumber canvas migration with Figma/style/codegen parity slices: the live MCP tool set now includes `import_figma_clipboard`, Cucumber canvas `read_nodes`, variables/theme tools, recursive style search/replace, and in-memory codegen plan/submit/assemble/clean routes, while the Skia property panel can bind selected node colors to document variables.
 - Hardened Figma/system paste fidelity by capturing all readable clipboard MIME text, preferring native Figma/SVG payloads when present, mapping Figma auto-layout directly onto PenNode layout props, and extending the SVG fallback to preserve transforms, style rules, gradient defs, masks/clip warnings, text style, effects, and line endpoints.
-- Extended the import fidelity pass to clipboard file/blob capture and raster image paste assets, OpenPencil-aligned Figma stroke/fill/text/image-fill mapping, executable PenNode sizing for imported auto-layout, SVG specificity/descendant style resolution, `<use>` expansion, simple clipPath frames, and filter-to-effect mapping with explicit warnings for unsupported mask/filter/clip cases.
+- Extended the import fidelity pass to clipboard file/blob capture and raster image paste assets, Cucumber-aligned Figma stroke/fill/text/image-fill mapping, executable PenNode sizing for imported auto-layout, SVG specificity/descendant style resolution, `<use>` expansion, simple clipPath frames, and filter-to-effect mapping with explicit warnings for unsupported mask/filter/clip cases.
 - Corrected the live paste fallback priority so invalid/unsupported Figma native buffers no longer immediately return the lossy Figma HTML parser before explicit `image/svg+xml` or raster MIME payloads, and added clipboard MIME diagnostics for browser-side paste troubleshooting.
 - Changed HTML-only paste events to opportunistically merge Clipboard API MIME data during the same user paste action, so Figma/browser clipboard paths that expose richer SVG/image/blob payloads through `navigator.clipboard.read()` are no longer limited to the paste event's `text/html` / `text/plain` surface.
 - Expanded runtime paste diagnostics to show the concrete Figma import strategy (`figma-native` vs `figma-html-fallback`), warnings, asset/root counts, and a sanitized node summary for debugging fidelity regressions from real user clipboard payloads.
-- Restored high-fidelity Figma paste around OpenPencil's full `pen-figma` module: added `@cucumber/pen-figma` as a vendored workspace package, routed native clipboard decode through its parser/converters, recursively attaches Cucumber import metadata, registers data URL image assets, and offsets full native PenNode trees on insertion so nested geometry stays aligned.
+- Restored high-fidelity Figma paste around Cucumber's full `pen-figma` module: added `@cucumber/pen-figma` as a vendored workspace package, routed native clipboard decode through its parser/converters, recursively attaches Cucumber import metadata, registers data URL image assets, and offsets full native PenNode trees on insertion so nested geometry stays aligned.
 - Advanced codegen assembly from protocol-only state to concrete design-as-code file output: `codegen_assemble` now returns framework-specific files for React (`App.tsx`, component files, CSS), HTML (`index.html`, CSS), and generic framework fallbacks, and the property panel now includes typography controls plus reusable component/ref metadata and inline color variable creation/binding.
 - Added a dedicated `codegen_export` MCP tool so the Agent can export the current live canvas selection, or explicit node IDs, directly into React (`.tsx` + CSS) or static HTML (`index.html` + CSS) design-as-code files with diagnostic logging.
 - Added the first Phase C prompt-to-canvas orchestration slice: `prompt_canvas_plan` creates deterministic section plans, `prompt_canvas_execute` writes root/section containers through the live canvas service with structured `[phase-c-orchestration]` logs, and `codegen_export` now emits Vue single-file component output alongside React and HTML.
@@ -182,24 +184,24 @@ Status:
 
 - Passed: `pnpm exec playwright test tests/e2e/skia-canvas.spec.ts`.
 - Passed: `pnpm exec playwright test tests/e2e/canvas-agent-output.spec.ts`.
-- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/open-pencil-canvas.test.ts` (20 tests).
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/structured-canvas.test.ts` (20 tests).
 - Passed: `pnpm --filter @cucumber/server typecheck`.
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-export.test.ts` (15 tests).
 - Passed: `pnpm exec playwright test tests/e2e/skia-canvas.spec.ts -g "smokes layers" --workers=1`.
 - Passed: `pnpm exec playwright test tests/e2e/skia-canvas.spec.ts tests/e2e/canvas-import.spec.ts tests/e2e/canvas-agent-output.spec.ts --workers=1` (8 tests).
-- Passed: `pnpm exec biome check apps/server/src/mcp/tools/open-pencil-canvas.ts apps/server/src/mcp/tools/open-pencil-canvas.test.ts apps/web/src/components/canvas/canvas-export.ts apps/web/test/canvas-export.test.ts apps/web/src/components/canvas-editor.tsx`.
-- Passed: `pnpm exec biome check apps/web/src/app/test/canvas-agent-output/page.tsx apps/web/src/app/test/canvas-agent-output/canvas-agent-output-harness.tsx tests/e2e/canvas-agent-output.spec.ts docs/tech/openpencil-web-canvas-parity.md progress.md feature_list.json` (Biome checked the configured source/spec files; Markdown/JSON docs are ignored by the current Biome config).
-- Passed: `pnpm exec biome check tests/e2e/skia-canvas.spec.ts docs/tech/openpencil-web-canvas-parity.md progress.md` (Biome checked the configured spec file; Markdown docs are ignored by the current Biome config).
+- Passed: `pnpm exec biome check apps/server/src/mcp/tools/structured-canvas.ts apps/server/src/mcp/tools/structured-canvas.test.ts apps/web/src/components/canvas/canvas-export.ts apps/web/test/canvas-export.test.ts apps/web/src/components/canvas-editor.tsx`.
+- Passed: `pnpm exec biome check apps/web/src/app/test/canvas-agent-output/page.tsx apps/web/src/app/test/canvas-agent-output/canvas-agent-output-harness.tsx tests/e2e/canvas-agent-output.spec.ts docs/tech/cucumber-canvas-foundation.md progress.md feature_list.json` (Biome checked the configured source/spec files; Markdown/JSON docs are ignored by the current Biome config).
+- Passed: `pnpm exec biome check tests/e2e/skia-canvas.spec.ts docs/tech/cucumber-canvas-foundation.md progress.md` (Biome checked the configured spec file; Markdown docs are ignored by the current Biome config).
 - Failed: `pnpm --filter @cucumber/web typecheck` remains blocked by the unchanged out-of-scope `apps/web/src/components/canvas/skia-canvas.tsx:388` `PenNode` to `Record<string, unknown>` cast diagnostic.
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-editor-toolbar.test.tsx test/canvas-layers-panel.test.tsx test/canvas-property-panel.test.tsx`.
-- Passed: `pnpm exec biome check apps/web/src/components/canvas/shape-tool-dropdown.tsx apps/web/src/components/canvas-layers-panel.tsx apps/web/test/canvas-editor-toolbar.test.tsx apps/web/test/canvas-layers-panel.test.tsx docs/tech/openpencil-web-canvas-parity.md progress.md`.
+- Passed: `pnpm exec biome check apps/web/src/components/canvas/shape-tool-dropdown.tsx apps/web/src/components/canvas-layers-panel.tsx apps/web/test/canvas-editor-toolbar.test.tsx apps/web/test/canvas-layers-panel.test.tsx docs/tech/cucumber-canvas-foundation.md progress.md`.
 - Failed: `pnpm --filter @cucumber/web typecheck` remains blocked by the unchanged out-of-scope `apps/web/src/components/canvas/skia-canvas.tsx:388` `PenNode` to `Record<string, unknown>` cast diagnostic.
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-editor-toolbar.test.tsx test/canvas-layers-panel.test.tsx test/canvas-property-panel.test.tsx`.
-- Passed: `pnpm exec biome check apps/web/src/components/canvas/editor-toolbar.tsx apps/web/src/components/canvas/shape-tool-dropdown.tsx apps/web/src/components/canvas-layers-panel.tsx apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx apps/web/test/canvas-editor-toolbar.test.tsx apps/web/test/canvas-layers-panel.test.tsx apps/web/test/canvas-property-panel.test.tsx docs/tech/openpencil-web-canvas-parity.md progress.md`.
+- Passed: `pnpm exec biome check apps/web/src/components/canvas/editor-toolbar.tsx apps/web/src/components/canvas/shape-tool-dropdown.tsx apps/web/src/components/canvas-layers-panel.tsx apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx apps/web/test/canvas-editor-toolbar.test.tsx apps/web/test/canvas-layers-panel.test.tsx apps/web/test/canvas-property-panel.test.tsx docs/tech/cucumber-canvas-foundation.md progress.md`.
 - Failed: `pnpm --filter @cucumber/web typecheck` remains blocked by the out-of-scope `apps/web/src/components/canvas/skia-canvas.tsx:388` `PenNode` to `Record<string, unknown>` cast diagnostic.
 - Passed: `./node_modules/.bin/tsc -p apps/server/tsconfig.json --noEmit`.
-- Passed: `PATH="/Users/bytedance/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" ../../node_modules/.bin/vitest run src/mcp/tools/open-pencil-canvas.test.ts --passWithNoTests` from `apps/server` after adding Phase C prompt-to-canvas orchestration and Vue export coverage.
-- Passed: `./node_modules/.bin/biome check apps/server/src/mcp/tools/open-pencil-canvas.ts apps/server/src/mcp/tools/open-pencil-canvas.test.ts apps/server/src/agent/prompts/cucumber-main.ts docs/tech/canvas-design-integration.md progress.md feature_list.json`.
+- Passed: `PATH="/Users/bytedance/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" ../../node_modules/.bin/vitest run src/mcp/tools/structured-canvas.test.ts --passWithNoTests` from `apps/server` after adding Phase C prompt-to-canvas orchestration and Vue export coverage.
+- Passed: `./node_modules/.bin/biome check apps/server/src/mcp/tools/structured-canvas.ts apps/server/src/mcp/tools/structured-canvas.test.ts apps/server/src/agent/prompts/cucumber-main.ts docs/tech/canvas-design-integration.md progress.md feature_list.json`.
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-design-system-panel.test.tsx`.
 - Passed: `pnpm --filter @cucumber/web typecheck` (Next emitted the existing multi-lockfile workspace-root warning).
 - Passed: `pnpm exec biome check apps/web/src/components/canvas-design-system-panel.tsx apps/web/src/components/canvas/icon-library.ts apps/web/src/components/canvas-bottom-bar.tsx apps/web/src/components/canvas/skia-canvas.tsx apps/web/src/app/canvas/page.tsx apps/web/test/canvas-design-system-panel.test.tsx docs/tech/canvas-design-integration.md progress.md feature_list.json`.
@@ -227,7 +229,7 @@ Status:
 - Passed: `pnpm --dir packages/canvas-core exec vitest run src/__tests__/canvas-core.test.ts -t "extracts figma clipboard"`.
 - Passed: `pnpm --dir packages/canvas-core exec vitest run src/__tests__/canvas-core.test.ts -t "inserts imported nodes"`.
 - Passed: targeted `pnpm exec biome check --write` for the touched Skia canvas, property panel, keyboard shortcut, Figma native, and import files.
-- Failed: full `pnpm lint` remains blocked by unrelated existing diagnostics in `openpencil/**`, `apps/server/src/agent/backends/dev.ts`, `apps/server/src/agent/persistence/index.ts`, and `apps/server/src/agent/deep-agent.ts`.
+- Failed: full `pnpm lint` remains blocked by unrelated existing diagnostics in `deleted cucumber tracked files`, `apps/server/src/agent/backends/dev.ts`, `apps/server/src/agent/persistence/index.ts`, and `apps/server/src/agent/deep-agent.ts`.
 - Passed: targeted `pnpm exec biome check` for `apps/web/src/components/canvas/canvas-api.ts`, `apps/web/src/components/canvas/skia-canvas.tsx`, `apps/web/src/components/canvas-editor.tsx`, `apps/web/src/app/test/canvas-import/canvas-import-harness.tsx`, `tests/e2e/canvas-import.spec.ts`, `docs/architecture.md`, `progress.md`, and `feature_list.json`.
 - Passed: local Playwright smoke against `http://localhost:3002` for `/test/canvas-engine` and `/test/canvas-import`, covering Skia rectangle/ellipse/polygon drag creation plus Figma-like paste import metadata.
 - Note: direct `pnpm exec playwright test tests/e2e/skia-canvas.spec.ts tests/e2e/canvas-import.spec.ts` is blocked by the current root `playwright.config.ts` pointing at `playwright-tests/tests`, so those files are not discovered by that config.
@@ -263,28 +265,28 @@ Status:
 - Blocked: `PATH=/usr/local/bin:$PATH ./node_modules/.bin/turbo run build --filter @cucumber/web` could not start because Turbo could not find the package manager binary in this shell (`pnpm` is not on PATH).
 - Failed: `pnpm --filter @cucumber/server typecheck` is still blocked by pre-existing `apps/server/src/http/sse.test.ts` missing the required `webOrigin` option for `registerSseRoutes`.
 - Failed: full `pnpm --filter @cucumber/web test` remains blocked by the pre-existing React 19 / Testing Library `React.act is not a function` issue across legacy web tests; the new clipboard-import focused test passes when run in isolation.
-- Failed: root `pnpm lint` remains blocked by unrelated pre-existing/untracked files, primarily `openpencil/**`, server formatting drift, and existing `apps/server/src/agent/deep-agent.ts` explicit `any` diagnostics.
+- Failed: root `pnpm lint` remains blocked by unrelated pre-existing/untracked files, primarily `deleted cucumber tracked files`, server formatting drift, and existing `apps/server/src/agent/deep-agent.ts` explicit `any` diagnostics.
 - Passed: `./node_modules/.bin/tsc -p apps/server/tsconfig.json --noEmit`.
-- Passed: `PATH="/Users/bytedance/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" ../../node_modules/.bin/vitest run src/mcp/tools/open-pencil-canvas.test.ts --passWithNoTests` from `apps/server`.
-- Passed: `./node_modules/.bin/biome check apps/server/src/mcp/tools/open-pencil-canvas.ts apps/server/src/mcp/tools/open-pencil-canvas.test.ts apps/server/src/mcp/server.ts apps/server/src/agent/prompts/cucumber-main.ts`.
+- Passed: `PATH="/Users/bytedance/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" ../../node_modules/.bin/vitest run src/mcp/tools/structured-canvas.test.ts --passWithNoTests` from `apps/server`.
+- Passed: `./node_modules/.bin/biome check apps/server/src/mcp/tools/structured-canvas.ts apps/server/src/mcp/tools/structured-canvas.test.ts apps/server/src/mcp/server.ts apps/server/src/agent/prompts/cucumber-main.ts`.
 - Passed: `./node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`.
-- Passed: `PATH="/Users/bytedance/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" ../../node_modules/.bin/vitest run src/mcp/tools/open-pencil-canvas.test.ts --passWithNoTests` from `apps/server` after adding style/variable/codegen coverage.
-- Passed: `./node_modules/.bin/biome check apps/server/src/mcp/tools/open-pencil-canvas.ts apps/server/src/mcp/tools/open-pencil-canvas.test.ts apps/server/src/mcp/server.ts apps/server/src/agent/prompts/cucumber-main.ts apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx apps/web/src/components/canvas/skia-canvas.tsx progress.md feature_list.json`.
-- Passed: `./node_modules/.bin/tsc -p apps/server/tsconfig.json --noEmit`.
-- Passed: `./node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`.
-- Passed: `PATH="/Users/bytedance/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" ../../node_modules/.bin/vitest run src/mcp/tools/open-pencil-canvas.test.ts --passWithNoTests` from `apps/server` after adding codegen file assembly coverage.
+- Passed: `PATH="/Users/bytedance/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" ../../node_modules/.bin/vitest run src/mcp/tools/structured-canvas.test.ts --passWithNoTests` from `apps/server` after adding style/variable/codegen coverage.
+- Passed: `./node_modules/.bin/biome check apps/server/src/mcp/tools/structured-canvas.ts apps/server/src/mcp/tools/structured-canvas.test.ts apps/server/src/mcp/server.ts apps/server/src/agent/prompts/cucumber-main.ts apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx apps/web/src/components/canvas/skia-canvas.tsx progress.md feature_list.json`.
 - Passed: `./node_modules/.bin/tsc -p apps/server/tsconfig.json --noEmit`.
 - Passed: `./node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`.
-- Passed: `PATH="/Users/bytedance/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" ../../node_modules/.bin/vitest run src/mcp/tools/open-pencil-canvas.test.ts --passWithNoTests` from `apps/server` after adding `codegen_export` selection/export coverage.
-- Passed: `./node_modules/.bin/biome check --write apps/server/src/mcp/tools/open-pencil-canvas.ts apps/server/src/mcp/tools/open-pencil-canvas.test.ts apps/server/src/agent/prompts/cucumber-main.ts apps/server/src/mcp/server.ts apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx apps/web/src/components/canvas/skia-canvas.tsx progress.md feature_list.json`.
-- Passed: final no-write `./node_modules/.bin/biome check apps/server/src/mcp/tools/open-pencil-canvas.ts apps/server/src/mcp/tools/open-pencil-canvas.test.ts apps/server/src/agent/prompts/cucumber-main.ts apps/server/src/mcp/server.ts apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx apps/web/src/components/canvas/skia-canvas.tsx progress.md feature_list.json`.
+- Passed: `PATH="/Users/bytedance/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" ../../node_modules/.bin/vitest run src/mcp/tools/structured-canvas.test.ts --passWithNoTests` from `apps/server` after adding codegen file assembly coverage.
+- Passed: `./node_modules/.bin/tsc -p apps/server/tsconfig.json --noEmit`.
+- Passed: `./node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`.
+- Passed: `PATH="/Users/bytedance/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" ../../node_modules/.bin/vitest run src/mcp/tools/structured-canvas.test.ts --passWithNoTests` from `apps/server` after adding `codegen_export` selection/export coverage.
+- Passed: `./node_modules/.bin/biome check --write apps/server/src/mcp/tools/structured-canvas.ts apps/server/src/mcp/tools/structured-canvas.test.ts apps/server/src/agent/prompts/cucumber-main.ts apps/server/src/mcp/server.ts apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx apps/web/src/components/canvas/skia-canvas.tsx progress.md feature_list.json`.
+- Passed: final no-write `./node_modules/.bin/biome check apps/server/src/mcp/tools/structured-canvas.ts apps/server/src/mcp/tools/structured-canvas.test.ts apps/server/src/agent/prompts/cucumber-main.ts apps/server/src/mcp/server.ts apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx apps/web/src/components/canvas/skia-canvas.tsx progress.md feature_list.json`.
 - Passed: `pnpm exec biome check apps/web/src/components/canvas/skia-canvas.tsx packages/pen-renderer/src/renderer.ts packages/pen-renderer/src/types.ts packages/pen-renderer/src/index.ts`.
 - Passed: `pnpm --filter @cucumber/web typecheck`.
 - Passed: `pnpm --filter @cucumber/pen-renderer typecheck`.
 - Passed: `pnpm --filter @cucumber/web test -- canvas-export use-canvas-keyboard-shortcuts`.
 - Passed: `pnpm --filter @cucumber/web build`.
 - Failed: root `pnpm typecheck` remains blocked by unrelated existing `packages/pen-core/__tests__` NodeNext extension, implicit-any, and possibly-undefined diagnostics.
-- Failed: root `pnpm lint` remains blocked by unrelated existing diagnostics in `openpencil/**`, server formatting drift, `vercel.json`, and `apps/server/src/agent/deep-agent.ts`.
+- Failed: root `pnpm lint` remains blocked by unrelated existing diagnostics in `deleted cucumber tracked files`, server formatting drift, `vercel.json`, and `apps/server/src/agent/deep-agent.ts`.
 - Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
 - Passed: `pnpm --filter @cucumber/web typecheck` (Next emitted the existing multi-lockfile workspace-root warning).
 - Passed: `pnpm --filter @cucumber/canvas-core test`.
@@ -292,7 +294,7 @@ Status:
 - Passed: `pnpm --filter @cucumber/pen-renderer typecheck`.
 - Passed: `pnpm --filter @cucumber/web typecheck` (Next emitted the existing multi-lockfile workspace-root warning).
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/skia-canvas-selection-snapshot.test.tsx test/use-canvas-clipboard-import.test.tsx`.
-- Failed: root `pnpm lint` remains blocked by unrelated existing diagnostics in `openpencil/**`, `apps/server/src/agent/backends/dev.ts`, `apps/server/src/agent/persistence/index.ts`, and `apps/server/src/agent/deep-agent.ts`.
+- Failed: root `pnpm lint` remains blocked by unrelated existing diagnostics in `deleted cucumber tracked files`, `apps/server/src/agent/backends/dev.ts`, `apps/server/src/agent/persistence/index.ts`, and `apps/server/src/agent/deep-agent.ts`.
 - Failed: `pnpm --filter @cucumber/web test -- skia-canvas-selection-snapshot.test.tsx use-canvas-clipboard-import.test.tsx` was parsed by the package script as a broad web test run and hit the existing `test/projects.test.tsx` toast text assertion (`项目创建失败` vs `项目创建失败：Create failed.`); the corrected direct Vitest command above passed.
 - Passed: `pnpm exec biome check packages/canvas-core/src/import.ts packages/canvas-core/src/figma-native.ts apps/web/src/components/canvas/use-canvas-clipboard-import.ts`.
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/use-canvas-clipboard-import.test.tsx`.
@@ -327,6 +329,6 @@ Status:
 - Moved Skia's ad hoc runtime document extension away from the local `CanvasRuntimeDocument` type and into explicit `CanvasApiDocument` / `CanvasApiRuntimeState` contracts in `apps/web/src/components/canvas/canvas-api.ts`.
 - Added a focused CanvasApi type assertion so runtime selection state remains visible at the API boundary.
 - Passed: `pnpm --filter @cucumber/web typecheck` and `pnpm --filter @cucumber/canvas-core typecheck`.
-- Passed: related canvas tests: `pnpm --filter @cucumber/web exec vitest run test/canvas-api-types.test.ts test/use-canvas-clipboard-import.test.tsx test/use-canvas-keyboard-shortcuts.test.tsx test/canvas-export.test.ts`, `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/canvas-core.test.ts src/__tests__/figma-native-adapter.test.ts --environment jsdom --testNamePattern "figma|svg|clipboard|layout|image|pen-figma"`, and `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/open-pencil-canvas.test.ts --passWithNoTests`.
+- Passed: related canvas tests: `pnpm --filter @cucumber/web exec vitest run test/canvas-api-types.test.ts test/use-canvas-clipboard-import.test.tsx test/use-canvas-keyboard-shortcuts.test.tsx test/canvas-export.test.ts`, `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/canvas-core.test.ts src/__tests__/figma-native-adapter.test.ts --environment jsdom --testNamePattern "figma|svg|clipboard|layout|image|pen-figma"`, and `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/structured-canvas.test.ts --passWithNoTests`.
 - Passed: Playwright smoke `pnpm exec playwright test tests/e2e/skia-canvas.spec.ts tests/e2e/canvas-import.spec.ts tests/e2e/canvas-agent-output.spec.ts --workers=1` after updating the smoke to use drag-based line/arrow creation and stable property-panel spinbutton targeting.
-- Passed: touched-file Biome check for canvas runtime/API/config/test files. Full `pnpm lint` remains blocked by unrelated existing diagnostics in `openpencil/**`, `vercel.json`, and server agent files; full `pnpm typecheck` remains blocked by unrelated existing `packages/pen-core/__tests__` NodeNext extension/strictness diagnostics.
+- Passed: touched-file Biome check for canvas runtime/API/config/test files. Full `pnpm lint` remains blocked by unrelated existing diagnostics in `deleted cucumber tracked files`, `vercel.json`, and server agent files; full `pnpm typecheck` remains blocked by unrelated existing `packages/pen-core/__tests__` NodeNext extension/strictness diagnostics.

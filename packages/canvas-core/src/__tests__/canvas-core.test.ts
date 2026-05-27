@@ -24,7 +24,6 @@ import {
   getVisibleCanvasNodesInBounds,
   insertCanvasImportResult,
   mergeSymbolProps,
-  normalizeLegacyImportCoordinates,
   parseClipboardImport,
   reparentNodesByDropPoint,
   resolveContext,
@@ -151,8 +150,7 @@ describe("cucumber canvas core", () => {
       applyCanvasOperation(doc, {
         type: "updateNode",
         nodeId: node.id,
-        // @ts-expect-error - containerId deprecated, still used in test for agent boundary check
-        containerId: "container",
+        parentId: "container",
         agentId: "agent-1",
         updates: {
           x: 520,
@@ -320,9 +318,9 @@ describe("cucumber canvas core", () => {
         height: 100,
       }).map((node) => node.id),
     ).toEqual(["page-b-rect"]);
-    expect(getOrderedCanvasNodes(next, "page-a").map((entry) => entry.node.id)).toEqual([
-      "page-a-rect",
-    ]);
+    expect(
+      getOrderedCanvasNodes(next, "page-a").map((entry) => entry.node.id),
+    ).toEqual(["page-a-rect"]);
   });
 
   it("groups and ungroups sibling nodes without changing their bounds", () => {
@@ -676,47 +674,6 @@ describe("cucumber canvas core", () => {
       importSourceLabel: "SVG",
       warningCount: 0,
     });
-  });
-
-  it("normalizes legacy fallback import children that were saved with absolute coordinates", () => {
-    const doc = createEmptyDocument();
-    const legacyDoc = applyCanvasOperation(doc, {
-      type: "insertNode",
-      node: {
-        id: "legacy-group",
-        type: "group",
-        x: 100,
-        y: 200,
-        width: 300,
-        height: 160,
-        meta: {
-          source: "figma-paste",
-          originNodeType: "div",
-          importSessionId: "legacy-import",
-        },
-        children: [
-          {
-            id: "legacy-child",
-            type: "rectangle",
-            x: 140,
-            y: 230,
-            width: 80,
-            height: 40,
-            meta: {
-              source: "figma-paste",
-              originNodeType: "div",
-              importSessionId: "legacy-import",
-            },
-          } as PenNode,
-        ],
-      } as PenNode,
-    });
-
-    const normalized = normalizeLegacyImportCoordinates(legacyDoc);
-    expect(findNode(normalized, "legacy-group")?.x).toBe(100);
-    expect(findNode(normalized, "legacy-group")?.y).toBe(200);
-    expect(findNode(normalized, "legacy-child")?.x).toBe(40);
-    expect(findNode(normalized, "legacy-child")?.y).toBe(30);
   });
 
   it("assigns a shared import session and warning metadata to inserted roots", () => {

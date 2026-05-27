@@ -55,27 +55,24 @@ function expectPageError(
 }
 
 describe("canvas page helpers", () => {
-  it("normalizes legacy children-only documents into a first page", () => {
+  it("rejects legacy children-only documents", () => {
     const legacy: PenDocument = {
       version: "cucumber-canvas-v1",
       children: [rect("legacy")],
     };
 
-    const normalized = normalizeCanvasPages(legacy);
-
-    expect(normalized.pages).toHaveLength(1);
-    expect(normalized.pages?.[0]?.name).toBe("Page 1");
-    expect(normalized.pages?.[0]?.children.map((node) => node.id)).toEqual([
-      "legacy",
-    ]);
-    expect(normalized.activePageId).toBe("page-default");
-    expect(normalized.children).toEqual([]);
+    expectPageError(
+      () => normalizeCanvasPages(legacy),
+      "invalid_page_operation",
+      "PenDocument.pages is required.",
+    );
   });
 
   it("clones explicit page children while normalizing pages", () => {
     const seed = rect("seed");
     const doc: PenDocument = {
       version: "cucumber-canvas-v1",
+      activePageId: "page-a",
       children: [],
       pages: [{ id: "page-a", name: "A", children: [seed] }],
     };
@@ -90,6 +87,7 @@ describe("canvas page helpers", () => {
   it("finds and mutates nodes on the requested active page", () => {
     const doc: PenDocument = normalizeCanvasPages({
       version: "cucumber-canvas-v1",
+      activePageId: "page-a",
       children: [],
       pages: [
         { id: "page-a", name: "A", children: [rect("a")] },
@@ -170,6 +168,7 @@ describe("canvas page helpers", () => {
   it("rejects stale active page IDs without mutating the first page", () => {
     const doc: PenDocument = normalizeCanvasPages({
       version: "cucumber-canvas-v1",
+      activePageId: "page-a",
       children: [],
       pages: [
         { id: "page-a", name: "A", children: [rect("a")] },
@@ -208,7 +207,7 @@ describe("canvas page helpers", () => {
     );
   });
 
-  it("rejects stale active page IDs on legacy children-only documents without mutating root children", () => {
+  it("rejects active page writes on legacy children-only documents without mutating root children", () => {
     const legacy: PenDocument = {
       version: "cucumber-canvas-v1",
       children: [rect("legacy")],
@@ -221,18 +220,18 @@ describe("canvas page helpers", () => {
           node: rect("typo-target"),
           activePageId: "page-default",
         }),
-      "page_not_found",
-      "Page page-default does not exist.",
+      "invalid_page_operation",
+      "PenDocument.pages is required.",
     );
     expectPageError(
       () => resolveActivePageId(legacy, "page-default"),
-      "page_not_found",
-      "Page page-default does not exist.",
+      "invalid_page_operation",
+      "PenDocument.pages is required.",
     );
     expectPageError(
       () => getCanvasPage(legacy, "page-default"),
-      "page_not_found",
-      "Page page-default does not exist.",
+      "invalid_page_operation",
+      "PenDocument.pages is required.",
     );
     expect(legacy.children.map((node) => node.id)).toEqual(["legacy"]);
   });
@@ -250,18 +249,18 @@ describe("canvas page helpers", () => {
           type: "insertNode",
           node: rect("target"),
         }),
-      "page_not_found",
-      "Page page-default does not exist.",
+      "invalid_page_operation",
+      "PenDocument.pages is required.",
     );
     expectPageError(
       () => normalizeCanvasPages(legacy),
-      "page_not_found",
-      "Page page-default does not exist.",
+      "invalid_page_operation",
+      "PenDocument.pages is required.",
     );
     expectPageError(
       () => getCanvasPages(legacy),
-      "page_not_found",
-      "Page page-default does not exist.",
+      "invalid_page_operation",
+      "PenDocument.pages is required.",
     );
   });
 
@@ -297,7 +296,9 @@ describe("canvas page helpers", () => {
   it("validates stale active page IDs for selection operations", () => {
     const doc = normalizeCanvasPages({
       version: "cucumber-canvas-v1",
-      children: [rect("root")],
+      activePageId: "page-default",
+      children: [],
+      pages: [createDefaultCanvasPage([rect("root")])],
     });
 
     expect(() =>
@@ -312,6 +313,7 @@ describe("canvas page helpers", () => {
   it("rejects duplicate page IDs when adding a page", () => {
     const doc = normalizeCanvasPages({
       version: "cucumber-canvas-v1",
+      activePageId: "page-a",
       children: [],
       pages: [
         { id: "page-a", name: "A", children: [] },
@@ -329,6 +331,7 @@ describe("canvas page helpers", () => {
   it("rejects persisted documents with duplicate page IDs before page-child writes", () => {
     const malformed: PenDocument = {
       version: "cucumber-canvas-v1",
+      activePageId: "page-a",
       children: [],
       pages: [
         { id: "page-a", name: "A", children: [rect("a")] },
@@ -349,7 +352,9 @@ describe("canvas page helpers", () => {
   it("adds, renames, duplicates, reorders, and deletes pages without deleting the final page", () => {
     let doc = normalizeCanvasPages({
       version: "cucumber-canvas-v1",
-      children: [rect("root")],
+      activePageId: "page-default",
+      children: [],
+      pages: [createDefaultCanvasPage([rect("root")])],
     });
 
     const added = addCanvasPage(doc, { name: "Exploration" });
@@ -361,9 +366,9 @@ describe("canvas page helpers", () => {
     doc = { ...doc, activePageId: added.page.id };
     doc = renameCanvasPage(doc, added.page.id, "Final UI").document;
     expect(doc.activePageId).toBe(added.page.id);
-    expect(getCanvasPages(doc).find((page) => page.id === added.page.id)?.name).toBe(
-      "Final UI",
-    );
+    expect(
+      getCanvasPages(doc).find((page) => page.id === added.page.id)?.name,
+    ).toBe("Final UI");
 
     const duplicated = duplicateCanvasPage(doc, added.page.id);
     doc = duplicated.document;
@@ -387,14 +392,16 @@ describe("canvas page helpers", () => {
     doc = deleted.document;
     expect(deleted.page.id).toBe(added.page.id);
     expect(doc.activePageId).toBe(added.page.id);
-    expect(getCanvasPages(doc).some((page) => page.id === duplicated.page.id)).toBe(
-      false,
-    );
+    expect(
+      getCanvasPages(doc).some((page) => page.id === duplicated.page.id),
+    ).toBe(false);
 
     const invalidNextDoc = addCanvasPage(
       normalizeCanvasPages({
         version: "cucumber-canvas-v1",
-        children: [rect("root")],
+        activePageId: "page-default",
+        children: [],
+        pages: [createDefaultCanvasPage([rect("root")])],
       }),
       { name: "Second" },
     ).document;
@@ -406,7 +413,9 @@ describe("canvas page helpers", () => {
 
     const onePageDoc = normalizeCanvasPages({
       version: "cucumber-canvas-v1",
-      children: [rect("only")],
+      activePageId: "page-default",
+      children: [],
+      pages: [createDefaultCanvasPage([rect("only")])],
     });
     expectPageError(
       () => deleteCanvasPage(onePageDoc, "missing"),
@@ -431,7 +440,9 @@ describe("canvas page helpers", () => {
       ],
     };
 
-    expect(() => normalizeCanvasPages(doc)).toThrow("Page missing does not exist.");
+    expect(() => normalizeCanvasPages(doc)).toThrow(
+      "Page missing does not exist.",
+    );
     expect(() => addCanvasPage(doc, { name: "C" })).toThrow(
       "Page missing does not exist.",
     );
@@ -449,6 +460,7 @@ describe("canvas page helpers", () => {
   it("duplicates page children recursively with new IDs", () => {
     const doc = normalizeCanvasPages({
       version: "cucumber-canvas-v1",
+      activePageId: "source-page",
       children: [],
       pages: [
         {
@@ -471,7 +483,9 @@ describe("canvas page helpers", () => {
     const clonedGroup = duplicated.page.children[0];
     expect(clonedGroup).toBeDefined();
     const clonedChild =
-      clonedGroup && "children" in clonedGroup && Array.isArray(clonedGroup.children)
+      clonedGroup &&
+      "children" in clonedGroup &&
+      Array.isArray(clonedGroup.children)
         ? clonedGroup.children[0]
         : undefined;
 

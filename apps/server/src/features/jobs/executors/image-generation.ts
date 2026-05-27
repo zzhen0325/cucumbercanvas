@@ -1,11 +1,7 @@
 import { generateImage } from "../../../generation/image-generation.js";
 import { resolveImageProviderName } from "../../../generation/providers/registry.js";
 import type { GeneratedImage } from "../../../generation/types.js";
-import {
-  insertImageElement,
-  markImageGenerationGroupFailed,
-  replaceImageGenerationPlaceholder,
-} from "../../canvas/canvas-element-writer.js";
+import { insertImageElement } from "../../canvas/canvas-element-writer.js";
 import { type ExecutorContext, registerExecutor } from "../job-executor.js";
 import { persistInlineInputImages } from "./inline-input-images.js";
 
@@ -40,8 +36,6 @@ registerExecutor(
       aspect_ratio?: string;
       title?: string;
       input_images?: string[];
-      image_generation_group_id?: string;
-      image_placeholder_id?: string;
     };
 
     if (!payload.prompt)
@@ -161,28 +155,7 @@ registerExecutor(
         .getPublicUrl(objectPath);
 
       let elementId: string | undefined;
-      if (jobRow.canvas_id && payload.image_placeholder_id) {
-        const replaceResult = await replaceImageGenerationPlaceholder(admin, {
-          canvasId: jobRow.canvas_id as string,
-          placeholderId: payload.image_placeholder_id,
-          ...(payload.image_generation_group_id
-            ? { groupId: payload.image_generation_group_id }
-            : {}),
-          objectPath,
-          width: generated.width,
-          height: generated.height,
-          mimeType: generated.mimeType ?? "image/png",
-          title: payload.title ?? payload.prompt.slice(0, 80),
-          prompt: payload.prompt,
-          model,
-          jobId,
-          ...(jobRow.session_id
-            ? { sessionId: jobRow.session_id as string }
-            : {}),
-        });
-        elementId = replaceResult.elementId;
-        lap("canvas_placeholder_replaced");
-      } else if (jobRow.canvas_id) {
+      if (jobRow.canvas_id) {
         const insertResult = await insertImageElement(admin, {
           canvasId: jobRow.canvas_id as string,
           objectPath,
@@ -200,38 +173,11 @@ registerExecutor(
         asset_id: (assetRow as { id: string }).id,
         signed_url: urlData.publicUrl,
         object_path: objectPath,
-        ...(payload.image_generation_group_id
-          ? { group_id: payload.image_generation_group_id }
-          : {}),
-        ...(payload.image_placeholder_id
-          ? { placeholder_id: payload.image_placeholder_id }
-          : {}),
         ...(elementId ? { element_id: elementId } : {}),
         width: generated.width,
         height: generated.height,
         mime_type: generated.mimeType ?? "image/png",
       };
-    } catch (err) {
-      if (jobRow.canvas_id && payload.image_placeholder_id) {
-        const detail = err instanceof Error ? err.message : String(err);
-        try {
-          await markImageGenerationGroupFailed(admin, {
-            canvasId: jobRow.canvas_id as string,
-            placeholderId: payload.image_placeholder_id,
-            ...(payload.image_generation_group_id
-              ? { groupId: payload.image_generation_group_id }
-              : {}),
-            errorMessage: detail,
-          });
-          lap("canvas_placeholder_marked_failed");
-        } catch (markErr) {
-          console.error(
-            `${tag} failed to mark canvas placeholder as failed:`,
-            markErr,
-          );
-        }
-      }
-      throw err;
     } finally {
       clearInterval(heartbeatTimer);
     }

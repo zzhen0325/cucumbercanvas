@@ -3,16 +3,15 @@
 // Pure indexing and walking utilities shared by node-diff.ts and node-merge.ts.
 // Not exported from the module's public surface — these are internal helpers.
 
-import type { PenDocument, PenNode } from '@cucumber/pen-types';
+import type { PenDocument, PenNode } from "@cucumber/pen-types";
 
 /**
  * Information stored per indexed node, capturing both the node itself and
  * the structural context that the merge algorithm needs (page, parent, index).
  */
 export interface IndexedNode {
-  /** null for legacy single-page documents (no pages array) */
-  pageId: string | null;
-  /** null when the node sits at the top of a page (or top of legacy children) */
+  pageId: string;
+  /** null when the node sits at the top of a page */
   parentId: string | null;
   /** position within parent.children (or top-level array) */
   index: number;
@@ -20,8 +19,7 @@ export interface IndexedNode {
 }
 
 /**
- * Walk a document and produce a Map<nodeId, IndexedNode>. Handles both
- * `pages` and legacy `children` shapes uniformly.
+ * Walk a document and produce a Map<nodeId, IndexedNode>.
  */
 export function indexNodesById(doc: PenDocument): Map<string, IndexedNode> {
   const out = new Map<string, IndexedNode>();
@@ -33,7 +31,7 @@ export function indexNodesById(doc: PenDocument): Map<string, IndexedNode> {
 
 function walk(
   nodes: PenNode[],
-  pageId: string | null,
+  pageId: string,
   parentId: string | null,
   out: Map<string, IndexedNode>,
 ): void {
@@ -47,15 +45,15 @@ function walk(
 }
 
 /**
- * Normalize a document into a list of pages, regardless of whether it uses
- * the explicit `pages` array or the legacy `children` array. Legacy mode
- * produces a single synthetic page with `id = null`.
+ * Normalize a document into a list of persisted Cucumber pages.
  */
-export function getAllPages(doc: PenDocument): Array<{ id: string | null; children: PenNode[] }> {
-  if (doc.pages && doc.pages.length > 0) {
-    return doc.pages.map((p) => ({ id: p.id, children: p.children }));
+export function getAllPages(
+  doc: PenDocument,
+): Array<{ id: string; children: PenNode[] }> {
+  if (!Array.isArray(doc.pages) || doc.pages.length === 0) {
+    throw new Error("PenDocument must include non-empty pages.");
   }
-  return [{ id: null, children: doc.children ?? [] }];
+  return doc.pages.map((p) => ({ id: p.id, children: p.children }));
 }
 
 /**
@@ -73,11 +71,11 @@ export function nodeFieldsEqual(a: PenNode, b: PenNode): boolean {
  * Used everywhere we want to compare or diff a node's atomic fields without
  * the recursive children noise.
  */
-export function stripChildren<T extends PenNode>(node: T): Omit<T, 'children'> {
+export function stripChildren<T extends PenNode>(node: T): Omit<T, "children"> {
   // Use destructuring; TS-safe.
   const copy = { ...node } as T & { children?: unknown };
-  delete copy.children;
-  return copy as Omit<T, 'children'>;
+  copy.children = undefined;
+  return copy as Omit<T, "children">;
 }
 
 /**
@@ -92,7 +90,7 @@ export function jsonEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (a === null || b === null) return false;
   if (typeof a !== typeof b) return false;
-  if (typeof a !== 'object') return false;
+  if (typeof a !== "object") return false;
   // Both are non-null objects (or arrays)
   return JSON.stringify(canonicalize(a)) === JSON.stringify(canonicalize(b));
 }
@@ -102,7 +100,7 @@ export function jsonEqual(a: unknown, b: unknown): boolean {
  * regardless of insertion order.
  */
 function canonicalize(value: unknown): unknown {
-  if (value === null || typeof value !== 'object') return value;
+  if (value === null || typeof value !== "object") return value;
   if (Array.isArray(value)) return value.map(canonicalize);
   const sortedKeys = Object.keys(value as Record<string, unknown>).sort();
   const out: Record<string, unknown> = {};

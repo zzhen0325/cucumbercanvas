@@ -73,7 +73,7 @@ leave the document unchanged and log a concrete reason.
 
 ## Phase B Design System Panel
 
-The live canvas now exposes an OpenPencil-style design system panel from the
+The live canvas now exposes an Cucumber canvas design system panel from the
 bottom bar. The panel is intentionally document-native: it reads and writes the
 active `PenDocument` rather than keeping a parallel UI-only registry.
 

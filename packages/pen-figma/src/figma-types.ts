@@ -283,4 +283,4 @@ export interface FigmaPage {
   childCount: number;
 }
 
-export type FigmaImportLayoutMode = "preserve" | "openpencil";
+export type FigmaImportLayoutMode = "preserve" | "cucumber";

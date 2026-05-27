@@ -6,7 +6,6 @@ import {
   type CanvasBounds,
   type CanvasClipboardData,
   type CanvasImportResult,
-  CanvasPageOperationError,
   type ClipboardImportPayload,
   type CucumberCanvasDocument,
   type ImportNode,
@@ -28,7 +27,6 @@ import {
   insertCanvasImportResult,
   isDescendantOf,
   normalizeCanvasPages,
-  normalizeLegacyImportCoordinates,
   parseClipboardImport,
   pasteCanvasClipboard,
   renameCanvasPage,
@@ -234,45 +232,11 @@ function normalizePenDocument(raw: unknown): PenDocument {
 }
 
 function normalizeRuntimeDocument(raw: unknown): PenDocument {
-  return normalizeLegacyImportCoordinates(
-    normalizeCanvasPages(normalizePenDocument(raw)),
-  );
+  return normalizeCanvasPages(normalizePenDocument(raw));
 }
 
-function normalizeRuntimeDocumentForCanvasSet(raw: unknown): {
-  document: PenDocument;
-  reconciledFrom: string | null;
-} {
-  const candidate = normalizePenDocument(raw);
-  try {
-    return {
-      document: normalizeLegacyImportCoordinates(
-        normalizeCanvasPages(candidate),
-      ),
-      reconciledFrom: null,
-    };
-  } catch (error) {
-    if (
-      error instanceof CanvasPageOperationError &&
-      error.code === "page_not_found" &&
-      Array.isArray(candidate.pages) &&
-      candidate.pages.length > 0
-    ) {
-      return {
-        document: normalizeLegacyImportCoordinates(
-          normalizeCanvasPages({
-            ...candidate,
-            activePageId: undefined,
-          }),
-        ),
-        reconciledFrom:
-          typeof candidate.activePageId === "string"
-            ? candidate.activePageId
-            : null,
-      };
-    }
-    throw error;
-  }
+function normalizeRuntimeDocumentForCanvasSet(raw: unknown): PenDocument {
+  return normalizeRuntimeDocument(raw);
 }
 
 function syncRendererDocument(
@@ -283,25 +247,6 @@ function syncRendererDocument(
   if (!renderer) return;
   renderer.setDocument(doc);
   renderer.setPage(activePageId);
-}
-
-function reconcileActivePageId(
-  nextRaw: PenDocument,
-  normalized: PenDocument,
-  currentActivePageId: string,
-): string {
-  const requestedActivePageId =
-    typeof nextRaw.activePageId === "string" && nextRaw.activePageId.trim()
-      ? nextRaw.activePageId.trim()
-      : null;
-  if (requestedActivePageId) {
-    return resolveActivePageId(normalized, requestedActivePageId);
-  }
-  try {
-    return resolveActivePageId(normalized, currentActivePageId);
-  } catch {
-    return resolveActivePageId(normalized);
-  }
 }
 
 type DrawableShapeTool = "rect" | "ellipse" | "polygon";
@@ -673,12 +618,7 @@ export const SkiaCanvas = memo(
         },
       ) => {
         const normalized = normalizeCanvasPages(next);
-        const previousActivePageId = activePageIdRef.current;
-        const nextActivePageId = reconcileActivePageId(
-          next,
-          normalized,
-          previousActivePageId,
-        );
+        const nextActivePageId = resolveActivePageId(normalized);
         const requestedSelection =
           opts && "selection" in opts
             ? (opts.selection ?? [])
@@ -693,12 +633,6 @@ export const SkiaCanvas = memo(
           activePageId: nextActivePageId,
           selection: nextSelection,
         } as CanvasApiDocument;
-        if (previousActivePageId !== nextActivePageId) {
-          console.info("[skia-canvas] page.active.reconciled", {
-            previousActivePageId,
-            activePageId: nextActivePageId,
-          });
-        }
         if (opts?.captureHistory !== false) {
           setHistoryStack((prev) => {
             const trimmed = prev.slice(0, historyIndex + 1);
@@ -878,9 +812,10 @@ export const SkiaCanvas = memo(
         if (!renderer) return;
         const rect = canvasContainerRef.current?.getBoundingClientRect();
         if (!rect) return;
+        const pointerButton = event.button ?? 0;
 
         // Middle button → pan
-        if (event.button === 1) {
+        if (pointerButton === 1) {
           event.preventDefault();
           const vp = renderer.getViewport();
           dragRef.current = {
@@ -894,7 +829,7 @@ export const SkiaCanvas = memo(
           return;
         }
 
-        if (event.button !== 0) return;
+        if (pointerButton !== 0) return;
 
         const tool = effectiveTool;
         if (tool === "hand") {
@@ -2150,15 +2085,8 @@ export const SkiaCanvas = memo(
       () => ({
         getDocument: () => docRef.current as CanvasApiDocument,
         setDocument: (raw: unknown) => {
-          const { document: next, reconciledFrom } =
-            normalizeRuntimeDocumentForCanvasSet(raw);
+          const next = normalizeRuntimeDocumentForCanvasSet(raw);
           commitDocument(next, { captureHistory: false });
-          if (reconciledFrom) {
-            console.info("[skia-canvas] page.active.reconciled", {
-              previousActivePageId: reconciledFrom,
-              activePageId: activePageIdRef.current,
-            });
-          }
           syncRendererDocument(
             rendererRef.current,
             docRef.current,

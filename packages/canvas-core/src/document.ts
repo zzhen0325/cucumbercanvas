@@ -1,28 +1,30 @@
-import type { PenDocument, PenNode, PenPage } from '@cucumber/pen-types';
+import type { PenDocument, PenNode, PenPage } from "@cucumber/pen-types";
 import {
   CanvasPageOperationError,
   DEFAULT_CANVAS_PAGE_ID,
   assertUniqueCanvasPageIds,
   createDefaultCanvasPage,
   resolveActivePageId,
-} from './pages.js';
-import type { CanvasBounds, CanvasDocumentState, CanvasViewport } from './types.js';
+} from "./pages.js";
+import type {
+  CanvasBounds,
+  CanvasDocumentState,
+  CucumberCanvasDocument,
+  CanvasViewport,
+} from "./types.js";
 
 let idCounter = 0;
 
-export function createNodeId(prefix = 'node'): string {
+export function createNodeId(prefix = "node"): string {
   idCounter += 1;
   return `${prefix}_${Date.now().toString(36)}_${idCounter.toString(36)}`;
 }
 
-/** @deprecated Use createNodeId */
-export const createCanvasNodeId = createNodeId;
-
 export function createCanvasDocument(name?: string): CanvasDocumentState {
   const defaultPage = createDefaultCanvasPage();
   return {
-    version: 'cucumber-canvas-v1',
-    name: name ?? 'Untitled',
+    version: "cucumber-canvas-v1",
+    name: name ?? "Untitled",
     activePageId: DEFAULT_CANVAS_PAGE_ID,
     pages: [defaultPage],
     children: [],
@@ -30,34 +32,32 @@ export function createCanvasDocument(name?: string): CanvasDocumentState {
   };
 }
 
-export function createEmptyDocument(name?: string): PenDocument {
+export function createEmptyDocument(name?: string): CucumberCanvasDocument {
   return createCanvasDocument(name);
 }
 
-export function getActivePage(doc: PenDocument, activePageId?: string | null): PenPage {
-  if (doc.pages && doc.pages.length > 0) {
-    assertUniqueCanvasPageIds(doc.pages);
-    const resolvedPageId = resolveActivePageId(doc, activePageId);
-    const page = doc.pages.find((candidate) => candidate.id === resolvedPageId);
-    if (page) {
-      return page;
-    }
-    throw new CanvasPageOperationError(
-      'page_not_found',
-      `Page ${resolvedPageId} does not exist.`,
-    );
-  }
+export function getActivePage(
+  doc: PenDocument,
+  activePageId?: string | null,
+): PenPage {
   const resolvedPageId = resolveActivePageId(doc, activePageId);
-  if (resolvedPageId !== DEFAULT_CANVAS_PAGE_ID) {
-    throw new CanvasPageOperationError(
-      'page_not_found',
-      `Page ${resolvedPageId} does not exist.`,
-    );
+  assertUniqueCanvasPageIds(requireCanvasPages(doc));
+  const page = requireCanvasPages(doc).find(
+    (candidate) => candidate.id === resolvedPageId,
+  );
+  if (page) {
+    return page;
   }
-  return { id: DEFAULT_CANVAS_PAGE_ID, name: 'Page 1', children: doc.children };
+  throw new CanvasPageOperationError(
+    "page_not_found",
+    `Page ${resolvedPageId} does not exist.`,
+  );
 }
 
-export function getActiveChildren(doc: PenDocument, activePageId?: string | null): PenNode[] {
+export function getActiveChildren(
+  doc: PenDocument,
+  activePageId?: string | null,
+): PenNode[] {
   return getActivePage(doc, activePageId).children;
 }
 
@@ -67,18 +67,15 @@ export function setActiveChildren(
   activePageId?: string | null,
 ): PenDocument {
   const page = getActivePage(doc, activePageId);
-  if (doc.pages && doc.pages.length > 0) {
-    const pages = doc.pages.map((p) =>
-      p.id === page.id ? { ...p, children } : p,
-    );
-    return {
-      ...doc,
-      activePageId: page.id,
-      pages,
-      children: [],
-    };
-  }
-  return { ...doc, children };
+  const pages = requireCanvasPages(doc).map((p) =>
+    p.id === page.id ? { ...p, children } : p,
+  );
+  return {
+    ...doc,
+    activePageId: page.id,
+    pages,
+    children: [],
+  };
 }
 
 export function appendActivePageChildren(
@@ -103,10 +100,13 @@ export function findNode(
   return findNodeInList(children, nodeId);
 }
 
-export function findNodeInList(nodes: PenNode[], nodeId: string): PenNode | undefined {
+export function findNodeInList(
+  nodes: PenNode[],
+  nodeId: string,
+): PenNode | undefined {
   for (const node of nodes) {
     if (node.id === nodeId) return node;
-    if ('children' in node && Array.isArray(node.children)) {
+    if ("children" in node && Array.isArray(node.children)) {
       const found = findNodeInList(node.children as PenNode[], nodeId);
       if (found) return found;
     }
@@ -124,9 +124,12 @@ export function findParent(
   return findParentInList(children, nodeId);
 }
 
-export function findParentInList(nodes: PenNode[], nodeId: string): PenNode | undefined {
+export function findParentInList(
+  nodes: PenNode[],
+  nodeId: string,
+): PenNode | undefined {
   for (const node of nodes) {
-    if ('children' in node && Array.isArray(node.children)) {
+    if ("children" in node && Array.isArray(node.children)) {
       const childList = node.children as PenNode[];
       if (childList.some((c) => c.id === nodeId)) return node;
       const found = findParentInList(childList, nodeId);
@@ -152,12 +155,15 @@ export function isDescendantOf(
 }
 
 /** Flatten the document tree into a flat array (depth-first) */
-export function flattenNodes(doc: PenDocument, activePageId?: string | null): PenNode[] {
+export function flattenNodes(
+  doc: PenDocument,
+  activePageId?: string | null,
+): PenNode[] {
   const result: PenNode[] = [];
   const walk = (nodes: PenNode[]) => {
     for (const node of nodes) {
       result.push(node);
-      if ('children' in node && Array.isArray(node.children)) {
+      if ("children" in node && Array.isArray(node.children)) {
         walk(node.children as PenNode[]);
       }
     }
@@ -174,27 +180,32 @@ export function getNodeChildren(
 ): PenNode[] {
   if (nodeId === null) return getActiveChildren(doc, activePageId);
   const node = findNode(doc, nodeId, activePageId);
-  if (!node || !('children' in node) || !Array.isArray(node.children)) return [];
+  if (!node || !("children" in node) || !Array.isArray(node.children))
+    return [];
   return node.children as PenNode[];
 }
 
 export function getNodeBounds(node: PenNode): CanvasBounds {
   const x = node.x ?? 0;
   const y = node.y ?? 0;
+  const measuredNode = node as PenNode & { width?: unknown; height?: unknown };
   let width = 100;
   let height = 100;
-  if ('width' in node) {
-    const w = (node as any).width;
-    width = typeof w === 'number' ? w : 100;
+  if ("width" in node) {
+    const w = measuredNode.width;
+    width = typeof w === "number" ? w : 100;
   }
-  if ('height' in node) {
-    const h = (node as any).height;
-    height = typeof h === 'number' ? h : 100;
+  if ("height" in node) {
+    const h = measuredNode.height;
+    height = typeof h === "number" ? h : 100;
   }
   return { x, y, width, height, rotation: node.rotation };
 }
 
-export function isBoundsInside(inner: CanvasBounds, outer: CanvasBounds): boolean {
+export function isBoundsInside(
+  inner: CanvasBounds,
+  outer: CanvasBounds,
+): boolean {
   return (
     inner.x >= outer.x &&
     inner.y >= outer.y &&
@@ -207,13 +218,51 @@ export function cloneDocument(doc: PenDocument): PenDocument {
   return structuredClone(doc);
 }
 
-/** @deprecated Use cloneDocument */
-export const cloneCanvasDocument = cloneDocument;
+export function normalizeCanvasDocument(raw: unknown): CucumberCanvasDocument {
+  if (!isCucumberCanvasDocument(raw)) {
+    throw new CanvasPageOperationError(
+      "invalid_page_operation",
+      "Unsupported canvas document: expected a Cucumber PenDocument with pages and activePageId.",
+    );
+  }
+  return raw;
+}
+
+export function isCucumberCanvasDocument(
+  value: unknown,
+): value is CucumberCanvasDocument {
+  if (typeof value !== "object" || value === null) return false;
+  const doc = value as Partial<PenDocument>;
+  if (typeof doc.version !== "string") return false;
+  if (!Array.isArray(doc.pages) || doc.pages.length === 0) return false;
+  if (
+    typeof doc.activePageId !== "string" ||
+    doc.activePageId.trim().length === 0
+  ) {
+    return false;
+  }
+  return doc.pages.some(
+    (page) =>
+      page.id === doc.activePageId &&
+      typeof page.name === "string" &&
+      Array.isArray(page.children),
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Default viewport
 // ---------------------------------------------------------------------------
 
 export function defaultViewport(): CanvasViewport {
-  return { x: 0, y: 0, zoom: 1, backgroundColor: '#ffffff' };
+  return { x: 0, y: 0, zoom: 1, backgroundColor: "#ffffff" };
+}
+
+function requireCanvasPages(doc: PenDocument): PenPage[] {
+  if (!Array.isArray(doc.pages) || doc.pages.length === 0) {
+    throw new CanvasPageOperationError(
+      "invalid_page_operation",
+      "Unsupported legacy canvas document: PenDocument.pages is required.",
+    );
+  }
+  return doc.pages;
 }

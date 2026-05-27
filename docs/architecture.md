@@ -22,7 +22,7 @@ Core product principles:
 Primary product scenarios:
 
 - Image iteration: a user asks the Agent to generate an image, the Agent analyzes the request and places the generated result on the canvas. When the user selects that result, a contextual Agent overlay can collect follow-up instructions, while nearby quick actions such as upscale, outpaint, and local edit should route into the same Agent-backed revision flow.
-- Structured creation: when the Agent generates PPT, web pages, or UI screens, the output needs stronger direct-editing affordances closer to Figma-style design tools. The local `openpencil/` reference is useful for this direction: prompt-to-canvas generation, selecting elements and chatting to modify them, headless design engine boundaries, React editor panels/toolbars, Figma import, and design-as-code export.
+- Structured creation: when the Agent generates PPT, web pages, or UI screens, the output needs direct-editing affordances on top of Cucumber's own canvas architecture: prompt-to-canvas generation, selecting elements and chatting to modify them, headless design boundaries, editor panels/toolbars, Figma import, and design-as-code export.
 
 This document is the high-level map for future agents and maintainers. Keep detailed implementation notes near the code or under `docs/tech/`.
 
@@ -52,21 +52,21 @@ UI code should keep the productivity surface stable and dense. Reuse existing co
 
 For generated media, prefer contextual controls attached to the selected canvas result over global panels when the action is a second-pass edit of that result. For structured outputs such as slides, pages, and UI, plan for richer element-level editing while preserving the Agent-created container as the durable output boundary.
 
-Current Cucumber canvas editing continues to use `@cucumber/canvas-core` as the single runtime document model. When borrowing ideas from `openpencil/`, prefer reusing parser or interaction patterns rather than persisting OpenPencil `PenDocument` structures directly into the main product.
+Current Cucumber canvas editing uses `@cucumber/canvas-core`, `@cucumber/pen-types`, `@cucumber/pen-core`, and `@cucumber/pen-renderer` as the single runtime document stack. The durable document shape is a Cucumber `PenDocument` with non-empty `pages` and a valid `activePageId`; old flat-map or root-children-only canvas formats are not supported in runtime paths.
 
 The current P2 import path follows a three-step boundary:
 
 1. Browser clipboard or file input captures SVG/Figma payloads in the web app.
-2. `@cucumber/canvas-core` parses and normalizes those payloads into `CanvasNode[]` and `CanvasAsset[]`, preserving import metadata such as source and origin node type.
+2. `@cucumber/canvas-core` parses and normalizes those payloads into editable `PenNode[]` and `CanvasAsset[]`, preserving import metadata such as source and origin node type.
 3. `SkiaCanvas` inserts the normalized result into `CucumberCanvasDocument` as a normal history-tracked canvas mutation.
 
-This keeps import, future component/ref modeling, variable/token wiring, and design-as-code export anchored to the same durable canvas schema instead of coupling the product shell to OpenPencil document internals.
+This keeps import, future component/ref modeling, variable/token wiring, and design-as-code export anchored to the same durable Cucumber canvas schema.
 
 The current import-fidelity pass deliberately strengthens provenance metadata and degradation warnings before introducing a full component/ref schema. Imported nodes now carry a shared import session ID plus normalized source/origin metadata so future waves can map the same imported structures into reusable component references, variable bindings, and code export pipelines without rewriting the existing canvas history or persistence model.
 
 When import fidelity is partial, the product should preserve the editable geometry that can be represented in `CucumberCanvasDocument`, and surface explicit degradation hints for dropped layout, effects, or component semantics. Do not silently coerce unsupported Figma or SVG features into unrelated node types without recording a warning.
 
-The next import-fidelity wave uses a native-first Figma clipboard strategy: when the browser clipboard HTML contains Figma's embedded binary payload, `@cucumber/canvas-core` should decode the fig-kiwi buffer before falling back to styled HTML or embedded SVG parsing. Native decode is responsible for preserving higher-fidelity geometry, text, vector, image, and frame structure inside the existing `CanvasNode` model, while fallback parsing remains the safety net for unsupported or malformed clipboard payloads.
+The next import-fidelity wave uses a native-first Figma clipboard strategy: when the browser clipboard HTML contains Figma's embedded binary payload, `@cucumber/canvas-core` should decode the fig-kiwi buffer before falling back to styled HTML or embedded SVG parsing. Native decode is responsible for preserving higher-fidelity geometry, text, vector, image, and frame structure inside the existing `PenNode` model, while fallback parsing remains the safety net for unsupported or malformed clipboard payloads.
 
 Within that native-first path, `SYMBOL` and `INSTANCE` nodes should be treated as an import-time fidelity concern first, not as a new runtime document type. The current wave is allowed to inline master symbol content into imported instance trees and replay override/derived data so visual results stay editable in the existing schema, while still surfacing explicit warnings that reusable component semantics are not yet preserved as first-class runtime references.
 

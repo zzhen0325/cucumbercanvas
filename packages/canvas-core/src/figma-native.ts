@@ -4,7 +4,7 @@ import { decompress as zstdDecompress } from "fzstd";
 import { ByteBuffer, compileSchema, decodeBinarySchema } from "kiwi-schema";
 import * as UZIP from "uzip";
 
-import { createCanvasNodeId } from "./document.js";
+import { createNodeId } from "./document.js";
 import type {
   FigmaClipboardData,
   FigmaColor,
@@ -219,7 +219,7 @@ function collectImageAssets(nodes: PenNode[]): CanvasAsset[] {
     if (imageUrl && isDataImageUrl(imageUrl) && !seen.has(imageUrl)) {
       seen.add(imageUrl);
       assets.push({
-        id: createCanvasNodeId("asset"),
+        id: createNodeId("asset"),
         url: imageUrl,
         mimeType: imageUrl.slice(5, imageUrl.indexOf(";")) || "image/png",
         source: "upload",
@@ -234,7 +234,7 @@ function collectImageAssets(nodes: PenNode[]): CanvasAsset[] {
       ) {
         seen.add(fill.url);
         assets.push({
-          id: createCanvasNodeId("asset"),
+          id: createNodeId("asset"),
           url: fill.url,
           mimeType: fill.url.slice(5, fill.url.indexOf(";")) || "image/png",
           source: "upload",
@@ -647,7 +647,7 @@ function convertFigmaGroupLike(
   const bounds = getNodeBounds(figma);
   const nodeType =
     figma.type === "GROUP" ? ("group" as const) : ("frame" as const);
-  const groupId = createCanvasNodeId(nodeType);
+  const groupId = createNodeId(nodeType);
   const childIds: string[] = [];
   const frameFills =
     nodeType === "frame"
@@ -808,7 +808,7 @@ function convertFigmaRectangle(
   state: FigmaConvertState,
   parentStackMode?: FigmaNodeChange["stackMode"],
 ): string {
-  const nodeId = createCanvasNodeId("rectangle");
+  const nodeId = createNodeId("rectangle");
   state.nodes.push({
     id: nodeId,
     type: "rectangle",
@@ -837,7 +837,7 @@ function convertFigmaEllipse(
   state: FigmaConvertState,
   parentStackMode?: FigmaNodeChange["stackMode"],
 ): string {
-  const nodeId = createCanvasNodeId("ellipse");
+  const nodeId = createNodeId("ellipse");
   state.nodes.push({
     id: nodeId,
     type: "ellipse",
@@ -861,7 +861,7 @@ function convertFigmaLine(
   state: FigmaConvertState,
   parentStackMode?: FigmaNodeChange["stackMode"],
 ): string {
-  const nodeId = createCanvasNodeId("line");
+  const nodeId = createNodeId("line");
   const bounds = getNodeBounds(figma);
   state.nodes.push({
     id: nodeId,
@@ -894,7 +894,7 @@ function convertFigmaText(
   state: FigmaConvertState,
   parentStackMode?: FigmaNodeChange["stackMode"],
 ): string {
-  const nodeId = createCanvasNodeId("text");
+  const nodeId = createNodeId("text");
   const text = buildFigmaTextContent(figma);
   const title = getPlainTextContent(text).trim() || figma.name || "Text";
   state.nodes.push({
@@ -935,7 +935,7 @@ function convertFigmaVector(
   state: FigmaConvertState,
   parentStackMode?: FigmaNodeChange["stackMode"],
 ): string {
-  const pathId = createCanvasNodeId("path");
+  const pathId = createNodeId("path");
   const path = decodeFigmaVectorPath(figma, decoded.blobs);
   if (!path) {
     state.warnings.push({
@@ -2353,7 +2353,7 @@ function resolveImagePaint(
   const mimeType = inferImageMimeType(bytes);
   const dataUrl = bytesToDataUrl(bytes, mimeType);
   const asset: CanvasAsset = {
-    id: createCanvasNodeId("asset"),
+    id: createNodeId("asset"),
     url: dataUrl,
     mimeType,
     name: "figma-paste-image",

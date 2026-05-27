@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
-import { isCucumberCanvasDocument } from "@cucumber/canvas-core";
 
 import type {
   AgentRunContextPayload,
@@ -21,9 +20,8 @@ import type { ServerEnv } from "../config/env.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type { ViewerService } from "../features/bootstrap/ensure-user-foundation.js";
 import {
+  insertImageElement,
   insertVideoElement,
-  markImageGenerationGroupFailed,
-  replaceImageGenerationPlaceholder,
 } from "../features/canvas/canvas-element-writer.js";
 import type { LiveCanvasService } from "../features/canvas/live-canvas-service.js";
 import type { JobService } from "../features/jobs/job-service.js";
@@ -491,27 +489,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
           jobLap("job_created", { jobId: job.id, sessionId, runId });
 
-          let groupId: string | undefined;
-          let placeholderId: string | undefined;
-          if (canvasId) {
-            const writerClient = createClient(
-              accessToken,
-            ) as UserSupabaseClient;
-            const { data: canvasRow } = await writerClient
-              .from("canvases")
-              .select("content")
-              .eq("id", canvasId)
-              .maybeSingle();
-
-            jobLap("canvas_generation_group_skipped", {
-              canvasId,
-              jobId: job.id,
-              reason: isCucumberCanvasDocument(canvasRow?.content)
-                ? "cucumber_canvas_document"
-                : "non_cucumber_canvas_document_reset_on_insert",
-            });
-          }
-
           // Poll until terminal state
           // Worker image VT=120s, but provider calls can take 100s+ plus queue delay.
           const POLL_INTERVAL = 2000;
@@ -534,8 +511,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 signed_url?: string;
                 object_path?: string;
                 element_id?: string;
-                group_id?: string;
-                placeholder_id?: string;
                 width?: number;
                 height?: number;
                 mime_type?: string;
@@ -543,38 +518,21 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               jobLap("job_poll_done", { pollCount, status: "succeeded" });
 
               let elementId = result.element_id;
-              if (
-                canvasId &&
-                result.object_path &&
-                placeholderId &&
-                !elementId
-              ) {
+              if (canvasId && result.object_path && !elementId) {
                 const writerClient = createClient(
                   accessToken,
                 ) as UserSupabaseClient;
-                const replaceResult = await replaceImageGenerationPlaceholder(
-                  writerClient,
-                  {
-                    canvasId,
-                    placeholderId,
-                    ...(groupId ? { groupId } : {}),
-                    objectPath: result.object_path,
-                    width: result.width ?? 1024,
-                    height: result.height ?? 1024,
-                    mimeType: result.mime_type ?? "image/png",
-                    title: input.title,
-                    prompt: input.prompt,
-                    model: input.model,
-                    jobId: job.id,
-                    runId,
-                    sessionId,
-                  },
-                );
-                elementId = replaceResult.elementId;
-                jobLap("canvas_generation_group_replaced", {
+                const insertResult = await insertImageElement(writerClient, {
+                  canvasId,
+                  objectPath: result.object_path,
+                  width: result.width ?? 1024,
+                  height: result.height ?? 1024,
+                  mimeType: result.mime_type ?? "image/png",
+                  title: input.title,
+                });
+                elementId = insertResult.elementId;
+                jobLap("canvas_image_inserted", {
                   elementId,
-                  groupId,
-                  placeholderId,
                 });
               }
 
@@ -588,12 +546,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
               return {
                 jobId: job.id,
-                ...(groupId != null || result.group_id != null
-                  ? { groupId: groupId ?? result.group_id }
-                  : {}),
-                ...(placeholderId != null || result.placeholder_id != null
-                  ? { placeholderId: placeholderId ?? result.placeholder_id }
-                  : {}),
                 ...(elementId != null ? { elementId } : {}),
                 imageUrl: result.signed_url ?? "",
                 width: result.width ?? 1024,
@@ -607,28 +559,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               current.status === "canceled"
             ) {
               jobLap("job_poll_done", { pollCount, status: current.status });
-              if (canvasId && placeholderId) {
-                const writerClient = createClient(
-                  accessToken,
-                ) as UserSupabaseClient;
-                await markImageGenerationGroupFailed(writerClient, {
-                  canvasId,
-                  placeholderId,
-                  ...(groupId ? { groupId } : {}),
-                  errorMessage:
-                    current.error_message ??
-                    `Image generation ${current.status}`,
-                });
-                options.eventBuffer?.publish(canvasId, {
-                  type: "canvas.sync" as const,
-                  runId,
-                  timestamp: new Date().toISOString(),
-                });
-              }
               return {
                 jobId: job.id,
-                ...(groupId ? { groupId } : {}),
-                ...(placeholderId ? { placeholderId } : {}),
                 error: current.error_message ?? `Job ${current.status}`,
               };
             }
@@ -642,28 +574,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 pollCount,
                 status: "failed_max_retries",
               });
-              if (canvasId && placeholderId) {
-                const writerClient = createClient(
-                  accessToken,
-                ) as UserSupabaseClient;
-                await markImageGenerationGroupFailed(writerClient, {
-                  canvasId,
-                  placeholderId,
-                  ...(groupId ? { groupId } : {}),
-                  errorMessage:
-                    current.error_message ??
-                    "Image generation failed after max retries",
-                });
-                options.eventBuffer?.publish(canvasId, {
-                  type: "canvas.sync" as const,
-                  runId,
-                  timestamp: new Date().toISOString(),
-                });
-              }
               return {
                 jobId: job.id,
-                ...(groupId ? { groupId } : {}),
-                ...(placeholderId ? { placeholderId } : {}),
                 error: current.error_message ?? "Job failed after max retries",
               };
             }
@@ -672,8 +584,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           jobLap("job_poll_done", { pollCount, status: "timeout" });
           return {
             jobId: job.id,
-            ...(groupId ? { groupId } : {}),
-            ...(placeholderId ? { placeholderId } : {}),
             error: `Job timed out after ${MAX_WAIT / 1000}s`,
           };
         };
@@ -754,55 +664,45 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               };
               jobLap("job_poll_done", { pollCount, status: "succeeded" });
 
-              // Write element directly to canvas (backend-driven insertion)
               let elementId: string | undefined;
               if (canvasId && result.signed_url) {
-                try {
-                  const writerClient = createClient(
-                    accessToken,
-                  ) as UserSupabaseClient;
-                  const explicitPlacement =
-                    input.placementX != null && input.placementY != null
-                      ? {
-                          x: input.placementX,
-                          y: input.placementY,
-                          width: input.placementWidth ?? 640,
-                          height: input.placementHeight ?? 360,
-                        }
-                      : undefined;
+                const writerClient = createClient(
+                  accessToken,
+                ) as UserSupabaseClient;
+                const explicitPlacement =
+                  input.placementX != null && input.placementY != null
+                    ? {
+                        x: input.placementX,
+                        y: input.placementY,
+                        width: input.placementWidth ?? 640,
+                        height: input.placementHeight ?? 360,
+                      }
+                    : undefined;
 
-                  const insertResult = await insertVideoElement(
-                    writerClient,
-                    {
-                      canvasId,
-                      signedUrl: result.signed_url,
-                      width: result.width ?? 1280,
-                      height: result.height ?? 720,
-                      mimeType: result.mime_type ?? "video/mp4",
-                      ...(result.duration_seconds != null
-                        ? { durationSeconds: result.duration_seconds }
-                        : {}),
-                      title: input.title,
-                      prompt: input.prompt,
-                    },
-                    explicitPlacement,
-                  );
-                  elementId = insertResult.elementId;
+                const insertResult = await insertVideoElement(
+                  writerClient,
+                  {
+                    canvasId,
+                    signedUrl: result.signed_url,
+                    width: result.width ?? 1280,
+                    height: result.height ?? 720,
+                    mimeType: result.mime_type ?? "video/mp4",
+                    ...(result.duration_seconds != null
+                      ? { durationSeconds: result.duration_seconds }
+                      : {}),
+                    title: input.title,
+                    prompt: input.prompt,
+                  },
+                  explicitPlacement,
+                );
+                elementId = insertResult.elementId;
 
-                  // Notify connected frontends to refresh canvas
-                  options.eventBuffer?.publish(canvasId, {
-                    type: "canvas.sync" as const,
-                    runId,
-                    timestamp: new Date().toISOString(),
-                  });
-                  jobLap("canvas_element_inserted", { elementId });
-                } catch (insertErr) {
-                  // Graceful degradation: log error but still return result
-                  console.error(
-                    "[submitVideoJob] canvas insert failed:",
-                    insertErr,
-                  );
-                }
+                options.eventBuffer?.publish(canvasId, {
+                  type: "canvas.sync" as const,
+                  runId,
+                  timestamp: new Date().toISOString(),
+                });
+                jobLap("canvas_element_inserted", { elementId });
               }
 
               return {
@@ -1067,22 +967,21 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           // of what's on the canvas without needing to call inspect_canvas first.
           let canvasSummary: string | null = null;
           if (run.canvasId && run.accessToken && options.createUserClient) {
-            try {
-              const canvasClient = options.createUserClient(
-                run.accessToken,
-              ) as UserSupabaseClient;
-              const { data: canvasData } = await canvasClient
-                .from("canvases")
-                .select("content")
-                .eq("id", run.canvasId)
-                .single();
-              if (canvasData?.content) {
-                canvasSummary = buildCanvasSummaryForContext(
-                  canvasData.content,
-                );
-              }
-            } catch {
-              // Non-critical — agent can still call inspect_canvas manually
+            const canvasClient = options.createUserClient(
+              run.accessToken,
+            ) as UserSupabaseClient;
+            const { data: canvasData, error: canvasError } = await canvasClient
+              .from("canvases")
+              .select("content")
+              .eq("id", run.canvasId)
+              .single();
+            if (canvasError) {
+              throw new Error(
+                `Failed to load live canvas context for agent run: ${canvasError.message}`,
+              );
+            }
+            if (canvasData?.content) {
+              canvasSummary = buildCanvasSummaryForContext(canvasData.content);
             }
           }
 

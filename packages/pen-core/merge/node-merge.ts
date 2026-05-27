@@ -2,14 +2,14 @@
 //
 // Pure 3-way merge of PenDocument trees.
 
-import type { PenDocument, PenNode } from '@cucumber/pen-types';
+import type { PenDocument, PenNode } from "@cucumber/pen-types";
 import {
+  type IndexedNode,
   indexNodesById,
+  jsonEqual,
   nodeFieldsEqual,
   stripChildren,
-  jsonEqual,
-  type IndexedNode,
-} from './merge-helpers.js';
+} from "./merge-helpers.js";
 
 export interface MergeInput {
   base: PenDocument;
@@ -18,13 +18,13 @@ export interface MergeInput {
 }
 
 export type NodeConflictReason =
-  | 'both-modified-same-field'
-  | 'modify-vs-delete'
-  | 'add-vs-add-different'
-  | 'reparent-conflict';
+  | "both-modified-same-field"
+  | "modify-vs-delete"
+  | "add-vs-add-different"
+  | "reparent-conflict";
 
 export interface NodeConflict {
-  pageId: string | null;
+  pageId: string;
   nodeId: string;
   reason: NodeConflictReason;
   base: PenNode | null;
@@ -32,7 +32,12 @@ export interface NodeConflict {
   theirs: PenNode | null;
 }
 
-export type DocFieldName = 'variables' | 'themes' | 'pages-order' | 'name' | 'version';
+export type DocFieldName =
+  | "variables"
+  | "themes"
+  | "pages-order"
+  | "name"
+  | "version";
 
 export interface DocFieldConflict {
   field: DocFieldName;
@@ -88,7 +93,11 @@ export function mergeDocuments(input: MergeInput): MergeResult {
   const oursIdx = indexNodesById(ours);
   const theirsIdx = indexNodesById(theirs);
 
-  const allIds = new Set<string>([...baseIdx.keys(), ...oursIdx.keys(), ...theirsIdx.keys()]);
+  const allIds = new Set<string>([
+    ...baseIdx.keys(),
+    ...oursIdx.keys(),
+    ...theirsIdx.keys(),
+  ]);
 
   const decisions = new Map<string, NodeDecision>();
   const nodeConflicts: NodeConflict[] = [];
@@ -106,30 +115,40 @@ export function mergeDocuments(input: MergeInput): MergeResult {
   const docFieldConflicts: DocFieldConflict[] = [];
 
   // Merge doc-level scalar fields (name, version)
-  mergeDocScalarField(base, ours, theirs, 'name', merged, docFieldConflicts);
-  mergeDocScalarField(base, ours, theirs, 'version', merged, docFieldConflicts);
+  mergeDocScalarField(base, ours, theirs, "name", merged, docFieldConflicts);
+  mergeDocScalarField(base, ours, theirs, "version", merged, docFieldConflicts);
 
   // Merge variables (object map)
   merged.variables = mergeRecord(
     base.variables,
     ours.variables,
     theirs.variables,
-    'variables',
+    "variables",
     docFieldConflicts,
   );
   if (merged.variables && Object.keys(merged.variables).length === 0) {
-    delete merged.variables;
+    merged.variables = undefined;
   }
 
   // Merge themes (object map of string[])
-  merged.themes = mergeRecord(base.themes, ours.themes, theirs.themes, 'themes', docFieldConflicts);
+  merged.themes = mergeRecord(
+    base.themes,
+    ours.themes,
+    theirs.themes,
+    "themes",
+    docFieldConflicts,
+  );
   if (merged.themes && Object.keys(merged.themes).length === 0) {
-    delete merged.themes;
+    merged.themes = undefined;
   }
 
   // Merge pages order (only if both sides have pages)
   if (base.pages && ours.pages && theirs.pages) {
-    const reorderConflict = detectPagesOrderConflict(base.pages, ours.pages, theirs.pages);
+    const reorderConflict = detectPagesOrderConflict(
+      base.pages,
+      ours.pages,
+      theirs.pages,
+    );
     if (reorderConflict) {
       docFieldConflicts.push(reorderConflict);
     }
@@ -149,7 +168,7 @@ function mergeDocScalarField(
   base: PenDocument,
   ours: PenDocument,
   theirs: PenDocument,
-  field: 'name' | 'version',
+  field: "name" | "version",
   merged: PenDocument,
   conflicts: DocFieldConflict[],
 ): void {
@@ -191,14 +210,18 @@ function mergeRecord<V>(
   base: Record<string, V> | undefined,
   ours: Record<string, V> | undefined,
   theirs: Record<string, V> | undefined,
-  fieldName: 'variables' | 'themes',
+  fieldName: "variables" | "themes",
   conflicts: DocFieldConflict[],
 ): Record<string, V> | undefined {
   if (!base && !ours && !theirs) return undefined;
   const b = base ?? {};
   const o = ours ?? {};
   const t = theirs ?? {};
-  const allKeys = new Set<string>([...Object.keys(b), ...Object.keys(o), ...Object.keys(t)]);
+  const allKeys = new Set<string>([
+    ...Object.keys(b),
+    ...Object.keys(o),
+    ...Object.keys(t),
+  ]);
   const merged: Record<string, V> = {};
   for (const key of allKeys) {
     const bv = b[key];
@@ -290,9 +313,9 @@ function mergeRecord<V>(
  * leaves the pages in ours' order (the rebuildDocument step already did this).
  */
 function detectPagesOrderConflict(
-  basePages: PenDocument['pages'],
-  oursPages: PenDocument['pages'],
-  theirsPages: PenDocument['pages'],
+  basePages: PenDocument["pages"],
+  oursPages: PenDocument["pages"],
+  theirsPages: PenDocument["pages"],
 ): DocFieldConflict | null {
   if (!basePages || !oursPages || !theirsPages) return null;
   const baseOrder = basePages.map((p) => p.id);
@@ -303,8 +326,8 @@ function detectPagesOrderConflict(
   if (!oursReordered || !theirsReordered) return null;
   if (sequenceEqual(oursOrder, theirsOrder)) return null;
   return {
-    field: 'pages-order',
-    path: 'pages-order',
+    field: "pages-order",
+    path: "pages-order",
     base: baseOrder,
     ours: oursOrder,
     theirs: theirsOrder,
@@ -326,7 +349,7 @@ function sequenceEqual(a: string[], b: string[]): boolean {
  *
  * Algorithm:
  *   1. Group decisions by (pageId, parentId).
- *   2. For each page in ours (or the legacy single page):
+ *   2. For each page in ours:
  *      a. Build the page's top-level children list from decisions where
  *         parentId === null and pageId === thisPageId.
  *      b. Recursively populate each container's children from decisions where
@@ -334,12 +357,15 @@ function sequenceEqual(a: string[], b: string[]): boolean {
  *   3. Within a parent, sort by `index` ascending; ties broken by id for
  *      determinism.
  */
-function rebuildDocument(scaffold: PenDocument, decisions: Map<string, NodeDecision>): PenDocument {
+function rebuildDocument(
+  scaffold: PenDocument,
+  decisions: Map<string, NodeDecision>,
+): PenDocument {
   // Group by parent for fast child lookup.
   const byParent = new Map<string, NodeDecision[]>();
   for (const decision of decisions.values()) {
     if (!decision.mergedNode) continue;
-    const key = `${decision.pageId ?? '_'}::${decision.parentId ?? '_'}`;
+    const key = `${decision.pageId ?? "_"}::${decision.parentId ?? "_"}`;
     let bucket = byParent.get(key);
     if (!bucket) {
       bucket = [];
@@ -348,15 +374,15 @@ function rebuildDocument(scaffold: PenDocument, decisions: Map<string, NodeDecis
     bucket.push(decision);
   }
 
-  function buildChildren(pageId: string | null, parentId: string | null): PenNode[] {
-    const key = `${pageId ?? '_'}::${parentId ?? '_'}`;
+  function buildChildren(pageId: string, parentId: string | null): PenNode[] {
+    const key = `${pageId ?? "_"}::${parentId ?? "_"}`;
     const bucket = byParent.get(key);
     if (!bucket) return [];
     // Stable sort by (index, id).
     const sorted = [...bucket].sort((a, b) => {
       if (a.index !== b.index) return a.index - b.index;
-      const ai = a.mergedNode ? a.mergedNode.id : '';
-      const bi = b.mergedNode ? b.mergedNode.id : '';
+      const ai = a.mergedNode ? a.mergedNode.id : "";
+      const bi = b.mergedNode ? b.mergedNode.id : "";
       return ai.localeCompare(bi);
     });
     return sorted.map((decision) => {
@@ -366,30 +392,28 @@ function rebuildDocument(scaffold: PenDocument, decisions: Map<string, NodeDecis
       // (containers). Following the existing PenDocument convention, attach
       // the children only if the node already had `children` or if there are
       // any children to attach.
-      if (children.length > 0 || (node as { children?: PenNode[] }).children !== undefined) {
+      if (
+        children.length > 0 ||
+        (node as { children?: PenNode[] }).children !== undefined
+      ) {
         return { ...node, children } as PenNode;
       }
       return node;
     });
   }
 
-  // Use ours' page structure as the scaffold.
-  if (scaffold.pages && scaffold.pages.length > 0) {
-    const newPages = scaffold.pages.map((page) => ({
-      id: page.id,
-      name: page.name,
-      children: buildChildren(page.id, null),
-    }));
-    return {
-      ...scaffold,
-      pages: newPages,
-      children: [],
-    };
+  if (!Array.isArray(scaffold.pages) || scaffold.pages.length === 0) {
+    throw new Error("PenDocument must include non-empty pages.");
   }
-  // Legacy single-page mode.
+  const newPages = scaffold.pages.map((page) => ({
+    id: page.id,
+    name: page.name,
+    children: buildChildren(page.id, null),
+  }));
   return {
     ...scaffold,
-    children: buildChildren(null, null),
+    pages: newPages,
+    children: [],
   };
 }
 
@@ -433,7 +457,7 @@ function classifyNode(
       conflict: {
         pageId: o.pageId,
         nodeId: id,
-        reason: 'modify-vs-delete',
+        reason: "modify-vs-delete",
         base: b.node,
         ours: o.node,
         theirs: null,
@@ -455,7 +479,7 @@ function classifyNode(
       conflict: {
         pageId: t.pageId,
         nodeId: id,
-        reason: 'modify-vs-delete',
+        reason: "modify-vs-delete",
         base: b.node,
         ours: null,
         theirs: t.node,
@@ -489,7 +513,7 @@ function classifyNode(
       conflict: {
         pageId: o.pageId,
         nodeId: id,
-        reason: 'add-vs-add-different',
+        reason: "add-vs-add-different",
         base: null,
         ours: o.node,
         theirs: t.node,
@@ -612,7 +636,7 @@ function mergeThreeWay(
       conflict: {
         pageId: mergedPageId,
         nodeId: id,
-        reason: 'reparent-conflict',
+        reason: "reparent-conflict",
         base: b.node,
         ours: o.node,
         theirs: t.node,
@@ -631,7 +655,7 @@ function mergeThreeWay(
       conflict: {
         pageId: mergedPageId,
         nodeId: id,
-        reason: 'both-modified-same-field',
+        reason: "both-modified-same-field",
         base: b.node,
         ours: o.node,
         theirs: t.node,

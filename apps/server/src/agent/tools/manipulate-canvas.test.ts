@@ -1,6 +1,6 @@
 import {
-  type PenNode,
   type ContainerRole,
+  type PenNode,
   applyCanvasOperation,
   createEmptyDocument,
   createNodeId,
@@ -96,7 +96,7 @@ describe("createManipulateCanvasTool", () => {
     expect(textNode).toBeTruthy();
     expect(textNode).toMatchObject({
       type: "text",
-      text: "生成标题",
+      content: "生成标题",
     });
   });
 
@@ -160,7 +160,7 @@ describe("createManipulateCanvasTool", () => {
     expect(textNode).toBeTruthy();
     expect(textNode).toMatchObject({
       type: "text",
-      text: "关键视觉方向",
+      content: "关键视觉方向",
     });
   });
 });

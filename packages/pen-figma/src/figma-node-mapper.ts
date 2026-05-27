@@ -104,7 +104,7 @@ export function figmaToPenDocument(
   decoded: FigmaDecodedFile,
   fileName: string,
   pageIndex = 0,
-  layoutMode: FigmaImportLayoutMode = "openpencil",
+  layoutMode: FigmaImportLayoutMode = "cucumber",
 ): {
   document: PenDocument;
   warnings: string[];
@@ -182,7 +182,7 @@ export function figmaToPenDocument(
 export function figmaAllPagesToPenDocument(
   decoded: FigmaDecodedFile,
   fileName: string,
-  layoutMode: FigmaImportLayoutMode = "openpencil",
+  layoutMode: FigmaImportLayoutMode = "cucumber",
 ): {
   document: PenDocument;
   warnings: string[];
@@ -284,7 +284,7 @@ export function getFigmaPages(
  */
 export function figmaNodeChangesToPenNodes(
   decoded: FigmaDecodedFile,
-  layoutMode: FigmaImportLayoutMode = "openpencil",
+  layoutMode: FigmaImportLayoutMode = "cucumber",
 ): {
   nodes: PenNode[];
   warnings: string[];

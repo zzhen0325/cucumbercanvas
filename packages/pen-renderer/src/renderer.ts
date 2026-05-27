@@ -24,8 +24,8 @@ import { SkiaNodeRenderer } from "./node-renderer.js";
 import { parseColor } from "./paint-utils.js";
 import { SpatialIndex } from "./spatial-index.js";
 import type {
-  EditorOverlayState,
   EditorLineOverlay,
+  EditorOverlayState,
   EditorPenPreviewOverlay,
   EditorShapeOverlay,
   PenRendererOptions,
@@ -53,7 +53,7 @@ const RESIZE_HANDLES: ResizeHandleDirection[] = [
 ];
 
 /**
- * Standalone read-only renderer for OpenPencil (.op) design files.
+ * Standalone read-only renderer for Cucumber (.op) design files.
  * No React, no Zustand, no TanStack — just pure TypeScript + CanvasKit.
  *
  * @example
@@ -502,7 +502,10 @@ export class PenRenderer {
       canvas,
       this.editorOverlays.shapePreview ?? null,
     );
-    this.drawLinePreviewOverlay(canvas, this.editorOverlays.linePreview ?? null);
+    this.drawLinePreviewOverlay(
+      canvas,
+      this.editorOverlays.linePreview ?? null,
+    );
 
     for (const rn of this.getSelectedOverlayRenderNodes()) {
       if (rn.node.type === "text") continue;

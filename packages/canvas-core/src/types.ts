@@ -29,7 +29,7 @@ export type {
   RefNode,
   VideoEmbedNode,
   PenNode,
-} from '@cucumber/pen-types';
+} from "@cucumber/pen-types";
 
 // Re-export style types
 export type {
@@ -45,36 +45,20 @@ export type {
   ShadowEffect,
   PenEffect,
   StyledTextSegment,
-} from '@cucumber/pen-types';
+} from "@cucumber/pen-types";
 
-import type { AgentBinding, PenDocument, PenNode } from '@cucumber/pen-types';
-import type { PenPage } from '@cucumber/pen-types';
-
-// ---------------------------------------------------------------------------
-// Backward-compatible type aliases (pre-Phase1 consumers)
-// ---------------------------------------------------------------------------
-
-/** @deprecated Use PenDocument directly */
-export type CucumberCanvasDocument = PenDocument;
+import type { AgentBinding, PenDocument, PenNode } from "@cucumber/pen-types";
+import type { PenPage } from "@cucumber/pen-types";
 
 export type CanvasPage = PenPage;
 
-export interface PageAwareCanvasDocument extends PenDocument {
-  pages: CanvasPage[];
-  activePageId: string;
-  viewport: CanvasViewport;
+export interface CucumberCanvasDocument extends PenDocument {
+  pages?: CanvasPage[];
+  activePageId?: string;
+  viewport?: CanvasViewport;
 }
 
-export type CanvasDocumentState = PageAwareCanvasDocument;
-
-/** @deprecated Use PenNode directly */
-export type CanvasNode = PenNode;
-
-/** @deprecated Use PenNode (FrameNode or GroupNode) */
-export type ContainerNode = PenNode;
-
-/** @deprecated Use PenNode */
-export type ConnectorNode = PenNode;
+export type CanvasDocumentState = CucumberCanvasDocument;
 
 // ---------------------------------------------------------------------------
 // Canvas-level types (not in pen-types)
@@ -105,7 +89,7 @@ export interface CanvasAsset {
   name?: string;
   width?: number;
   height?: number;
-  source?: 'upload' | 'generated' | 'canvas-ref';
+  source?: "upload" | "generated" | "canvas-ref";
 }
 
 /** Lightweight node summary for agent context */
@@ -121,9 +105,9 @@ export interface AgentContext {
   agentId: string;
   containerId: string;
   containerPath: string[];
-  effectiveContext: import('@cucumber/pen-types').ContextSlots;
+  effectiveContext: import("@cucumber/pen-types").ContextSlots;
   visibleNodes: NodeSummary[];
-  permissions: ('read' | 'write' | 'spawn')[];
+  permissions: ("read" | "write" | "spawn")[];
   siblings: { containerId: string; agentId?: string; status?: string }[];
 }
 
@@ -140,65 +124,64 @@ export type PageAwareCanvasOperation<Operation extends object> = Operation &
 
 export type CanvasOperation =
   | PageAwareCanvasOperation<{
-      type: 'insertNode';
+      type: "insertNode";
       node: PenNode;
       parentId?: string | null;
-      /** @deprecated Use parentId */
-      containerId?: string | null;
       index?: number;
       agentId?: string;
     }>
   | PageAwareCanvasOperation<{
-      type: 'updateNode';
+      type: "updateNode";
       nodeId: string;
       updates: Partial<PenNode>;
+      parentId?: string | null;
       agentId?: string;
     }>
   | PageAwareCanvasOperation<{
-      type: 'deleteNode';
+      type: "deleteNode";
       nodeId: string;
+      parentId?: string | null;
       agentId?: string;
     }>
   | PageAwareCanvasOperation<{
-      type: 'setSelection';
+      type: "setSelection";
       nodeIds: string[];
     }>
   | PageAwareCanvasOperation<{
-      type: 'moveNode';
+      type: "moveNode";
       nodeId: string;
       newParentId?: string | null;
       index?: number;
     }>
   | PageAwareCanvasOperation<{
-      type: 'groupNodes';
+      type: "groupNodes";
       groupId: string;
       nodeIds: string[];
       title?: string;
     }>
   | PageAwareCanvasOperation<{
-      type: 'ungroupNode';
+      type: "ungroupNode";
       groupId: string;
     }>
   | PageAwareCanvasOperation<{
-      type: 'alignNodes';
+      type: "alignNodes";
       nodeIds: string[];
-      alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom';
+      alignment: "left" | "center" | "right" | "top" | "middle" | "bottom";
     }>
   | PageAwareCanvasOperation<{
-      type: 'reorderNode';
+      type: "reorderNode";
       nodeId: string;
-      direction?: 'forward' | 'backward' | 'front' | 'back';
+      direction?: "forward" | "backward" | "front" | "back";
       targetParentId?: string | null;
       targetIndex?: number;
     }>
   | PageAwareCanvasOperation<{
-      type: 'bindAgent';
+      type: "bindAgent";
       nodeId?: string;
       binding: AgentBinding;
-      containerId?: string;
     }>
   | {
-      type: 'createDataFlowEdge';
+      type: "createDataFlowEdge";
       edgeId: string;
       sourceNodeId: string;
       sourcePortId: string;
@@ -206,7 +189,7 @@ export type CanvasOperation =
       targetPortId: string;
     }
   | {
-      type: 'removeDataFlowEdge';
+      type: "removeDataFlowEdge";
       edgeId: string;
     };
 
@@ -214,20 +197,31 @@ export type CanvasOperation =
 // Import metadata (Figma/SVG)
 // ---------------------------------------------------------------------------
 
-export type CanvasImportSource = 'svg-import' | 'figma-paste' | 'image-paste';
+export type CanvasImportSource = "svg-import" | "figma-paste" | "image-paste";
 
 export type CanvasImportWarningCode =
-  | 'unsupported_tag'
-  | 'partial_fidelity'
-  | 'layout_degraded'
-  | 'component_metadata_dropped'
-  | 'effects_dropped';
+  | "unsupported_tag"
+  | "partial_fidelity"
+  | "layout_degraded"
+  | "component_metadata_dropped"
+  | "effects_dropped";
 
-export type CanvasImportedLayoutMode = 'horizontal' | 'vertical';
-export type CanvasImportedLayoutAlign = 'start' | 'center' | 'end' | 'space_between' | 'baseline';
-export type CanvasImportedSizingMode = 'fixed' | 'fit_content' | 'fill_container';
-export type CanvasImportedPositioningMode = 'auto' | 'absolute';
-export type CanvasImportedPadding = number | [number, number] | [number, number, number, number];
+export type CanvasImportedLayoutMode = "horizontal" | "vertical";
+export type CanvasImportedLayoutAlign =
+  | "start"
+  | "center"
+  | "end"
+  | "space_between"
+  | "baseline";
+export type CanvasImportedSizingMode =
+  | "fixed"
+  | "fit_content"
+  | "fill_container";
+export type CanvasImportedPositioningMode = "auto" | "absolute";
+export type CanvasImportedPadding =
+  | number
+  | [number, number]
+  | [number, number, number, number];
 
 export interface CanvasImportedAutoLayoutMeta {
   layout?: CanvasImportedLayoutMode;
@@ -237,7 +231,7 @@ export interface CanvasImportedAutoLayoutMeta {
   alignItems?: CanvasImportedLayoutAlign;
   widthMode?: CanvasImportedSizingMode;
   heightMode?: CanvasImportedSizingMode;
-  alignSelf?: 'auto' | 'start' | 'center' | 'end' | 'stretch' | 'baseline';
+  alignSelf?: "auto" | "start" | "center" | "end" | "stretch" | "baseline";
   positioning?: CanvasImportedPositioningMode;
   grow?: number;
   clipContent?: boolean;
@@ -263,7 +257,7 @@ export interface DataFlowEdge {
   id: string;
   source: { nodeId: string; portId: string };
   target: { nodeId: string; portId: string };
-  status?: 'idle' | 'flowing' | 'error';
+  status?: "idle" | "flowing" | "error";
   transform?: string;
 }
 
@@ -271,8 +265,12 @@ export interface DataFlowEdge {
 // Helpers
 // ---------------------------------------------------------------------------
 
-export function isCanvasImportSource(value: unknown): value is CanvasImportSource {
-  return value === 'svg-import' || value === 'figma-paste' || value === 'image-paste';
+export function isCanvasImportSource(
+  value: unknown,
+): value is CanvasImportSource {
+  return (
+    value === "svg-import" || value === "figma-paste" || value === "image-paste"
+  );
 }
 
 export function getCanvasImportedNodeMeta(

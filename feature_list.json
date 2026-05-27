@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-27T22:50:00+08:00",
+  "updatedAt": "2026-05-27T23:40:00+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -41,15 +41,15 @@
       "status": "active",
       "priority": "P0",
       "owner": "agent-engineering",
-      "summary": "Deep Agents/LangChain runtime with SSE streaming, MCP-compatible typed tools, live editor canvas document access, OpenPencil-compatible page-aware atomic batch canvas read/write, page management, layered design skeleton/content/refine tools with scoped placeholder replacement and content ID normalization, Figma import, style/variable, Phase C prompt-to-canvas planning/execution, and design-as-code codegen route tools with assembled file outputs plus direct selection export to React/HTML/Vue and degradation warnings, persistence, and workspace skill execution.",
+      "summary": "Deep Agents/LangChain runtime with streaming, MCP-compatible typed tools, live editor canvas document access, Cucumber structured canvas read/write, page management, layered design/content/refine tools, Figma import, style/variable tools, prompt-to-canvas planning/execution, design-as-code export to React/HTML/Vue, persistence, and workspace skill execution.",
       "artifacts": [
         "apps/server/src/agent/deep-agent.ts",
         "apps/server/src/agent/runtime.ts",
         "apps/server/src/agent/tools/index.ts",
         "apps/server/src/features/canvas/live-canvas-service.ts",
         "apps/server/src/mcp/server.ts",
-        "apps/server/src/mcp/tools/open-pencil-canvas.ts",
-        "apps/server/src/mcp/tools/open-pencil-canvas.test.ts",
+        "apps/server/src/mcp/tools/structured-canvas.ts",
+        "apps/server/src/mcp/tools/structured-canvas.test.ts",
         "apps/server/src/mcp/deepagents-bridge.ts",
         "apps/server/src/agent/workspace-skills.ts"
       ]
@@ -73,7 +73,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "generation-engineering",
-      "summary": "Seedream/Volcengine-backed image and video generation through provider adapters, background_jobs state, Supabase tasks leasing, worker execution, prompt normalization, UI panels, and grouped canvas-native image generation flows.",
+      "summary": "Seedream/Volcengine-backed image and video generation through provider adapters, background_jobs state, Supabase task leasing, worker execution, prompt normalization, and direct Cucumber canvas asset insertion.",
       "artifacts": [
         "apps/server/src/generation/providers/seedream.ts",
         "apps/server/src/generation/providers/seedream-prompt.ts",
@@ -107,7 +107,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "product-engineering",
-      "summary": "Canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit behind a standalone CanvasApi contract with explicit runtime document/state types, and the P2 import/edit/export path combines complete clipboard MIME/file/blob capture, paste-event plus Clipboard API MIME enrichment, raster image paste assets, warning-rich SVG/Figma fallback metadata, OpenPencil `pen-figma` native clipboard binary decode, native-failure SVG/raster MIME priority, paste strategy diagnostics, instance overrides, OpenPencil-aligned Figma stroke/fill/text/image-fill mapping, direct auto-layout-to-PenNode sizing/layout mapping, transform/style/defs/clip/filter-aware SVG import, robust paste event handling, renderer-native selection/marquee/pen/line/arrow/shape previews with scene-coordinate hit-testing, nested line endpoint rendering, arrowhead rendering, clip-aware hit regions, pointer-position frame reparenting, drag-out frame/group auto-detach, richer PenNode typography/component/ref/variable property editing, direct React/HTML selection export, path drag creation, retired Excalidraw/Pixi/unused pen-engine shadow runtime packages, and runnable Playwright smoke coverage.",
+      "summary": "Cucumber canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit behind a standalone CanvasApi contract, PenDocument.pages is the only supported durable shape, legacy flat-map/root-children data fails fast, and import/edit/export flows produce editable PenNode trees with explicit degradation warnings.",
       "artifacts": [
         "packages/canvas-core",
         "packages/pen-figma",
@@ -157,16 +157,17 @@
         "apps/server/src/agent/tools/inspect-canvas.ts",
         "packages/shared/src/contracts.ts",
         "packages/shared/src/ws-protocol.ts",
-        "supabase/migrations/20260522000001_cucumber_canvas_only.sql"
+        "supabase/migrations/20260522000001_cucumber_canvas_only.sql",
+        "docs/tech/cucumber-canvas-foundation.md"
       ]
     },
     {
-      "id": "openpencil-phase-a-editor",
-      "name": "OpenPencil Phase A editor controls",
+      "id": "cucumber-canvas-editor-controls",
+      "name": "Cucumber canvas editor controls",
       "status": "done",
       "priority": "P0",
       "owner": "product-engineering",
-      "summary": "OpenPencil Phase A editor migration with page-aware canvas operations, page tabs, editor toolbar, boolean toolbar, and advanced drawing/editing controls on the live Skia canvas.",
+      "summary": "Cucumber canvas editor controls with page-aware canvas operations, page tabs, editor toolbar, boolean toolbar, and advanced drawing/editing controls on the live Skia canvas.",
       "scope": "Multi-page canvas UI, editor toolbar, boolean toolbar, and advanced drawing/editing controls",
       "artifacts": [
         "apps/web/src/components/canvas/skia-canvas.tsx",
@@ -178,12 +179,12 @@
       ]
     },
     {
-      "id": "openpencil-phase-b-design-system",
-      "name": "OpenPencil Phase B design system panel",
+      "id": "cucumber-canvas-design-system",
+      "name": "Cucumber canvas design system panel",
       "status": "done",
       "priority": "P0",
       "owner": "product-engineering",
-      "summary": "OpenPencil Phase B migration with component creation/instances, document variables and theme axes, and a local icon library rendered through the Skia icon lookup path.",
+      "summary": "Cucumber canvas design-system slice with component creation/instances, document variables and theme axes, and a local icon library rendered through the Skia icon lookup path.",
       "scope": "Component system, variables/theme panel, and icon library",
       "artifacts": [
         "apps/web/src/components/canvas-design-system-panel.tsx",
@@ -195,34 +196,39 @@
       ]
     },
     {
-      "id": "openpencil-phase-c-codegen-orchestration",
-      "name": "OpenPencil Phase C codegen and orchestration",
+      "id": "cucumber-structured-canvas-orchestration",
+      "name": "Cucumber structured canvas orchestration",
       "status": "active",
       "priority": "P0",
       "owner": "agent-engineering",
-      "summary": "Phase C thin slice with prompt-to-canvas planning, live canvas container materialization through MCP tools, structured orchestration logs, and design-as-code export to React, HTML, and Vue.",
+      "summary": "Prompt-to-canvas planning, live canvas container materialization through Cucumber structured MCP tools, structured orchestration logs, and design-as-code export to React, HTML, and Vue.",
       "scope": "Prompt-to-canvas orchestration MCP tools, section-level concurrent execution, live canvas writes, and Vue codegen export alongside React/HTML.",
       "artifacts": [
-        "docs/superpowers/specs/2026-05-27-openpencil-phase-c-codegen-orchestration-design.md",
-        "docs/superpowers/plans/2026-05-27-openpencil-phase-c-codegen-orchestration.md",
-        "apps/server/src/mcp/tools/open-pencil-canvas.ts",
-        "apps/server/src/mcp/tools/open-pencil-canvas.test.ts",
+        "docs/tech/cucumber-canvas-foundation.md",
+        "apps/server/src/mcp/tools/structured-canvas.ts",
+        "apps/server/src/mcp/tools/structured-canvas.test.ts",
         "apps/server/src/agent/prompts/cucumber-main.ts",
         "docs/tech/canvas-design-integration.md"
       ]
     },
     {
-      "id": "openpencil-b0-web-canvas-parity",
-      "name": "OpenPencil B0 Web canvas parity",
+      "id": "cucumber-canvas-foundation-cleanup",
+      "name": "Cucumber canvas foundation cleanup",
       "status": "active",
       "priority": "P0",
       "owner": "product-engineering",
-      "summary": "Parity-matrix-first B0 implementation that audits OpenPencil Web canvas main-path capabilities, has closed editor/import/design-system/Agent/MCP/export/verification gaps, and records desktop/CLI/Git/i18n/collaboration/plugin/native-codegen surfaces as roadmap-only.",
-      "scope": "Web canvas parity matrix plus P0/P1 implementation for editor, import, design system, Agent generation, MCP, export, and verification.",
+      "summary": "Structure cleanup that keeps the deleted local reference tree out of the repo, removes legacy runtime compatibility, makes PenDocument.pages the only supported canvas shape, and documents the next development order: canvas foundation, tools/container types, Agent canvas read/write, then Agent runtime tuning.",
+      "scope": "Canvas and Agent structure cleanup, fail-fast legacy data handling, Cucumber structured canvas tooling, and documentation alignment.",
       "artifacts": [
-        "docs/tech/openpencil-web-canvas-parity.md",
-        "docs/superpowers/specs/2026-05-27-openpencil-b0-web-canvas-parity-design.md",
-        "docs/superpowers/plans/2026-05-27-openpencil-b0-web-canvas-parity.md"
+        "docs/tech/cucumber-canvas-foundation.md",
+        "AGENTS.md",
+        "docs/architecture.md",
+        "docs/tech/agent-runtime-workflow.md",
+        "packages/canvas-core/src/pages.ts",
+        "packages/canvas-core/src/document.ts",
+        "apps/server/src/mcp/tools/structured-canvas.ts",
+        "apps/server/src/features/canvas/canvas-element-writer.ts",
+        "apps/server/src/agent/runtime.ts"
       ]
     },
     {

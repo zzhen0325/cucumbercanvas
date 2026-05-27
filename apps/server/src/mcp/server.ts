@@ -12,9 +12,9 @@ import { createGenerateImageMcpTool } from "./tools/generate-image.js";
 import { createGenerateVideoMcpTool } from "./tools/generate-video.js";
 import { createInspectCanvasMcpTool } from "./tools/inspect-canvas.js";
 import { createManipulateCanvasMcpTool } from "./tools/manipulate-canvas.js";
-import { createOpenPencilCanvasMcpTools } from "./tools/open-pencil-canvas.js";
 import { createPersistSandboxFileMcpTool } from "./tools/persist-sandbox-file.js";
 import { createProjectSearchMcpTool } from "./tools/project-search.js";
+import { createStructuredCanvasMcpTools } from "./tools/structured-canvas.js";
 import type {
   CucumberMcpTool,
   McpListedTool,
@@ -60,7 +60,7 @@ export function createCucumberMcpServer(
         ? { liveCanvasService: deps.liveCanvasService }
         : {}),
     }),
-    ...createOpenPencilCanvasMcpTools({
+    ...createStructuredCanvasMcpTools({
       ...(deps.liveCanvasService
         ? { liveCanvasService: deps.liveCanvasService }
         : {}),

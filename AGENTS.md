@@ -24,8 +24,12 @@ This is a pnpm/turbo monorepo:
 
 - `apps/web/`: Next.js App Router frontend.
 - `apps/server/`: Fastify backend, Deep Agents/LangChain runtime, Supabase access, generation workers, WebSocket streaming.
+- `packages/canvas-core/`: canonical Cucumber canvas document model, page helpers, operations, import/export helpers, clipboard, geometry, history, and agent context helpers.
+- `packages/pen-core/`: Pen document tree utilities, layout, boolean ops, merge/diff, normalization, and shape/path helpers.
+- `packages/pen-types/`: Pen document, page, node, style, variable, layout, and theme contracts.
+- `packages/pen-renderer/`: CanvasKit/Skia renderer, hit testing, thumbnails, viewport, fonts, and image loading.
+- `packages/pen-figma/`: Figma clipboard/file parsing and conversion into Cucumber Pen nodes.
 - `packages/shared/`: cross-app contracts, event schemas, job contracts, and shared errors.
-- `packages/ui/`: shared UI package boundary.
 - `packages/config/`: shared TypeScript configuration package.
 - `skills/`: workspace skills loaded by the backend agent runtime.
 - `supabase/`: local Supabase config and migrations.
@@ -86,6 +90,17 @@ For complex tasks:
 - Do not bypass persistence, auth, or Supabase access helpers unless the task explicitly requires it.
 - For long-running agent or generation flows, include enough structured log context to correlate session, project, job, and provider failures.
 - Treat skill execution, file persistence, and external generation providers as production boundaries: sanitize inputs, return typed errors, and preserve diagnosability.
+
+## Canvas And Agent Development Order
+
+Current development sequence:
+
+1. Canvas foundation first: stabilize `PenDocument.pages`, active page handling, selection, rendering, persistence, import/export, and performance.
+2. Canvas tools and container types next: make tools easy to extend, keep containers as Agent output units, and keep canvas operations small, typed, logged, and page-aware.
+3. Agent canvas read/write next: Agent must rely on the current live canvas state before editing, using `canvas.bind` → `CanvasEditor` RPC → `LiveCanvasService` → `inspect_canvas` / `manipulate_canvas` / Cucumber structured canvas tools.
+4. Agent runtime workflow after that: tune Deep Agents/LangGraph runtime, prompt layers, tool selection, skill access, and workflow orchestration only after the canvas read/write substrate is reliable.
+
+Canvas persistence rule: `PenDocument.pages` with a valid `activePageId` is the only supported durable canvas shape. Do not add runtime compatibility for old flat-map/root-children canvas formats. If old canvas data is encountered, fail fast with a clear error and handle any real production data repair as a separate migration or data-fix task.
 
 ## LangChain / LangGraph / Deep Agents
 

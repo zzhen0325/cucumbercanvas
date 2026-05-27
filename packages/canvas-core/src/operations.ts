@@ -1,5 +1,9 @@
-import type { GroupNode, PenDocument, PenNode } from '@cucumber/pen-types';
-import { CanvasOperationError, isAgentContainer, isContainerNode } from './context.js';
+import type { GroupNode, PenDocument, PenNode } from "@cucumber/pen-types";
+import {
+  CanvasOperationError,
+  isAgentContainer,
+  isContainerNode,
+} from "./context.js";
 import {
   cloneDocument,
   findNode,
@@ -9,94 +13,160 @@ import {
   getNodeBounds,
   isBoundsInside,
   setActiveChildren,
-} from './document.js';
-import type { CanvasBounds, CanvasOperation } from './types.js';
+} from "./document.js";
+import type { CanvasBounds, CanvasOperation } from "./types.js";
 
 export function applyCanvasOperation(
   doc: PenDocument,
   operation: CanvasOperation,
 ): PenDocument {
   const next = cloneDocument(doc);
-  const activePageId = 'activePageId' in operation ? operation.activePageId : undefined;
+  const activePageId =
+    "activePageId" in operation ? operation.activePageId : undefined;
   validateOperationActivePage(next, operation, activePageId);
 
   switch (operation.type) {
-    case 'insertNode': {
+    case "insertNode": {
       const node = structuredClone(operation.node);
-      const parentId = operation.parentId ?? operation.containerId ?? null;
-      assertAgentCanWrite(next, operation.agentId, parentId, activePageId, node);
+      const parentId = operation.parentId ?? null;
+      assertAgentCanWrite(
+        next,
+        operation.agentId,
+        parentId,
+        activePageId,
+        node,
+      );
       insertNodeInDoc(next, node, parentId, operation.index, activePageId);
       break;
     }
-    case 'updateNode': {
+    case "updateNode": {
       const existing = findNode(next, operation.nodeId, activePageId);
       if (!existing) {
-        throw new CanvasOperationError('node_not_found', `Node ${operation.nodeId} does not exist.`);
+        throw new CanvasOperationError(
+          "node_not_found",
+          `Node ${operation.nodeId} does not exist.`,
+        );
       }
-      const candidate = { ...existing, ...operation.updates, id: existing.id, type: existing.type } as PenNode;
-      const legacyContainerId = (operation as { containerId?: string | null }).containerId ?? null;
-      assertAgentCanWrite(next, operation.agentId, legacyContainerId, activePageId, candidate);
+      const candidate = {
+        ...existing,
+        ...operation.updates,
+        id: existing.id,
+        type: existing.type,
+      } as PenNode;
+      assertAgentCanWrite(
+        next,
+        operation.agentId,
+        operation.parentId ?? null,
+        activePageId,
+        candidate,
+      );
       updateNodeInDoc(next, operation.nodeId, candidate, activePageId);
       break;
     }
-    case 'deleteNode': {
+    case "deleteNode": {
       const existing = findNode(next, operation.nodeId, activePageId);
       if (!existing) {
-        throw new CanvasOperationError('node_not_found', `Node ${operation.nodeId} does not exist.`);
+        throw new CanvasOperationError(
+          "node_not_found",
+          `Node ${operation.nodeId} does not exist.`,
+        );
       }
-      assertAgentCanWrite(next, operation.agentId, null, activePageId);
+      assertAgentCanWrite(
+        next,
+        operation.agentId,
+        operation.parentId ?? null,
+        activePageId,
+      );
       removeNodeFromDoc(next, operation.nodeId, activePageId);
       break;
     }
-    case 'setSelection': {
+    case "setSelection": {
       getActiveChildren(next, activePageId);
       break;
     }
-    case 'moveNode': {
+    case "moveNode": {
       const existing = findNode(next, operation.nodeId, activePageId);
       if (!existing) {
-        throw new CanvasOperationError('node_not_found', `Node ${operation.nodeId} does not exist.`);
+        throw new CanvasOperationError(
+          "node_not_found",
+          `Node ${operation.nodeId} does not exist.`,
+        );
       }
-      moveNodeInDoc(next, operation.nodeId, operation.newParentId ?? null, operation.index, activePageId);
+      moveNodeInDoc(
+        next,
+        operation.nodeId,
+        operation.newParentId ?? null,
+        operation.index,
+        activePageId,
+      );
       break;
     }
-    case 'groupNodes': {
-      groupNodesInDoc(next, operation.groupId, operation.nodeIds, operation.title, activePageId);
+    case "groupNodes": {
+      groupNodesInDoc(
+        next,
+        operation.groupId,
+        operation.nodeIds,
+        operation.title,
+        activePageId,
+      );
       break;
     }
-    case 'ungroupNode': {
+    case "ungroupNode": {
       ungroupNodeInDoc(next, operation.groupId, activePageId);
       break;
     }
-    case 'alignNodes': {
-      alignNodesInDoc(next, operation.nodeIds, operation.alignment, activePageId);
+    case "alignNodes": {
+      alignNodesInDoc(
+        next,
+        operation.nodeIds,
+        operation.alignment,
+        activePageId,
+      );
       break;
     }
-    case 'bindAgent': {
-      const targetNodeId = operation.nodeId ?? operation.containerId;
-      if (!targetNodeId) throw new CanvasOperationError('invalid_operation', 'bindAgent requires nodeId.');
+    case "bindAgent": {
+      const targetNodeId = operation.nodeId;
+      if (!targetNodeId)
+        throw new CanvasOperationError(
+          "invalid_operation",
+          "bindAgent requires nodeId.",
+        );
       const node = findNode(next, targetNodeId, activePageId);
       if (!isContainerNode(node)) {
-        throw new CanvasOperationError('container_not_found', `Node ${targetNodeId} is not a container.`);
+        throw new CanvasOperationError(
+          "container_not_found",
+          `Node ${targetNodeId} is not a container.`,
+        );
       }
-      updateNodeInDoc(next, targetNodeId, {
-        ...node,
-        agentBinding: { ...operation.binding, assignedAt: operation.binding.assignedAt ?? Date.now() },
-      } as PenNode, activePageId);
+      updateNodeInDoc(
+        next,
+        targetNodeId,
+        {
+          ...node,
+          agentBinding: {
+            ...operation.binding,
+            assignedAt: operation.binding.assignedAt ?? Date.now(),
+          },
+        } as PenNode,
+        activePageId,
+      );
       break;
     }
-    case 'reorderNode': {
+    case "reorderNode": {
       reorderNodeInDoc(next, operation, activePageId);
       break;
     }
-    case 'createDataFlowEdge':
-    case 'removeDataFlowEdge': {
+    case "createDataFlowEdge":
+    case "removeDataFlowEdge": {
       // DataFlow edges are managed by DataFlowEngine, persisted separately
       break;
     }
     default: {
       const _exhaustive: never = operation;
-      throw new CanvasOperationError('invalid_operation', `Unsupported operation: ${JSON.stringify(_exhaustive)}`);
+      throw new CanvasOperationError(
+        "invalid_operation",
+        `Unsupported operation: ${JSON.stringify(_exhaustive)}`,
+      );
     }
   }
 
@@ -195,10 +265,9 @@ export function reparentNodesByDropPoint(
       {
         ...targetParentRecord,
         clipContent: true,
-        children:
-          Array.isArray(targetParentRecord.children)
-            ? targetParentRecord.children
-            : [],
+        children: Array.isArray(targetParentRecord.children)
+          ? targetParentRecord.children
+          : [],
       } as PenNode,
       activePageId,
     );
@@ -254,7 +323,7 @@ function findFrameAtScenePoint(
   const visit = (nodes: PenNode[]) => {
     for (const node of nodes) {
       if (
-        node.type === 'frame' &&
+        node.type === "frame" &&
         !isNodeOrAncestorExcluded(doc, node.id, excludedNodeIds, activePageId)
       ) {
         const bounds = getSceneBounds(doc, node.id, activePageId);
@@ -262,7 +331,7 @@ function findFrameAtScenePoint(
           target = node;
         }
       }
-      if ('children' in node && Array.isArray(node.children)) {
+      if ("children" in node && Array.isArray(node.children)) {
         visit(node.children as PenNode[]);
       }
     }
@@ -326,7 +395,7 @@ function hasRequestedAncestor(
 }
 
 function isReparentableCanvasParent(node: PenNode): boolean {
-  return node.type === 'frame' || node.type === 'group';
+  return node.type === "frame" || node.type === "group";
 }
 
 function getSceneOrigin(
@@ -337,7 +406,7 @@ function getSceneOrigin(
   const node = findNode(doc, nodeId, activePageId);
   if (!node) {
     throw new CanvasOperationError(
-      'node_not_found',
+      "node_not_found",
       `Node ${nodeId} does not exist.`,
     );
   }
@@ -363,10 +432,10 @@ function buildScenePreservingUpdates(
     y: oldParentOrigin.y + (node.y ?? 0) - newParentOrigin.y,
   };
   const line = node as PenNode & { x2?: number; y2?: number };
-  if (typeof line.x2 === 'number') {
+  if (typeof line.x2 === "number") {
     updates.x2 = oldParentOrigin.x + line.x2 - newParentOrigin.x;
   }
-  if (typeof line.y2 === 'number') {
+  if (typeof line.y2 === "number") {
     updates.y2 = oldParentOrigin.y + line.y2 - newParentOrigin.y;
   }
   return updates as Partial<PenNode>;
@@ -377,7 +446,10 @@ function validateOperationActivePage(
   operation: CanvasOperation,
   activePageId?: string | null,
 ): void {
-  if (operation.type === 'createDataFlowEdge' || operation.type === 'removeDataFlowEdge') {
+  if (
+    operation.type === "createDataFlowEdge" ||
+    operation.type === "removeDataFlowEdge"
+  ) {
     return;
   }
   getActiveChildren(doc, activePageId);
@@ -409,16 +481,24 @@ function insertNodeInDoc(
     return;
   }
   const parent = findNode(doc, parentId, activePageId);
-  if (!parent || !('children' in parent)) {
-    throw new CanvasOperationError('container_not_found', `Parent ${parentId} not found or not a container.`);
+  if (!parent || !("children" in parent)) {
+    throw new CanvasOperationError(
+      "container_not_found",
+      `Parent ${parentId} not found or not a container.`,
+    );
   }
-  const children = [...(parent.children as PenNode[] ?? [])];
+  const children = [...((parent.children as PenNode[]) ?? [])];
   if (index !== undefined && index >= 0 && index <= children.length) {
     children.splice(index, 0, node);
   } else {
     children.push(node);
   }
-  updateNodeInDoc(doc, parentId, { ...parent, children } as PenNode, activePageId);
+  updateNodeInDoc(
+    doc,
+    parentId,
+    { ...parent, children } as PenNode,
+    activePageId,
+  );
 }
 
 function updateNodeInDoc(
@@ -435,24 +515,39 @@ function updateNodeInDoc(
   doc.children = updatedDoc.children;
 }
 
-function replaceNodeInList(nodes: PenNode[], nodeId: string, updated: PenNode): PenNode[] {
+function replaceNodeInList(
+  nodes: PenNode[],
+  nodeId: string,
+  updated: PenNode,
+): PenNode[] {
   return nodes.map((node) => {
     if (node.id === nodeId) return updated;
-    if ('children' in node && Array.isArray(node.children)) {
+    if ("children" in node && Array.isArray(node.children)) {
       return {
         ...node,
-        children: replaceNodeInList(node.children as PenNode[], nodeId, updated),
+        children: replaceNodeInList(
+          node.children as PenNode[],
+          nodeId,
+          updated,
+        ),
       } as PenNode;
     }
     return node;
   });
 }
 
-function removeNodeFromDoc(doc: PenDocument, nodeId: string, activePageId?: string | null): void {
+function removeNodeFromDoc(
+  doc: PenDocument,
+  nodeId: string,
+  activePageId?: string | null,
+): void {
   const children = getActiveChildren(doc, activePageId);
   const removed = removeNodeFromList(children, nodeId);
   if (!removed.removed) {
-    throw new CanvasOperationError('node_not_found', `Node ${nodeId} not found in tree.`);
+    throw new CanvasOperationError(
+      "node_not_found",
+      `Node ${nodeId} not found in tree.`,
+    );
   }
   const updated = setActiveChildren(doc, removed.nodes, activePageId);
   doc.activePageId = updated.activePageId;
@@ -460,14 +555,17 @@ function removeNodeFromDoc(doc: PenDocument, nodeId: string, activePageId?: stri
   doc.children = updated.children;
 }
 
-function removeNodeFromList(nodes: PenNode[], nodeId: string): { nodes: PenNode[]; removed: boolean } {
+function removeNodeFromList(
+  nodes: PenNode[],
+  nodeId: string,
+): { nodes: PenNode[]; removed: boolean } {
   const filtered = nodes.filter((n) => n.id !== nodeId);
   if (filtered.length < nodes.length) {
     return { nodes: filtered, removed: true };
   }
   let removed = false;
   const mapped = nodes.map((node) => {
-    if ('children' in node && Array.isArray(node.children)) {
+    if ("children" in node && Array.isArray(node.children)) {
       const result = removeNodeFromList(node.children as PenNode[], nodeId);
       if (result.removed) {
         removed = true;
@@ -487,14 +585,21 @@ function moveNodeInDoc(
   activePageId?: string | null,
 ): void {
   const node = findNode(doc, nodeId, activePageId);
-  if (!node) throw new CanvasOperationError('node_not_found', `Node ${nodeId} does not exist.`);
+  if (!node)
+    throw new CanvasOperationError(
+      "node_not_found",
+      `Node ${nodeId} does not exist.`,
+    );
 
   // Check for cycles
   if (newParentId) {
     let current = findNode(doc, newParentId, activePageId);
     while (current) {
       if (current.id === nodeId) {
-        throw new CanvasOperationError('invalid_operation', `Cannot move node into itself.`);
+        throw new CanvasOperationError(
+          "invalid_operation",
+          "Cannot move node into itself.",
+        );
       }
       current = findParent(doc, current.id, activePageId);
     }
@@ -512,22 +617,37 @@ export function groupNodesInDoc(
   activePageId?: string | null,
 ): void {
   const existing = findNode(doc, groupId, activePageId);
-  if (existing) throw new CanvasOperationError('invalid_operation', `Node ${groupId} already exists.`);
+  if (existing)
+    throw new CanvasOperationError(
+      "invalid_operation",
+      `Node ${groupId} already exists.`,
+    );
 
-  const nodes = nodeIds.map((id) => findNode(doc, id, activePageId)).filter(Boolean) as PenNode[];
-  if (nodes.length < 2) throw new CanvasOperationError('invalid_operation', 'Grouping requires at least two existing nodes.');
+  const nodes = nodeIds
+    .map((id) => findNode(doc, id, activePageId))
+    .filter(Boolean) as PenNode[];
+  if (nodes.length < 2)
+    throw new CanvasOperationError(
+      "invalid_operation",
+      "Grouping requires at least two existing nodes.",
+    );
 
   // Ensure all nodes share the same parent
-  const parents = nodes.map((n) => findParent(doc, n.id, activePageId)?.id ?? null);
+  const parents = nodes.map(
+    (n) => findParent(doc, n.id, activePageId)?.id ?? null,
+  );
   if (new Set(parents).size > 1) {
-    throw new CanvasOperationError('invalid_operation', 'Grouped nodes must share the same parent.');
+    throw new CanvasOperationError(
+      "invalid_operation",
+      "Grouped nodes must share the same parent.",
+    );
   }
 
   const bounds = getSelectionBoundsFromNodes(nodes);
   const group: GroupNode = {
     id: groupId,
-    type: 'group',
-    name: title ?? 'Group',
+    type: "group",
+    name: title ?? "Group",
     x: bounds?.x ?? 0,
     y: bounds?.y ?? 0,
     width: bounds?.width ?? 100,
@@ -548,8 +668,11 @@ export function ungroupNodeInDoc(
   activePageId?: string | null,
 ): void {
   const group = findNode(doc, groupId, activePageId);
-  if (!group || group.type !== 'group') {
-    throw new CanvasOperationError('node_not_found', `Group ${groupId} does not exist.`);
+  if (!group || group.type !== "group") {
+    throw new CanvasOperationError(
+      "node_not_found",
+      `Group ${groupId} does not exist.`,
+    );
   }
 
   const parent = findParent(doc, groupId, activePageId);
@@ -565,11 +688,17 @@ export function ungroupNodeInDoc(
 function alignNodesInDoc(
   doc: PenDocument,
   nodeIds: string[],
-  alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom',
+  alignment: "left" | "center" | "right" | "top" | "middle" | "bottom",
   activePageId?: string | null,
 ): void {
-  const nodes = nodeIds.map((id) => findNode(doc, id, activePageId)).filter(Boolean) as PenNode[];
-  if (nodes.length < 2) throw new CanvasOperationError('invalid_operation', 'Alignment requires at least two nodes.');
+  const nodes = nodeIds
+    .map((id) => findNode(doc, id, activePageId))
+    .filter(Boolean) as PenNode[];
+  if (nodes.length < 2)
+    throw new CanvasOperationError(
+      "invalid_operation",
+      "Alignment requires at least two nodes.",
+    );
 
   const bounds = getSelectionBoundsFromNodes(nodes);
   if (!bounds) return;
@@ -577,48 +706,80 @@ function alignNodesInDoc(
   for (const node of nodes) {
     if (node.locked) continue;
     const updates: Partial<PenNode> = {};
-    if (alignment === 'left') updates.x = bounds.x;
-    if (alignment === 'center') updates.x = bounds.x + (bounds.width - (getNodeBounds(node).width)) / 2;
-    if (alignment === 'right') updates.x = bounds.x + bounds.width - getNodeBounds(node).width;
-    if (alignment === 'top') updates.y = bounds.y;
-    if (alignment === 'middle') updates.y = bounds.y + (bounds.height - getNodeBounds(node).height) / 2;
-    if (alignment === 'bottom') updates.y = bounds.y + bounds.height - getNodeBounds(node).height;
-    updateNodeInDoc(doc, node.id, { ...node, ...updates } as PenNode, activePageId);
+    if (alignment === "left") updates.x = bounds.x;
+    if (alignment === "center")
+      updates.x = bounds.x + (bounds.width - getNodeBounds(node).width) / 2;
+    if (alignment === "right")
+      updates.x = bounds.x + bounds.width - getNodeBounds(node).width;
+    if (alignment === "top") updates.y = bounds.y;
+    if (alignment === "middle")
+      updates.y = bounds.y + (bounds.height - getNodeBounds(node).height) / 2;
+    if (alignment === "bottom")
+      updates.y = bounds.y + bounds.height - getNodeBounds(node).height;
+    updateNodeInDoc(
+      doc,
+      node.id,
+      { ...node, ...updates } as PenNode,
+      activePageId,
+    );
   }
 }
 
 function reorderNodeInDoc(
   doc: PenDocument,
-  operation: Extract<CanvasOperation, { type: 'reorderNode' }>,
+  operation: Extract<CanvasOperation, { type: "reorderNode" }>,
   activePageId?: string | null,
 ): void {
   const node = findNode(doc, operation.nodeId, activePageId);
   if (!node) {
-    throw new CanvasOperationError('node_not_found', `Node ${operation.nodeId} does not exist.`);
+    throw new CanvasOperationError(
+      "node_not_found",
+      `Node ${operation.nodeId} does not exist.`,
+    );
   }
 
   const currentParent = findParent(doc, operation.nodeId, activePageId);
   const targetParentId =
-    operation.targetParentId !== undefined ? operation.targetParentId : currentParent?.id ?? null;
-  const currentSiblings = getActiveSiblingList(doc, currentParent?.id ?? null, activePageId);
-  const currentIndex = currentSiblings.findIndex((candidate) => candidate.id === operation.nodeId);
+    operation.targetParentId !== undefined
+      ? operation.targetParentId
+      : (currentParent?.id ?? null);
+  const currentSiblings = getActiveSiblingList(
+    doc,
+    currentParent?.id ?? null,
+    activePageId,
+  );
+  const currentIndex = currentSiblings.findIndex(
+    (candidate) => candidate.id === operation.nodeId,
+  );
   if (currentIndex === -1) {
-    throw new CanvasOperationError('node_not_found', `Node ${operation.nodeId} not found in tree.`);
+    throw new CanvasOperationError(
+      "node_not_found",
+      `Node ${operation.nodeId} not found in tree.`,
+    );
   }
 
   let targetIndex = operation.targetIndex;
   if (targetIndex === undefined) {
-    if (operation.direction === 'back') targetIndex = 0;
-    if (operation.direction === 'backward') targetIndex = Math.max(0, currentIndex - 1);
-    if (operation.direction === 'forward') targetIndex = Math.min(currentSiblings.length - 1, currentIndex + 1);
-    if (operation.direction === 'front' || operation.direction === undefined) {
+    if (operation.direction === "back") targetIndex = 0;
+    if (operation.direction === "backward")
+      targetIndex = Math.max(0, currentIndex - 1);
+    if (operation.direction === "forward")
+      targetIndex = Math.min(currentSiblings.length - 1, currentIndex + 1);
+    if (operation.direction === "front" || operation.direction === undefined) {
       targetIndex = currentSiblings.length - 1;
     }
   }
 
   removeNodeFromDoc(doc, operation.nodeId, activePageId);
-  const targetSiblings = getActiveSiblingList(doc, targetParentId, activePageId);
-  const insertIndex = Math.max(0, Math.min(targetIndex ?? targetSiblings.length, targetSiblings.length));
+  const targetSiblings = getActiveSiblingList(
+    doc,
+    targetParentId,
+    activePageId,
+  );
+  const insertIndex = Math.max(
+    0,
+    Math.min(targetIndex ?? targetSiblings.length, targetSiblings.length),
+  );
   insertNodeInDoc(doc, node, targetParentId, insertIndex, activePageId);
 }
 
@@ -629,8 +790,11 @@ function getActiveSiblingList(
 ): PenNode[] {
   if (parentId === null) return getActiveChildren(doc, activePageId);
   const parent = findNode(doc, parentId, activePageId);
-  if (!parent || !('children' in parent) || !Array.isArray(parent.children)) {
-    throw new CanvasOperationError('container_not_found', `Parent ${parentId} not found or not a container.`);
+  if (!parent || !("children" in parent) || !Array.isArray(parent.children)) {
+    throw new CanvasOperationError(
+      "container_not_found",
+      `Parent ${parentId} not found or not a container.`,
+    );
   }
   return parent.children as PenNode[];
 }
@@ -659,26 +823,29 @@ export function assertAgentCanWrite(
   if (!agentId) return;
   if (!containerId) {
     throw new CanvasOperationError(
-      'permission_denied',
+      "permission_denied",
       `Agent ${agentId} must be bound to a container before writing to the canvas.`,
     );
   }
   const container = findNode(doc, containerId, activePageId);
   if (!isAgentContainer(container)) {
     throw new CanvasOperationError(
-      'container_not_found',
+      "container_not_found",
       `Container ${containerId} does not exist or has no agent binding.`,
     );
   }
   if (!canWriteContainer(container, agentId)) {
     throw new CanvasOperationError(
-      'permission_denied',
+      "permission_denied",
       `Agent ${agentId} does not have write permission in container ${containerId}.`,
     );
   }
-  if (candidate && !isBoundsInside(getNodeBounds(candidate), getNodeBounds(container))) {
+  if (
+    candidate &&
+    !isBoundsInside(getNodeBounds(candidate), getNodeBounds(container))
+  ) {
     throw new CanvasOperationError(
-      'bounds_violation',
+      "bounds_violation",
       `Agent ${agentId} cannot write outside container ${containerId}.`,
     );
   }
@@ -686,9 +853,12 @@ export function assertAgentCanWrite(
 
 function canWriteContainer(container: PenNode, agentId: string): boolean {
   const binding = container.agentBinding;
-  if (binding?.agentId === agentId && binding.permissions?.includes('write')) return true;
+  if (binding?.agentId === agentId && binding.permissions?.includes("write"))
+    return true;
   const permissions = container.permissions;
   if (!permissions) return false;
-  if (permissions.isolationLevel === 'open') return true;
-  return permissions.owner === agentId || permissions.canWrite.includes(agentId);
+  if (permissions.isolationLevel === "open") return true;
+  return (
+    permissions.owner === agentId || permissions.canWrite.includes(agentId)
+  );
 }

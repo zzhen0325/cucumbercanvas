@@ -11,7 +11,7 @@ function makeCtx(): ConversionContext {
     warnings: [],
     generateId: () => `test-${++id}`,
     blobs: [],
-    layoutMode: "openpencil",
+    layoutMode: "cucumber",
   };
 }
 

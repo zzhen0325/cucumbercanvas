@@ -1,4 +1,4 @@
-import { createEmptyCanvasDocument } from "@cucumber/canvas-core";
+import { createEmptyDocument } from "@cucumber/canvas-core";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -30,7 +30,7 @@ function createUserClient() {
 
 describe("createLiveCanvasService", () => {
   it("returns a live document through a bound editor RPC", async () => {
-    const doc = createEmptyCanvasDocument();
+    const doc = createEmptyDocument();
     const service = createLiveCanvasService({
       connectionManager: {
         rpcToCanvas: vi.fn(async () => ({ document: doc })),

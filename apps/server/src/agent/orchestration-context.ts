@@ -193,7 +193,7 @@ function createRunStyleguide(
         ? brandAssets.map((asset) => `Brand asset: ${asset}`)
         : ["Project Brand Kit"],
     componentPreferences: [
-      "优先复用现有画布容器、组件、变量和 OpenPencil DSL 工具",
+      "优先复用现有画布容器、组件、变量和 Cucumber structured canvas DSL 工具",
     ],
   };
 }

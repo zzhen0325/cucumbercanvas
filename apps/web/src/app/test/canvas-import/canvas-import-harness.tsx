@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 
 import {
   type CucumberCanvasDocument,
-  createEmptyCanvasDocument,
+  createEmptyDocument,
   flattenNodes,
   getActiveChildren,
 } from "@cucumber/canvas-core";
@@ -13,9 +13,9 @@ import type { CanvasSceneElement } from "../../../components/canvas/canvas-api";
 import { SkiaCanvas } from "../../../components/canvas/skia-canvas";
 
 export function CanvasImportHarness() {
-  const initialContent = useMemo(() => createEmptyCanvasDocument(), []);
+  const initialContent = useMemo(() => createEmptyDocument(), []);
   const [doc, setDoc] = useState<CucumberCanvasDocument>(() =>
-    createEmptyCanvasDocument(),
+    createEmptyDocument(),
   );
   const [selection, setSelection] = useState<CanvasSceneElement[]>([]);
 

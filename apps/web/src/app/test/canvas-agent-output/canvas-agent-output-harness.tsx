@@ -5,7 +5,7 @@ import { useMemo, useRef, useState } from "react";
 import {
   type CucumberCanvasDocument,
   type PenNode,
-  createEmptyCanvasDocument,
+  createEmptyDocument,
   flattenNodes,
   getActiveChildren,
   resolveActivePageId,
@@ -51,9 +51,7 @@ function withActivePageChildren(
 }
 
 function createManualDocument(): CucumberCanvasDocument {
-  return withActivePageChildren(createEmptyCanvasDocument(), [
-    createManualNode(),
-  ]);
+  return withActivePageChildren(createEmptyDocument(), [createManualNode()]);
 }
 
 function createSectionNode(options: {

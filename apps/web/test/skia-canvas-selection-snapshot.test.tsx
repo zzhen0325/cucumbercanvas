@@ -55,7 +55,10 @@ class MockResizeObserver {
 
 const initialDocument: CucumberCanvasDocument = {
   version: "cucumber-canvas-v1",
+  activePageId: "page-default",
+  pages: [{ id: "page-default", name: "Page 1", children: [] }],
   children: [],
+  viewport: { x: 0, y: 0, zoom: 1, backgroundColor: "#ffffff" },
 };
 
 describe("SkiaCanvas selection snapshots", () => {
@@ -151,7 +154,7 @@ describe("SkiaCanvas selection snapshots", () => {
     }
   });
 
-  it("reconciles a stale active page when agents replace the document", async () => {
+  it("rejects a stale active page when agents replace the document", async () => {
     const originalResizeObserver = globalThis.ResizeObserver;
     globalThis.ResizeObserver =
       MockResizeObserver as unknown as typeof ResizeObserver;
@@ -174,16 +177,15 @@ describe("SkiaCanvas selection snapshots", () => {
       const readyApi = apiRef.current;
       if (!readyApi) throw new Error("Canvas API was not initialized.");
 
-      await act(async () => {
+      expect(() =>
         readyApi.setDocument({
           version: "cucumber-canvas-v1",
           activePageId: "deleted-page",
           pages: [{ id: "page-a", name: "Page A", children: [] }],
           children: [],
-        } as CucumberCanvasDocument);
-      });
-
-      expect(readyApi.getActivePageId()).toBe("page-a");
+          viewport: { x: 0, y: 0, zoom: 1, backgroundColor: "#ffffff" },
+        } as CucumberCanvasDocument),
+      ).toThrow("Page deleted-page does not exist.");
     } finally {
       globalThis.ResizeObserver = originalResizeObserver;
     }
@@ -291,7 +293,12 @@ describe("SkiaCanvas selection snapshots", () => {
         <SkiaCanvas
           initialContent={{
             version: "cucumber-canvas-v1",
-            children: [textNode],
+            activePageId: "page-default",
+            pages: [
+              { id: "page-default", name: "Page 1", children: [textNode] },
+            ],
+            children: [],
+            viewport: { x: 0, y: 0, zoom: 1, backgroundColor: "#ffffff" },
           }}
           onApiReady={(readyApi) => {
             apiRef.current = readyApi;
@@ -357,25 +364,43 @@ describe("SkiaCanvas selection snapshots", () => {
       );
       const readyApi = apiRef.current;
       if (!readyApi) throw new Error("Canvas API was not initialized.");
-      const stage = container.querySelector("canvas") as HTMLElement;
+      const canvasElement = container.querySelector("canvas") as HTMLElement;
+      const stage = canvasElement.parentElement?.parentElement;
+      if (!stage) throw new Error("Canvas stage was not initialized.");
+      const firePointerEvent = (
+        type: "pointerdown" | "pointermove" | "pointerup",
+        options: { clientX: number; clientY: number; pointerId: number },
+      ) => {
+        const event = new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          clientX: options.clientX,
+          clientY: options.clientY,
+        });
+        Object.defineProperty(event, "pointerId", {
+          configurable: true,
+          value: options.pointerId,
+        });
+        fireEvent(stage, event);
+      };
 
       await act(async () => {
         apiRef.current?.setActiveTool("line");
       });
       await waitFor(() => expect(apiRef.current?.getActiveTool()).toBe("line"));
       await act(async () => {
-        fireEvent.pointerDown(stage, {
-          button: 0,
+        firePointerEvent("pointerdown", {
           clientX: 10,
           clientY: 20,
           pointerId: 1,
         });
-        fireEvent.pointerMove(stage, {
+        firePointerEvent("pointermove", {
           clientX: 110,
           clientY: 70,
           pointerId: 1,
         });
-        fireEvent.pointerUp(stage, {
+        firePointerEvent("pointerup", {
           clientX: 110,
           clientY: 70,
           pointerId: 1,
@@ -389,18 +414,17 @@ describe("SkiaCanvas selection snapshots", () => {
         expect(apiRef.current?.getActiveTool()).toBe("arrow"),
       );
       await act(async () => {
-        fireEvent.pointerDown(stage, {
-          button: 0,
+        firePointerEvent("pointerdown", {
           clientX: 200,
           clientY: 90,
           pointerId: 2,
         });
-        fireEvent.pointerMove(stage, {
+        firePointerEvent("pointermove", {
           clientX: 260,
           clientY: 150,
           pointerId: 2,
         });
-        fireEvent.pointerUp(stage, {
+        firePointerEvent("pointerup", {
           clientX: 260,
           clientY: 150,
           pointerId: 2,
@@ -414,18 +438,17 @@ describe("SkiaCanvas selection snapshots", () => {
         expect(apiRef.current?.getActiveTool()).toBe("container"),
       );
       await act(async () => {
-        fireEvent.pointerDown(stage, {
-          button: 0,
+        firePointerEvent("pointerdown", {
           clientX: 50,
           clientY: 60,
           pointerId: 3,
         });
-        fireEvent.pointerMove(stage, {
+        firePointerEvent("pointermove", {
           clientX: 250,
           clientY: 210,
           pointerId: 3,
         });
-        fireEvent.pointerUp(stage, {
+        firePointerEvent("pointerup", {
           clientX: 250,
           clientY: 210,
           pointerId: 3,
@@ -460,7 +483,8 @@ describe("SkiaCanvas selection snapshots", () => {
     } finally {
       globalThis.ResizeObserver = originalResizeObserver;
       HTMLElement.prototype.setPointerCapture = originalSetPointerCapture;
-      HTMLElement.prototype.releasePointerCapture = originalReleasePointerCapture;
+      HTMLElement.prototype.releasePointerCapture =
+        originalReleasePointerCapture;
       HTMLElement.prototype.hasPointerCapture = originalHasPointerCapture;
     }
   });

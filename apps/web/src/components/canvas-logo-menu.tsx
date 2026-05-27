@@ -1,16 +1,16 @@
 "use client";
 
-import { createCanvasNodeId } from "@cucumber/canvas-core";
+import { createNodeId } from "@cucumber/canvas-core";
 import {
-  Copy,
   ClipboardPaste,
-  Scissors,
+  Copy,
   FolderOpen,
   Home,
   ImagePlus,
   Maximize2,
   Plus,
   ScanText,
+  Scissors,
   Trash2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -39,7 +39,7 @@ interface CanvasLogoMenuProps {
 }
 
 function generateFileId(): string {
-  return createCanvasNodeId("asset");
+  return createNodeId("asset");
 }
 
 function scaleToFit(width: number, height: number, maxSize: number) {

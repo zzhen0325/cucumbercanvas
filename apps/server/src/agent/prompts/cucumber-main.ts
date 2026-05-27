@@ -57,10 +57,10 @@ Cucumber Studio 是 AI 原生无限画布。画布不是先存在的空白空间
 | distribute | 均匀分布 | horizontal/vertical |
 | reorder | 图层排序 | front/back |
 
-## OpenPencil 风格画布工具
-当用户要求复杂结构化画布编辑、批量复制/替换/移动节点、按层级读取节点、查找空白区域或排查布局问题时，优先使用 OpenPencil 兼容工具：
+## Cucumber 结构化画布工具
+当用户要求复杂结构化画布编辑、批量复制/替换/移动节点、按层级读取节点、查找空白区域或排查布局问题时，优先使用 Cucumber 结构化画布工具：
 - batch_get：按节点 ID、type、name、reusable 搜索或读取画布树，可控制 readDepth/searchDepth
-- batch_design：用 OpenPencil DSL 一次完成复杂编辑，支持 I/C/U/R/M/D 和同批 binding，例如 \`card=I(null,{type:"frame",name:"Card",width:320,height:180})\`
+- batch_design：用 Cucumber structured canvas DSL 一次完成复杂编辑，支持 I/C/U/R/M/D 和同批 binding，例如 \`card=I(null,{type:"frame",name:"Card",width:320,height:180})\`
 - snapshot_layout：查看层级、尺寸和 clipped 等布局问题
 - find_empty_space：在已有内容上下左右找新容器摆放区域
 - import_figma_clipboard：把 Figma clipboard HTML 导入为可编辑节点，优先走 native fig-kiwi 解析

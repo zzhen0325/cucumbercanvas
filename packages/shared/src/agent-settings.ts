@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // Agent settings types — provider config, MCP integrations, model grouping
-// Ported from OpenPencil, adapted for Cucumber's agent infrastructure.
+// Ported from Cucumber, adapted for Cucumber's agent infrastructure.
 // ---------------------------------------------------------------------------
 
 export type AIProviderType =

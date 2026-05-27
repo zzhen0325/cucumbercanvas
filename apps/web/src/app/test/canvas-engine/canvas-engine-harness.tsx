@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import {
   type CucumberCanvasDocument,
   type PenNode,
-  createEmptyCanvasDocument,
+  createEmptyDocument,
   flattenNodes,
 } from "@cucumber/canvas-core";
 
@@ -22,7 +22,7 @@ import { CanvasPropertyPanel } from "../../../components/canvas/property-panel/c
 import { SkiaCanvas } from "../../../components/canvas/skia-canvas";
 
 export function CanvasEngineHarness() {
-  const emptyDocument = useMemo(() => createEmptyCanvasDocument(), []);
+  const emptyDocument = useMemo(() => createEmptyDocument(), []);
   const [canvasKey, setCanvasKey] = useState(0);
   const [persistedDoc, setPersistedDoc] =
     useState<CucumberCanvasDocument>(emptyDocument);
@@ -31,7 +31,7 @@ export function CanvasEngineHarness() {
   const [exportResult, setExportResult] = useState<Record<string, unknown>>({});
   const [showLayers, setShowLayers] = useState(false);
   const [doc, setDoc] = useState<CucumberCanvasDocument>(() =>
-    createEmptyCanvasDocument(),
+    createEmptyDocument(),
   );
   const selectedIds = selection.map((element) => element.id);
   const selectedNode =
@@ -234,7 +234,7 @@ export function CanvasEngineHarness() {
 }
 
 function createMainPathDocument(): CucumberCanvasDocument {
-  const doc = createEmptyCanvasDocument();
+  const doc = createEmptyDocument();
   const nodes: PenNode[] = [
     {
       children: [],
