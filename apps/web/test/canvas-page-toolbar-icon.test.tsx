@@ -2,7 +2,7 @@
 
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockReplace = vi.fn();
@@ -67,11 +67,34 @@ vi.mock("@/components/canvas-design-system-panel", () => ({
   }: {
     initialTab?: string;
     open: boolean;
-  }) => (
-    <div data-testid="design-panel">
-      {open ? `open:${initialTab ?? "components"}` : "closed"}
-    </div>
-  ),
+  }) => {
+    const [activeTab, setActiveTab] = useState(initialTab ?? "components");
+
+    useEffect(() => {
+      if (!open) return;
+      setActiveTab(initialTab ?? "components");
+    }, [open, initialTab]);
+
+    if (!open) return <div data-testid="design-panel">closed</div>;
+
+    return (
+      <div data-testid="design-panel">
+        open:{activeTab}
+        <button type="button" onClick={() => setActiveTab("components")}>
+          Mock Components
+        </button>
+        <button type="button" onClick={() => setActiveTab("variables")}>
+          Mock Variables
+        </button>
+        {activeTab === "icons" ? (
+          <>
+            <input aria-label="Search icons" />
+            <button type="button">Insert Mail icon</button>
+          </>
+        ) : null}
+      </div>
+    );
+  },
 }));
 
 vi.mock("@/components/canvas-bottom-bar", () => ({
@@ -149,5 +172,37 @@ describe("Canvas page toolbar icon handoff", () => {
       screen.getByRole("button", { name: "Toolbar Insert icon" }),
     );
     expect(screen.getByTestId("design-panel")).toHaveTextContent("open:icons");
+  });
+
+  it("returns an already-open panel to icons after the user switches tabs", async () => {
+    const user = userEvent.setup();
+    const { default: CanvasPage } = await import("@/app/canvas/page");
+
+    render(<CanvasPage />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("design-panel")).toHaveTextContent("closed"),
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Toolbar Insert icon" }),
+    );
+    expect(screen.getByTestId("design-panel")).toHaveTextContent("open:icons");
+    expect(screen.getByRole("textbox", { name: "Search icons" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Mock Variables" }));
+    expect(screen.getByTestId("design-panel")).toHaveTextContent(
+      "open:variables",
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Toolbar Insert icon" }),
+    );
+
+    expect(screen.getByTestId("design-panel")).toHaveTextContent("open:icons");
+    expect(screen.getByRole("textbox", { name: "Search icons" })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Insert Mail icon" }),
+    ).toBeVisible();
   });
 });

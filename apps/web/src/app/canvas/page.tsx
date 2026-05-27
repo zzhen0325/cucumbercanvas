@@ -88,6 +88,8 @@ function CanvasPageContent() {
   const [designOpen, setDesignOpen] = useState(false);
   const [designInitialTab, setDesignInitialTab] =
     useState<CanvasDesignSystemPanelProps["initialTab"]>("components");
+  const [designInitialTabRequestKey, setDesignInitialTabRequestKey] =
+    useState(0);
   const [brandKitId, setBrandKitId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("Untitled");
   const [selectedCanvasElements, setSelectedCanvasElements] = useState<
@@ -126,6 +128,7 @@ function CanvasPageContent() {
   }, []);
   const handleInsertIconFromToolbar = useCallback(() => {
     setDesignInitialTab("icons");
+    setDesignInitialTabRequestKey((key) => key + 1);
     setDesignOpen(true);
     setLayersOpen(false);
     setFilesOpen(false);
@@ -433,6 +436,7 @@ function CanvasPageContent() {
           onClose={handleCloseFiles}
         />
         <CanvasDesignSystemPanel
+          key={`design-system-${designInitialTabRequestKey}`}
           canvasApi={canvasApi}
           initialTab={designInitialTab}
           open={designOpen}

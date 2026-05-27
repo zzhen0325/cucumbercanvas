@@ -1,6 +1,6 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-27 17:05 CST
+Last updated: 2026-05-27 17:10 CST
 
 ## 2026-05-27
 
@@ -24,6 +24,9 @@ Last updated: 2026-05-27 17:05 CST
   the toolbar `Insert icon` affordance through `CanvasEditor`/`SkiaCanvas` to
   the existing Design System Icons tab/search, preserving
   `CanvasDesignSystemPanel` as the only icon insertion implementation.
+- Toolbar icon insertion review follow-up fixed: repeated toolbar activations
+  now carry an explicit tab request key, so an already-open Design System panel
+  returns to Icons/search after the user manually switches to another tab.
 
 ## Current Session
 
