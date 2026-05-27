@@ -54,6 +54,11 @@ Last updated: 2026-05-27 CST
   removal, and lucide icon insertion renderability through the icon node plus
   `lookupCanvasIcon` contract. Existing production behavior passed without
   runtime changes.
+- B0 agent-generation parity closed: `/test/canvas-agent-output` now exercises
+  an open `SkiaCanvas` session with a preserved manual node, applies a
+  prompt-canvas-shaped Agent output document through `CanvasApi.setDocument`,
+  and verifies durable root/section container metadata plus generated-root
+  selection coherence in Playwright.
 
 ## Current Session
 
@@ -127,7 +132,7 @@ Status:
 ## Next Targets
 
 1. Add deterministic browser/e2e smoke coverage for create container, bind Agent, insert generated content, refresh restore, and basic tool interactions.
-2. Add an Agent-output smoke scenario that verifies a visual prompt creates durable, containerized canvas results instead of leaving the canvas as an unstructured artifact dump.
+2. Add deterministic browser smoke coverage for selection export, refresh restore, layers/property edits, and persistence around Agent-created containers.
 3. Design the selected-result Agent overlay and quick-action contract for image upscale, outpaint, local edit, and variant generation.
 4. Continue P2.2 by collecting real Figma clipboard fixtures for native `pen-figma` regression coverage, especially nested instances, image fills, text style hints, and vector boolean edge cases.
 5. Expand deterministic browser/e2e coverage for system paste from SVG/Figma clipboard content, including nested component instances, the compatibility summary, and the fallback path now that the shared test webServer is healthy again.
@@ -145,6 +150,9 @@ Status:
 ## Verification Log
 
 - Passed: `pnpm exec playwright test tests/e2e/skia-canvas.spec.ts`.
+- Passed: `pnpm exec playwright test tests/e2e/canvas-agent-output.spec.ts`.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/open-pencil-canvas.test.ts`.
+- Passed: `pnpm exec biome check apps/web/src/app/test/canvas-agent-output/page.tsx apps/web/src/app/test/canvas-agent-output/canvas-agent-output-harness.tsx tests/e2e/canvas-agent-output.spec.ts docs/tech/openpencil-web-canvas-parity.md progress.md feature_list.json` (Biome checked the configured source/spec files; Markdown/JSON docs are ignored by the current Biome config).
 - Passed: `pnpm exec biome check tests/e2e/skia-canvas.spec.ts docs/tech/openpencil-web-canvas-parity.md progress.md` (Biome checked the configured spec file; Markdown docs are ignored by the current Biome config).
 - Failed: `pnpm --filter @cucumber/web typecheck` remains blocked by the unchanged out-of-scope `apps/web/src/components/canvas/skia-canvas.tsx:388` `PenNode` to `Record<string, unknown>` cast diagnostic.
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-editor-toolbar.test.tsx test/canvas-layers-panel.test.tsx test/canvas-property-panel.test.tsx`.

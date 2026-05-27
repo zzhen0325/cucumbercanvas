@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-27T13:49:00+08:00",
+  "updatedAt": "2026-05-27T18:50:11+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -91,11 +91,15 @@
     {
       "id": "QUALITY-001",
       "name": "Deterministic canvas smoke test",
-      "status": "todo",
+      "status": "active",
       "priority": "P1",
       "owner": "quality-engineering",
-      "summary": "Add an e2e smoke test for create project, send prompt, receive generated canvas artifact, and persist state.",
-      "artifacts": []
+      "summary": "Add deterministic e2e smoke tests for canvas editor, import, Agent-output ingestion, persistence, and generated canvas artifacts.",
+      "artifacts": [
+        "tests/e2e/skia-canvas.spec.ts",
+        "tests/e2e/canvas-import.spec.ts",
+        "tests/e2e/canvas-agent-output.spec.ts"
+      ]
     },
     {
       "id": "CORE-005",
@@ -137,11 +141,14 @@
         "apps/web/src/app/test/canvas-import/canvas-import-harness.tsx",
         "apps/web/src/app/test/canvas-engine/page.tsx",
         "apps/web/src/app/test/canvas-engine/canvas-engine-harness.tsx",
+        "apps/web/src/app/test/canvas-agent-output/page.tsx",
+        "apps/web/src/app/test/canvas-agent-output/canvas-agent-output-harness.tsx",
         "apps/web/test/use-canvas-clipboard-import.test.tsx",
         "apps/web/test/use-canvas-keyboard-shortcuts.test.tsx",
         "apps/web/test/canvas-export.test.ts",
         "playwright.config.ts",
         "tests/e2e/canvas-import.spec.ts",
+        "tests/e2e/canvas-agent-output.spec.ts",
         "tests/e2e/skia-canvas.spec.ts",
         "tests/e2e/transport.spec.ts",
         "apps/server/src/agent/tools/manipulate-canvas.ts",
