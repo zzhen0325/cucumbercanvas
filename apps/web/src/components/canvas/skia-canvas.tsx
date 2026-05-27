@@ -27,6 +27,7 @@ import {
   getVisibleCanvasNodesInBounds,
   insertCanvasImportResult,
   normalizeCanvasPages,
+  normalizeLegacyImportCoordinates,
   parseClipboardImport,
   pasteCanvasClipboard,
   renameCanvasPage,
@@ -234,7 +235,9 @@ function normalizePenDocument(raw: unknown): PenDocument {
 }
 
 function normalizeRuntimeDocument(raw: unknown): PenDocument {
-  return normalizeCanvasPages(normalizePenDocument(raw));
+  return normalizeLegacyImportCoordinates(
+    normalizeCanvasPages(normalizePenDocument(raw)),
+  );
 }
 
 function normalizeRuntimeDocumentForCanvasSet(raw: unknown): {
@@ -244,7 +247,9 @@ function normalizeRuntimeDocumentForCanvasSet(raw: unknown): {
   const candidate = normalizePenDocument(raw);
   try {
     return {
-      document: normalizeCanvasPages(candidate),
+      document: normalizeLegacyImportCoordinates(
+        normalizeCanvasPages(candidate),
+      ),
       reconciledFrom: null,
     };
   } catch (error) {
@@ -255,10 +260,12 @@ function normalizeRuntimeDocumentForCanvasSet(raw: unknown): {
       candidate.pages.length > 0
     ) {
       return {
-        document: normalizeCanvasPages({
-          ...candidate,
-          activePageId: undefined,
-        }),
+        document: normalizeLegacyImportCoordinates(
+          normalizeCanvasPages({
+            ...candidate,
+            activePageId: undefined,
+          }),
+        ),
         reconciledFrom:
           typeof candidate.activePageId === "string"
             ? candidate.activePageId

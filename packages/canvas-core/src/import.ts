@@ -617,29 +617,53 @@ export function insertCanvasImportResult(
   // SVG/HTML path: convert ImportNode flat list → PenNode tree
   const importNodes = result.nodes as ImportNode[];
   const nodeMap = new Map<string, PenNode>();
+  const importNodeMap = new Map<string, ImportNode>();
+  const absoluteOriginMap = new Map<string, { x: number; y: number }>();
   for (const imported of importNodes) {
     const penNode = importNodeToPenNode(imported, offsetX, offsetY, result);
     nodeMap.set(penNode.id, penNode);
+    importNodeMap.set(imported.id, imported);
+    absoluteOriginMap.set(imported.id, {
+      x: penNode.x ?? 0,
+      y: penNode.y ?? 0,
+    });
   }
 
-  // Resolve childrenOrder → children for container nodes
-  for (const imported of importNodes) {
-    if (!imported.childrenOrder || imported.childrenOrder.length === 0)
-      continue;
-    const penNode = nodeMap.get(imported.id);
-    if (!penNode || !("children" in penNode)) continue;
-    const children: PenNode[] = [];
-    for (const childId of imported.childrenOrder) {
-      const child = nodeMap.get(childId);
-      if (child) children.push(child);
+  const materializeImportTree = (
+    nodeId: string,
+    parentId: string | null,
+  ): PenNode | null => {
+    const sourceNode = nodeMap.get(nodeId);
+    if (!sourceNode) return null;
+    const imported = importNodeMap.get(nodeId);
+    let penNode = structuredClone(sourceNode) as PenNode;
+
+    if (parentId) {
+      const parentOrigin = absoluteOriginMap.get(parentId);
+      const nodeOrigin = absoluteOriginMap.get(nodeId);
+      if (parentOrigin && nodeOrigin) {
+        penNode = makeNodeParentRelative(penNode, nodeOrigin, parentOrigin);
+      }
     }
-    nodeMap.set(imported.id, { ...penNode, children } as PenNode);
-  }
+
+    if (
+      imported?.childrenOrder?.length &&
+      "children" in penNode &&
+      Array.isArray((penNode as { children?: unknown }).children)
+    ) {
+      const children = imported.childrenOrder
+        .map((childId) => materializeImportTree(childId, nodeId))
+        .filter((child): child is PenNode => Boolean(child));
+      penNode = { ...penNode, children } as PenNode;
+    }
+
+    return markImportCoordinatesParentRelative(penNode);
+  };
 
   // Insert root nodes via applyCanvasOperation
   const insertedIds: string[] = [];
   for (const rootId of result.rootNodeIds) {
-    const penNode = nodeMap.get(rootId);
+    const penNode = materializeImportTree(rootId, null);
     if (!penNode) continue;
     next = applyCanvasOperation(next, {
       type: "insertNode",
@@ -650,6 +674,139 @@ export function insertCanvasImportResult(
   }
 
   return { doc: next, insertedIds };
+}
+
+export function normalizeLegacyImportCoordinates(
+  doc: PenDocument,
+): PenDocument {
+  let changed = false;
+  const normalizeNodes = (
+    nodes: PenNode[],
+    parentOrigin: { x: number; y: number },
+    parent?: PenNode,
+  ): PenNode[] =>
+    nodes.map((node) => {
+      let next = node;
+      if (
+        parent &&
+        shouldNormalizeLegacyImportChild(node, parent, parentOrigin)
+      ) {
+        next = makeNodeParentRelative(
+          next,
+          { x: node.x ?? 0, y: node.y ?? 0 },
+          parentOrigin,
+        );
+        changed = true;
+      }
+
+      const nodeOrigin = {
+        x: parentOrigin.x + (next.x ?? 0),
+        y: parentOrigin.y + (next.y ?? 0),
+      };
+      if ("children" in next && Array.isArray(next.children)) {
+        const children = normalizeNodes(next.children, nodeOrigin, next);
+        if (children !== next.children) {
+          next = { ...next, children } as PenNode;
+        }
+      }
+      return next;
+    });
+
+  const nextPages = doc.pages?.map((page) => ({
+    ...page,
+    children: normalizeNodes(page.children, { x: 0, y: 0 }),
+  }));
+  const nextChildren = normalizeNodes(doc.children ?? [], { x: 0, y: 0 });
+  if (!changed) return doc;
+  return {
+    ...doc,
+    ...(nextPages ? { pages: nextPages } : {}),
+    children: nextChildren,
+  };
+}
+
+function makeNodeParentRelative(
+  node: PenNode,
+  nodeOrigin: { x: number; y: number },
+  parentOrigin: { x: number; y: number },
+): PenNode {
+  const record = node as PenNode & { x2?: number; y2?: number };
+  return {
+    ...node,
+    x: nodeOrigin.x - parentOrigin.x,
+    y: nodeOrigin.y - parentOrigin.y,
+    ...(record.x2 !== undefined ? { x2: record.x2 - parentOrigin.x } : {}),
+    ...(record.y2 !== undefined ? { y2: record.y2 - parentOrigin.y } : {}),
+  } as PenNode;
+}
+
+function markImportCoordinatesParentRelative(node: PenNode): PenNode {
+  const record = node as PenNode & {
+    meta?: Record<string, unknown>;
+    children?: PenNode[];
+  };
+  return {
+    ...node,
+    meta: {
+      ...(record.meta ?? {}),
+      importCoordinateMode: "parent-relative",
+    },
+    ...("children" in node && Array.isArray(record.children)
+      ? {
+          children: record.children.map((child) =>
+            markImportCoordinatesParentRelative(child),
+          ),
+        }
+      : {}),
+  } as unknown as PenNode;
+}
+
+function shouldNormalizeLegacyImportChild(
+  child: PenNode,
+  parent: PenNode,
+  parentOrigin: { x: number; y: number },
+): boolean {
+  if (!isLegacyFlatImportNode(child) || !isLegacyFlatImportNode(parent)) {
+    return false;
+  }
+  const childMeta = getImportMeta(child);
+  const parentMeta = getImportMeta(parent);
+  if (
+    childMeta.importSessionId &&
+    parentMeta.importSessionId &&
+    childMeta.importSessionId !== parentMeta.importSessionId
+  ) {
+    return false;
+  }
+  const childX = child.x ?? 0;
+  const childY = child.y ?? 0;
+  const parentWidth =
+    "width" in parent && typeof parent.width === "number" ? parent.width : 0;
+  const parentHeight =
+    "height" in parent && typeof parent.height === "number" ? parent.height : 0;
+  const withinParentX =
+    parentWidth <= 0 ||
+    (childX >= parentOrigin.x && childX <= parentOrigin.x + parentWidth);
+  const withinParentY =
+    parentHeight <= 0 ||
+    (childY >= parentOrigin.y && childY <= parentOrigin.y + parentHeight);
+  return withinParentX && withinParentY;
+}
+
+function isLegacyFlatImportNode(node: PenNode): boolean {
+  const meta = getImportMeta(node);
+  return (
+    (meta.source === "figma-paste" || meta.source === "svg-import") &&
+    meta.importCoordinateMode !== "parent-relative" &&
+    meta.originNodeType !== "figma-native"
+  );
+}
+
+function getImportMeta(node: PenNode): Record<string, unknown> {
+  return ((node as { meta?: Record<string, unknown> }).meta ?? {}) as Record<
+    string,
+    unknown
+  >;
 }
 
 function isNativePenNode(node: ImportNode | PenNode): node is PenNode {

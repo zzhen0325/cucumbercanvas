@@ -23,6 +23,7 @@ import {
   getVisibleCanvasNodesInBounds,
   insertCanvasImportResult,
   mergeSymbolProps,
+  normalizeLegacyImportCoordinates,
   parseClipboardImport,
   resolveContext,
 } from "../index.js";
@@ -487,9 +488,12 @@ describe("cucumber canvas core", () => {
     });
 
     const groupNode1 = findNode(inserted.doc, "group-1");
+    const childNode1 = findNode(inserted.doc, "child-1");
     expect(groupNode1?.x).toBe(50);
     expect(groupNode1?.y).toBe(30);
-    expect(findNode(inserted.doc, "child-1")).toBeDefined();
+    expect(childNode1).toBeDefined();
+    expect(childNode1?.x).toBe(10);
+    expect(childNode1?.y).toBe(10);
     expect(inserted.insertedIds).toEqual(["group-1"]);
     expect((findNode(inserted.doc, "group-1") as any)?.meta).toMatchObject({
       source: "svg-import",
@@ -497,6 +501,47 @@ describe("cucumber canvas core", () => {
       importSourceLabel: "SVG",
       warningCount: 0,
     });
+  });
+
+  it("normalizes legacy fallback import children that were saved with absolute coordinates", () => {
+    const doc = createEmptyDocument();
+    const legacyDoc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: {
+        id: "legacy-group",
+        type: "group",
+        x: 100,
+        y: 200,
+        width: 300,
+        height: 160,
+        meta: {
+          source: "figma-paste",
+          originNodeType: "div",
+          importSessionId: "legacy-import",
+        },
+        children: [
+          {
+            id: "legacy-child",
+            type: "rectangle",
+            x: 140,
+            y: 230,
+            width: 80,
+            height: 40,
+            meta: {
+              source: "figma-paste",
+              originNodeType: "div",
+              importSessionId: "legacy-import",
+            },
+          } as PenNode,
+        ],
+      } as PenNode,
+    });
+
+    const normalized = normalizeLegacyImportCoordinates(legacyDoc);
+    expect(findNode(normalized, "legacy-group")?.x).toBe(100);
+    expect(findNode(normalized, "legacy-group")?.y).toBe(200);
+    expect(findNode(normalized, "legacy-child")?.x).toBe(40);
+    expect(findNode(normalized, "legacy-child")?.y).toBe(30);
   });
 
   it("assigns a shared import session and warning metadata to inserted roots", () => {

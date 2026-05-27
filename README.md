@@ -19,6 +19,13 @@ cp .env.example .env.local
 pnpm dev
 ```
 
+If a previous dev server leaves `3000` or `CUCUMBER_SERVER_PORT` occupied, run:
+
+```bash
+pnpm dev:clean
+pnpm dev:restart
+```
+
 Seedream requires:
 
 ```bash
