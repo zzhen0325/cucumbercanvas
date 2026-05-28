@@ -1,16 +1,16 @@
-# Loomic UI Design Guidelines
+# Cucumber UI Design Guidelines
 
-> 本文档梳理 Loomic 当前 Web 端的视觉语言、组件规范和页面设计约定。适用范围：`apps/web` 下的产品工作台、画布、Brand Kit、Skills、Pricing、登录注册与官网展示页。
+> 本文档梳理 Cucumber 当前 Web 端的视觉语言、组件规范和页面设计约定。
 
 ## 1. 产品气质
 
-Loomic 是一个画布式 AI 创意工作台。界面要让用户专注于“输入想法、生成素材、在画布上整理作品”，因此整体应保持克制、轻量、低噪声。
+Cucumber 是一个画布式 AI 创意工作台。界面要让用户专注于“输入想法、生成素材、在画布上整理作品”，因此整体应保持克制、轻量、低噪声。
 
 核心关键词：
 
 - **创作工具感**：优先支持高频操作、快速扫描、稳定布局，而不是营销式大面积装饰。
 - **中性底色 + 高识别强调色**：主界面以黑白灰为骨架，使用荧光黄绿色作为 AI、当前态、聚焦态和关键行动的提示。
-- **轻浮层、轻边框、轻阴影**：工作台和画布需要“漂浮但不抢内容”的控件。
+- **轻浮层、轻边框、无阴影**：工作台和画布需要“漂浮但不抢内容”的控件。
 - **图像优先**：项目、画布、官网展示页都应让真实生成图、缩略图、视频或画布内容成为第一视觉信号。
 - **动效有功能性**：动效用于状态切换、生成中反馈、悬浮确认和导航过渡，避免无意义的装饰动效。
 
@@ -20,27 +20,31 @@ Loomic 是一个画布式 AI 创意工作台。界面要让用户专注于“输
 
 主要定义位置：
 
-- `apps/web/src/app/globals.css`
-- `apps/web/components.json`
-- `apps/web/src/components/ui/*`
+- Web UI 全局 token：`apps/web/src/app/globals.css`。这里包含 Tailwind 4 的 `@theme inline` 映射、`:root` 浅色变量、`.dark` 深色变量、`shadow-*` / `accent-glow` 工具类和全局 keyframes。
+- shadcn/base-nova 配置：`apps/web/components.json`。这里声明 `base-nova`、CSS 入口 `src/app/globals.css`、CSS Variables 和 `lucide` 图标库。
+- 全局字体注入：`apps/web/src/app/layout.tsx`。当前通过 `next/font/google` 的 `Poppins` 写入 `--font-sans`，并在 `body` 上使用 `font-sans`。
+- 明暗主题入口：`apps/web/src/components/providers.tsx`。`next-themes` 通过 `class` 切换 `.dark`。
+- 画布文档设计变量：`packages/pen-types/src/pen.ts` 和 `packages/pen-types/src/variables.ts`。`PenDocument.variables` / `PenDocument.themes` 是画布内容自己的变量和主题轴，不等同于 Web UI 全局 CSS token。
+- 画布变量解析：`packages/pen-core/variables/resolve.ts` 和 `packages/pen-renderer/src/renderer.ts`。渲染前会把 `$variableName` 根据当前 theme 解析为具体值。
+- 画布设计系统面板：`apps/web/src/components/canvas-design-system-panel.tsx`。这里负责在 UI 中创建、编辑、删除和绑定画布变量/主题。
 
 ### 2.1 颜色
 
-| 用途 | Token | 当前值 | 使用建议 |
-| --- | --- | --- | --- |
-| 页面背景 | `--background` | `oklch(1 0 0)` | App 主背景、登录右侧背景 |
-| 主文本 | `--foreground` | `oklch(0.145 0 0)` | 标题、正文、图标主态 |
-| 卡片/浮层 | `--card` | `oklch(1 0 0)` | 卡片、侧栏、弹窗、工具条 |
-| 次级底色 | `--muted` | `oklch(0.97 0 0)` | 输入框、缩略图占位、选中背景 |
-| 次级文本 | `--muted-foreground` | `oklch(0.556 0 0)` | 描述、时间、元信息、弱图标 |
-| 主按钮 | `--primary` | `oklch(0.205 0 0)` | 提交、确认、开关开启态 |
-| 强调色 | `--accent` | `oklch(0.90 0.17 115)` | AI、选中、聚焦、品牌能量感 |
-| 边框 | `--border` | `oklch(0.922 0 0)` | 卡片、分割线、输入框、工具栏 |
-| 表单边框 | `--input-border` | `oklch(0.84 0 0)` | 更明确的输入边界 |
-| 错误 | `--destructive` | `oklch(0.577 0.245 27.325)` | 删除、失败、危险提示 |
-| 成功 | `--success` | `oklch(0.60 0.15 145)` | 成功状态、可用状态 |
-| 警告 | `--warning` | `oklch(0.75 0.15 85)` | 额度、限制、等待确认 |
-| 信息 | `--info` | `oklch(0.65 0.1 250)` | 系统提示、辅助说明 |
+| 用途    | Token                | 当前值                         | 使用建议           |
+| ----- | -------------------- | --------------------------- | -------------- |
+| 页面背景  | `--background`       | `oklch(1 0 0)`              | App 主背景、登录右侧背景 |
+| 主文本   | `--foreground`       | `oklch(0.145 0 0)`          | 标题、正文、图标主态     |
+| 卡片/浮层 | `--card`             | `oklch(1 0 0)`              | 卡片、侧栏、弹窗、工具条   |
+| 次级底色  | `--muted`            | `oklch(0.97 0 0)`           | 输入框、缩略图占位、选中背景 |
+| 次级文本  | `--muted-foreground` | `oklch(0.556 0 0)`          | 描述、时间、元信息、弱图标  |
+| 主按钮   | `--primary`          | `oklch(0.205 0 0)`          | 提交、确认、开关开启态    |
+| 强调色   | `--accent`           | `oklch(0.90 0.17 115)`      | AI、选中、聚焦、品牌能量感 |
+| 边框    | `--border`           | `oklch(0.922 0 0)`          | 卡片、分割线、输入框、工具栏 |
+| 表单边框  | `--input-border`     | `oklch(0.84 0 0)`           | 更明确的输入边界       |
+| 错误    | `--destructive`      | `oklch(0.577 0.245 27.325)` | 删除、失败、危险提示     |
+| 成功    | `--success`          | `oklch(0.60 0.15 145)`      | 成功状态、可用状态      |
+| 警告    | `--warning`          | `oklch(0.75 0.15 85)`       | 额度、限制、等待确认     |
+| 信息    | `--info`             | `oklch(0.65 0.1 250)`       | 系统提示、辅助说明      |
 
 颜色使用原则：
 
@@ -51,19 +55,19 @@ Loomic 是一个画布式 AI 创意工作台。界面要让用户专注于“输
 
 ### 2.2 字体
 
-当前全局字体为 `Geist`，通过 `--font-sans` 注入。新增 UI 默认使用 `font-sans`。
+当前全局字体为 `Poppins`，通过 `apps/web/src/app/layout.tsx` 注入到 `--font-sans`。新增 UI 默认使用 `font-sans`。
 
 字号建议：
 
-| 场景 | Tailwind 建议 | 说明 |
-| --- | --- | --- |
-| 页面主标题 | `text-base sm:text-lg` | 工作台标题，如“项目” |
-| 页面 Hero 标题 | `text-xl sm:text-2xl` | Home 工作台欢迎区 |
-| 官网 Hero 标题 | `text-5xl` 到 `lg:text-8xl` | 仅官网首屏使用 |
-| 卡片标题 | `text-sm font-medium/semibold` | 项目卡片、面板标题 |
-| 正文 | `text-sm` | 表单、列表、聊天正文 |
-| 元信息 | `text-xs` / `text-[11px]` | 时间、模型名、状态 |
-| 标签 | `text-[10px]` 到 `text-xs` | Badge、计数、状态 pill |
+| 场景         | Tailwind 建议                    | 说明               |
+| ---------- | ------------------------------ | ---------------- |
+| 页面主标题      | `text-base sm:text-lg`         | 工作台标题，如“项目”      |
+| 页面 Hero 标题 | `text-xl sm:text-2xl`          | Home 工作台欢迎区      |
+| 官网 Hero 标题 | `text-5xl` 到 `lg:text-8xl`     | 仅官网首屏使用          |
+| 卡片标题       | `text-sm font-medium/semibold` | 项目卡片、面板标题        |
+| 正文         | `text-sm`                      | 表单、列表、聊天正文       |
+| 元信息        | `text-xs` / `text-[11px]`      | 时间、模型名、状态        |
+| 标签         | `text-[10px]` 到 `text-xs`      | Badge、计数、状态 pill |
 
 字体规范：
 
@@ -76,13 +80,13 @@ Loomic 是一个画布式 AI 创意工作台。界面要让用户专注于“输
 
 全局基础圆角：`--radius: 0.625rem`。
 
-| 场景 | 建议 |
-| --- | --- |
-| 基础按钮/输入框 | `rounded-lg` |
-| 卡片/面板 | `rounded-xl`，大面板可到 `rounded-2xl` |
-| 图标按钮 | `rounded-lg` 或 `rounded-full`，跟所在区域一致 |
-| 小标签 | `rounded-md` / `rounded-full` |
-| 缩略图 | `rounded-lg` |
+| 场景       | 建议                                    |
+| -------- | ------------------------------------- |
+| 基础按钮/输入框 | `rounded-lg`                          |
+| 卡片/面板    | `rounded-xl`，大面板可到 `rounded-2xl`      |
+| 图标按钮     | `rounded-lg` 或 `rounded-full`，跟所在区域一致 |
+| 小标签      | `rounded-md` / `rounded-full`         |
+| 缩略图      | `rounded-lg`                          |
 
 注意：
 
@@ -109,7 +113,7 @@ Loomic 是一个画布式 AI 创意工作台。界面要让用户专注于“输
 全局工具类：
 
 - `shadow-subtle`: 轻提示、细小浮起
-- `shadow-card`: 卡片和工具栏默认
+- `shadow-card`: 工具栏和轻浮层默认，卡片默认不加阴影
 - `shadow-card-hover`: 卡片 hover
 - `shadow-float`: 弹窗、浮动面板
 - `accent-glow`: 关键按钮/AI 生成按钮的短暂强调
@@ -129,6 +133,8 @@ Loomic 是一个画布式 AI 创意工作台。界面要让用户专注于“输
 - 桌面：左侧 `60px` 图标 rail，主内容区滚动。
 - 移动端：底部固定导航，主内容区预留 `pb-14`。
 - 主内容：`main` 负责滚动，页面内部避免再制造多个大滚动容器。
+
+对应实现位置：`apps/web/src/app/(workspace)/layout.tsx` 和 `apps/web/src/components/app-sidebar.tsx`。
 
 新增工作台页面建议结构：
 
@@ -152,6 +158,8 @@ Loomic 是一个画布式 AI 创意工作台。界面要让用户专注于“输
 - 底部中间用于工具栏。
 - 左右面板用于聊天、图层、文件，移动端默认收起。
 
+对应实现位置：`apps/web/src/app/canvas/page.tsx`、`apps/web/src/components/canvas/editor-toolbar.tsx`、`apps/web/src/components/canvas/page-tabs.tsx`、`apps/web/src/components/canvas-bottom-bar.tsx`。
+
 画布控件视觉：
 
 - `bg-card/75 backdrop-blur-lg border border-border shadow-card`
@@ -167,6 +175,8 @@ Loomic 是一个画布式 AI 创意工作台。界面要让用户专注于“输
 - 缩略图比例：`aspect-[395/227]`
 - 网格：`grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5`
 
+对应实现位置：`apps/web/src/components/project-list.tsx`、`apps/web/src/app/(workspace)/home/page.tsx`、`apps/web/src/components/skeletons/projects-skeleton.tsx`、`apps/web/src/components/skeletons/home-skeleton.tsx`。
+
 卡片规范：
 
 - 图像/缩略图永远是卡片第一视觉。
@@ -174,22 +184,12 @@ Loomic 是一个画布式 AI 创意工作台。界面要让用户专注于“输
 - 时间、状态等元信息用 `text-[10px] sm:text-[11px] text-muted-foreground`。
 - hover 只增强阴影或轻微背景，不移动布局。
 
-### 3.4 官网/营销页布局
-
-官网页允许比产品页更具表现力：
-
-- 首屏使用真实产品图或生成作品图，不使用空泛插画。
-- Hero 文案可使用大字号、渐变文字、淡 glow、轻动效。
-- 展示图必须清晰可辨，避免过暗、模糊或只做氛围。
-- CTA 使用 `primary`，局部可增加 `landing-cta-shimmer`。
-
-产品工作台与官网不要混用风格：工作台不做大 Hero 和装饰性大卡片。
-
 ## 4. 基础组件规范
 
 ### 4.1 Button
 
 优先使用 `apps/web/src/components/ui/button.tsx` 的 `Button`。
+变体和尺寸以同文件内的 `buttonVariants` 为准。
 
 变体：
 
@@ -222,6 +222,8 @@ Loomic 是一个画布式 AI 创意工作台。界面要让用户专注于“输
 
 基础输入框：
 
+对应实现位置：`apps/web/src/components/ui/input.tsx`。
+
 - 高度：`h-8`
 - 圆角：`rounded-lg`
 - 边框：`border-input`
@@ -237,6 +239,8 @@ Loomic 是一个画布式 AI 创意工作台。界面要让用户专注于“输
 ### 4.3 Dialog / Popover / Dropdown
 
 弹窗和浮层：
+
+Dialog 对应实现位置：`apps/web/src/components/ui/dialog.tsx`。Dropdown 对应实现位置：`apps/web/src/components/ui/dropdown-menu.tsx`。
 
 - 背景：`bg-popover` 或 `bg-card`
 - 圆角：`rounded-xl` / `rounded-2xl`
@@ -281,16 +285,7 @@ Loomic 是一个画布式 AI 创意工作台。界面要让用户专注于“输
 - 图标默认：`text-muted-foreground`
 - 图标当前：`text-foreground`
 
-导航顺序：
-
-1. Logo/Home
-2. Home
-3. Projects
-4. Brand Kit
-5. Skills
-6. Credits
-7. Settings
-8. Sign out
+<br />
 
 ### 5.2 移动端底部导航
 
@@ -305,20 +300,7 @@ Loomic 是一个画布式 AI 创意工作台。界面要让用户专注于“输
 
 ## 6. 页面级规范
 
-### 6.1 Home
-
-Home 是创作入口，不是营销页：
-
-- 中心布局，最大宽度约 `max-w-3xl`。
-- Logo + Loomic + 一句短标题 + 一句辅助文案。
-- Prompt 输入框是主元素。
-- 示例、发现、最近项目作为下方辅助，不抢主输入。
-
-文案气质：
-
-- 简短、直接、偏行动。
-- 中文优先，按钮和页面主流程保持中文一致。
-- 可以保留产品名和模型名英文。
+<br />
 
 ### 6.2 Projects
 
@@ -419,9 +401,8 @@ ease: [0.25, 0.46, 0.45, 0.94]
 
 ## 10. 图像与媒体
 
-Loomic 的视觉可信度来自生成作品和画布内容：
+Cucumber 的视觉可信度来自生成作品和画布内容：
 
-- 项目、官网、展示区优先使用真实作品图。
 - 图片容器必须固定比例。
 - 缩略图使用 `object-cover`。
 - 可查看细节的图片不要过度加暗色蒙层、模糊或裁切。
@@ -453,6 +434,28 @@ Loomic 的视觉可信度来自生成作品和画布内容：
 - `@/components/ui/skeleton`
 - `@/lib/utils` 中的 `cn`
 - `lucide-react` 图标
+
+关键实现位置索引：
+
+- 工作台路由布局：`apps/web/src/app/(workspace)/layout.tsx`
+- 桌面侧栏和移动底部导航：`apps/web/src/components/app-sidebar.tsx`
+- Home 页面：`apps/web/src/app/(workspace)/home/page.tsx`
+- Projects 页面：`apps/web/src/app/(workspace)/projects/page.tsx`
+- Project 卡片网格：`apps/web/src/components/project-list.tsx`
+- Canvas 页面框架：`apps/web/src/app/canvas/page.tsx`
+- Canvas 编辑器主体：`apps/web/src/components/canvas-editor.tsx`
+- Canvas 工具栏：`apps/web/src/components/canvas/editor-toolbar.tsx`
+- Canvas 底部栏：`apps/web/src/components/canvas-bottom-bar.tsx`
+- Canvas 属性面板：`apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx`
+- Canvas 设计系统面板：`apps/web/src/components/canvas-design-system-panel.tsx`
+- Brand Kit 页面：`apps/web/src/app/(workspace)/brand-kit/page.tsx`
+- Brand Kit 组件：`apps/web/src/components/brand-kit/`
+- Skills 页面：`apps/web/src/app/(workspace)/skills/page.tsx`
+- Skills 组件：`apps/web/src/components/skills/`
+- Auth 页面：`apps/web/src/app/login/page.tsx`、`apps/web/src/app/register/page.tsx`
+- Auth 表单：`apps/web/src/components/login-form.tsx`、`apps/web/src/components/register-form.tsx`
+- 基础 UI primitives：`apps/web/src/components/ui/`
+- 通用工具函数：`apps/web/src/lib/utils.ts`
 
 代码规范：
 
@@ -494,4 +497,3 @@ Don't:
 - [ ] 文案是否短、直接、符合当前中英混合规则？
 - [ ] 危险操作是否有确认或明确 destructive 样式？
 - [ ] 是否避免了大面积装饰性颜色和不必要动效？
-

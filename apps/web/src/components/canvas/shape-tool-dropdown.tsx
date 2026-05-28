@@ -84,9 +84,15 @@ export function ShapeToolDropdown({
 
   return (
     <DropdownMenu modal={false}>
-      <div className="flex items-center rounded-lg">
+      <div
+        className={cn(
+          "flex flex-col items-center rounded-lg border border-transparent transition-colors",
+          activeShape && "border-foreground/10 bg-foreground/[0.08]",
+        )}
+      >
         <EditorToolButton
           active={Boolean(activeShape)}
+          className={cn(activeShape && "border-transparent bg-transparent")}
           icon={primaryShape.icon}
           label="Shapes"
           onClick={() => chooseShapeTool(primaryTool)}
@@ -95,7 +101,7 @@ export function ShapeToolDropdown({
         <DropdownMenuTrigger
           aria-label="Open shape menu"
           className={cn(
-            "-ml-1 flex size-5 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
+            " flex size-5 items-center justify-center rotate-270 rounded-md text-foreground/50 outline-none transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
             activeShape && "text-foreground",
           )}
           title="Open shape menu"

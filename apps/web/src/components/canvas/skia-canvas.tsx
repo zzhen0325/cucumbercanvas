@@ -88,7 +88,7 @@ import { CanvasPropertyPanel } from "./property-panel/canvas-property-panel";
 import {
   type ClipboardImportContext,
   readClipboardImportPayload,
-  readDataTransferImportPayload,
+  readDataTransferImportPayloads,
   useCanvasClipboardImport,
 } from "./use-canvas-clipboard-import";
 import { useCanvasKeyboardShortcuts } from "./use-canvas-keyboard-shortcuts";
@@ -1710,6 +1710,113 @@ export const SkiaCanvas = memo(
       [commitDocument, notifySelectionForDoc, selectedIds, setSelection, toast],
     );
 
+    const importDropPayloadsInGrid = useCallback(
+      (
+        results: Array<{
+          payload: ClipboardImportPayload;
+          context: ClipboardImportContext;
+        }>,
+        scenePoint?: { x: number; y: number },
+      ) => {
+        const parsedEntries = results.flatMap((result) => {
+          const parsed = parseClipboardImport(result.payload);
+          if (!parsed) return [];
+          return [
+            {
+              ...result,
+              parsed,
+              bounds: getCanvasImportBounds(parsed),
+            },
+          ];
+        });
+        if (parsedEntries.length === 0) return [];
+
+        const rect = canvasContainerRef.current?.getBoundingClientRect();
+        const viewport = rendererRef.current?.getViewport() ?? {
+          zoom: 1,
+          panX: 0,
+          panY: 0,
+        };
+        const targetCenter =
+          scenePoint ??
+          ({
+            x: ((rect?.width ?? 0) / 2 - viewport.panX) / viewport.zoom,
+            y: ((rect?.height ?? 0) / 2 - viewport.panY) / viewport.zoom,
+          } satisfies { x: number; y: number });
+        const placements = computeImportGridPlacements(
+          parsedEntries.map((entry) => entry.bounds),
+          targetCenter,
+        );
+        const targetParentId = getPrimarySelectedContainerId(
+          docRef.current as CucumberCanvasDocument,
+          selectedIds,
+          activePageIdRef.current,
+        );
+
+        let nextDoc = docRef.current;
+        const insertedIds: string[] = [];
+        let warningCount = 0;
+        const sourceLabels = new Set<string>();
+
+        parsedEntries.forEach((entry, index) => {
+          const bounds = entry.bounds;
+          const placement = placements[index] ?? targetCenter;
+          const offsetX = bounds
+            ? placement.x - (bounds.x + bounds.width / 2)
+            : 0;
+          const offsetY = bounds
+            ? placement.y - (bounds.y + bounds.height / 2)
+            : 0;
+          const inserted = insertCanvasImportResult(nextDoc, entry.parsed, {
+            parentId: targetParentId,
+            offsetX,
+            offsetY,
+          });
+          nextDoc = inserted.doc;
+          insertedIds.push(...inserted.insertedIds);
+          warningCount += entry.parsed.warnings.length;
+          sourceLabels.add(entry.parsed.sourceLabel);
+        });
+
+        commitDocument(nextDoc, { selection: insertedIds });
+        setSelection(insertedIds, { notifyScene: false });
+        notifySelectionForDoc(nextDoc, insertedIds);
+        const label =
+          sourceLabels.size === 1 ? Array.from(sourceLabels)[0] : "文件";
+        if (warningCount > 0) {
+          toast.toast(
+            `${label} 已导入 ${insertedIds.length} 个节点，包含 ${warningCount} 条兼容性提醒。`,
+          );
+        } else {
+          toast.success(`${label} 已导入 ${insertedIds.length} 个节点。`);
+        }
+        console.info("[skia-canvas] file-drop.grid-imported", {
+          activePageId: activePageIdRef.current,
+          itemCount: results.length,
+          importedItemCount: parsedEntries.length,
+          unsupportedItemCount: results.length - parsedEntries.length,
+          insertedCount: insertedIds.length,
+          parentId: targetParentId,
+          placement: parsedEntries.length > 1 ? "grid" : "drop-point",
+          grid: describeImportGridPlacements(
+            parsedEntries.map((entry) => entry.bounds),
+          ),
+          targetCenter,
+          warningCount,
+          mimeTypes: Array.from(
+            new Set(results.flatMap((result) => result.context.mimeTypes)),
+          ),
+          fileTypes: Array.from(
+            new Set(
+              results.flatMap((result) => result.context.fileTypes ?? []),
+            ),
+          ),
+        });
+        return insertedIds;
+      },
+      [commitDocument, notifySelectionForDoc, selectedIds, setSelection, toast],
+    );
+
     const resetFileDragState = useCallback(() => {
       fileDragDepthRef.current = 0;
       setIsFileDragActive(false);
@@ -1777,23 +1884,24 @@ export const SkiaCanvas = memo(
           scenePoint,
         });
 
-        void readDataTransferImportPayload(dataTransfer).then(
-          ({ payload, context }) => {
+        void readDataTransferImportPayloads(dataTransfer).then(
+          (results) => {
             try {
-              const insertedIds = importFromPayload(payload, context, {
-                scenePoint,
+              const importedIds = importDropPayloadsInGrid(results, scenePoint);
+              if (importedIds.length > 0) return;
+              console.info("[skia-canvas] file-drop.import.ignored", {
+                activePageId: activePageIdRef.current,
+                itemCount: results.length,
+                mimeTypes: results.flatMap(
+                  (result) => result.context.mimeTypes,
+                ),
+                fileTypes: results.flatMap(
+                  (result) => result.context.fileTypes ?? [],
+                ),
               });
-              if (insertedIds.length === 0) {
-                console.info("[skia-canvas] file-drop.import.ignored", {
-                  activePageId: activePageIdRef.current,
-                  mimeTypes: context.mimeTypes,
-                  fileTypes: context.fileTypes ?? [],
-                  fileCount: payload.files?.length ?? 0,
-                });
-                toast.error(
-                  "暂不支持拖入这些文件。请使用 PNG、JPG、WebP、GIF 或 SVG 文件。",
-                );
-              }
+              toast.error(
+                "暂不支持拖入这些文件。请使用 PNG、JPG、WebP、GIF 或 SVG 文件。",
+              );
             } catch (error) {
               console.warn("[skia-canvas] file-drop.import.failed", {
                 activePageId: activePageIdRef.current,
@@ -1815,7 +1923,7 @@ export const SkiaCanvas = memo(
           },
         );
       },
-      [importFromPayload, resetFileDragState, toast],
+      [importDropPayloadsInGrid, resetFileDragState, toast],
     );
 
     const pasteFromSystemClipboard = useCallback(async () => {
@@ -2941,6 +3049,58 @@ function hasFileDataTransfer(dataTransfer: DataTransfer | null): boolean {
   return Array.from(dataTransfer.items ?? []).some(
     (item) => item.kind === "file",
   );
+}
+
+function computeImportGridPlacements(
+  boundsList: Array<CanvasBounds | null>,
+  center: { x: number; y: number },
+): Array<{ x: number; y: number }> {
+  const count = boundsList.length;
+  if (count === 0) return [];
+  if (count === 1) return [center];
+
+  const gap = 24;
+  const columns = Math.ceil(Math.sqrt(count));
+  const rows = Math.ceil(count / columns);
+  const cellWidth = Math.max(
+    1,
+    ...boundsList.map((bounds) => bounds?.width ?? 320),
+  );
+  const cellHeight = Math.max(
+    1,
+    ...boundsList.map((bounds) => bounds?.height ?? 240),
+  );
+  const totalWidth = columns * cellWidth + (columns - 1) * gap;
+  const totalHeight = rows * cellHeight + (rows - 1) * gap;
+  const startX = center.x - totalWidth / 2;
+  const startY = center.y - totalHeight / 2;
+
+  return boundsList.map((bounds, index) => {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const width = bounds?.width ?? cellWidth;
+    const height = bounds?.height ?? cellHeight;
+    return {
+      x: startX + column * (cellWidth + gap) + width / 2,
+      y: startY + row * (cellHeight + gap) + height / 2,
+    };
+  });
+}
+
+function describeImportGridPlacements(boundsList: Array<CanvasBounds | null>): {
+  columns: number;
+  rows: number;
+  gap: number;
+  itemCount: number;
+} {
+  const itemCount = boundsList.length;
+  const columns = itemCount <= 1 ? itemCount : Math.ceil(Math.sqrt(itemCount));
+  return {
+    columns,
+    rows: columns > 0 ? Math.ceil(itemCount / columns) : 0,
+    gap: 24,
+    itemCount,
+  };
 }
 
 function getDrawableToolPreview(

@@ -58,7 +58,7 @@ export function CanvasEditorToolbar({
   return (
     <nav
       aria-label="Canvas editor tools"
-      className="pointer-events-auto absolute left-4 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-1 rounded-lg border border-border bg-card/95 p-1.5 shadow-card backdrop-blur"
+      className="pointer-events-auto absolute left-4 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-1.5 rounded-full border border-border bg-card/75 p-1.5 py-4   backdrop-blur-lg"
       onClick={stopCanvasPropagation}
       onDoubleClick={stopCanvasPropagation}
       onKeyDown={stopCanvasPropagation}
@@ -68,71 +68,82 @@ export function CanvasEditorToolbar({
       onPointerUp={stopCanvasPropagation}
       onWheel={stopCanvasPropagation}
     >
-      <EditorToolButton
-        active={activeTool === "select"}
-        icon={MousePointer2}
-        label="Select"
-        onClick={() => onToolChange("select")}
-        shortcut="V"
-      />
-      <EditorToolButton
-        active={activeTool === "hand"}
-        icon={Hand}
-        label="Hand"
-        onClick={() => onToolChange("hand")}
-        shortcut="H"
-      />
-      <ShapeToolDropdown
-        activeTool={activeTool}
-        onInsertIcon={onInsertIcon}
-        onImportImage={onImportImage}
-        onImportSvg={onImportSvg}
-        onToolChange={onToolChange}
-      />
-      <EditorToolButton
-        active={activeTool === "text"}
-        icon={Type}
-        label="Text"
-        onClick={() => onToolChange("text")}
-        shortcut="T"
-      />
-      <EditorToolButton
-        active={activeTool === "container"}
-        icon={Frame}
-        label="Frame"
-        onClick={() => onToolChange("container")}
-        shortcut="F"
-      />
+      <div className="flex flex-col items-center gap-1">
+        <EditorToolButton
+          active={activeTool === "select"}
+          icon={MousePointer2}
+          label="Select"
+          onClick={() => onToolChange("select")}
+          shortcut="V"
+        />
+        <EditorToolButton
+          active={activeTool === "hand"}
+          icon={Hand}
+          label="Hand"
+          onClick={() => onToolChange("hand")}
+          shortcut="H"
+        />
+      </div>
 
-      <Separator className="my-1 h-px w-6" />
+      <Separator className="h-px w-4 bg-border/70" />
 
-      <EditorToolButton
-        disabled={!canUndo}
-        icon={Undo2}
-        label="Undo"
-        onClick={onUndo}
-      />
-      <EditorToolButton
-        disabled={!canRedo}
-        icon={Redo2}
-        label="Redo"
-        onClick={onRedo}
-      />
+      <div className="flex flex-col items-center gap-1">
+        <ShapeToolDropdown
+          activeTool={activeTool}
+          onInsertIcon={onInsertIcon}
+          onImportImage={onImportImage}
+          onImportSvg={onImportSvg}
+          onToolChange={onToolChange}
+        />
+        <EditorToolButton
+          active={activeTool === "text"}
+          icon={Type}
+          label="Text"
+          onClick={() => onToolChange("text")}
+          shortcut="T"
+        />
+        <EditorToolButton
+          active={activeTool === "container"}
+          icon={Frame}
+          label="Frame"
+          onClick={() => onToolChange("container")}
+          shortcut="F"
+        />
+      </div>
 
-      <Separator className="my-1 h-px w-6" />
+      <Separator className="h-px w-4  bg-border/70" />
 
-      <EditorToolButton
-        icon={Plus}
-        label="New container"
-        onClick={onCreateContainer}
-      />
-      <EditorToolButton
-        className="hover:text-destructive"
-        disabled={selectedCount === 0}
-        icon={Trash2}
-        label="Delete"
-        onClick={onDelete}
-      />
+      <div className="flex flex-col items-center gap-1">
+        <EditorToolButton
+          disabled={!canUndo}
+          icon={Undo2}
+          label="Undo"
+          onClick={onUndo}
+        />
+        <EditorToolButton
+          disabled={!canRedo}
+          icon={Redo2}
+          label="Redo"
+          onClick={onRedo}
+        />
+      </div>
+
+      <Separator className="h-px w-4 bg-border/70" />
+
+      <div className="flex flex-col items-center gap-1">
+        <EditorToolButton
+          icon={Plus}
+          label="New container"
+          onClick={onCreateContainer}
+        />
+        <EditorToolButton
+          className="hover:bg-destructive/10 hover:text-destructive"
+          disabled={selectedCount === 0}
+          icon={Trash2}
+          label="Delete"
+          onClick={onDelete}
+        />
+      </div>
     </nav>
   );
 }

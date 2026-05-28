@@ -327,7 +327,7 @@ export default function HomePage() {
               type="button"
               disabled={creating}
               onClick={() => createNewProject()}
-              className="aspect-[286/208] cursor-pointer rounded-xl bg-card p-2 shadow-card transition-shadow duration-300 hover:shadow-md sm:rounded-2xl sm:p-3"
+              className="aspect-[286/208] cursor-pointer rounded-xl bg-card p-2 transition-shadow duration-300 hover:shadow-md sm:rounded-2xl sm:p-3"
             >
               <div className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-xl bg-muted sm:gap-3">
                 <svg
@@ -355,7 +355,7 @@ export default function HomePage() {
                 key={project.id}
                 variants={cardItem}
                 whileHover={{ y: -4 }}
-                className="group relative aspect-[286/208] cursor-pointer rounded-lg bg-card p-2 text-left shadow-card transition-shadow duration-300 hover:shadow-md sm:p-3"
+                className="group relative aspect-[286/208] cursor-pointer rounded-lg bg-card p-2 text-left transition-shadow duration-300 hover:shadow-md sm:p-3"
                 onClick={() =>
                   router.push(`/canvas?id=${project.primaryCanvas.id}`)
                 }

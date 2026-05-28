@@ -84,6 +84,22 @@ export async function readDataTransferImportPayload(
   );
 }
 
+export async function readDataTransferImportPayloads(
+  dataTransfer: DataTransfer | null | undefined,
+): Promise<ClipboardImportReadResult[]> {
+  const files = collectClipboardFiles(dataTransfer);
+  if (files.length === 0) {
+    return [await readDataTransferImportPayload(dataTransfer)];
+  }
+
+  return Promise.all(
+    files.map(async (file) => ({
+      payload: await fileToImportPayload(file),
+      context: getSingleFileImportContext(dataTransfer, file),
+    })),
+  );
+}
+
 export async function readClipboardImportPayload(): Promise<ClipboardImportReadResult> {
   let html: string | undefined;
   let text: string | undefined;
@@ -284,6 +300,32 @@ async function readFilesFromDataTransfer(
   };
 }
 
+async function fileToImportPayload(
+  file: File,
+): Promise<ClipboardImportPayload> {
+  const type = file.type || "application/octet-stream";
+  if (isReadableSvgFile(file)) {
+    const text = await blobToText(file);
+    return {
+      svg: text || undefined,
+      items: [{ type: "image/svg+xml", text: text || undefined }],
+    };
+  }
+  if (isReadableFileClipboardType(type)) {
+    return {
+      files: [await blobToClipboardFile(file)],
+    };
+  }
+  return {
+    files: [
+      {
+        type,
+        name: file.name || undefined,
+      },
+    ],
+  };
+}
+
 function mergeDataTransferFilePayload(
   base: ClipboardImportReadResult,
   enriched: {
@@ -321,6 +363,24 @@ function getDataTransferImportContext(
   if (itemTypes.length > 0) context.itemTypes = itemTypes;
   if (fileTypes.length > 0) context.fileTypes = fileTypes;
   return context;
+}
+
+function getSingleFileImportContext(
+  dataTransfer: DataTransfer | null | undefined,
+  file: File,
+): ClipboardImportContext {
+  const type = file.type || "application/octet-stream";
+  const mimeTypes = Array.from(
+    new Set([...Array.from(dataTransfer?.types ?? []).filter(Boolean), type]),
+  );
+  return {
+    trigger: "drop-event",
+    mimeTypes,
+    itemTypes: type ? [type] : undefined,
+    fileTypes: type ? [type] : undefined,
+    hasHtml: false,
+    hasText: false,
+  };
 }
 
 function getClipboardDataMimeTypes(

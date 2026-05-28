@@ -1,4 +1,5 @@
 # Cucumber Studio Agent Manual
+
 AI 原生无限画布，画布不是先存在的空白空间，而是 AI Agent 执行过程的可视化产物；
 
 ## 核心设计理念
@@ -76,12 +77,9 @@ For complex tasks:
 
 ## UI Rules
 
-- Use existing components before creating new ones.
-- Keep spacing, radius, color, typography, and motion consistent with the current design system.
-- Avoid hardcoded colors unless the surrounding code already uses that pattern.
-- Avoid adding animation unless requested or already part of the local interaction pattern.
-- Do not introduce new UI libraries without explicit approval.
-- For canvas/productivity surfaces, optimize for dense, stable, scan-friendly workflows over marketing-style layouts.
+- UI 相关任务先参考根目录 `design.md`，其中维护当前 Web 端设计令牌、字体、布局、基础组件和关键实现位置索引。
+
+  <br />
 
 ## Backend And Agent Rules
 
@@ -104,7 +102,7 @@ Canvas persistence rule: `PenDocument.pages` with a valid `activePageId` is the 
 
 ## LangChain / LangGraph / Deep Agents
 
-关于 LangChain、LangGraph、Deep Agents 相关开发，先查看官方 `llms.txt` 作为索引，再进入对应文档获取最佳实践：https://docs.langchain.com/llms.txt
+关于 LangChain、LangGraph、Deep Agents 相关开发，先查看官方 `llms.txt` 作为索引，再进入对应文档获取最佳实践：<https://docs.langchain.com/llms.txt>
 
 When changing agent runtime code under `apps/server/src/agent/`, inspect the current Deep Agents/LangGraph patterns in the repository before editing. Do not change framework-level orchestration, checkpointer/store behavior, or tool protocol shape without documenting the reason in `docs/architecture.md` or an adjacent technical note.
 
@@ -124,3 +122,4 @@ Do not modify these unless explicitly requested:
 - Payment logic.
 - Global design tokens.
 - Deployment configuration.
+

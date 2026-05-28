@@ -133,7 +133,7 @@ export function HomeDiscoveryGallery({
             onClick={() =>
               handleCaseClick(item.categoryKey, item.categoryLabel, item)
             }
-            className="group overflow-hidden rounded-2xl border border-border bg-card shadow-card transition-all duration-300 hover:-translate-y-1 hover:shadow-md"
+            className="group overflow-hidden rounded-2xl border border-border bg-card transition-all duration-300 hover:-translate-y-1 hover:shadow-md"
           >
             <div className="relative aspect-[4/5] overflow-hidden bg-muted">
               <img

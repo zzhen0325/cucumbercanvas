@@ -218,8 +218,8 @@ function NumberField({
   return (
     <label
       className={cn(
-        "flex h-9 min-w-0 items-center rounded-lg bg-muted/60 px-3 text-xs text-muted-foreground",
-        "focus-within:bg-background focus-within:ring-1 focus-within:ring-border",
+        "flex h-9 min-w-0 items-center rounded-lg border border-transparent bg-muted/70 px-3 text-xs text-muted-foreground shadow-subtle",
+        "focus-within:border-border focus-within:bg-background focus-within:ring-2 focus-within:ring-ring/20",
         muted && "opacity-55",
       )}
     >
@@ -254,14 +254,14 @@ function InspectorSection({
   return (
     <section
       className={cn(
-        "-mx-3 border-t border-border px-3 py-4 first:border-t-0 first:pt-1",
+        "-mx-4 border-t border-border/70 px-4 py-4 first:border-t-0 first:pt-1",
         muted && "text-muted-foreground",
       )}
     >
       <div className="mb-3 flex h-7 items-center justify-between">
         <h3
           className={cn(
-            "text-sm font-semibold tracking-normal text-foreground",
+            "text-xs font-semibold tracking-normal text-foreground",
             muted && "text-muted-foreground",
           )}
         >
@@ -293,9 +293,10 @@ function InspectorIconButton({
     <button
       type="button"
       className={cn(
-        "flex h-8 w-8 items-center justify-center rounded-lg text-foreground transition-colors",
-        "hover:bg-muted disabled:cursor-not-allowed disabled:opacity-35",
-        active && "bg-foreground text-background hover:bg-foreground/90",
+        "flex h-8 w-8 items-center justify-center rounded-lg border border-transparent text-foreground/65 transition-colors",
+        "hover:bg-foreground/[0.05] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35",
+        active &&
+          "border-foreground/10 bg-foreground/[0.08] text-foreground hover:bg-foreground/[0.1]",
       )}
       disabled={disabled}
       onClick={onClick}
@@ -317,7 +318,7 @@ function SegmentedControl<T extends string>({
   onChange: (value: T) => void;
 }) {
   return (
-    <div className="grid h-9 overflow-hidden rounded-lg bg-muted/60 p-0.5">
+    <div className="grid h-9 overflow-hidden rounded-lg border border-border/60 bg-muted/70 p-0.5 shadow-subtle">
       <div
         className="grid gap-0.5"
         style={{
@@ -333,7 +334,7 @@ function SegmentedControl<T extends string>({
               className={cn(
                 "flex items-center justify-center rounded-md text-muted-foreground transition-colors",
                 "hover:bg-background/70 hover:text-foreground",
-                active && "bg-background text-foreground shadow-sm",
+                active && "bg-background text-foreground shadow-subtle",
               )}
               onClick={() => onChange(optionValue)}
               title={label}
@@ -415,7 +416,7 @@ function ColorPickerPopover({
       <ColorSwatch color={color} onClick={() => setOpen(!open)} />
       {open ? (
         <div
-          className="absolute left-0 top-9 z-50 w-52 rounded-xl border border-border bg-card p-2 shadow-card"
+          className="absolute left-0 top-9 z-50 w-52 rounded-xl border border-border bg-card/95 p-2 shadow-float backdrop-blur-lg"
           onPointerDown={(event) => event.stopPropagation()}
         >
           <HexColorPicker color={pickerColor} onChange={onChange} />
@@ -461,14 +462,14 @@ function PaintRow({
   onRemove: () => void;
 }) {
   return (
-    <div className="grid grid-cols-[1fr_3rem_auto] items-center overflow-visible rounded-lg bg-muted/60">
+    <div className="grid grid-cols-[1fr_3rem_auto] items-center overflow-visible rounded-lg border border-border/60 bg-muted/70 shadow-subtle">
       <div className="flex min-w-0 items-center gap-2 px-3">
         <ColorPickerPopover color={color} onChange={onColorChange} />
         <span className="truncate text-sm font-medium text-foreground">
           {color.replace(/^#/, "").toUpperCase()}
         </span>
       </div>
-      <label className="flex h-9 items-center border-l border-background/80 px-2 text-sm">
+      <label className="flex h-9 items-center border-l border-border/70 px-2 text-sm">
         <input
           className="w-full bg-transparent text-right font-medium text-foreground outline-none"
           type="number"
@@ -652,7 +653,7 @@ function StrokeSection({
         />
         <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
           <select
-            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none focus:ring-1 focus:ring-border"
+            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
             value={stroke?.align ?? "inside"}
             onChange={(event) =>
               onUpdate({
@@ -700,7 +701,7 @@ function TextSection({
   return (
     <InspectorSection title="文本内容">
       <textarea
-        className="h-20 w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-border"
+        className="h-20 w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-ring/20"
         value={String(node.content ?? "")}
         onChange={(event) =>
           onUpdate({ content: event.currentTarget.value } as Partial<PenNode>)
@@ -713,7 +714,7 @@ function TextSection({
           min={1}
           onChange={(fontSize) => onUpdate({ fontSize } as Partial<PenNode>)}
         />
-        <div className="flex h-9 items-center gap-2 rounded-lg bg-muted/60 px-3">
+        <div className="flex h-9 items-center gap-2 rounded-lg border border-border/60 bg-muted/70 px-3 shadow-subtle">
           <span className="shrink-0 text-xs font-medium text-muted-foreground">
             颜色
           </span>
@@ -799,8 +800,8 @@ function EffectsSection({
         <button
           type="button"
           className={cn(
-            "flex h-9 w-full items-center justify-between rounded-lg bg-muted/60 px-3 text-sm font-medium",
-            shadow && "bg-background ring-1 ring-border",
+            "flex h-9 w-full items-center justify-between rounded-lg border border-transparent bg-muted/70 px-3 text-sm font-medium shadow-subtle transition-colors hover:bg-muted",
+            shadow && "border-border bg-background",
           )}
           onClick={toggleShadow}
         >
@@ -847,8 +848,8 @@ function EffectsSection({
         <button
           type="button"
           className={cn(
-            "flex h-9 w-full items-center justify-between rounded-lg bg-muted/60 px-3 text-sm font-medium",
-            blurFx && "bg-background ring-1 ring-border",
+            "flex h-9 w-full items-center justify-between rounded-lg border border-transparent bg-muted/70 px-3 text-sm font-medium shadow-subtle transition-colors hover:bg-muted",
+            blurFx && "border-border bg-background",
           )}
           onClick={toggleBlur}
         >
@@ -966,7 +967,7 @@ function AutoLayoutSection({
             </div>
             <div className="grid grid-cols-2 gap-2">
               <select
-                className="h-9 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none focus:ring-1 focus:ring-border"
+                className="h-9 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
                 value={n.justifyContent ?? "start"}
                 onChange={(event) =>
                   onUpdate({
@@ -981,7 +982,7 @@ function AutoLayoutSection({
                 <option value="space_around">主轴 环绕</option>
               </select>
               <select
-                className="h-9 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none focus:ring-1 focus:ring-border"
+                className="h-9 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
                 value={n.alignItems ?? "start"}
                 onChange={(event) =>
                   onUpdate({
@@ -998,7 +999,7 @@ function AutoLayoutSection({
         ) : (
           <button
             type="button"
-            className="h-9 w-full rounded-lg border border-border bg-background text-sm font-medium hover:bg-muted"
+            className="h-9 w-full rounded-lg border border-border bg-background text-sm font-medium transition-colors hover:bg-muted"
             onClick={() => {
               onUpdate({
                 layout: "vertical",
@@ -1044,7 +1045,7 @@ function AgentBindingSection({
     <InspectorSection title="Agent 绑定">
       <div className="flex items-center gap-2">
         <input
-          className="h-9 flex-1 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-border"
+          className="h-9 flex-1 rounded-lg border border-border bg-background px-3 text-sm outline-none transition-colors focus:ring-2 focus:ring-ring/20"
           placeholder="Agent name"
           value={name}
           onChange={(e) => setName(e.currentTarget.value)}
@@ -1052,7 +1053,7 @@ function AgentBindingSection({
         />
         <button
           type="button"
-          className="h-9 rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+          className="h-9 rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           onClick={handleBind}
         >
           绑定
@@ -1128,7 +1129,7 @@ function ImportedAutoLayoutSection({
       {hasChildren ? (
         <button
           type="button"
-          className="mt-2 h-9 w-full rounded-lg bg-primary/10 text-xs font-medium text-primary hover:bg-primary/20"
+          className="mt-2 h-9 w-full rounded-lg bg-foreground/[0.08] text-xs font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
           onClick={onApply}
         >
           应用到子节点
@@ -1192,7 +1193,7 @@ function VariableBindingSection({
       {onVariablesChange ? (
         <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
           <input
-            className="h-9 min-w-0 rounded-lg border border-border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-border"
+            className="h-9 min-w-0 rounded-lg border border-border bg-background px-2 text-xs outline-none transition-colors focus:ring-2 focus:ring-ring/20"
             placeholder="newColorToken"
             value={newName}
             onChange={(event) => setNewName(event.currentTarget.value)}
@@ -1200,7 +1201,7 @@ function VariableBindingSection({
           <ColorPickerPopover color={newColor} onChange={setNewColor} />
           <button
             type="button"
-            className="col-span-2 h-9 rounded-lg bg-primary/10 text-xs font-medium text-primary hover:bg-primary/20"
+            className="col-span-2 h-9 rounded-lg bg-foreground/[0.08] text-xs font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
             onClick={() => {
               const name = newName.trim();
               if (!name) return;
@@ -1241,7 +1242,7 @@ function TypographySection({
     >
       <div className="space-y-2">
         <input
-          className="h-9 w-full rounded-lg bg-muted/60 px-3 text-sm font-medium outline-none focus:bg-background focus:ring-1 focus:ring-border"
+          className="h-9 w-full rounded-lg border border-transparent bg-muted/70 px-3 text-sm font-medium shadow-subtle outline-none focus:border-border focus:bg-background focus:ring-2 focus:ring-ring/20"
           placeholder="Font family"
           value={node.fontFamily ?? ""}
           onChange={(event) =>
@@ -1295,8 +1296,8 @@ function TypographySection({
           <button
             type="button"
             className={cn(
-              "flex h-9 items-center justify-center gap-2 rounded-lg bg-muted/60 text-sm font-medium",
-              node.fontStyle === "italic" && "bg-background ring-1 ring-border",
+              "flex h-9 items-center justify-center gap-2 rounded-lg border border-transparent bg-muted/70 text-sm font-medium shadow-subtle transition-colors hover:bg-muted",
+              node.fontStyle === "italic" && "border-border bg-background",
             )}
             onClick={() =>
               onUpdate({
@@ -1310,8 +1311,8 @@ function TypographySection({
           <button
             type="button"
             className={cn(
-              "flex h-9 items-center justify-center gap-2 rounded-lg bg-muted/60 text-sm font-medium",
-              node.underline && "bg-background ring-1 ring-border",
+              "flex h-9 items-center justify-center gap-2 rounded-lg border border-transparent bg-muted/70 text-sm font-medium shadow-subtle transition-colors hover:bg-muted",
+              node.underline && "border-border bg-background",
             )}
             onClick={() =>
               onUpdate({ underline: !node.underline } as Partial<PenNode>)
@@ -1342,7 +1343,7 @@ function ComponentRefSection({
       actions={<InspectorIconButton icon={Box} label="组件" disabled />}
     >
       {node.type === "frame" ? (
-        <label className="flex h-9 items-center gap-2 rounded-lg bg-muted/60 px-3 text-sm text-muted-foreground">
+        <label className="flex h-9 items-center gap-2 rounded-lg border border-border/60 bg-muted/70 px-3 text-sm text-muted-foreground shadow-subtle">
           <input
             type="checkbox"
             checked={record.reusable === true}
@@ -1357,7 +1358,7 @@ function ComponentRefSection({
       ) : null}
       {node.type === "ref" ? (
         <input
-          className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-border"
+          className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none transition-colors focus:ring-2 focus:ring-ring/20"
           placeholder="Referenced component id"
           value={String(record.ref ?? "")}
           onChange={(event) =>
@@ -1403,7 +1404,7 @@ function PositionSection({
             step={0.5}
             onChange={(rotation) => onBoundsChange({ rotation })}
           />
-          <div className="grid grid-cols-3 overflow-hidden rounded-lg bg-muted/60 p-0.5">
+          <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-border/60 bg-muted/70 p-0.5 shadow-subtle">
             <InspectorIconButton
               icon={RotateCw}
               label="重置旋转"
@@ -1583,23 +1584,28 @@ export function CanvasPropertyPanel({
 
   return (
     <div
-      className="absolute right-0 top-0 z-20 flex h-full w-[344px] flex-col border-l border-border bg-card/95 shadow-card backdrop-blur"
+      className="absolute bottom-4 right-4 top-4 z-20 flex w-[360px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-border bg-card  ring-1 ring-foreground/5 backdrop-blur-lg"
       onPointerDown={(event) => event.stopPropagation()}
       onPointerUp={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
       onKeyDown={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
     >
-      <div className="flex min-h-14 items-center justify-between border-b border-border px-5">
+      <div className="flex min-h-16 items-center justify-between border-b border-border/70 bg-card/70 px-4">
         <button
           type="button"
-          className="flex min-w-0 items-center gap-2 text-left"
+          className="flex min-w-0 flex-col items-start gap-0.5 text-left"
           title={nodeName}
         >
-          <span className="truncate text-lg font-semibold text-foreground">
-            {nodeTypeLabel(node.type)}
+          <span className="flex max-w-[184px] items-center gap-1.5">
+            <span className="truncate text-sm font-semibold text-foreground">
+              {nodeTypeLabel(node.type)}
+            </span>
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           </span>
-          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="max-w-[184px] truncate text-[11px] font-medium text-muted-foreground">
+            {node.name?.trim() ? nodeName : "已选节点"}
+          </span>
         </button>
         <div className="flex items-center gap-1">
           <InspectorIconButton
@@ -1614,14 +1620,14 @@ export function CanvasPropertyPanel({
           <InspectorIconButton icon={MoreHorizontal} label="更多" disabled />
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-3">
-        <div className="py-3">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4">
+        <div className="py-3.5">
           <label className="sr-only" htmlFor={`${node.id}-title`}>
             名称
           </label>
           <input
             id={`${node.id}-title`}
-            className="h-9 w-full rounded-lg bg-muted/60 px-3 text-sm font-medium outline-none focus:bg-background focus:ring-1 focus:ring-border"
+            className="h-9 w-full rounded-lg border border-transparent bg-muted/70 px-3 text-sm font-medium shadow-subtle outline-none focus:border-border focus:bg-background focus:ring-2 focus:ring-ring/20"
             value={node.name ?? ""}
             placeholder={nodeTypeLabel(node.type)}
             onChange={(event) => onUpdate({ name: event.currentTarget.value })}
@@ -1684,7 +1690,7 @@ export function CanvasPropertyPanel({
           <InspectorSection title="规则">
             <textarea
               id={`${node.id}-rules`}
-              className="h-20 w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-border"
+              className="h-20 w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none transition-colors focus:ring-2 focus:ring-ring/20"
               value={context.rules?.join("\n") ?? ""}
               onChange={(event) => {
                 const lines = event.currentTarget.value

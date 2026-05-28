@@ -4,7 +4,7 @@ Last updated: 2026-05-28 CST
 
 ## 2026-05-28
 
-- Canvas 文件拖拽导入 landed: PNG/JPG/WebP/GIF/SVG 文件可直接拖到 Skia 画布区域，导入位置落在释放点，SVG 文件复用现有矢量解析链路，位图复用资产导入链路，并补充 drop 诊断日志与不支持文件类型的明确提示。
+- Canvas 文件拖拽导入 landed: PNG/JPG/WebP/GIF/SVG 文件可直接拖到 Skia 画布区域，批量文件会拆成独立导入 payload 后按网格自动排列在释放点周围；SVG 文件复用现有矢量解析链路，位图复用资产导入链路，并补充 drop 诊断日志与不支持文件类型的明确提示。
 - Agent runs no longer auto-create canvas process containers for every tool call; tool progress remains in chat/run stream events, while concrete image/video artifacts and backend live-canvas writes still sync to the canvas.
 - The main Agent prompt now explicitly keeps plans, critiques, tool-call status, and intermediate process traces out of canvas containers unless the user asks for a final structured visual deliverable.
 
@@ -188,10 +188,10 @@ Status:
 
 ## Verification Log
 
-- Passed: `pnpm --filter @cucumber/web exec vitest run test/use-canvas-clipboard-import.test.tsx` (7 tests).
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/use-canvas-clipboard-import.test.tsx` (8 tests).
 - Passed: `pnpm --filter @cucumber/web typecheck` (with existing Next.js workspace-root warning about multiple lockfiles).
 - Passed: `pnpm exec biome check apps/web/src/components/canvas/skia-canvas.tsx apps/web/src/components/canvas/use-canvas-clipboard-import.ts apps/web/test/use-canvas-clipboard-import.test.tsx`.
-- Failed: `pnpm lint` remains blocked by existing unrelated Biome diagnostics outside this change, including `apps/server/src/agent/backends/dev.ts`, `apps/server/src/agent/backends/prod.ts`, `apps/server/src/agent/persistence/index.ts`, `apps/server/src/agent/tools/brand-kit.ts`, `apps/server/src/agent/real-image-generation-chain.integration.test.ts`, and `vercel.json`.
+- Failed: `pnpm lint` remains blocked by existing unrelated Biome diagnostics outside this change, including `apps/server/src/agent/backends/dev.ts`, `apps/server/src/agent/backends/prod.ts`, `apps/server/src/agent/persistence/index.ts`, `apps/server/src/agent/tools/brand-kit.ts`, `apps/server/src/agent/real-image-generation-chain.integration.test.ts`, `tests/e2e/transport.spec.ts`, and `vercel.json`.
 - Passed: `pnpm exec playwright test tests/e2e/skia-canvas.spec.ts`.
 - Passed: `pnpm exec playwright test tests/e2e/canvas-agent-output.spec.ts`.
 - Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/structured-canvas.test.ts` (20 tests).

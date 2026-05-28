@@ -79,7 +79,7 @@ function ExamplePreviewCard({
         "group aspect-[217/130] overflow-hidden rounded-xl px-4 pt-4 text-left transition-all duration-300",
         selected
           ? "bg-card shadow-md ring-1 ring-foreground/15"
-          : "bg-card shadow-card hover:-translate-y-0.5 hover:bg-muted/70 hover:shadow-md",
+          : "bg-card hover:-translate-y-0.5 hover:bg-muted/70 hover:shadow-md",
       )}
     >
       <div className="flex h-20 w-full flex-col items-start gap-3 text-sm leading-5 text-foreground">

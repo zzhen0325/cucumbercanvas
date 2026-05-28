@@ -6,6 +6,7 @@ import {
   readClipboardImportPayload,
   readClipboardImportPayloadFromEvent,
   readDataTransferImportPayload,
+  readDataTransferImportPayloads,
   useCanvasClipboardImport,
 } from "@/components/canvas/use-canvas-clipboard-import";
 
@@ -238,6 +239,44 @@ describe("useCanvasClipboardImport", () => {
       },
     ]);
     expect(result.payload.files).toBeUndefined();
+  });
+
+  it("splits multiple drop files into independent import payloads", async () => {
+    const originalImage = globalThis.Image;
+    Object.defineProperty(globalThis, "Image", {
+      configurable: true,
+      value: undefined,
+    });
+    const svgFile = new File(["<svg><circle r='5' /></svg>"], "shape.svg", {
+      type: "image/svg+xml",
+    });
+    const pngFile = new File([new Uint8Array([137, 80, 78, 71])], "photo.png", {
+      type: "image/png",
+    });
+
+    const results = await readDataTransferImportPayloads(
+      createDataTransfer({}, [svgFile, pngFile]),
+    );
+
+    expect(results).toHaveLength(2);
+    expect(results[0]?.payload.svg).toBe("<svg><circle r='5' /></svg>");
+    expect(results[0]?.payload.files).toBeUndefined();
+    expect(results[1]?.payload.files?.[0]).toMatchObject({
+      type: "image/png",
+      name: "photo.png",
+    });
+    expect(results[1]?.payload.files?.[0]?.dataUrl).toMatch(
+      /^data:image\/png;base64,/,
+    );
+    expect(results.map((result) => result.context.trigger)).toEqual([
+      "drop-event",
+      "drop-event",
+    ]);
+
+    Object.defineProperty(globalThis, "Image", {
+      configurable: true,
+      value: originalImage,
+    });
   });
 
   it("falls back to readText when clipboard.read is unavailable or blocked", async () => {

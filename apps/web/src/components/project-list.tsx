@@ -46,7 +46,7 @@ export function ProjectList({
               onCreateClick();
             }
           }}
-          className="aspect-[286/208] cursor-pointer rounded-xl bg-card p-2 shadow-card transition-all duration-300 hover:shadow-md sm:rounded-2xl sm:p-3"
+          className="aspect-[286/208] cursor-pointer rounded-xl bg-card p-2 transition-all duration-300 hover:shadow-md sm:rounded-2xl sm:p-3"
         >
           <div className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-xl bg-muted sm:gap-3">
             <svg
@@ -73,7 +73,7 @@ export function ProjectList({
           <Link
             key={project.id}
             href={`/canvas?id=${project.primaryCanvas.id}`}
-            className={`group relative block aspect-[286/208] rounded-lg bg-card p-2 cursor-pointer shadow-card transition-all duration-300 hover:shadow-md sm:p-3 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1${
+            className={`group relative block aspect-[286/208] rounded-lg bg-card p-2 cursor-pointer transition-all duration-300 hover:shadow-md sm:p-3 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1${
               highlightId === project.id ? " ring-2 ring-border" : ""
             }`}
           >
