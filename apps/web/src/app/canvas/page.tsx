@@ -52,6 +52,8 @@ function formatImportHint(hint: string): string {
       return "复杂结构按降级路径导入";
     case "layout_degraded":
       return "自动布局已按绝对定位近似";
+    case "component_editability_limited":
+      return "组件引用已保留，编辑能力有限";
     case "component_metadata_dropped":
       return "组件引用语义未保留";
     case "effects_dropped":

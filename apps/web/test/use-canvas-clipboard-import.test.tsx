@@ -279,6 +279,36 @@ describe("useCanvasClipboardImport", () => {
     });
   });
 
+  it("reads drop event .fig files as binary Figma import payloads", async () => {
+    const bytes = new Uint8Array([102, 105, 103, 45]);
+    const file = new File([bytes], "design.fig", {
+      type: "application/octet-stream",
+    });
+
+    const results = await readDataTransferImportPayloads(
+      createDataTransfer({}, [file]),
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.context).toMatchObject({
+      trigger: "drop-event",
+      mimeTypes: ["Files", "application/octet-stream"],
+      fileTypes: ["application/octet-stream"],
+      hasHtml: false,
+      hasText: false,
+    });
+    expect(results[0]?.payload.files?.[0]).toMatchObject({
+      type: "application/octet-stream",
+      name: "design.fig",
+    });
+    const importedArrayBuffer = results[0]?.payload.files?.[0]?.arrayBuffer;
+    expect(importedArrayBuffer).toBeInstanceOf(ArrayBuffer);
+    expect(
+      Array.from(new Uint8Array(importedArrayBuffer ?? new ArrayBuffer(0))),
+    ).toEqual(Array.from(bytes));
+    expect(results[0]?.payload.files?.[0]?.dataUrl).toBeUndefined();
+  });
+
   it("falls back to readText when clipboard.read is unavailable or blocked", async () => {
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,

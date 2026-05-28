@@ -8,7 +8,32 @@ export interface RenderNode {
   absY: number;
   absW: number;
   absH: number;
-  clipRect?: { x: number; y: number; w: number; h: number; rx: number };
+  depth?: number;
+  inheritedOpacity?: number;
+  renderOpacity?: number;
+  opacityGroup?: {
+    opacity: number;
+    depth: number;
+  };
+  clipRect?: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    rx: number;
+    cornerRadius?: [number, number, number, number];
+    cornerSmoothing?: number;
+    source?: "frame" | "mask";
+    maskOpacity?: number;
+    maskType?: "alpha" | "vector";
+    maskShape?: {
+      node: PenNode;
+      absX: number;
+      absY: number;
+      absW: number;
+      absH: number;
+    };
+  };
 }
 
 /** Injectable icon lookup function for resolving icon names to SVG path data. */

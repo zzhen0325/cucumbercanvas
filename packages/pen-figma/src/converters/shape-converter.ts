@@ -7,9 +7,8 @@ import type { TreeNode } from "../figma-tree-builder.js";
 import {
   type ConversionContext,
   commonProps,
-  extractPosition,
-  extractRotation,
   mapCornerRadius,
+  mapCornerSmoothing,
   normalizeAngle,
   resolveHeight,
   resolveWidth,
@@ -25,10 +24,11 @@ export function convertRectangle(
 
   return {
     type: "rectangle",
-    ...commonProps(figma, id),
+    ...commonProps(figma, id, parentStackMode),
     width: resolveWidth(figma, parentStackMode, ctx),
     height: resolveHeight(figma, parentStackMode, ctx),
     cornerRadius: mapCornerRadius(figma),
+    cornerSmoothing: mapCornerSmoothing(figma),
     fill: mapFigmaFills(figma.fillPaints),
     stroke: mapFigmaStroke(figma),
     effects: mapFigmaEffects(figma.effects),
@@ -46,7 +46,7 @@ export function convertEllipse(
   // Convert Figma arcData (radians) to PenNode arc properties (degrees)
   const arc = figma.arcData;
   const arcProps = arc ? mapFigmaArcData(arc) : {};
-  const props = commonProps(figma, id);
+  const props = commonProps(figma, id, parentStackMode);
 
   // For arc ellipses, absorb flipX/flipY into the arc angles instead of
   // relying on canvas-level flip (SVG path flip doesn't work well in Fabric.js).
@@ -75,6 +75,7 @@ export function convertEllipse(
     width: resolveWidth(figma, parentStackMode, ctx),
     height: resolveHeight(figma, parentStackMode, ctx),
     ...arcProps,
+    cornerSmoothing: mapCornerSmoothing(figma),
     fill: mapFigmaFills(figma.fillPaints),
     stroke: mapFigmaStroke(figma),
     effects: mapFigmaEffects(figma.effects),
@@ -124,27 +125,86 @@ function mapFigmaArcData(arc: {
 
 export function convertLine(
   treeNode: TreeNode,
+  parentStackMode: string | undefined,
   ctx: ConversionContext,
 ): PenNode {
   const figma = treeNode.figma;
   const id = ctx.generateId();
-  const { x, y } = extractPosition(figma);
+  const props = commonProps(figma, id, parentStackMode);
+  const x = props.x;
+  const y = props.y;
   const w = figma.size?.x ?? 100;
 
   return {
     type: "line",
-    id,
-    name: figma.name || undefined,
-    x,
-    y,
+    ...props,
     x2: x + w,
     y2: y,
-    rotation: extractRotation(figma.transform),
-    opacity:
-      figma.opacity !== undefined && figma.opacity < 1
-        ? figma.opacity
-        : undefined,
     stroke: mapFigmaStroke(figma),
     effects: mapFigmaEffects(figma.effects),
   };
+}
+
+export function convertRegularPolygon(
+  treeNode: TreeNode,
+  parentStackMode: string | undefined,
+  ctx: ConversionContext,
+): PenNode {
+  const figma = treeNode.figma;
+  const id = ctx.generateId();
+
+  return {
+    type: "polygon",
+    ...commonProps(figma, id, parentStackMode),
+    polygonKind: "polygon",
+    polygonCount: resolvePolygonPointCount(figma, 3),
+    width: resolveWidth(figma, parentStackMode, ctx),
+    height: resolveHeight(figma, parentStackMode, ctx),
+    cornerRadius: mapCornerRadius(figma),
+    cornerSmoothing: mapCornerSmoothing(figma),
+    fill: mapFigmaFills(figma.fillPaints),
+    stroke: mapFigmaStroke(figma),
+    effects: mapFigmaEffects(figma.effects),
+  };
+}
+
+export function convertStar(
+  treeNode: TreeNode,
+  parentStackMode: string | undefined,
+  ctx: ConversionContext,
+): PenNode {
+  const figma = treeNode.figma;
+  const id = ctx.generateId();
+
+  return {
+    type: "polygon",
+    ...commonProps(figma, id, parentStackMode),
+    polygonKind: "star",
+    polygonCount: resolvePolygonPointCount(figma, 5),
+    innerRadius: resolveStarInnerRadius(figma),
+    width: resolveWidth(figma, parentStackMode, ctx),
+    height: resolveHeight(figma, parentStackMode, ctx),
+    cornerRadius: mapCornerRadius(figma),
+    cornerSmoothing: mapCornerSmoothing(figma),
+    fill: mapFigmaFills(figma.fillPaints),
+    stroke: mapFigmaStroke(figma),
+    effects: mapFigmaEffects(figma.effects),
+  };
+}
+
+function resolvePolygonPointCount(figma: TreeNode["figma"], fallback: number) {
+  const count = figma.pointCount ?? figma.polygonCount;
+  if (typeof count !== "number" || !Number.isFinite(count)) return fallback;
+  return Math.max(3, Math.round(count));
+}
+
+function resolveStarInnerRadius(figma: TreeNode["figma"]) {
+  const value =
+    figma.innerRadius ??
+    figma.innerRadiusRatio ??
+    figma.starInnerRadius ??
+    figma.starInnerScale;
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0.5;
+  const normalized = value > 1 ? value / 100 : value;
+  return Math.min(0.99, Math.max(0.01, Math.round(normalized * 1000) / 1000));
 }

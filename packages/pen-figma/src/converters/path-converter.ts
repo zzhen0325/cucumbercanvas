@@ -63,7 +63,7 @@ export function convertVector(
 
     return {
       type: "path",
-      ...commonProps(figma, id),
+      ...commonProps(figma, id, parentStackMode),
       d: iconMatch.d,
       iconId: iconMatch.iconId,
       width: iconW,
@@ -79,7 +79,7 @@ export function convertVector(
 
   const pathD = decodeFigmaVectorPath(figma, ctx.blobs);
   if (pathD) {
-    const props = commonProps(figma, id);
+    const props = commonProps(figma, id, parentStackMode);
     let width: SizingBehavior = resolveWidth(figma, parentStackMode, ctx);
     let height: SizingBehavior = resolveHeight(figma, parentStackMode, ctx);
 
@@ -127,6 +127,7 @@ export function convertVector(
         type: "path",
         ...props,
         d: pathD,
+        fillRule: mapPathFillRule(figma),
         width,
         height,
         fill: strokeAsFill,
@@ -138,6 +139,7 @@ export function convertVector(
       type: "path",
       ...props,
       d: pathD,
+      fillRule: mapPathFillRule(figma),
       width,
       height,
       fill: mapFigmaFills(figma.fillPaints),
@@ -149,13 +151,59 @@ export function convertVector(
   ctx.warnings.push(
     `Vector node "${figma.name}" converted as rectangle (path data not decodable)`,
   );
+  const props = commonProps(figma, id, parentStackMode);
   return {
     type: "rectangle",
-    ...commonProps(figma, id),
+    ...props,
     width: resolveWidth(figma, parentStackMode, ctx),
     height: resolveHeight(figma, parentStackMode, ctx),
     fill: mapFigmaFills(figma.fillPaints),
     stroke: mapFigmaStroke(figma),
     effects: mapFigmaEffects(figma.effects),
+    meta: {
+      ...(props.meta ?? {}),
+      vectorFallback: getFigmaVectorFallbackMeta(figma),
+    },
+  };
+}
+
+function mapPathFillRule(figma: TreeNode["figma"]): "nonzero" | "evenodd" | undefined {
+  const geometries =
+    figma.fillGeometry?.length ? figma.fillGeometry : figma.strokeGeometry;
+  const windingRules = geometries
+    ?.map((path: any) => path.windingRule)
+    .filter(Boolean);
+  if (windingRules?.includes("ODD")) return "evenodd";
+  if (windingRules?.includes("NONZERO")) return "nonzero";
+  return undefined;
+}
+
+function getFigmaVectorFallbackMeta(figma: TreeNode["figma"]): Record<string, unknown> {
+  const booleanOperation =
+    (figma as Record<string, unknown>).booleanOperation ??
+    (figma as Record<string, unknown>).booleanOperationType ??
+    (figma as Record<string, unknown>).operation;
+  const fillWindingRules = figma.fillGeometry
+    ?.map((path: any) => path.windingRule)
+    .filter(Boolean);
+  const strokeWindingRules = figma.strokeGeometry
+    ?.map((path: any) => path.windingRule)
+    .filter(Boolean);
+
+  return {
+    source: "figma",
+    nodeType: figma.type,
+    fallbackReason: "path_not_decodable",
+    ...(booleanOperation ? { booleanOperation } : {}),
+    ...(figma.vectorData?.normalizedSize
+      ? { normalizedSize: figma.vectorData.normalizedSize }
+      : {}),
+    ...(figma.vectorData?.vectorNetworkBlob !== undefined
+      ? { vectorNetworkBlob: figma.vectorData.vectorNetworkBlob }
+      : {}),
+    fillGeometryCount: figma.fillGeometry?.length ?? 0,
+    strokeGeometryCount: figma.strokeGeometry?.length ?? 0,
+    ...(fillWindingRules?.length ? { fillWindingRules } : {}),
+    ...(strokeWindingRules?.length ? { strokeWindingRules } : {}),
   };
 }

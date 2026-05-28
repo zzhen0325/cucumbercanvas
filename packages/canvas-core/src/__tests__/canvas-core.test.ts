@@ -23,6 +23,12 @@ import {
   getOrderedCanvasNodes,
   getVisibleCanvasNodesInBounds,
   insertCanvasImportResult,
+  mapFigmaNativeArcData,
+  mapFigmaNativeComponentRef,
+  mapFigmaNativeEffects,
+  mapFigmaNativePaints,
+  mapFigmaNativeStroke,
+  mapFigmaNativeVectorFillRule,
   mergeSymbolProps,
   parseClipboardImport,
   reparentNodesByDropPoint,
@@ -715,13 +721,230 @@ describe("cucumber canvas core", () => {
     });
   });
 
+  it("merges imported Figma style definitions into the canvas document", () => {
+    const result: CanvasImportResult = {
+      source: "figma",
+      sourceLabel: "Figma",
+      importSessionId: "import-style-defs",
+      rootNodeIds: ["styled-rect"],
+      nodes: [
+        {
+          id: "styled-rect",
+          type: "rect",
+          parentId: null,
+          title: "Styled rect",
+          bounds: { x: 0, y: 0, width: 80, height: 40 },
+          styleRefs: {
+            fill: { source: "figma", id: "10:20" },
+          },
+          fills: [{ type: "solid", color: "#ff0000" }] as PenFill[],
+        },
+      ],
+      assets: [],
+      styleDefinitions: {
+        "10:20": {
+          source: "figma",
+          id: "10:20",
+          name: "Brand / Primary",
+          type: "fill",
+          fill: [{ type: "solid", color: "#ff0000" }],
+          variableRefs: {
+            fill: { type: "VARIABLE_ALIAS", id: "VariableID:1:2" },
+          },
+        },
+      },
+      warnings: [],
+    };
+
+    const inserted = insertCanvasImportResult(createEmptyDocument(), result);
+    const node = findNode(inserted.doc, "styled-rect") as
+      | (PenNode & { styleRefs?: Record<string, unknown> })
+      | undefined;
+
+    expect(inserted.doc.styleDefinitions?.["10:20"]).toMatchObject({
+      source: "figma",
+      id: "10:20",
+      name: "Brand / Primary",
+      type: "fill",
+      variableRefs: {
+        fill: { type: "VARIABLE_ALIAS", id: "VariableID:1:2" },
+      },
+    });
+    expect(inserted.doc.variables?.["figma.VariableID-1-2"]).toMatchObject({
+      source: "figma",
+      id: "VariableID:1:2",
+      type: "color",
+      value: "#ff0000",
+      property: "fill",
+      unresolved: false,
+    });
+    expect(node?.styleRefs).toMatchObject({
+      fill: { source: "figma", id: "10:20" },
+    });
+  });
+
+  it("keeps unresolved imported Figma variable refs as editable placeholders", () => {
+    const result: CanvasImportResult = {
+      source: "figma",
+      sourceLabel: "Figma",
+      importSessionId: "import-variable-placeholders",
+      rootNodeIds: ["text-with-var"],
+      nodes: [
+        {
+          id: "text-with-var",
+          type: "text",
+          parentId: null,
+          title: "Variable text",
+          bounds: { x: 0, y: 0, width: 120, height: 24 },
+          text: "Variable text",
+          variableRefs: {
+            fontSize: { id: "VariableID:font-size" },
+          },
+        },
+      ],
+      assets: [],
+      warnings: [],
+    };
+
+    const inserted = insertCanvasImportResult(createEmptyDocument(), result);
+
+    expect(
+      inserted.doc.variables?.["figma.VariableID-font-size"],
+    ).toMatchObject({
+      source: "figma",
+      id: "VariableID:font-size",
+      type: "string",
+      value: "VariableID:font-size",
+      property: "fontSize",
+      unresolved: true,
+    });
+  });
+
+  it("upgrades unresolved imported Figma variable placeholders with resolved definitions", () => {
+    const doc = createEmptyDocument();
+    doc.variables = {
+      "figma.VariableID-1-2": {
+        source: "figma",
+        id: "VariableID:1:2",
+        type: "string",
+        value: "VariableID:1:2",
+        property: "fill",
+        unresolved: true,
+      },
+      "figma.keep-user-token": {
+        source: "figma",
+        id: "keep-user-token",
+        type: "color",
+        value: "#123456",
+        property: "fill",
+        unresolved: false,
+      },
+    };
+    const result: CanvasImportResult = {
+      source: "figma",
+      sourceLabel: "Figma",
+      importSessionId: "import-variable-upgrade",
+      rootNodeIds: ["styled-rect"],
+      nodes: [
+        {
+          id: "styled-rect",
+          type: "rect",
+          parentId: null,
+          title: "Styled rect",
+          bounds: { x: 0, y: 0, width: 80, height: 40 },
+          fills: [{ type: "solid", color: "#ff0000" }] as PenFill[],
+          variableRefs: {
+            fill: { id: "VariableID:1:2" },
+            stroke: { id: "keep-user-token" },
+          },
+        },
+      ],
+      assets: [],
+      variables: {
+        "figma.keep-user-token": {
+          source: "figma",
+          id: "keep-user-token",
+          type: "color",
+          value: "#abcdef",
+          property: "fill",
+          unresolved: false,
+        },
+      },
+      warnings: [],
+    };
+
+    const inserted = insertCanvasImportResult(doc, result);
+
+    expect(inserted.doc.variables?.["figma.VariableID-1-2"]).toMatchObject({
+      source: "figma",
+      id: "VariableID:1:2",
+      type: "color",
+      value: "#ff0000",
+      property: "fill",
+      unresolved: false,
+    });
+    expect(inserted.doc.variables?.["figma.keep-user-token"]).toMatchObject({
+      value: "#123456",
+      unresolved: false,
+    });
+  });
+
+  it("preserves imported Figma ellipse arc geometry", () => {
+    expect(
+      mapFigmaNativeArcData({
+        startingAngle: Math.PI / 2,
+        endingAngle: Math.PI,
+        innerRadius: 0.35,
+      }),
+    ).toEqual({
+      startAngle: 90,
+      sweepAngle: 90,
+      innerRadius: 0.35,
+    });
+
+    const result: CanvasImportResult = {
+      source: "figma",
+      sourceLabel: "Figma",
+      importSessionId: "import-arc",
+      rootNodeIds: ["arc-ellipse"],
+      nodes: [
+        {
+          id: "arc-ellipse",
+          type: "ellipse",
+          parentId: null,
+          title: "Arc",
+          bounds: { x: 10, y: 20, width: 100, height: 80 },
+          startAngle: 90,
+          sweepAngle: 90,
+          innerRadius: 0.35,
+          fills: [{ type: "solid", color: "#ffffff" }] as PenFill[],
+        },
+      ],
+      assets: [],
+      warnings: [],
+    };
+
+    const inserted = insertCanvasImportResult(createEmptyDocument(), result);
+    expect(findNode(inserted.doc, "arc-ellipse")).toMatchObject({
+      type: "ellipse",
+      x: 10,
+      y: 20,
+      width: 100,
+      height: 80,
+      startAngle: 90,
+      sweepAngle: 90,
+      innerRadius: 0.35,
+    });
+  });
+
   parserCapableIt(
     "parses figma html fallback with grouped structure and degradation warnings",
     () => {
       const result = parseClipboardImport({
         html: `
-          <div data-buffer="1" data-node-id="42:1" style="position:absolute;left:10px;top:12px;width:120px;height:64px;background-color:#ffffff;display:flex;box-shadow:0 2px 12px rgba(0,0,0,.15)">
+          <div data-buffer="1" data-node-id="42:1" data-node-type="INSTANCE" data-component-id="7:9" data-component-key="button-key" data-variant-properties='{"State":"Default","Disabled":false}' data-component-prop-assignments='{"Label":"Title"}' style="position:absolute;left:10px;top:12px;width:120px;height:64px;background-color:#ffffff;display:flex;align-items:stretch;box-shadow:0 2px 12px rgba(0,0,0,.15)">
             <span style="font-size:18px;color:#111827">Title</span>
+            <div data-node-id="42:2" style="position:absolute;left:72px;top:8px;width:20px;height:20px;background-color:#ff0000"></div>
           </div>
         `,
       });
@@ -732,6 +955,7 @@ describe("cucumber canvas core", () => {
         expect.arrayContaining([
           expect.objectContaining({ code: "layout_degraded" }),
           expect.objectContaining({ code: "effects_dropped" }),
+          expect.objectContaining({ code: "component_editability_limited" }),
           expect.objectContaining({ code: "partial_fidelity" }),
         ]),
       );
@@ -746,6 +970,40 @@ describe("cucumber canvas core", () => {
         originNodeType: "div",
         autoLayout: {
           layout: "horizontal",
+          alignItems: "stretch",
+        },
+      });
+      if (!result) {
+        throw new Error("Expected Figma HTML fallback to parse.");
+      }
+      const inserted = insertCanvasImportResult(createEmptyDocument(), result);
+      const importedAbsoluteChild = getOrderedCanvasNodes(inserted.doc)
+        .map((entry) => entry.node)
+        .find(
+          (node) =>
+            ((node as PenNode & { meta?: Record<string, unknown> }).meta
+              ?.originNodeId as string | undefined) === "42:2" &&
+            node.type === "group",
+        ) as
+        | (PenNode & { role?: string; meta?: Record<string, unknown> })
+        | undefined;
+      expect(findNode(inserted.doc, rootId ?? "")).toMatchObject({
+        componentRef: {
+          source: "figma",
+          type: "instance",
+          id: "42:1",
+          key: "button-key",
+          componentId: "7:9",
+          variantProperties: { State: "Default", Disabled: false },
+          propertyAssignments: { Label: "Title" },
+        },
+      });
+      expect(importedAbsoluteChild).toMatchObject({
+        role: "overlay",
+        meta: {
+          autoLayout: {
+            positioning: "absolute",
+          },
         },
       });
     },
@@ -844,6 +1102,284 @@ describe("cucumber canvas core", () => {
       expect(rect?.stroke?.thickness).toBe(2);
     },
   );
+
+  it("preserves legacy native Figma gradient transform geometry", () => {
+    const transform = {
+      m00: 0.8,
+      m01: 0.1,
+      m02: 0.05,
+      m10: 0.2,
+      m11: 0.6,
+      m12: 0.1,
+    };
+    const stops = [
+      { position: 0, color: { r: 0, g: 0, b: 0, a: 1 } },
+      { position: 1, color: { r: 1, g: 1, b: 1, a: 1 } },
+    ];
+
+    const fills = mapFigmaNativePaints([
+      { type: "GRADIENT_LINEAR", transform, stops },
+      { type: "GRADIENT_ANGULAR", transform, stops },
+      { type: "GRADIENT_DIAMOND", transform, stops },
+    ]);
+
+    expect(fills?.[0]).toMatchObject({
+      type: "linear_gradient",
+      angle: 76,
+      x1: 0.1,
+      y1: 0.4,
+      transform,
+    });
+    expect(fills?.[0]?.type === "linear_gradient" && fills[0].x2).toBeCloseTo(
+      0.9,
+    );
+    expect(fills?.[1]).toMatchObject({
+      type: "angular_gradient",
+      cx: 0.5,
+      cy: 0.5,
+      angle: 76,
+      transform,
+    });
+    expect(fills?.[2]).toMatchObject({
+      type: "diamond_gradient",
+      cx: 0.5,
+      cy: 0.5,
+      angle: 76,
+      transform,
+    });
+    expect(
+      fills?.[2]?.type === "diamond_gradient" && fills[2].radius,
+    ).toBeCloseTo(0.3582, 4);
+  });
+
+  it("preserves legacy native Figma paint layer visibility and blend modes", () => {
+    const fills = mapFigmaNativePaints([
+      {
+        type: "SOLID",
+        visible: false,
+        blendMode: "MULTIPLY",
+        opacity: 0.4,
+        color: { r: 1, g: 0, b: 0, a: 1 },
+      },
+      {
+        type: "GRADIENT_LINEAR",
+        blendMode: "SCREEN",
+        opacity: 0.7,
+        transform: {
+          m00: 1,
+          m01: 0,
+          m02: 0,
+          m10: 0,
+          m11: 1,
+          m12: 0,
+        },
+        stops: [
+          { position: 0, color: { r: 0, g: 0, b: 0, a: 1 } },
+          { position: 1, color: { r: 1, g: 1, b: 1, a: 1 } },
+        ],
+      },
+    ]);
+
+    expect(fills).toEqual([
+      {
+        type: "solid",
+        color: "#ff0000",
+        opacity: 0.4,
+        visible: false,
+        blendMode: "multiply",
+      },
+      {
+        type: "linear_gradient",
+        angle: 90,
+        x1: 0,
+        y1: 0.5,
+        x2: 1,
+        y2: 0.5,
+        stops: [
+          { offset: 0, color: "#000000" },
+          { offset: 1, color: "#ffffff" },
+        ],
+        opacity: 0.7,
+        blendMode: "screen",
+      },
+    ]);
+  });
+
+  it("preserves unresolved legacy native Figma image fills for diagnostics", () => {
+    const fills = mapFigmaNativePaints([
+      {
+        type: "IMAGE",
+        image: { hash: Uint8Array.from([0xab, 0xcd, 0x12]) },
+        imageScaleMode: "CROP",
+        originalImageWidth: 2644,
+        originalImageHeight: 1696,
+        opacity: 0.6,
+        visible: false,
+        blendMode: "MULTIPLY",
+        transform: {
+          m00: 0.5,
+          m01: 0.1,
+          m02: 0.2,
+          m10: 0.05,
+          m11: 0.75,
+          m12: 0.15,
+        },
+      },
+    ]);
+
+    expect(fills).toEqual([
+      {
+        type: "image",
+        url: "__hash:abcd12",
+        mode: "crop",
+        originalSize: { width: 2644, height: 1696 },
+        transform: {
+          m00: 0.5,
+          m01: 0.1,
+          m02: 0.2,
+          m10: 0.05,
+          m11: 0.75,
+          m12: 0.15,
+        },
+        opacity: 0.6,
+        visible: false,
+        blendMode: "multiply",
+      },
+    ]);
+  });
+
+  it("preserves imported Figma vector path fill rules", () => {
+    expect(
+      mapFigmaNativeVectorFillRule({
+        fillGeometry: [{ windingRule: "NONZERO" }, { windingRule: "ODD" }],
+      }),
+    ).toBe("evenodd");
+
+    const result: CanvasImportResult = {
+      source: "figma",
+      sourceLabel: "Figma",
+      importSessionId: "import-vector-fill-rule",
+      rootNodeIds: ["evenodd-path"],
+      nodes: [
+        {
+          id: "evenodd-path",
+          type: "path",
+          parentId: null,
+          title: "Compound path",
+          bounds: { x: 0, y: 0, width: 80, height: 80 },
+          d: "M0 0 L80 0 L80 80 L0 80 Z M20 20 L60 20 L60 60 L20 60 Z",
+          fillRule: "evenodd",
+          fills: [{ type: "solid", color: "#000000" }] as PenFill[],
+        },
+      ],
+      assets: [],
+      warnings: [],
+    };
+
+    const inserted = insertCanvasImportResult(createEmptyDocument(), result);
+    expect(findNode(inserted.doc, "evenodd-path")).toMatchObject({
+      type: "path",
+      fillRule: "evenodd",
+    });
+  });
+
+  it("preserves legacy native Figma hidden stroke paints and dash metadata", () => {
+    const stroke = mapFigmaNativeStroke({
+      strokeWeight: 3,
+      strokeAlign: "OUTSIDE",
+      strokeCap: "SQUARE",
+      strokeJoin: "MITER",
+      strokeMiterLimit: 8,
+      dashPattern: [6, 2],
+      dashOffset: 1.5,
+      strokePaints: [
+        {
+          type: "SOLID",
+          visible: false,
+          blendMode: "SCREEN",
+          color: { r: 0, g: 0, b: 1, a: 1 },
+        },
+      ],
+    });
+
+    expect(stroke).toEqual({
+      thickness: 3,
+      align: "outside",
+      cap: "square",
+      join: "miter",
+      dashPattern: [6, 2],
+      dashOffset: 1.5,
+      miterLimit: 8,
+      fill: [
+        {
+          type: "solid",
+          color: "#0000ff",
+          visible: false,
+          blendMode: "screen",
+        },
+      ],
+    });
+  });
+
+  it("preserves legacy native Figma effect layers for editability", () => {
+    const effects = mapFigmaNativeEffects([
+      {
+        type: "DROP_SHADOW",
+        visible: true,
+        blendMode: "MULTIPLY",
+        offset: { x: 2, y: 4 },
+        radius: 12,
+        spread: 3,
+        color: { r: 0, g: 0, b: 0, a: 0.35 },
+      },
+      {
+        type: "INNER_SHADOW",
+        visible: false,
+        offset: { x: -1, y: 2 },
+        radius: 6,
+        spread: 1,
+        color: { r: 1, g: 0, b: 0, a: 0.5 },
+      },
+      {
+        type: "BACKGROUND_BLUR",
+        visible: true,
+        radius: 20,
+        opacity: 0.4,
+        blendMode: "SCREEN",
+      },
+    ]);
+
+    expect(effects).toEqual([
+      {
+        type: "shadow",
+        inner: false,
+        offsetX: 2,
+        offsetY: 4,
+        blur: 12,
+        spread: 3,
+        color: "#000000",
+        opacity: 0.35,
+        blendMode: "multiply",
+      },
+      {
+        type: "shadow",
+        inner: true,
+        offsetX: -1,
+        offsetY: 2,
+        blur: 6,
+        spread: 1,
+        color: "#ff0000",
+        visible: false,
+        opacity: 0.5,
+      },
+      {
+        type: "background_blur",
+        radius: 20,
+        opacity: 0.4,
+        blendMode: "screen",
+      },
+    ]);
+  });
 
   it("parses raster clipboard files into image assets", () => {
     const result = parseClipboardImport({
@@ -1041,6 +1577,20 @@ describe("cucumber canvas core", () => {
           parentId: null,
           title: "Auto frame",
           bounds: { x: 10, y: 20, width: 240, height: 120, rotation: 8 },
+          transform: {
+            m00: -1,
+            m01: 0.25,
+            m02: 10,
+            m10: 0.1,
+            m11: 1.2,
+            m12: 20,
+          },
+          scaleX: 1.05,
+          scaleY: 1.2,
+          skewX: 7,
+          skewY: 5,
+          blendMode: "multiply",
+          flipX: true,
           fills: [{ type: "solid", color: "#ffffff" }] as PenFill[],
           effects: [
             {
@@ -1089,6 +1639,8 @@ describe("cucumber canvas core", () => {
           alignItems?: string;
           clipContent?: boolean;
           effects?: Array<{ type: string; blur?: number }>;
+          blendMode?: string;
+          flipX?: boolean;
         })
       | undefined;
     const text = findNode(inserted.doc, "text-1") as
@@ -1102,6 +1654,20 @@ describe("cucumber canvas core", () => {
     expect(frame).toMatchObject({
       type: "frame",
       rotation: 8,
+      transform: {
+        m00: -1,
+        m01: 0.25,
+        m02: 10,
+        m10: 0.1,
+        m11: 1.2,
+        m12: 20,
+      },
+      scaleX: 1.05,
+      scaleY: 1.2,
+      skewX: 7,
+      skewY: 5,
+      blendMode: "multiply",
+      flipX: true,
       layout: "horizontal",
       gap: 12,
       padding: [8, 16],
@@ -1117,6 +1683,54 @@ describe("cucumber canvas core", () => {
       textAlign: "center",
       textGrowth: "fixed-width",
     });
+  });
+
+  it("preserves imported text PostScript font identity", () => {
+    const result: CanvasImportResult = {
+      source: "figma",
+      sourceLabel: "Figma",
+      importSessionId: "import-text-postscript",
+      rootNodeIds: ["text-postscript"],
+      nodes: [
+        {
+          id: "text-postscript",
+          type: "text",
+          parentId: null,
+          title: "PostScript text",
+          bounds: { x: 0, y: 0, width: 180, height: 48 },
+          text: [
+            {
+              text: "Styled",
+              fontFamily: "Inter",
+              fontPostScriptName: "Inter-SemiBoldItalic",
+              fontSize: 18,
+              fontWeight: 600,
+              fontStyle: "italic",
+            },
+          ],
+          fontFamily: "Inter",
+          fontPostScriptName: "Inter-Regular",
+          fontSize: 16,
+        },
+      ],
+      assets: [],
+      warnings: [],
+    };
+
+    const inserted = insertCanvasImportResult(createEmptyDocument(), result);
+    const text = findNode(inserted.doc, "text-postscript") as
+      | (PenNode & {
+          content?: Array<{ fontPostScriptName?: string }>;
+          fontPostScriptName?: string;
+        })
+      | undefined;
+
+    expect(text).toMatchObject({
+      type: "text",
+      fontFamily: "Inter",
+      fontPostScriptName: "Inter-Regular",
+    });
+    expect(text?.content?.[0]?.fontPostScriptName).toBe("Inter-SemiBoldItalic");
   });
 
   it("materializes imported auto-layout sizing onto executable PenNode fields", () => {
@@ -1463,6 +2077,440 @@ describe("cucumber canvas core", () => {
     });
   });
 
+  it("aligns imported horizontal auto-layout children by baseline", () => {
+    let doc = createEmptyDocument();
+    const root = {
+      ...makeContainer("baseline-root"),
+      x: 0,
+      y: 0,
+      width: 260,
+      height: 80,
+      meta: {
+        source: "figma-paste",
+        autoLayout: {
+          layout: "horizontal",
+          gap: 8,
+          padding: 10,
+          alignItems: "baseline",
+        },
+      },
+    } as PenNode & { meta: Record<string, unknown> };
+    const title: PenNode = {
+      id: "baseline-title",
+      type: "text",
+      x: 0,
+      y: 0,
+      width: 70,
+      height: 40,
+      content: "Title",
+      fontSize: 30,
+    };
+    const label: PenNode = {
+      id: "baseline-label",
+      type: "text",
+      x: 0,
+      y: 0,
+      width: 50,
+      height: 20,
+      content: "Label",
+      fontSize: 10,
+    };
+    const icon: PenNode = {
+      id: "baseline-icon",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 16,
+      height: 16,
+      fill: [{ type: "solid", color: "#ffffff" }] as PenFill[],
+    };
+
+    doc = applyCanvasOperation(doc, { type: "insertNode", node: root });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: title,
+      parentId: "baseline-root",
+    });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: label,
+      parentId: "baseline-root",
+    });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: icon,
+      parentId: "baseline-root",
+    });
+
+    const next = applyImportedAutoLayout(doc, "baseline-root");
+    const nextTitle = findNode(next, "baseline-title");
+    const nextLabel = findNode(next, "baseline-label");
+    const nextIcon = findNode(next, "baseline-icon");
+    if (!nextTitle || !nextLabel || !nextIcon) {
+      throw new Error("Expected baseline auto-layout children to exist.");
+    }
+
+    expect(getNodeBounds(nextTitle)).toMatchObject({
+      x: 10,
+      y: 10,
+      width: 70,
+      height: 40,
+    });
+    expect(getNodeBounds(nextLabel)).toMatchObject({
+      x: 88,
+      y: 26,
+      width: 50,
+      height: 20,
+    });
+    expect(getNodeBounds(nextIcon)).toMatchObject({
+      x: 146,
+      y: 18,
+      width: 16,
+      height: 16,
+    });
+  });
+
+  it("stretches imported auto-layout children from container cross-axis alignment", () => {
+    let doc = createEmptyDocument();
+    const root = {
+      ...makeContainer("stretch-root"),
+      x: 0,
+      y: 0,
+      width: 220,
+      height: 90,
+      meta: {
+        source: "figma-paste",
+        autoLayout: {
+          layout: "horizontal",
+          gap: 10,
+          padding: [12, 20],
+          alignItems: "stretch",
+        },
+      },
+    } as PenNode & { meta: Record<string, unknown> };
+    const left: PenNode = {
+      id: "stretch-left",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 40,
+      height: 18,
+      fill: [{ type: "solid", color: "#ffffff" }] as PenFill[],
+    };
+    const right: PenNode = {
+      id: "stretch-right",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 50,
+      height: 24,
+      fill: [{ type: "solid", color: "#ffffff" }] as PenFill[],
+    };
+
+    doc = applyCanvasOperation(doc, { type: "insertNode", node: root });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: left,
+      parentId: "stretch-root",
+    });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: right,
+      parentId: "stretch-root",
+    });
+
+    const next = applyImportedAutoLayout(doc, "stretch-root");
+    const nextLeft = findNode(next, "stretch-left");
+    const nextRight = findNode(next, "stretch-right");
+    if (!nextLeft || !nextRight) {
+      throw new Error("Expected stretched auto-layout children to exist.");
+    }
+
+    expect(getNodeBounds(nextLeft)).toMatchObject({
+      x: 20,
+      y: 12,
+      width: 40,
+      height: 66,
+    });
+    expect(getNodeBounds(nextRight)).toMatchObject({
+      x: 70,
+      y: 12,
+      width: 50,
+      height: 66,
+    });
+  });
+
+  it("distributes remaining main-axis space to imported fill-container children", () => {
+    let doc = createEmptyDocument();
+    const root = {
+      ...makeContainer("fill-root"),
+      x: 0,
+      y: 0,
+      width: 300,
+      height: 80,
+      meta: {
+        source: "figma-paste",
+        autoLayout: {
+          layout: "horizontal",
+          gap: 10,
+          padding: 20,
+        },
+      },
+    } as PenNode & { meta: Record<string, unknown> };
+
+    const fixedNode: PenNode = {
+      id: "fixed",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 50,
+      height: 20,
+      fill: [{ type: "solid", color: "#ffffff" }] as PenFill[],
+    };
+    const fillNodeA = {
+      id: "fill-a",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 30,
+      height: 20,
+      fill: [{ type: "solid", color: "#ffffff" }] as PenFill[],
+      meta: {
+        source: "figma-paste",
+        autoLayout: {
+          widthMode: "fill_container",
+        },
+      },
+    } as PenNode & { meta: Record<string, unknown> };
+    const fillNodeB = {
+      id: "fill-b",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 30,
+      height: 20,
+      fill: [{ type: "solid", color: "#ffffff" }] as PenFill[],
+      meta: {
+        source: "figma-paste",
+        autoLayout: {
+          widthMode: "fill_container",
+        },
+      },
+    } as PenNode & { meta: Record<string, unknown> };
+
+    doc = applyCanvasOperation(doc, { type: "insertNode", node: root });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: fixedNode,
+      parentId: "fill-root",
+    });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: fillNodeA,
+      parentId: "fill-root",
+    });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: fillNodeB,
+      parentId: "fill-root",
+    });
+
+    const next = applyImportedAutoLayout(doc, "fill-root");
+
+    const fixed = findNode(next, "fixed");
+    const nextFillA = findNode(next, "fill-a");
+    const nextFillB = findNode(next, "fill-b");
+    if (!fixed || !nextFillA || !nextFillB) {
+      throw new Error("Expected imported auto-layout children to exist.");
+    }
+
+    expect(getNodeBounds(fixed)).toMatchObject({
+      x: 20,
+      y: 20,
+      width: 50,
+      height: 20,
+    });
+    expect(getNodeBounds(nextFillA)).toMatchObject({
+      x: 80,
+      y: 20,
+      width: 95,
+      height: 20,
+    });
+    expect(getNodeBounds(nextFillB)).toMatchObject({
+      x: 185,
+      y: 20,
+      width: 95,
+      height: 20,
+    });
+  });
+
+  it("resizes imported hug auto-layout containers around flow children", () => {
+    let doc = createEmptyDocument();
+    const root = {
+      ...makeContainer("hug-root"),
+      x: 0,
+      y: 0,
+      width: 300,
+      height: 100,
+      meta: {
+        source: "figma-paste",
+        autoLayout: {
+          layout: "horizontal",
+          gap: 10,
+          padding: [8, 12],
+          justifyContent: "center",
+          widthMode: "fit_content",
+          heightMode: "fit_content",
+        },
+      },
+    } as PenNode & { meta: Record<string, unknown> };
+    const left: PenNode = {
+      id: "hug-left",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 40,
+      height: 20,
+      fill: [{ type: "solid", color: "#ffffff" }] as PenFill[],
+    };
+    const right: PenNode = {
+      id: "hug-right",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 60,
+      height: 30,
+      fill: [{ type: "solid", color: "#ffffff" }] as PenFill[],
+    };
+
+    doc = applyCanvasOperation(doc, { type: "insertNode", node: root });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: left,
+      parentId: "hug-root",
+    });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: right,
+      parentId: "hug-root",
+    });
+
+    const next = applyImportedAutoLayout(doc, "hug-root");
+    const nextRoot = findNode(next, "hug-root");
+    const nextLeft = findNode(next, "hug-left");
+    const nextRight = findNode(next, "hug-right");
+    if (!nextRoot || !nextLeft || !nextRight) {
+      throw new Error("Expected hug auto-layout nodes to exist.");
+    }
+
+    expect(getNodeBounds(nextRoot)).toMatchObject({
+      width: 134,
+      height: 46,
+    });
+    expect(getNodeBounds(nextLeft)).toMatchObject({
+      x: 12,
+      y: 8,
+      width: 40,
+      height: 20,
+    });
+    expect(getNodeBounds(nextRight)).toMatchObject({
+      x: 62,
+      y: 8,
+      width: 60,
+      height: 30,
+    });
+  });
+
+  it("propagates nested hug auto-layout sizes to parent containers in one reflow", () => {
+    let doc = createEmptyDocument();
+    const outer = {
+      ...makeContainer("hug-outer"),
+      x: 0,
+      y: 0,
+      width: 260,
+      height: 140,
+      meta: {
+        source: "figma-paste",
+        autoLayout: {
+          layout: "horizontal",
+          padding: 10,
+          widthMode: "fit_content",
+          heightMode: "fit_content",
+        },
+      },
+    } as PenNode & { meta: Record<string, unknown> };
+    const inner = {
+      ...makeContainer("hug-inner"),
+      x: 0,
+      y: 0,
+      width: 220,
+      height: 100,
+      meta: {
+        source: "figma-paste",
+        autoLayout: {
+          layout: "horizontal",
+          gap: 4,
+          padding: 5,
+          widthMode: "fit_content",
+          heightMode: "fit_content",
+        },
+      },
+    } as PenNode & { meta: Record<string, unknown> };
+    const left: PenNode = {
+      id: "nested-hug-left",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 20,
+      height: 10,
+      fill: [{ type: "solid", color: "#ffffff" }] as PenFill[],
+    };
+    const right: PenNode = {
+      id: "nested-hug-right",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 30,
+      height: 12,
+      fill: [{ type: "solid", color: "#ffffff" }] as PenFill[],
+    };
+
+    doc = applyCanvasOperation(doc, { type: "insertNode", node: outer });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: inner,
+      parentId: "hug-outer",
+    });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: left,
+      parentId: "hug-inner",
+    });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: right,
+      parentId: "hug-inner",
+    });
+
+    const next = applyImportedAutoLayout(doc, "hug-outer");
+    const nextOuter = findNode(next, "hug-outer");
+    const nextInner = findNode(next, "hug-inner");
+    if (!nextOuter || !nextInner) {
+      throw new Error("Expected nested hug auto-layout nodes to exist.");
+    }
+
+    expect(getNodeBounds(nextInner)).toMatchObject({
+      x: 10,
+      y: 10,
+      width: 64,
+      height: 22,
+    });
+    expect(getNodeBounds(nextOuter)).toMatchObject({
+      width: 84,
+      height: 42,
+    });
+  });
+
   it("applies instance overrides and derived data to symbol children", () => {
     const symbolNode: FigmaTreeNode = {
       figma: {
@@ -1591,5 +2639,53 @@ describe("cucumber canvas core", () => {
         size: { x: 96, y: 36 },
       }),
     ]);
+  });
+
+  it("preserves structured native Figma nested instance override path refs", () => {
+    expect(
+      mapFigmaNativeComponentRef({
+        type: "INSTANCE",
+        guid: { sessionID: 2, localID: 10 },
+        componentKey: "button/component-key",
+        size: { x: 120, y: 48 },
+        transform: { m00: 1, m01: 0, m02: 0, m10: 0, m11: 1, m12: 0 },
+        symbolData: {
+          symbolID: { sessionID: 1, localID: 1 },
+          symbolOverrides: [
+            {
+              guidPath: {
+                guids: [
+                  { sessionID: 4, localID: 20 },
+                  { sessionID: 4, localID: 21 },
+                ],
+              },
+              textData: { characters: "Nested label" },
+              fontSize: 18,
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({
+      source: "figma",
+      type: "instance",
+      id: "2:10",
+      key: "button/component-key",
+      componentId: "1:1",
+      overrideCount: 1,
+      overridePaths: ["4:20/4:21"],
+      overrides: [
+        {
+          source: "figma",
+          path: "4:20/4:21",
+          pathIds: ["4:20", "4:21"],
+          targetId: "4:21",
+          properties: ["textData", "fontSize"],
+          values: {
+            textData: { characters: "Nested label" },
+            fontSize: 18,
+          },
+        },
+      ],
+    });
   });
 });

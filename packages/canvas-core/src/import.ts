@@ -1,4 +1,20 @@
-import type { PenDocument, PenNode } from "@cucumber/pen-types";
+import {
+  figmaAllPagesToPenDocument,
+  getFigmaPages,
+  parseFigFile,
+  resolveImageBlobs,
+} from "@cucumber/pen-figma";
+import type {
+  BlendMode,
+  PenComponentRef,
+  PenDocument,
+  PenNode,
+  PenNodeStyleRefs,
+  PenPage,
+  PenStyleDefinition,
+  PenTransformMatrix,
+  VariableDefinition,
+} from "@cucumber/pen-types";
 import { cloneDocument, createNodeId, findNode } from "./document.js";
 import { parseFigmaClipboardNative } from "./figma-native.js";
 import { applyCanvasOperation } from "./operations.js";
@@ -31,18 +47,40 @@ export interface ImportNode {
   fills?: CanvasFill[];
   stroke?: CanvasStroke;
   cornerRadius?: number;
+  innerRadius?: number;
+  startAngle?: number;
+  sweepAngle?: number;
+  transform?: PenTransformMatrix;
+  scaleX?: number;
+  scaleY?: number;
+  skewX?: number;
+  skewY?: number;
+  blendMode?: BlendMode;
+  flipX?: boolean;
+  flipY?: boolean;
   opacity?: number;
   childrenOrder?: string[];
   text?: string | StyledTextSegment[];
   fontSize?: number;
   fontFamily?: string;
+  fontPostScriptName?: string;
   d?: string;
+  fillRule?: "nonzero" | "evenodd";
   points?: number;
   assetId?: string;
   src?: string;
   meta?: Record<string, unknown>;
   locked?: boolean;
   visible?: boolean;
+  mask?: {
+    enabled?: boolean;
+    type?: "alpha" | "vector";
+    sourceNodeId?: string;
+    shouldBreakMaskChain?: boolean;
+  };
+  styleRefs?: PenNodeStyleRefs;
+  componentRef?: PenComponentRef;
+  variableRefs?: Record<string, unknown>;
   effects?: CanvasEffect[];
   alt?: string;
   fontWeight?: number;
@@ -50,9 +88,17 @@ export interface ImportNode {
   fontStyle?: "normal" | "italic";
   letterSpacing?: number;
   lineHeight?: number;
+  paragraphSpacing?: number;
+  listStyle?: "none" | "ordered" | "unordered";
+  indent?: number;
+  hangingIndent?: number;
+  baselineShift?: number;
+  openTypeFeatures?: Record<string, boolean | number>;
+  fontFallback?: string[];
   textAlignVertical?: "top" | "middle" | "bottom";
   underline?: boolean;
   strikethrough?: boolean;
+  textCase?: "original" | "upper" | "lower" | "title";
   textGrowth?: "auto" | "fixed-width" | "fixed-width-height";
   layout?: "none" | "vertical" | "horizontal";
   gap?: number;
@@ -63,7 +109,7 @@ export interface ImportNode {
     | "end"
     | "space_between"
     | "space_around";
-  alignItems?: "start" | "center" | "end";
+  alignItems?: "start" | "center" | "end" | "baseline" | "stretch";
   clipContent?: boolean;
   x2?: number;
   y2?: number;
@@ -84,6 +130,8 @@ export interface CanvasImportResult {
   /** ImportNode[] from SVG/HTML parsers, or PenNode[] from native Figma parser (TODO: unify) */
   nodes: (ImportNode | PenNode)[];
   assets: CanvasAsset[];
+  styleDefinitions?: Record<string, PenStyleDefinition>;
+  variables?: Record<string, VariableDefinition>;
   warnings: CanvasImportWarning[];
 }
 
@@ -260,18 +308,53 @@ function getWarningCodes(warnings: CanvasImportWarning[]): string[] {
 
 function getHtmlAutoLayoutMeta(
   style: Record<string, string>,
+  element?: Element,
 ): CanvasImportedAutoLayoutMeta | undefined {
   const isFlex = style.display === "flex" || style.display === "inline-flex";
-  if (!isFlex) {
+  const positioning = getHtmlAutoLayoutPositioning(style, element);
+  const grow = parseCssNumber(style.flexGrow);
+  const alignSelf = mapCssAlignSelf(style.alignSelf);
+  const widthMode = getHtmlSizingMode(element, [
+    "data-width-mode",
+    "data-layout-width-mode",
+    "data-layout-sizing-horizontal",
+    "data-figma-width-mode",
+  ]);
+  const heightMode = getHtmlSizingMode(element, [
+    "data-height-mode",
+    "data-layout-height-mode",
+    "data-layout-sizing-vertical",
+    "data-figma-height-mode",
+  ]);
+
+  if (
+    !isFlex &&
+    !positioning &&
+    grow === undefined &&
+    !alignSelf &&
+    !widthMode &&
+    !heightMode
+  ) {
     return undefined;
   }
 
   const meta: CanvasImportedAutoLayoutMeta = {
-    layout: style.flexDirection === "column" ? "vertical" : "horizontal",
-    gap: parseCssNumber(style.gap),
-    padding: readCssPadding(style),
-    justifyContent: mapCssJustifyContent(style.justifyContent),
-    alignItems: mapCssAlignItems(style.alignItems),
+    layout: isFlex
+      ? style.flexDirection === "column"
+        ? "vertical"
+        : "horizontal"
+      : undefined,
+    gap: isFlex ? parseCssNumber(style.gap) : undefined,
+    padding: isFlex ? readCssPadding(style) : undefined,
+    justifyContent: isFlex
+      ? mapCssJustifyContent(style.justifyContent)
+      : undefined,
+    alignItems: isFlex ? mapCssAlignItems(style.alignItems) : undefined,
+    alignSelf,
+    positioning,
+    grow: grow !== undefined && grow > 0 ? grow : undefined,
+    widthMode,
+    heightMode,
     clipContent:
       style.overflow === "hidden" || style.overflow === "clip"
         ? true
@@ -281,6 +364,21 @@ function getHtmlAutoLayoutMeta(
   return Object.values(meta).some((value) => value !== undefined)
     ? meta
     : undefined;
+}
+
+function getHtmlAutoLayoutPositioning(
+  style: Record<string, string>,
+  element?: Element,
+): CanvasImportedAutoLayoutMeta["positioning"] {
+  const raw =
+    readFirstAttribute(element, [
+      "data-stack-positioning",
+      "data-layout-positioning",
+      "data-figma-stack-positioning",
+      "data-figma-layout-positioning",
+    ]) ?? style.position;
+  if (!raw) return undefined;
+  return /absolute/i.test(raw) ? "absolute" : "auto";
 }
 
 function readCssPadding(
@@ -341,11 +439,46 @@ function mapCssAlignItems(
       return "center";
     case "flex-end":
       return "end";
+    case "stretch":
+      return "stretch";
     case "baseline":
       return "baseline";
     default:
       return value ? "start" : undefined;
   }
+}
+
+function mapCssAlignSelf(
+  value?: string,
+): CanvasImportedAutoLayoutMeta["alignSelf"] {
+  switch (value) {
+    case "auto":
+      return "auto";
+    case "center":
+      return "center";
+    case "flex-end":
+      return "end";
+    case "stretch":
+      return "stretch";
+    case "baseline":
+      return "baseline";
+    case "flex-start":
+      return "start";
+    default:
+      return value ? "start" : undefined;
+  }
+}
+
+function getHtmlSizingMode(
+  element: Element | undefined,
+  names: string[],
+): CanvasImportedAutoLayoutMeta["widthMode"] | undefined {
+  const raw = readFirstAttribute(element, names);
+  if (!raw) return undefined;
+  if (/fill|stretch/i.test(raw)) return "fill_container";
+  if (/hug|fit|resize_to_fit/i.test(raw)) return "fit_content";
+  if (/fixed/i.test(raw)) return "fixed";
+  return undefined;
 }
 
 export function isLikelySvgMarkup(value: string): boolean {
@@ -377,6 +510,7 @@ export function parseClipboardImport(
       (item) => item.text && isLikelyFigmaClipboardHtml(item.text),
     )?.text;
   const rasterFile = payload.files?.find(isRasterClipboardFile);
+  const figmaFile = payload.files?.find(isFigmaFileImport);
   let figmaNativeDecodeError: string | undefined;
 
   if (figmaHtml && isLikelyFigmaClipboardHtml(figmaHtml)) {
@@ -400,6 +534,7 @@ export function parseClipboardImport(
           rootNodeIds: nativeResult.rootNodeIds,
           nodes,
           assets: nativeResult.assets,
+          styleDefinitions: nativeResult.styleDefinitions,
           warnings: nativeResult.warnings,
         };
       }
@@ -408,6 +543,9 @@ export function parseClipboardImport(
         error instanceof Error ? error.message : String(error);
       // Keep walking the explicit MIME priority list before falling back to lossy HTML parsing.
     }
+  }
+  if (figmaFile) {
+    return parseFigmaFileImport(figmaFile);
   }
   if (svg && isLikelySvgMarkup(svg)) {
     return parseSvgMarkup(svg, { source: "svg" });
@@ -436,6 +574,177 @@ export function parseClipboardImport(
 
 function isRasterClipboardFile(file: ClipboardImportFile): boolean {
   return /^(image\/png|image\/jpe?g|image\/webp|image\/gif)$/i.test(file.type);
+}
+
+function isFigmaFileImport(file: ClipboardImportFile): boolean {
+  return (
+    Boolean(file.arrayBuffer) &&
+    (/\.fig$/i.test(file.name ?? "") || /figma|fig/i.test(file.type))
+  );
+}
+
+function parseFigmaFileImport(file: ClipboardImportFile): CanvasImportResult {
+  if (!file.arrayBuffer) {
+    throw new Error(
+      `Figma 文件 ${file.name ?? file.type} 缺少可解析的二进制内容。`,
+    );
+  }
+
+  const importSessionId = createImportSessionId();
+  const fileName = file.name ?? "Figma import";
+  const decoded = parseFigFile(file.arrayBuffer);
+  const pages = getFigmaPages(decoded);
+  const converted = figmaAllPagesToPenDocument(decoded, fileName, "preserve");
+  const rootNodes = materializeFigmaDocumentRoots(converted.document);
+  const unresolvedBefore = countUnresolvedImageRefs(rootNodes);
+  const resolvedImageCount = resolveImageBlobs(
+    rootNodes,
+    converted.imageBlobs,
+    decoded.imageFiles,
+  );
+  const unresolvedAfter = countUnresolvedImageRefs(rootNodes);
+  const warningMessages = [...converted.warnings];
+  if (unresolvedAfter > 0) {
+    warningMessages.push(
+      `Figma 文件中仍有 ${unresolvedAfter} 个图片引用缺少可解析的二进制内容，已保留诊断占位。`,
+    );
+  }
+  const warnings = warningMessages.map(
+    (message): CanvasImportWarning => ({
+      code: "partial_fidelity",
+      message,
+    }),
+  );
+  const nodes = rootNodes.map((node) =>
+    attachImportMetaToPenNodeTree(node, importSessionId, warnings),
+  );
+
+  console.info("[canvas-import] figma.file.decoded", {
+    fileName,
+    nodeChangeCount: decoded.nodeChanges.length,
+    pageCount: pages.length,
+    pageNames: pages.map((page) => page.name),
+    imageFileCount: decoded.imageFiles.size,
+    imageBlobCount: converted.imageBlobs.size,
+    resolvedImageCount,
+    unresolvedImageRefsBefore: unresolvedBefore,
+    unresolvedImageRefsAfter: unresolvedAfter,
+    warningCount: warnings.length,
+    converterWarnings: converted.warnings,
+    rootCount: nodes.length,
+  });
+
+  return {
+    source: "figma",
+    sourceLabel: "Figma",
+    importSessionId,
+    rootNodeIds: nodes.map((node) => node.id),
+    nodes,
+    assets: [],
+    styleDefinitions: converted.document.styleDefinitions,
+    warnings,
+  };
+}
+
+const FIGMA_PAGE_GROUP_GAP = 160;
+
+function materializeFigmaDocumentRoots(document: PenDocument): PenNode[] {
+  const pages = document.pages ?? [];
+  if (pages.length === 0) {
+    return document.children ?? [];
+  }
+  if (pages.length === 1) {
+    return pages[0]?.children ?? [];
+  }
+
+  const roots: PenNode[] = [];
+  let cursorX = 0;
+  for (const page of pages) {
+    const bounds = getPenPageBounds(page);
+    const children = page.children.map((child) =>
+      offsetPenNodeRoot(child, -bounds.x, -bounds.y),
+    );
+    roots.push({
+      id: createNodeId("figma_page_group"),
+      type: "group",
+      name: page.name,
+      x: cursorX,
+      y: 0,
+      width: bounds.width,
+      height: bounds.height,
+      children,
+    } as PenNode);
+    cursorX += bounds.width + FIGMA_PAGE_GROUP_GAP;
+  }
+  return roots;
+}
+
+function getPenPageBounds(page: PenPage): CanvasBounds {
+  if (page.children.length === 0) {
+    return { x: 0, y: 0, width: 1, height: 1 };
+  }
+  const bounds = page.children.map(getPenNodeLocalBounds);
+  const minX = Math.min(...bounds.map((bound) => bound.x));
+  const minY = Math.min(...bounds.map((bound) => bound.y));
+  const maxX = Math.max(...bounds.map((bound) => bound.x + bound.width));
+  const maxY = Math.max(...bounds.map((bound) => bound.y + bound.height));
+  return {
+    x: minX,
+    y: minY,
+    width: Math.max(1, maxX - minX),
+    height: Math.max(1, maxY - minY),
+  };
+}
+
+function getPenNodeLocalBounds(node: PenNode): CanvasBounds {
+  const sized = node as PenNode & { width?: unknown; height?: unknown };
+  return {
+    x: node.x ?? 0,
+    y: node.y ?? 0,
+    width: typeof sized.width === "number" ? sized.width : 100,
+    height: typeof sized.height === "number" ? sized.height : 100,
+  };
+}
+
+function countUnresolvedImageRefs(nodes: PenNode[]): number {
+  let count = 0;
+  const visit = (node: PenNode): void => {
+    const record = node as PenNode & {
+      fill?: unknown;
+      fills?: unknown;
+      stroke?: { fill?: unknown };
+      children?: unknown;
+    };
+    if (node.type === "image" && isUnresolvedImageUrl(node.src)) {
+      count += 1;
+    }
+    count += countUnresolvedImageFills(record.fill);
+    count += countUnresolvedImageFills(record.fills);
+    count += countUnresolvedImageFills(record.stroke?.fill);
+    if (Array.isArray(record.children)) {
+      for (const child of record.children) visit(child);
+    }
+  };
+  for (const node of nodes) visit(node);
+  return count;
+}
+
+function countUnresolvedImageFills(fills: unknown): number {
+  if (!Array.isArray(fills)) return 0;
+  let count = 0;
+  for (const item of fills) {
+    if (item?.type === "image" && isUnresolvedImageUrl(item.url)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function isUnresolvedImageUrl(url: unknown): url is string {
+  return (
+    typeof url === "string" &&
+    (url.startsWith("__blob:") || url.startsWith("__hash:"))
+  );
 }
 
 function parseRasterClipboardFile(
@@ -589,6 +898,27 @@ export function insertCanvasImportResult(
     next = { ...next, assets };
   }
 
+  if (
+    result.styleDefinitions &&
+    Object.keys(result.styleDefinitions).length > 0
+  ) {
+    next = {
+      ...next,
+      styleDefinitions: {
+        ...(next.styleDefinitions ?? {}),
+        ...structuredClone(result.styleDefinitions),
+      },
+    };
+  }
+
+  const importedVariables = collectImportedVariableDefinitions(result);
+  if (Object.keys(importedVariables).length > 0) {
+    next = {
+      ...next,
+      variables: mergeImportedVariables(next.variables, importedVariables),
+    };
+  }
+
   // Detect node format: parser ImportNode has import-only fields such as
   // bounds/title/childrenOrder; already-normalized PenNode trees do not.
   const firstNode = result.nodes[0];
@@ -712,6 +1042,220 @@ function markImportCoordinatesParentRelative(node: PenNode): PenNode {
   } as unknown as PenNode;
 }
 
+type ImportedVariableCandidate = {
+  id: string;
+  property: string;
+  rawRef: unknown;
+  value?: VariableDefinition["value"];
+  type?: VariableDefinition["type"];
+};
+
+function collectImportedVariableDefinitions(
+  result: CanvasImportResult,
+): Record<string, VariableDefinition> {
+  const variables: Record<string, VariableDefinition> = {
+    ...(result.variables ?? {}),
+  };
+
+  for (const definition of Object.values(result.styleDefinitions ?? {})) {
+    addVariableCandidates(
+      variables,
+      extractVariableCandidates(
+        definition.variableRefs,
+        getStyleDefinitionVariableValue(definition),
+      ),
+    );
+  }
+
+  for (const node of result.nodes) {
+    visitImportedNodeForVariables(node, variables);
+  }
+
+  return variables;
+}
+
+function mergeImportedVariables(
+  existing: PenDocument["variables"],
+  imported: Record<string, VariableDefinition>,
+): Record<string, VariableDefinition> {
+  const merged: Record<string, VariableDefinition> = { ...(existing ?? {}) };
+  for (const [name, definition] of Object.entries(imported)) {
+    const current = merged[name];
+    if (!current || (current.unresolved === true && !definition.unresolved)) {
+      merged[name] = structuredClone(definition);
+    }
+  }
+  return merged;
+}
+
+function visitImportedNodeForVariables(
+  node: ImportNode | PenNode,
+  variables: Record<string, VariableDefinition>,
+): void {
+  const record = node as (ImportNode | PenNode) & {
+    variableRefs?: Record<string, unknown>;
+    fill?: CanvasFill[];
+    fills?: CanvasFill[];
+    stroke?: CanvasStroke;
+    effects?: CanvasEffect[];
+    children?: PenNode[];
+  };
+  const fills = record.fills ?? record.fill;
+  addVariableCandidates(
+    variables,
+    extractVariableCandidates(record.variableRefs, {
+      fill: firstSolidFillColor(fills),
+      stroke: firstSolidFillColor(record.stroke?.fill),
+      effect: firstEffectColor(record.effects),
+    }),
+  );
+
+  if (Array.isArray(record.children)) {
+    for (const child of record.children) {
+      visitImportedNodeForVariables(child, variables);
+    }
+  }
+}
+
+function addVariableCandidates(
+  variables: Record<string, VariableDefinition>,
+  candidates: ImportedVariableCandidate[],
+): void {
+  for (const candidate of candidates) {
+    const name = importedVariableName(candidate.id);
+    if (variables[name]) continue;
+    variables[name] = {
+      type:
+        candidate.value !== undefined
+          ? (candidate.type ?? inferVariableType(candidate))
+          : "string",
+      value: candidate.value ?? candidate.id,
+      source: "figma",
+      id: candidate.id,
+      name,
+      property: candidate.property,
+      unresolved: candidate.value === undefined,
+      rawRef: candidate.rawRef,
+    };
+  }
+}
+
+function extractVariableCandidates(
+  refs: unknown,
+  values: { fill?: string; stroke?: string; effect?: string },
+  path: string[] = [],
+): ImportedVariableCandidate[] {
+  if (!refs) return [];
+  if (typeof refs === "string") {
+    return [makeVariableCandidate(refs, path.join("."), refs, values)];
+  }
+  if (Array.isArray(refs)) {
+    return refs.flatMap((item, index) =>
+      extractVariableCandidates(item, values, [...path, String(index)]),
+    );
+  }
+  if (typeof refs === "object") {
+    const record = refs as Record<string, unknown>;
+    if (typeof record.id === "string") {
+      return [makeVariableCandidate(record.id, path.join("."), refs, values)];
+    }
+    if (typeof record.variableId === "string") {
+      return [
+        makeVariableCandidate(record.variableId, path.join("."), refs, values),
+      ];
+    }
+    return Object.entries(record).flatMap(([key, value]) =>
+      extractVariableCandidates(value, values, [...path, key]),
+    );
+  }
+  return [];
+}
+
+function makeVariableCandidate(
+  id: string,
+  property: string,
+  rawRef: unknown,
+  values: { fill?: string; stroke?: string; effect?: string },
+): ImportedVariableCandidate {
+  const lowerProperty = property.toLowerCase();
+  const value = lowerProperty.includes("stroke")
+    ? values.stroke
+    : lowerProperty.includes("effect") || lowerProperty.includes("shadow")
+      ? values.effect
+      : lowerProperty.includes("fill") || lowerProperty.includes("paint")
+        ? values.fill
+        : undefined;
+  return {
+    id,
+    property,
+    rawRef,
+    ...(value ? { value, type: "color" as const } : {}),
+  };
+}
+
+function getStyleDefinitionVariableValue(definition: PenStyleDefinition): {
+  fill?: string;
+  stroke?: string;
+  effect?: string;
+} {
+  return {
+    fill: firstSolidFillColor(definition.fill),
+    stroke: firstSolidFillColor(definition.strokeFill),
+    effect: firstEffectColor(definition.effects),
+  };
+}
+
+function firstSolidFillColor(fills?: CanvasFill[]): string | undefined {
+  const fill = fills?.find(
+    (candidate) =>
+      candidate.visible !== false &&
+      candidate.type === "solid" &&
+      typeof candidate.color === "string",
+  );
+  return fill?.type === "solid" ? fill.color : undefined;
+}
+
+function firstEffectColor(effects?: CanvasEffect[]): string | undefined {
+  const effect = effects?.find(
+    (candidate) =>
+      candidate.visible !== false &&
+      candidate.type === "shadow" &&
+      typeof candidate.color === "string",
+  );
+  return effect?.type === "shadow" ? effect.color : undefined;
+}
+
+function inferVariableType(
+  candidate: ImportedVariableCandidate,
+): VariableDefinition["type"] {
+  const property = candidate.property.toLowerCase();
+  if (
+    property.includes("fill") ||
+    property.includes("stroke") ||
+    property.includes("paint") ||
+    property.includes("color") ||
+    property.includes("shadow")
+  ) {
+    return "color";
+  }
+  if (
+    property.includes("opacity") ||
+    property.includes("radius") ||
+    property.includes("spacing") ||
+    property.includes("size") ||
+    property.includes("width") ||
+    property.includes("height")
+  ) {
+    return "number";
+  }
+  return "string";
+}
+
+function importedVariableName(id: string): string {
+  const sanitized = id.replace(/[^A-Za-z0-9_.-]/g, "-");
+  return `figma.${sanitized}`;
+}
+
 function isNativePenNode(node: ImportNode | PenNode): node is PenNode {
   return (
     !("bounds" in node) && !("title" in node) && !("childrenOrder" in node)
@@ -821,12 +1365,30 @@ function importNodeToPenNode(
     x: bounds.x + offsetX,
     y: bounds.y + offsetY,
     rotation: bounds.rotation,
+    transform: imported.transform,
+    scaleX: imported.scaleX,
+    scaleY: imported.scaleY,
+    skewX: imported.skewX,
+    skewY: imported.skewY,
+    blendMode: imported.blendMode,
+    flipX: imported.flipX,
+    flipY: imported.flipY,
     width: executableLayout.width ?? bounds.width,
     height: executableLayout.height ?? bounds.height,
     role: executableLayout.role,
     opacity: imported.opacity,
     visible: imported.visible,
     locked: imported.locked,
+    mask: imported.mask,
+    styleRefs:
+      imported.styleRefs ??
+      (importedMeta.figmaStyleRefs as PenNodeStyleRefs | undefined),
+    componentRef:
+      imported.componentRef ??
+      (importedMeta.figmaComponentRef as PenComponentRef | undefined),
+    variableRefs:
+      imported.variableRefs ??
+      (importedMeta.figmaVariableRefs as Record<string, unknown> | undefined),
     cornerRadius: imported.cornerRadius,
     fill: imported.fills,
     stroke: imported.stroke,
@@ -842,15 +1404,24 @@ function importNodeToPenNode(
         type: "text" as const,
         content: imported.text ?? "",
         fontFamily: imported.fontFamily,
+        fontPostScriptName: imported.fontPostScriptName,
         fontSize: imported.fontSize,
         fontWeight: imported.fontWeight,
         fontStyle: imported.fontStyle,
         letterSpacing: imported.letterSpacing,
         lineHeight: imported.lineHeight,
+        paragraphSpacing: imported.paragraphSpacing,
+        listStyle: imported.listStyle,
+        indent: imported.indent,
+        hangingIndent: imported.hangingIndent,
+        baselineShift: imported.baselineShift,
+        openTypeFeatures: imported.openTypeFeatures,
+        fontFallback: imported.fontFallback,
         textAlign: imported.textAlign,
         textAlignVertical: imported.textAlignVertical,
         underline: imported.underline,
         strikethrough: imported.strikethrough,
+        textCase: imported.textCase,
         textGrowth: imported.textGrowth,
       } as unknown as PenNode;
     case "frame":
@@ -880,11 +1451,20 @@ function importNodeToPenNode(
     case "rect":
     case "rectangle":
       return { ...base, type: "rectangle" as const } as unknown as PenNode;
+    case "ellipse":
+      return {
+        ...base,
+        type: "ellipse" as const,
+        innerRadius: imported.innerRadius,
+        startAngle: imported.startAngle,
+        sweepAngle: imported.sweepAngle,
+      } as unknown as PenNode;
     case "path":
       return {
         ...base,
         type: "path" as const,
         d: imported.d ?? "",
+        fillRule: imported.fillRule,
       } as unknown as PenNode;
     case "polygon":
       return {
@@ -1071,7 +1651,8 @@ function parseStyledHtmlElement(
     element.getAttribute("id") ??
     undefined;
   const degradationHints: string[] = [];
-  const autoLayout = getHtmlAutoLayoutMeta(style);
+  const autoLayout = getHtmlAutoLayoutMeta(style, element);
+  const componentRef = getHtmlFigmaComponentRef(element);
 
   if (autoLayout) {
     degradationHints.push("layout_degraded");
@@ -1092,7 +1673,16 @@ function parseStyledHtmlElement(
       originNodeType,
     });
   }
-  if (hasComponentLikeMetadata(element)) {
+  if (componentRef) {
+    degradationHints.push("component_editability_limited");
+    pushImportWarning(state, {
+      code: "component_editability_limited",
+      message:
+        "检测到 Figma 组件或实例元数据，已保留最小引用语义；当前 HTML 回退仍以内联可编辑结构呈现。",
+      originNodeId,
+      originNodeType,
+    });
+  } else if (hasComponentLikeMetadata(element)) {
     degradationHints.push("component_metadata_dropped");
     pushImportWarning(state, {
       code: "component_metadata_dropped",
@@ -1115,6 +1705,7 @@ function parseStyledHtmlElement(
       fills: bgColor ? [{ type: "solid", color: bgColor }] : undefined,
       cornerRadius: parseCssNumber(style.borderRadius) ?? 0,
       opacity: readOpacity(style.opacity),
+      componentRef,
       meta: createImportedNodeMeta(state, {
         originNodeType,
         originNodeId,
@@ -1146,6 +1737,7 @@ function parseStyledHtmlElement(
         height: Math.max(height || 0, Math.round(fontSize * 1.5)),
       },
       opacity: readOpacity(style.opacity),
+      componentRef,
       meta: createImportedNodeMeta(state, {
         originNodeType,
         originNodeId,
@@ -1195,6 +1787,7 @@ function parseStyledHtmlElement(
       title: element.getAttribute("aria-label") ?? "Imported group",
       bounds,
       childrenOrder: groupedIds,
+      componentRef,
       meta: createImportedNodeMeta(state, {
         originNodeType,
         originNodeId,
@@ -2138,6 +2731,127 @@ function hasComponentLikeMetadata(element: Element): boolean {
   return Array.from(element.attributes).some((attribute) =>
     /component|instance|variant/i.test(attribute.name + attribute.value),
   );
+}
+
+function getHtmlFigmaComponentRef(
+  element: Element,
+): PenComponentRef | undefined {
+  const figmaNodeType = inferFigmaNodeType(element)?.toUpperCase();
+  const explicitType = readFirstAttribute(element, [
+    "data-component-type",
+    "data-figma-component-type",
+  ])?.toLowerCase();
+  const componentId = readFirstAttribute(element, [
+    "data-component-id",
+    "data-main-component-id",
+    "data-figma-component-id",
+    "data-symbol-id",
+  ]);
+  const key = readFirstAttribute(element, [
+    "data-component-key",
+    "data-figma-component-key",
+  ]);
+  const id =
+    readFirstAttribute(element, [
+      "data-node-id",
+      "data-id",
+      "id",
+      "data-instance-id",
+    ]) ?? undefined;
+  const variantProperties = readJsonRecordOfPrimitives(element, [
+    "data-variant-properties",
+    "data-figma-variant-properties",
+  ]);
+  const componentProperties = readJsonRecord(element, [
+    "data-component-properties",
+    "data-figma-component-properties",
+  ]);
+  const propertyAssignments = readJsonRecord(element, [
+    "data-component-prop-assignments",
+    "data-component-property-assignments",
+    "data-figma-component-prop-assignments",
+  ]);
+  const hasInstanceSignal =
+    figmaNodeType === "INSTANCE" ||
+    explicitType === "instance" ||
+    Boolean(componentId) ||
+    Boolean(propertyAssignments);
+  const hasComponentSignal =
+    figmaNodeType === "SYMBOL" ||
+    figmaNodeType === "COMPONENT" ||
+    explicitType === "component" ||
+    explicitType === "variant";
+
+  if (!hasInstanceSignal && !hasComponentSignal && !variantProperties) {
+    return undefined;
+  }
+
+  const type: PenComponentRef["type"] = hasInstanceSignal
+    ? "instance"
+    : variantProperties || explicitType === "variant"
+      ? "variant"
+      : "component";
+
+  return {
+    source: "figma",
+    type,
+    ...(id ? { id } : {}),
+    ...(key ? { key } : {}),
+    ...(componentId ? { componentId } : {}),
+    ...(variantProperties ? { variantProperties } : {}),
+    ...(componentProperties ? { componentProperties } : {}),
+    ...(propertyAssignments ? { propertyAssignments } : {}),
+  };
+}
+
+function readFirstAttribute(
+  element: Element | undefined,
+  names: string[],
+): string | undefined {
+  if (!element) return undefined;
+  for (const name of names) {
+    const value = element.getAttribute(name);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function readJsonRecord(
+  element: Element,
+  names: string[],
+): Record<string, unknown> | undefined {
+  const raw = readFirstAttribute(element, names);
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return undefined;
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+}
+
+function readJsonRecordOfPrimitives(
+  element: Element,
+  names: string[],
+): Record<string, string | number | boolean> | undefined {
+  const record = readJsonRecord(element, names);
+  if (!record) return undefined;
+  const filtered = Object.fromEntries(
+    Object.entries(record).filter(
+      (entry): entry is [string, string | number | boolean] => {
+        const value = entry[1];
+        return (
+          typeof value === "string" ||
+          typeof value === "number" ||
+          typeof value === "boolean"
+        );
+      },
+    ),
+  );
+  return Object.keys(filtered).length > 0 ? filtered : undefined;
 }
 
 function inferFigmaNodeType(element: Element): string | undefined {

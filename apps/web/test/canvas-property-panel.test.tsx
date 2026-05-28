@@ -53,6 +53,35 @@ const textNode: PenNode = {
   y: 0,
 };
 
+const styledTextNode: PenNode = {
+  ...textNode,
+  content: [
+    {
+      text: "Hello",
+      fill: "#111827",
+      fontFamily: "Inter",
+      fontPostScriptName: "Inter-Regular",
+      fontSize: 18,
+    },
+    {
+      text: "World",
+      baselineShift: 2,
+      fills: [{ type: "solid", color: "#ef4444" }],
+      fontFamily: "Inter",
+      fontSize: 20,
+      textCase: "upper",
+    },
+  ],
+  fontFallback: ["Arial", "Helvetica"],
+  fontPostScriptName: "Inter-Regular",
+  listStyle: "none",
+  openTypeFeatures: { kern: 1, liga: true },
+  paragraphSpacing: 4,
+  textAlignVertical: "top",
+  textCase: "original",
+  textGrowth: "fixed-width-height",
+};
+
 const pathNode: PenNode = {
   d: "M0 0 C 20 10 40 10 60 0",
   fill: [{ type: "solid", color: "#22c55e", opacity: 0.5 }],
@@ -94,6 +123,33 @@ const lineNode: PenNode = {
   y2: 12,
 };
 
+const ellipseNode: PenNode = {
+  fill: [{ type: "solid", color: "#fef3c7" }],
+  height: 100,
+  id: "ellipse-1",
+  innerRadius: 0.25,
+  startAngle: 15,
+  sweepAngle: 220,
+  type: "ellipse",
+  width: 120,
+  x: 0,
+  y: 0,
+};
+
+const polygonNode: PenNode = {
+  fill: [{ type: "solid", color: "#a7f3d0" }],
+  height: 120,
+  id: "polygon-1",
+  innerRadius: 0.4,
+  polygonCount: 5,
+  polygonKind: "star",
+  startAngle: -90,
+  type: "polygon",
+  width: 120,
+  x: 0,
+  y: 0,
+};
+
 const existingShadow = {
   blur: 8,
   color: "#00000080",
@@ -108,6 +164,50 @@ const existingBlur = { radius: 3, type: "blur" as const };
 const nodeWithEffects: PenNode = {
   ...rectangleNode,
   effects: [existingShadow, existingBlur],
+};
+
+const figmaReferenceNode: PenNode = {
+  ...rectangleNode,
+  componentRef: {
+    componentId: "component-1",
+    id: "instance-1",
+    key: "component-key",
+    overrideCount: 1,
+    overrides: [
+      {
+        path: "root/button",
+        pathIds: ["root", "button"],
+        properties: ["fill"],
+        source: "figma",
+        targetId: "button",
+        values: { fill: "#ff0000" },
+      },
+    ],
+    propertyAssignments: { label: "Start" },
+    source: "figma",
+    type: "instance",
+    variantProperties: { Size: "Large" },
+  },
+  layoutRef: {
+    alignSelf: "auto",
+    grow: 0,
+    heightMode: "fixed",
+    positioning: "auto",
+    source: "figma",
+    widthMode: "fixed",
+  },
+  mask: {
+    enabled: false,
+    sourceNodeId: "mask-source",
+    type: "alpha",
+  },
+  styleRefs: {
+    effect: { id: "effect-style", source: "figma" },
+    fill: { id: "fill-style", source: "figma" },
+  },
+  variableRefs: {
+    "fills/0/color": "VariableID:1",
+  },
 };
 
 function renderPropertyPanel(
@@ -153,6 +253,91 @@ describe("CanvasPropertyPanel", () => {
     });
   });
 
+  it("updates transform matrix, scale, and skew controls", () => {
+    const { onUpdate } = renderPropertyPanel({
+      ...rectangleNode,
+      scaleX: 1.2,
+      scaleY: 0.9,
+      skewX: 4,
+      skewY: -2,
+      transform: { m00: 1, m01: 0.1, m02: 12, m10: 0.2, m11: 1, m12: 34 },
+    });
+
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Scale X" }), {
+      target: { value: "1.5" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Skew Y" }), {
+      target: { value: "6" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "矩阵 m01" }), {
+      target: { value: "0.35" },
+    });
+
+    expect(onUpdate).toHaveBeenCalledWith({ scaleX: 1.5 });
+    expect(onUpdate).toHaveBeenCalledWith({ skewY: 6 });
+    expect(onUpdate).toHaveBeenCalledWith({
+      transform: { m00: 1, m01: 0.35, m02: 12, m10: 0.2, m11: 1, m12: 34 },
+    });
+  });
+
+  it("updates layout sizing, child positioning, grow, and layout clip refs", async () => {
+    const user = userEvent.setup();
+    const { onUpdate } = renderPropertyPanel(figmaReferenceNode);
+
+    fireEvent.change(screen.getByLabelText("宽度模式"), {
+      target: { value: "fill_container" },
+    });
+    fireEvent.change(screen.getByLabelText("高度模式"), {
+      target: { value: "fit_content" },
+    });
+    fireEvent.change(screen.getByLabelText("子项定位"), {
+      target: { value: "absolute" },
+    });
+    fireEvent.change(screen.getByLabelText("自身对齐"), {
+      target: { value: "stretch" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "布局 Grow" }), {
+      target: { value: "2" },
+    });
+    await user.click(screen.getByRole("checkbox", { name: "布局裁剪" }));
+
+    expect(onUpdate).toHaveBeenCalledWith({
+      width: "fill_container",
+      layoutRef: expect.objectContaining({
+        source: "figma",
+        widthMode: "fill_container",
+      }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      height: "fit_content",
+      layoutRef: expect.objectContaining({
+        heightMode: "fit_content",
+        source: "figma",
+      }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      layoutRef: expect.objectContaining({
+        positioning: "absolute",
+        source: "figma",
+      }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      layoutRef: expect.objectContaining({
+        alignSelf: "stretch",
+        source: "figma",
+      }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      layoutRef: expect.objectContaining({ grow: 2, source: "figma" }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      layoutRef: expect.objectContaining({
+        clipContent: true,
+        source: "figma",
+      }),
+    });
+  });
+
   it("updates lock and visibility without rendering raw empty values", async () => {
     const user = userEvent.setup();
     const { container, onUpdate } = renderPropertyPanel();
@@ -173,6 +358,135 @@ describe("CanvasPropertyPanel", () => {
     expect(screen.getByText("3366FF")).toBeInTheDocument();
     expect(screen.getByText("111827")).toBeInTheDocument();
     expect(screen.getByRole("spinbutton", { name: "宽度" })).toHaveValue(2);
+  });
+
+  it("updates node blend mode and layered fill fidelity controls", async () => {
+    const user = userEvent.setup();
+    const firstFill = {
+      type: "solid" as const,
+      color: "#3366ff",
+      opacity: 0.75,
+      visible: false,
+      blendMode: "multiply" as const,
+    };
+    const secondFill = {
+      type: "image" as const,
+      url: "__hash:figma-image",
+      mode: "crop" as const,
+      opacity: 0.5,
+      visible: true,
+      blendMode: "screen" as const,
+      originalSize: { width: 640, height: 480 },
+    };
+    const { onUpdate } = renderPropertyPanel({
+      ...rectangleNode,
+      blendMode: "screen",
+      fill: [firstFill, secondFill],
+    });
+
+    fireEvent.change(screen.getByLabelText("图层混合模式"), {
+      target: { value: "overlay" },
+    });
+    await user.click(screen.getByRole("button", { name: "显示填充 1" }));
+    fireEvent.change(screen.getByLabelText("填充 1 类型"), {
+      target: { value: "linear_gradient" },
+    });
+    fireEvent.change(screen.getByLabelText("填充 1 混合模式"), {
+      target: { value: "darken" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "填充 2 透明" }), {
+      target: { value: "65" },
+    });
+    fireEvent.change(screen.getByLabelText("填充 2 图片模式"), {
+      target: { value: "stretch" },
+    });
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "填充 2 原始宽度" }),
+      { target: { value: "800" } },
+    );
+    await user.click(screen.getByRole("button", { name: "上移填充 2" }));
+
+    expect(onUpdate).toHaveBeenCalledWith({ blendMode: "overlay" });
+    expect(onUpdate).toHaveBeenCalledWith({
+      fill: [{ ...firstFill, visible: true }, secondFill],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      fill: [
+        expect.objectContaining({
+          type: "linear_gradient",
+          opacity: 0.75,
+          visible: false,
+          blendMode: "multiply",
+        }),
+        secondFill,
+      ],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      fill: [{ ...firstFill, blendMode: "darken" }, secondFill],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      fill: [firstFill, { ...secondFill, opacity: 0.65 }],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      fill: [firstFill, { ...secondFill, mode: "stretch" }],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      fill: [
+        firstFill,
+        { ...secondFill, originalSize: { width: 800, height: 480 } },
+      ],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      fill: [secondFill, firstFill],
+    });
+  });
+
+  it("updates advanced stroke fidelity controls from the inspector", () => {
+    const { onUpdate } = renderPropertyPanel({
+      ...rectangleNode,
+      stroke: {
+        align: "inside",
+        cap: "none",
+        dashOffset: 1,
+        dashPattern: [4, 2],
+        fill: [{ type: "solid", color: "#111827", opacity: 1 }],
+        join: "miter",
+        miterLimit: 4,
+        thickness: 2,
+      },
+    });
+
+    fireEvent.change(screen.getByLabelText("端点"), {
+      target: { value: "round" },
+    });
+    fireEvent.change(screen.getByLabelText("连接"), {
+      target: { value: "bevel" },
+    });
+    const dashInput = screen.getByLabelText("虚线");
+    fireEvent.change(dashInput, { target: { value: "6 3" } });
+    fireEvent.blur(dashInput);
+    fireEvent.change(screen.getByRole("spinbutton", { name: "右" }), {
+      target: { value: "7" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "斜接" }), {
+      target: { value: "9" },
+    });
+
+    expect(onUpdate).toHaveBeenCalledWith({
+      stroke: expect.objectContaining({ cap: "round" }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      stroke: expect.objectContaining({ join: "bevel" }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      stroke: expect.objectContaining({ dashPattern: [6, 3] }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      stroke: expect.objectContaining({ thickness: [2, 7, 2, 2] }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      stroke: expect.objectContaining({ miterLimit: 9 }),
+    });
   });
 
   it("shows text controls for text nodes and layout controls for frame nodes", () => {
@@ -199,15 +513,360 @@ describe("CanvasPropertyPanel", () => {
     expect(screen.getByRole("spinbutton", { name: "内边距" })).toHaveValue(12);
   });
 
-  it("updates effects by toggling shadow and blur with concrete payloads", async () => {
+  it("updates advanced root typography and styled text segment controls", () => {
+    const { onUpdate } = renderPropertyPanel(styledTextNode);
+
+    fireEvent.change(screen.getByLabelText("PostScript 字体名"), {
+      target: { value: "Inter-SemiBold" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "段落间距" }), {
+      target: { value: "12" },
+    });
+    fireEvent.change(screen.getByLabelText("垂直对齐"), {
+      target: { value: "middle" },
+    });
+    fireEvent.change(screen.getByLabelText("文本自适应"), {
+      target: { value: "auto" },
+    });
+    fireEvent.change(screen.getByLabelText("大小写"), {
+      target: { value: "title" },
+    });
+    fireEvent.change(screen.getByLabelText("列表样式"), {
+      target: { value: "unordered" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "文本缩进" }), {
+      target: { value: "24" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "悬挂缩进" }), {
+      target: { value: "8" },
+    });
+    const fallbackInput = screen.getByLabelText("字体 fallback");
+    fireEvent.change(fallbackInput, { target: { value: "Arial, Roboto" } });
+    fireEvent.blur(fallbackInput);
+    const openTypeInput = screen.getByLabelText("OpenType 特性");
+    fireEvent.change(openTypeInput, {
+      target: { value: "liga=false, kern=1" },
+    });
+    fireEvent.blur(openTypeInput);
+    fireEvent.click(screen.getByRole("button", { name: "Strike" }));
+
+    fireEvent.change(screen.getByLabelText("文本段 1"), {
+      target: { value: "Hello!" },
+    });
+    fireEvent.change(screen.getByLabelText("文本段 1 字体"), {
+      target: { value: "Roboto" },
+    });
+    fireEvent.change(screen.getByLabelText("文本段 1 PostScript"), {
+      target: { value: "Roboto-Regular" },
+    });
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "文本段 1 字号" }),
+      { target: { value: "22" } },
+    );
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "文本段 1 字距" }),
+      { target: { value: "1.5" } },
+    );
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "文本段 1 基线" }),
+      { target: { value: "3" } },
+    );
+    fireEvent.change(screen.getByLabelText("文本段 1 大小写"), {
+      target: { value: "upper" },
+    });
+
+    expect(onUpdate).toHaveBeenCalledWith({
+      fontPostScriptName: "Inter-SemiBold",
+    });
+    expect(onUpdate).toHaveBeenCalledWith({ paragraphSpacing: 12 });
+    expect(onUpdate).toHaveBeenCalledWith({ textAlignVertical: "middle" });
+    expect(onUpdate).toHaveBeenCalledWith({ textGrowth: "auto" });
+    expect(onUpdate).toHaveBeenCalledWith({ textCase: "title" });
+    expect(onUpdate).toHaveBeenCalledWith({ listStyle: "unordered" });
+    expect(onUpdate).toHaveBeenCalledWith({ indent: 24 });
+    expect(onUpdate).toHaveBeenCalledWith({ hangingIndent: 8 });
+    expect(onUpdate).toHaveBeenCalledWith({
+      fontFallback: ["Arial", "Roboto"],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      openTypeFeatures: { liga: false, kern: 1 },
+    });
+    expect(onUpdate).toHaveBeenCalledWith({ strikethrough: true });
+    expect(onUpdate).toHaveBeenCalledWith({
+      content: [
+        expect.objectContaining({ text: "Hello!" }),
+        expect.objectContaining({ text: "World" }),
+      ],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      content: [
+        expect.objectContaining({ fontFamily: "Roboto" }),
+        expect.objectContaining({ text: "World" }),
+      ],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      content: [
+        expect.objectContaining({ fontPostScriptName: "Roboto-Regular" }),
+        expect.objectContaining({ text: "World" }),
+      ],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      content: [
+        expect.objectContaining({ fontSize: 22 }),
+        expect.objectContaining({ text: "World" }),
+      ],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      content: [
+        expect.objectContaining({ letterSpacing: 1.5 }),
+        expect.objectContaining({ text: "World" }),
+      ],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      content: [
+        expect.objectContaining({ baselineShift: 3 }),
+        expect.objectContaining({ text: "World" }),
+      ],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      content: [
+        expect.objectContaining({ textCase: "upper" }),
+        expect.objectContaining({ text: "World" }),
+      ],
+    });
+  });
+
+  it("updates clipping, corner details, and stretch layout controls", async () => {
+    const user = userEvent.setup();
+    const { onUpdate } = renderPropertyPanel({
+      ...frameNode,
+      clipContent: false,
+      cornerRadius: [4, 8, 12, 16],
+      cornerSmoothing: 0.25,
+    });
+
+    fireEvent.change(screen.getByLabelText("交叉对齐"), {
+      target: { value: "stretch" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "内边距右" }), {
+      target: { value: "20" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "右下" }), {
+      target: { value: "18" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "平滑" }), {
+      target: { value: "60" },
+    });
+    await user.click(screen.getByRole("checkbox", { name: /裁剪内容/ }));
+    await user.click(screen.getByRole("checkbox", { name: "隔离混合" }));
+
+    expect(onUpdate).toHaveBeenCalledWith({ alignItems: "stretch" });
+    expect(onUpdate).toHaveBeenCalledWith({ padding: [12, 20, 12, 12] });
+    expect(onUpdate).toHaveBeenCalledWith({
+      cornerRadius: [4, 8, 18, 16],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({ cornerSmoothing: 0.6 });
+    expect(onUpdate).toHaveBeenCalledWith({ clipContent: true });
+    expect(onUpdate).toHaveBeenCalledWith({ isolated: true });
+  });
+
+  it("updates mask, style refs, variable refs, and component refs from UI", () => {
+    const { onUpdate } = renderPropertyPanel(figmaReferenceNode);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "启用遮罩" }));
+    fireEvent.change(screen.getByLabelText("遮罩类型"), {
+      target: { value: "vector" },
+    });
+    fireEvent.change(screen.getByLabelText("遮罩来源节点"), {
+      target: { value: "new-mask" },
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: "断开遮罩链" }));
+
+    fireEvent.change(screen.getByLabelText("填充样式"), {
+      target: { value: "fill-style-2" },
+    });
+    const variableRefsInput = screen.getByLabelText("变量引用 JSON");
+    fireEvent.change(variableRefsInput, {
+      target: { value: '{"fills/1/color":"VariableID:2"}' },
+    });
+    fireEvent.blur(variableRefsInput);
+
+    fireEvent.change(screen.getByLabelText("组件引用类型"), {
+      target: { value: "variant" },
+    });
+    fireEvent.change(screen.getByLabelText("组件引用 Key"), {
+      target: { value: "component-key-2" },
+    });
+    const variantInput = screen.getByLabelText("组件变体 JSON");
+    fireEvent.change(variantInput, {
+      target: { value: '{"State":"Active"}' },
+    });
+    fireEvent.blur(variantInput);
+    const assignmentsInput = screen.getByLabelText("组件属性赋值 JSON");
+    fireEvent.change(assignmentsInput, {
+      target: { value: '{"buttonText":"Launch"}' },
+    });
+    fireEvent.blur(assignmentsInput);
+    const overridesInput = screen.getByLabelText("组件覆写 JSON");
+    fireEvent.change(overridesInput, {
+      target: {
+        value:
+          '[{"source":"figma","path":"root/icon","properties":["visible"]}]',
+      },
+    });
+    fireEvent.blur(overridesInput);
+
+    expect(onUpdate).toHaveBeenCalledWith({
+      mask: expect.objectContaining({
+        enabled: true,
+        sourceNodeId: "mask-source",
+      }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      mask: expect.objectContaining({ type: "vector" }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      mask: expect.objectContaining({ sourceNodeId: "new-mask" }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      mask: expect.objectContaining({ shouldBreakMaskChain: true }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      styleRefs: expect.objectContaining({
+        fill: { id: "fill-style-2", source: "figma" },
+      }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      variableRefs: { "fills/1/color": "VariableID:2" },
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      componentRef: expect.objectContaining({
+        source: "figma",
+        type: "variant",
+      }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      componentRef: expect.objectContaining({
+        key: "component-key-2",
+        source: "figma",
+      }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      componentRef: expect.objectContaining({
+        source: "figma",
+        variantProperties: { State: "Active" },
+      }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      componentRef: expect.objectContaining({
+        propertyAssignments: { buttonText: "Launch" },
+        source: "figma",
+      }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      componentRef: expect.objectContaining({
+        overrides: [
+          {
+            path: "root/icon",
+            properties: ["visible"],
+            source: "figma",
+          },
+        ],
+        source: "figma",
+      }),
+    });
+  });
+
+  it("updates ellipse arc, polygon star, line endpoint, and path winding controls", () => {
+    const { onUpdate, rerender } = renderPropertyPanel(ellipseNode);
+
+    fireEvent.change(screen.getByRole("spinbutton", { name: "起始角度" }), {
+      target: { value: "45" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "扫过角度" }), {
+      target: { value: "180" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "内径比例" }), {
+      target: { value: "0.5" },
+    });
+
+    expect(onUpdate).toHaveBeenCalledWith({ startAngle: 45 });
+    expect(onUpdate).toHaveBeenCalledWith({ sweepAngle: 180 });
+    expect(onUpdate).toHaveBeenCalledWith({ innerRadius: 0.5 });
+
+    onUpdate.mockClear();
+    rerender(
+      <CanvasPropertyPanel
+        node={polygonNode}
+        onBindAgent={vi.fn()}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("多边形类型"), {
+      target: { value: "polygon" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "边数" }), {
+      target: { value: "7" },
+    });
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "多边形起始角度" }),
+      { target: { value: "-45" } },
+    );
+    fireEvent.change(screen.getByRole("spinbutton", { name: "多边形圆角" }), {
+      target: { value: "6" },
+    });
+
+    expect(onUpdate).toHaveBeenCalledWith({ polygonKind: "polygon" });
+    expect(onUpdate).toHaveBeenCalledWith({ polygonCount: 7 });
+    expect(onUpdate).toHaveBeenCalledWith({ startAngle: -45 });
+    expect(onUpdate).toHaveBeenCalledWith({ cornerRadius: 6 });
+
+    onUpdate.mockClear();
+    rerender(
+      <CanvasPropertyPanel
+        node={pathNode}
+        onBindAgent={vi.fn()}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("路径填充规则"), {
+      target: { value: "evenodd" },
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: "闭合路径" }));
+
+    expect(onUpdate).toHaveBeenCalledWith({ fillRule: "evenodd" });
+    expect(onUpdate).toHaveBeenCalledWith({ closed: true });
+
+    onUpdate.mockClear();
+    rerender(
+      <CanvasPropertyPanel
+        node={lineNode}
+        onBindAgent={vi.fn()}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole("spinbutton", { name: "终点 X" }), {
+      target: { value: "120" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "终点 Y" }), {
+      target: { value: "24" },
+    });
+
+    expect(onUpdate).toHaveBeenCalledWith({ x2: 120 });
+    expect(onUpdate).toHaveBeenCalledWith({ y2: 24 });
+  });
+
+  it("adds and updates layered effects with concrete payloads", async () => {
     const user = userEvent.setup();
     const { container, onUpdate } = renderPropertyPanel({
       ...rectangleNode,
       effects: undefined,
     });
 
-    await user.click(screen.getByRole("button", { name: /^阴影/ }));
-    await user.click(screen.getByRole("button", { name: /^模糊/ }));
+    await user.click(screen.getByRole("button", { name: "添加效果" }));
 
     expect(onUpdate).toHaveBeenCalledWith({
       effects: [
@@ -220,75 +879,86 @@ describe("CanvasPropertyPanel", () => {
           type: "shadow",
         },
       ],
-    });
-    expect(onUpdate).toHaveBeenCalledWith({
-      effects: [{ radius: 4, type: "blur" }],
     });
     expect(container).not.toHaveTextContent(/\bnull\b|\bundefined\b/);
   });
 
-  it("preserves other effects when disabling an existing shadow or blur", async () => {
+  it("updates multi-effect stack visibility, type, blend, opacity, and order", async () => {
     const user = userEvent.setup();
-    const { onUpdate, rerender } = renderPropertyPanel(nodeWithEffects);
-
-    await user.click(screen.getByRole("button", { name: /^阴影/ }));
-
-    expect(onUpdate).toHaveBeenCalledWith({
-      effects: [existingBlur],
-    });
-
-    onUpdate.mockClear();
-    rerender(
-      <CanvasPropertyPanel
-        node={nodeWithEffects}
-        onBindAgent={vi.fn()}
-        onUpdate={onUpdate}
-      />,
-    );
-
-    await user.click(screen.getByRole("button", { name: /^模糊/ }));
-
-    expect(onUpdate).toHaveBeenCalledWith({
-      effects: [existingShadow],
-    });
-  });
-
-  it("preserves existing effects when enabling shadow or blur", async () => {
-    const user = userEvent.setup();
-    const { onUpdate, rerender } = renderPropertyPanel({
+    const firstEffect = {
+      ...existingShadow,
+      blendMode: "multiply" as const,
+      opacity: 0.4,
+      visible: false,
+    };
+    const secondEffect = {
+      blendMode: "screen" as const,
+      opacity: 0.25,
+      radius: 12,
+      type: "background_blur" as const,
+      visible: true,
+    };
+    const { onUpdate } = renderPropertyPanel({
       ...rectangleNode,
-      effects: [existingBlur],
+      effects: [firstEffect, secondEffect],
     });
 
-    await user.click(screen.getByRole("button", { name: /^阴影/ }));
+    await user.click(screen.getByRole("button", { name: "显示效果 1" }));
+    fireEvent.change(screen.getByLabelText("效果 1 类型"), {
+      target: { value: "inner_shadow" },
+    });
+    fireEvent.change(screen.getByLabelText("效果 1 混合模式"), {
+      target: { value: "overlay" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "效果 1 扩展" }), {
+      target: { value: "3" },
+    });
+    fireEvent.change(screen.getByLabelText("效果 2 类型"), {
+      target: { value: "blur" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "效果 2 透明" }), {
+      target: { value: "75" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "效果 2 半径" }), {
+      target: { value: "20" },
+    });
+    await user.click(screen.getByRole("button", { name: "上移效果 2" }));
 
+    expect(onUpdate).toHaveBeenCalledWith({
+      effects: [{ ...firstEffect, visible: true }, secondEffect],
+    });
     expect(onUpdate).toHaveBeenCalledWith({
       effects: [
-        existingBlur,
-        {
+        expect.objectContaining({
+          blendMode: "multiply",
           blur: 8,
-          color: "#00000040",
-          offsetX: 0,
-          offsetY: 4,
-          spread: 0,
+          color: "#00000080",
+          inner: true,
+          opacity: 0.4,
+          spread: 1,
           type: "shadow",
-        },
+          visible: false,
+        }),
+        secondEffect,
       ],
     });
-
-    onUpdate.mockClear();
-    rerender(
-      <CanvasPropertyPanel
-        node={{ ...rectangleNode, effects: [existingShadow] }}
-        onBindAgent={vi.fn()}
-        onUpdate={onUpdate}
-      />,
-    );
-
-    await user.click(screen.getByRole("button", { name: /^模糊/ }));
-
     expect(onUpdate).toHaveBeenCalledWith({
-      effects: [existingShadow, { radius: 4, type: "blur" }],
+      effects: [{ ...firstEffect, blendMode: "overlay" }, secondEffect],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      effects: [{ ...firstEffect, spread: 3 }, secondEffect],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      effects: [firstEffect, { ...secondEffect, type: "blur" }],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      effects: [firstEffect, { ...secondEffect, opacity: 0.75 }],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      effects: [firstEffect, { ...secondEffect, radius: 20 }],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      effects: [secondEffect, firstEffect],
     });
   });
 
@@ -300,13 +970,13 @@ describe("CanvasPropertyPanel", () => {
     expect(effectsSection).toBeTruthy();
     fireEvent.change(
       within(effectsSection as HTMLElement).getByRole("spinbutton", {
-        name: "X",
+        name: "效果 1 X",
       }),
       { target: { value: "12" } },
     );
     fireEvent.change(
       within(effectsSection as HTMLElement).getByRole("spinbutton", {
-        name: "半径",
+        name: "效果 2 半径",
       }),
       { target: { value: "6" } },
     );
@@ -374,6 +1044,8 @@ describe("CanvasPropertyPanel", () => {
     expect(screen.getByRole("heading", { name: "描边" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "效果" })).toBeInTheDocument();
     expect(screen.getByText("F97316")).toBeInTheDocument();
-    expect(screen.getByRole("spinbutton", { name: "半径" })).toHaveValue(2);
+    expect(screen.getByRole("spinbutton", { name: "效果 1 半径" })).toHaveValue(
+      2,
+    );
   });
 });

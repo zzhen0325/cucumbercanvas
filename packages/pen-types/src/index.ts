@@ -3,8 +3,11 @@ export type {
   BlendMode,
   SolidFill,
   GradientStop,
+  PaintTransform,
   LinearGradientFill,
   RadialGradientFill,
+  AngularGradientFill,
+  DiamondGradientFill,
   ImageOriginalSize,
   ImageTransform,
   ImageFill,
@@ -14,13 +17,22 @@ export type {
   ShadowEffect,
   PenEffect,
   StyledTextSegment,
-} from './styles.js';
+} from "./styles.js";
 
 // Variables
-export type { VariableDefinition, VariableValue, ThemedValue } from './variables.js';
+export type {
+  VariableDefinition,
+  VariableValue,
+  ThemedValue,
+} from "./variables.js";
 
 // Canvas
-export type { ToolType, ViewportState, SelectionState, CanvasInteraction } from './canvas.js';
+export type {
+  ToolType,
+  ViewportState,
+  SelectionState,
+  CanvasInteraction,
+} from "./canvas.js";
 
 // Document model
 export type {
@@ -28,6 +40,13 @@ export type {
   PenDocument,
   PenNodeType,
   SizingBehavior,
+  PenTransformMatrix,
+  PenAutoLayoutRef,
+  PenComponentOverrideRef,
+  PenComponentRef,
+  PenExternalStyleRef,
+  PenStyleDefinition,
+  PenNodeStyleRefs,
   Padding,
   // Container / Agent types
   ContainerRole,
@@ -57,7 +76,7 @@ export type {
   RefNode,
   VideoEmbedNode,
   PenNode,
-} from './pen.js';
+} from "./pen.js";
 
 // Engine
 export type {
@@ -71,4 +90,4 @@ export type {
   InsertionIndicator,
   ContainerHighlight,
   IconLookupFn,
-} from './engine.js';
+} from "./engine.js";

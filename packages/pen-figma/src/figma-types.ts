@@ -62,7 +62,7 @@ export interface FigmaPaint {
   stops?: FigmaColorStop[];
   transform?: FigmaMatrix;
   image?: FigmaImage;
-  imageScaleMode?: "STRETCH" | "FIT" | "FILL" | "TILE";
+  imageScaleMode?: "STRETCH" | "FIT" | "FILL" | "TILE" | "CROP";
   originalImageWidth?: number;
   originalImageHeight?: number;
 }
@@ -79,11 +79,18 @@ export interface FigmaEffect {
   offset?: FigmaVector;
   radius?: number;
   spread?: number;
+  opacity?: number;
   visible?: boolean;
   blendMode?: string;
 }
 
 export interface FigmaFontName {
+  family?: string;
+  style?: string;
+  postscript?: string;
+}
+
+export interface FigmaFontFallback {
   family?: string;
   style?: string;
   postscript?: string;
@@ -182,6 +189,7 @@ export interface FigmaNodeChange {
   parentIndex?: FigmaParentIndex;
   type?: FigmaNodeType;
   phase?: string;
+  booleanOperation?: string;
   name?: string;
   visible?: boolean;
   locked?: boolean;
@@ -189,6 +197,12 @@ export interface FigmaNodeChange {
   // Geometry
   size?: FigmaVector;
   transform?: FigmaMatrix;
+  pointCount?: number;
+  polygonCount?: number;
+  innerRadius?: number;
+  innerRadiusRatio?: number;
+  starInnerRadius?: number;
+  starInnerScale?: number;
 
   // Appearance
   opacity?: number;
@@ -202,7 +216,9 @@ export interface FigmaNodeChange {
   strokeAlign?: "CENTER" | "INSIDE" | "OUTSIDE";
   strokeCap?: string;
   strokeJoin?: "MITER" | "BEVEL" | "ROUND";
+  strokeMiterLimit?: number;
   dashPattern?: number[];
+  dashOffset?: number;
 
   // Individual border weights
   borderStrokeWeightsIndependent?: boolean;
@@ -216,6 +232,7 @@ export interface FigmaNodeChange {
 
   // Corner radius
   cornerRadius?: number;
+  cornerSmoothing?: number;
   rectangleCornerRadiiIndependent?: boolean;
   rectangleTopLeftCornerRadius?: number;
   rectangleTopRightCornerRadius?: number;
@@ -232,6 +249,18 @@ export interface FigmaNodeChange {
   textAutoResize?: "NONE" | "WIDTH_AND_HEIGHT" | "HEIGHT";
   textDecoration?: "NONE" | "UNDERLINE" | "STRIKETHROUGH";
   textCase?: "ORIGINAL" | "UPPER" | "LOWER" | "TITLE";
+  paragraphSpacing?: number;
+  paragraphIndent?: number;
+  listSpacing?: number;
+  hangingIndent?: number;
+  baselineShift?: number;
+  listStyle?: "NONE" | "ORDERED" | "UNORDERED";
+  listType?: "NONE" | "ORDERED" | "UNORDERED";
+  hangingList?: { type?: "NONE" | "ORDERED" | "UNORDERED" };
+  openTypeFeatures?: Record<string, boolean | number>;
+  opentypeFlags?: Record<string, boolean | number>;
+  fontFallbacks?: FigmaFontFallback[];
+  fallbackFontNames?: FigmaFontFallback[];
   textData?: FigmaTextData;
 
   // Auto-layout (stack)
@@ -252,6 +281,9 @@ export interface FigmaNodeChange {
 
   // Masking / clipping
   frameMaskDisabled?: boolean;
+  isMask?: boolean;
+  maskType?: "ALPHA" | "VECTOR";
+  shouldBreakMaskChain?: boolean;
 
   // Vector/Path
   vectorData?: FigmaVectorData;
@@ -268,7 +300,17 @@ export interface FigmaNodeChange {
   };
   overriddenSymbolID?: FigmaGUID;
   componentKey?: string;
+  variantProperties?: Record<string, string | number | boolean>;
+  componentProperties?: Record<string, unknown>;
+  componentPropertyDefinitions?: Record<string, unknown>;
+  componentPropAssignments?: Record<string, unknown>;
   derivedSymbolData?: FigmaDerivedSymbolDataEntry[];
+  styleType?: "FILL" | "TEXT" | "EFFECT";
+  styleIdForFill?: { guid?: FigmaGUID };
+  styleIdForStrokeFill?: { guid?: FigmaGUID };
+  styleIdForText?: { guid?: FigmaGUID };
+  styleIdForEffect?: { guid?: FigmaGUID };
+  variableConsumptionMap?: Record<string, unknown>;
 }
 
 export interface FigmaDecodedFile {

@@ -54,10 +54,11 @@ export interface FigmaPaint {
   color?: FigmaColor;
   opacity?: number;
   visible?: boolean;
+  blendMode?: string;
   stops?: FigmaColorStop[];
   transform?: FigmaMatrix;
   image?: FigmaImage;
-  imageScaleMode?: "STRETCH" | "FIT" | "FILL" | "TILE";
+  imageScaleMode?: "STRETCH" | "FIT" | "FILL" | "TILE" | "CROP";
   originalImageWidth?: number;
   originalImageHeight?: number;
 }
@@ -67,13 +68,22 @@ export interface FigmaEffect {
   visible?: boolean;
   radius?: number;
   spread?: number;
+  opacity?: number;
   offset?: { x?: number; y?: number };
   color?: FigmaColor;
+  blendMode?: string;
 }
 
 export interface FigmaFontName {
   family?: string;
   style?: string;
+  postscript?: string;
+}
+
+export interface FigmaFontFallback {
+  family?: string;
+  style?: string;
+  postscript?: string;
 }
 
 export interface FigmaNumber {
@@ -104,6 +114,12 @@ export interface FigmaPath {
 export interface FigmaVectorData {
   vectorNetworkBlob?: number;
   normalizedSize?: FigmaVector;
+}
+
+export interface FigmaArcData {
+  startingAngle?: number;
+  endingAngle?: number;
+  innerRadius?: number;
 }
 
 export type FigmaNodeType =
@@ -138,12 +154,14 @@ export interface FigmaNodeChange {
   parentIndex?: FigmaParentIndex;
   type?: FigmaNodeType;
   phase?: string;
+  booleanOperation?: string;
   name?: string;
   visible?: boolean;
   locked?: boolean;
   size?: FigmaVector;
   transform?: FigmaMatrix;
   opacity?: number;
+  blendMode?: string;
   fillPaints?: FigmaPaint[];
   backgroundPaints?: FigmaPaint[];
   strokePaints?: FigmaPaint[];
@@ -151,7 +169,9 @@ export interface FigmaNodeChange {
   strokeAlign?: "CENTER" | "INSIDE" | "OUTSIDE";
   strokeCap?: string;
   strokeJoin?: "MITER" | "BEVEL" | "ROUND";
+  strokeMiterLimit?: number;
   dashPattern?: number[];
+  dashOffset?: number;
   borderStrokeWeightsIndependent?: boolean;
   borderTopWeight?: number;
   borderRightWeight?: number;
@@ -159,6 +179,7 @@ export interface FigmaNodeChange {
   borderLeftWeight?: number;
   effects?: FigmaEffect[];
   cornerRadius?: number;
+  cornerSmoothing?: number;
   fontSize?: number;
   fontName?: FigmaFontName;
   textAlignHorizontal?: "LEFT" | "CENTER" | "RIGHT" | "JUSTIFIED";
@@ -168,6 +189,19 @@ export interface FigmaNodeChange {
   textAutoResize?: "NONE" | "WIDTH_AND_HEIGHT" | "HEIGHT";
   textDecoration?: "NONE" | "UNDERLINE" | "STRIKETHROUGH";
   textCase?: "ORIGINAL" | "UPPER" | "LOWER" | "TITLE";
+  arcData?: FigmaArcData;
+  paragraphSpacing?: number;
+  paragraphIndent?: number;
+  listSpacing?: number;
+  hangingIndent?: number;
+  baselineShift?: number;
+  listStyle?: "NONE" | "ORDERED" | "UNORDERED";
+  listType?: "NONE" | "ORDERED" | "UNORDERED";
+  hangingList?: { type?: "NONE" | "ORDERED" | "UNORDERED" };
+  openTypeFeatures?: Record<string, boolean | number>;
+  opentypeFlags?: Record<string, boolean | number>;
+  fontFallbacks?: FigmaFontFallback[];
+  fallbackFontNames?: FigmaFontFallback[];
   textData?: FigmaTextData;
   stackMode?: "NONE" | "HORIZONTAL" | "VERTICAL";
   stackSpacing?: number;
@@ -184,6 +218,9 @@ export interface FigmaNodeChange {
   stackChildAlignSelf?: string;
   stackPositioning?: "AUTO" | "ABSOLUTE";
   frameMaskDisabled?: boolean;
+  isMask?: boolean;
+  maskType?: "ALPHA" | "VECTOR";
+  shouldBreakMaskChain?: boolean;
   vectorData?: FigmaVectorData;
   fillGeometry?: FigmaPath[];
   strokeGeometry?: FigmaPath[];
@@ -193,12 +230,18 @@ export interface FigmaNodeChange {
     symbolOverrides?: FigmaNodeChange[];
   };
   overriddenSymbolID?: FigmaGUID;
+  componentKey?: string;
+  variantProperties?: Record<string, string | number | boolean>;
+  componentProperties?: Record<string, unknown>;
+  componentPropertyDefinitions?: Record<string, unknown>;
+  componentPropAssignments?: Record<string, unknown>;
   derivedSymbolData?: FigmaDerivedSymbolDataEntry[];
   styleType?: "FILL" | "TEXT" | "EFFECT";
   styleIdForFill?: { guid?: FigmaGUID };
   styleIdForStrokeFill?: { guid?: FigmaGUID };
   styleIdForText?: { guid?: FigmaGUID };
   styleIdForEffect?: { guid?: FigmaGUID };
+  variableConsumptionMap?: Record<string, unknown>;
 }
 
 export interface FigmaDecodedFile {

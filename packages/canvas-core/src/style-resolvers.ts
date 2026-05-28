@@ -1,4 +1,4 @@
-import type { CanvasFill, CanvasStroke, CanvasEffect } from "./styles.js";
+import type { CanvasEffect, CanvasFill, CanvasStroke } from "./styles.js";
 
 type CSSProperties = Record<string, string | number | undefined>;
 
@@ -10,7 +10,9 @@ export function resolveFillCSS(fills?: CanvasFill[]): CSSProperties {
   if (!fills || fills.length === 0) return {};
 
   const visibleFills = fills.filter((f) => {
-    if ("opacity" in f && f.opacity !== undefined && f.opacity <= 0) return false;
+    if (f.visible === false) return false;
+    if ("opacity" in f && f.opacity !== undefined && f.opacity <= 0)
+      return false;
     return true;
   });
   if (visibleFills.length === 0) return {};
@@ -22,26 +24,60 @@ export function resolveFillCSS(fills?: CanvasFill[]): CSSProperties {
 
     switch (fill.type) {
       case "solid": {
-        const color = opacity !== undefined ? applyOpacity(fill.color, opacity) : fill.color;
+        const color =
+          opacity !== undefined
+            ? applyOpacity(fill.color, opacity)
+            : fill.color;
         backgrounds.push(color);
         break;
       }
       case "linear_gradient": {
         const angle = fill.angle ?? 180;
-        const stops = fill.stops.map((s) => `${s.color} ${Math.round(s.offset * 100)}%`).join(", ");
+        const stops = fill.stops
+          .map((s) => `${s.color} ${Math.round(s.offset * 100)}%`)
+          .join(", ");
         backgrounds.push(`linear-gradient(${angle}deg, ${stops})`);
         break;
       }
       case "radial_gradient": {
         const cx = fill.cx ?? 0.5;
         const cy = fill.cy ?? 0.5;
-        const stops = fill.stops.map((s) => `${s.color} ${Math.round(s.offset * 100)}%`).join(", ");
-        backgrounds.push(`radial-gradient(circle at ${cx * 100}% ${cy * 100}%, ${stops})`);
+        const stops = fill.stops
+          .map((s) => `${s.color} ${Math.round(s.offset * 100)}%`)
+          .join(", ");
+        backgrounds.push(
+          `radial-gradient(circle at ${cx * 100}% ${cy * 100}%, ${stops})`,
+        );
+        break;
+      }
+      case "angular_gradient": {
+        const cx = fill.cx ?? 0.5;
+        const cy = fill.cy ?? 0.5;
+        const stops = fill.stops
+          .map((s) => `${s.color} ${Math.round(s.offset * 100)}%`)
+          .join(", ");
+        backgrounds.push(
+          `conic-gradient(from ${fill.angle ?? 0}deg at ${cx * 100}% ${cy * 100}%, ${stops})`,
+        );
+        break;
+      }
+      case "diamond_gradient": {
+        const stops = fill.stops
+          .map((s) => `${s.color} ${Math.round(s.offset * 100)}%`)
+          .join(", ");
+        backgrounds.push(`radial-gradient(closest-side, ${stops})`);
         break;
       }
       case "image": {
         const mode = fill.mode ?? "fill";
-        const sizeCss = mode === "fit" ? "contain" : mode === "crop" ? "cover" : mode === "tile" ? "auto" : "100% 100%";
+        const sizeCss =
+          mode === "fit"
+            ? "contain"
+            : mode === "crop"
+              ? "cover"
+              : mode === "tile"
+                ? "auto"
+                : "100% 100%";
         const repeatCss = mode === "tile" ? "repeat" : "no-repeat";
         backgrounds.push(`url("${fill.url}") ${repeatCss} center / ${sizeCss}`);
         break;
@@ -67,9 +103,10 @@ export function resolveStrokeCSS(stroke?: CanvasStroke): CSSProperties {
 
   if (thickness <= 0) return {};
 
-  const color = stroke.fill?.[0] && stroke.fill[0].type === "solid"
-    ? stroke.fill[0].color
-    : "transparent";
+  const color =
+    stroke.fill?.[0] && stroke.fill[0].type === "solid"
+      ? stroke.fill[0].color
+      : "transparent";
 
   const style: CSSProperties = {};
 
@@ -80,7 +117,6 @@ export function resolveStrokeCSS(stroke?: CanvasStroke): CSSProperties {
     case "outside":
       style.boxShadow = `0 0 0 ${thickness}px ${color}`;
       break;
-    case "center":
     default:
       // Default: combine half-inside + half-outside, or just use border
       style.boxShadow = `inset 0 0 0 ${Math.ceil(thickness / 2)}px ${color}, 0 0 0 ${Math.floor(thickness / 2)}px ${color}`;
@@ -107,6 +143,12 @@ export function resolveEffectCSS(effects?: CanvasEffect[]): CSSProperties {
   let backdropBlur: number | null = null;
 
   for (const effect of effects) {
+    if (
+      effect.visible === false ||
+      (effect.opacity !== undefined && effect.opacity <= 0)
+    ) {
+      continue;
+    }
     switch (effect.type) {
       case "shadow": {
         const inset = effect.inner ? "inset " : "";

@@ -4,6 +4,7 @@ export { parseFigFile } from "./fig-parser.js";
 
 // Document conversion
 export {
+  collectFigmaStyleDefinitions,
   figmaToPenDocument,
   figmaAllPagesToPenDocument,
   getFigmaPages,

@@ -8,8 +8,8 @@ import type { FigmaNodeChange } from "./figma-types.js";
  */
 export function mapFigmaStroke(node: FigmaNodeChange): PenStroke | undefined {
   if (!node.strokePaints || node.strokePaints.length === 0) return undefined;
-  const visibleStrokes = node.strokePaints.filter((s) => s.visible !== false);
-  if (visibleStrokes.length === 0) return undefined;
+  const fill = mapFigmaFills(node.strokePaints);
+  if (fill.length === 0) return undefined;
 
   const thickness = node.borderStrokeWeightsIndependent
     ? ([
@@ -20,14 +20,14 @@ export function mapFigmaStroke(node: FigmaNodeChange): PenStroke | undefined {
       ] as [number, number, number, number])
     : (node.strokeWeight ?? 1);
 
-  const fill = mapFigmaFills(visibleStrokes);
-
   return {
     thickness,
     align: mapStrokeAlign(node.strokeAlign),
     join: mapStrokeJoin(node.strokeJoin),
     cap: mapStrokeCap(node.strokeCap),
     dashPattern: node.dashPattern?.length ? node.dashPattern : undefined,
+    dashOffset: node.dashOffset,
+    miterLimit: node.strokeMiterLimit,
     fill,
   };
 }

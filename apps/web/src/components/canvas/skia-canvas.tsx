@@ -33,7 +33,6 @@ import {
   reorderCanvasPage,
   reparentNodesByDropPoint,
   resolveActivePageId,
-  resolveContext,
 } from "@cucumber/canvas-core";
 import { createEmptyDocument } from "@cucumber/canvas-core";
 import {
@@ -3017,11 +3016,9 @@ export const SkiaCanvas = memo(
               if (!selectedNodeId) return null;
               const selectedNode = findNode(doc, selectedNodeId, activePageId);
               if (!selectedNode) return null;
-              const ctx = resolveContext(doc, selectedNodeId);
               return (
                 <CanvasPropertyPanel
                   node={selectedNode}
-                  context={ctx}
                   variables={doc.variables}
                   onVariablesChange={(variables) => {
                     commitDocument({

@@ -1,6 +1,11 @@
-import type { PenEffect, PenFill, PenNode, PenStroke } from '@cucumber/pen-types';
-import RBush from 'rbush';
-import type { RenderNode } from './types.js';
+import type {
+  PenEffect,
+  PenFill,
+  PenNode,
+  PenStroke,
+} from "@cucumber/pen-types";
+import RBush from "rbush";
+import type { RenderNode } from "./types.js";
 
 interface RTreeItem {
   minX: number;
@@ -31,9 +36,11 @@ export class SpatialIndex {
 
     const items: RTreeItem[] = [];
     for (let i = 0; i < nodes.length; i++) {
-      const rn = nodes[i]!;
-      if (('visible' in rn.node ? rn.node.visible : undefined) === false) continue;
-      if (('locked' in rn.node ? rn.node.locked : undefined) === true) continue;
+      const rn = nodes[i];
+      if (!rn) continue;
+      if (("visible" in rn.node ? rn.node.visible : undefined) === false)
+        continue;
+      if (("locked" in rn.node ? rn.node.locked : undefined) === true) continue;
 
       const bounds = getHittableBounds(rn);
       if (!bounds) continue;
@@ -68,13 +75,20 @@ export class SpatialIndex {
 
     // Sort by zIndex descending — children (rendered later) come first
     candidates.sort((a, b) => b.zIndex - a.zIndex);
-    return candidates.map((c) => c.renderNode).filter((rn) => isPointHittableRenderNode(rn));
+    return candidates
+      .map((c) => c.renderNode)
+      .filter((rn) => isPointHittableRenderNode(rn));
   }
 
   /**
    * Find all nodes that intersect with a rectangle (for marquee selection).
    */
-  searchRect(left: number, top: number, right: number, bottom: number): RenderNode[] {
+  searchRect(
+    left: number,
+    top: number,
+    right: number,
+    bottom: number,
+  ): RenderNode[] {
     const candidates = this.tree.search({
       minX: Math.min(left, right),
       minY: Math.min(top, bottom),
@@ -100,8 +114,8 @@ export class SpatialIndex {
     if (existing) {
       this.tree.remove(existing);
     }
-    if (('visible' in rn.node ? rn.node.visible : undefined) === false) return;
-    if (('locked' in rn.node ? rn.node.locked : undefined) === true) return;
+    if (("visible" in rn.node ? rn.node.visible : undefined) === false) return;
+    if (("locked" in rn.node ? rn.node.locked : undefined) === true) return;
     const bounds = getHittableBounds(rn);
     if (!bounds) return;
     const item: RTreeItem = {
@@ -130,13 +144,14 @@ export class SpatialIndex {
   }
 }
 
-function getHittableBounds(
+export function getHittableBounds(
   renderNode: RenderNode,
-): Pick<RTreeItem, 'minX' | 'minY' | 'maxX' | 'maxY'> | null {
-  let minX = renderNode.absX;
-  let minY = renderNode.absY;
-  let maxX = renderNode.absX + renderNode.absW;
-  let maxY = renderNode.absY + renderNode.absH;
+): Pick<RTreeItem, "minX" | "minY" | "maxX" | "maxY"> | null {
+  const visualOutset = resolveVisualOutset(renderNode.node);
+  let minX = renderNode.absX - visualOutset.left;
+  let minY = renderNode.absY - visualOutset.top;
+  let maxX = renderNode.absX + renderNode.absW + visualOutset.right;
+  let maxY = renderNode.absY + renderNode.absH + visualOutset.bottom;
   const clip = renderNode.clipRect;
   if (clip) {
     minX = Math.max(minX, clip.x);
@@ -148,42 +163,51 @@ function getHittableBounds(
   return { minX, minY, maxX, maxY };
 }
 
-function isPointHittableRenderNode(renderNode: RenderNode): boolean {
+export function isPointHittableRenderNode(renderNode: RenderNode): boolean {
   const node = renderNode.node;
   if (resolveNodeOpacity(node.opacity) <= 0) return false;
 
-  if (node.type === 'frame' || node.type === 'group' || node.type === 'rectangle') {
+  if (
+    node.type === "frame" ||
+    node.type === "group" ||
+    node.type === "rectangle"
+  ) {
     const hasExplicitAppearance =
       (Array.isArray(node.fill) && node.fill.length > 0) ||
       !!node.stroke ||
       (Array.isArray(node.effects) && node.effects.length > 0);
     if (!hasExplicitAppearance) {
-      if (node.type === 'frame' || node.type === 'group') {
+      if (node.type === "frame" || node.type === "group") {
         return false;
       }
       return true;
     }
     return (
-      hasVisibleFill(node.fill) || hasVisibleStroke(node.stroke) || hasVisibleEffects(node.effects)
+      hasVisibleFill(node.fill) ||
+      hasVisibleStroke(node.stroke) ||
+      hasVisibleEffects(node.effects)
     );
   }
 
   return true;
 }
 
-function hasVisibleFill(fill: PenFill[] | undefined): boolean {
+export function hasVisibleFill(fill: PenFill[] | undefined): boolean {
   if (!Array.isArray(fill) || fill.length === 0) return false;
   return fill.some((entry) => {
+    if (entry.visible === false) return false;
     const opacity = resolveNodeOpacity(entry.opacity);
     if (opacity <= 0) return false;
 
     switch (entry.type) {
-      case 'solid':
+      case "solid":
         return hasVisibleColor(entry.color);
-      case 'linear_gradient':
-      case 'radial_gradient':
+      case "linear_gradient":
+      case "radial_gradient":
+      case "angular_gradient":
+      case "diamond_gradient":
         return entry.stops.some((stop) => hasVisibleColor(stop.color));
-      case 'image':
+      case "image":
         return !!entry.url;
       default:
         return false;
@@ -191,20 +215,31 @@ function hasVisibleFill(fill: PenFill[] | undefined): boolean {
   });
 }
 
-function hasVisibleStroke(stroke: PenStroke | undefined): boolean {
+export function hasVisibleStroke(stroke: PenStroke | undefined): boolean {
   if (!stroke) return false;
   const thickness = resolveStrokeThickness(stroke);
   if (thickness <= 0) return false;
-  return hasVisibleFill(stroke.fill);
+  if (hasVisibleFill(stroke.fill)) return true;
+  const legacyStroke = stroke as PenStroke & { color?: unknown };
+  return (
+    typeof legacyStroke.color === "string" &&
+    hasVisibleColor(legacyStroke.color)
+  );
 }
 
-function hasVisibleEffects(effects: PenEffect[] | undefined): boolean {
+export function hasVisibleEffects(effects: PenEffect[] | undefined): boolean {
   if (!Array.isArray(effects) || effects.length === 0) return false;
   return effects.some((effect) => {
-    if (effect.type === 'shadow') {
+    if (effect.visible === false) return false;
+    if (resolveNodeOpacity(effect.opacity) <= 0) return false;
+
+    if (effect.type === "shadow") {
       return (
         hasVisibleColor(effect.color) &&
-        (effect.blur > 0 || effect.spread !== 0 || effect.offsetX !== 0 || effect.offsetY !== 0)
+        (effect.blur > 0 ||
+          effect.spread !== 0 ||
+          effect.offsetX !== 0 ||
+          effect.offsetY !== 0)
       );
     }
 
@@ -212,28 +247,33 @@ function hasVisibleEffects(effects: PenEffect[] | undefined): boolean {
   });
 }
 
-function hasVisibleColor(color: string | undefined): boolean {
+export function hasVisibleColor(color: string | undefined): boolean {
   if (!color) return false;
   return resolveColorAlpha(color) > 0;
 }
 
-function resolveColorAlpha(color: string): number {
+export function resolveColorAlpha(color: string): number {
   const normalized = color.trim().toLowerCase();
   if (!normalized) return 0;
-  if (normalized === 'transparent') return 0;
+  if (normalized === "transparent") return 0;
 
-  const hex = normalized.match(/^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i)?.[1];
+  const hex = normalized.match(
+    /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i,
+  )?.[1];
   if (hex) {
-    if (hex.length === 4) return parseInt(hex[3]! + hex[3]!, 16) / 255;
-    if (hex.length === 8) return parseInt(hex.slice(6, 8), 16) / 255;
+    if (hex.length === 4) {
+      const alphaHex = hex.charAt(3);
+      return Number.parseInt(alphaHex + alphaHex, 16) / 255;
+    }
+    if (hex.length === 8) return Number.parseInt(hex.slice(6, 8), 16) / 255;
     return 1;
   }
 
   const rgbaMatch = normalized.match(/^rgba?\(([^)]+)\)$/);
   if (rgbaMatch) {
-    const parts = rgbaMatch[1]!.split(',').map((part) => part.trim());
+    const parts = (rgbaMatch[1] ?? "").split(",").map((part) => part.trim());
     if (parts.length >= 4) {
-      const alpha = Number.parseFloat(parts[3]!);
+      const alpha = Number.parseFloat(parts[3] ?? "");
       return Number.isFinite(alpha) ? alpha : 1;
     }
     return 1;
@@ -242,9 +282,11 @@ function resolveColorAlpha(color: string): number {
   return 1;
 }
 
-function resolveNodeOpacity(opacity: PenNode['opacity'] | PenFill['opacity']): number {
-  if (typeof opacity === 'number') return opacity;
-  if (typeof opacity === 'string') {
+function resolveNodeOpacity(
+  opacity: PenNode["opacity"] | PenFill["opacity"],
+): number {
+  if (typeof opacity === "number") return opacity;
+  if (typeof opacity === "string") {
     const parsed = Number.parseFloat(opacity);
     if (Number.isFinite(parsed)) return parsed;
   }
@@ -252,9 +294,106 @@ function resolveNodeOpacity(opacity: PenNode['opacity'] | PenFill['opacity']): n
 }
 
 function resolveStrokeThickness(stroke: PenStroke): number {
-  if (typeof stroke.thickness === 'number') return stroke.thickness;
+  if (typeof stroke.thickness === "number") return stroke.thickness;
   if (Array.isArray(stroke.thickness)) {
     return Math.max(...stroke.thickness);
   }
   return 0;
+}
+
+function resolveVisualOutset(node: PenNode): {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+} {
+  const strokeOutset = resolveStrokeOutset(
+    "stroke" in node ? node.stroke : undefined,
+  );
+  const effectOutset = resolveEffectOutset(
+    "effects" in node ? node.effects : undefined,
+  );
+
+  return {
+    top: Math.max(strokeOutset.top, effectOutset.top),
+    right: Math.max(strokeOutset.right, effectOutset.right),
+    bottom: Math.max(strokeOutset.bottom, effectOutset.bottom),
+    left: Math.max(strokeOutset.left, effectOutset.left),
+  };
+}
+
+export function resolveStrokeOutset(stroke: PenStroke | undefined): {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+} {
+  if (!stroke || !hasVisibleStroke(stroke)) {
+    return { top: 0, right: 0, bottom: 0, left: 0 };
+  }
+
+  const align = stroke.align ?? "center";
+  const outwardScale = align === "outside" ? 1 : align === "center" ? 0.5 : 0;
+  if (outwardScale <= 0) {
+    return { top: 0, right: 0, bottom: 0, left: 0 };
+  }
+
+  if (typeof stroke.thickness === "number") {
+    const outset = stroke.thickness * outwardScale;
+    return { top: outset, right: outset, bottom: outset, left: outset };
+  }
+
+  if (Array.isArray(stroke.thickness)) {
+    const [top = 0, right = 0, bottom = 0, left = 0] = stroke.thickness;
+    return {
+      top: top * outwardScale,
+      right: right * outwardScale,
+      bottom: bottom * outwardScale,
+      left: left * outwardScale,
+    };
+  }
+
+  return { top: 0, right: 0, bottom: 0, left: 0 };
+}
+
+function resolveEffectOutset(effects: PenEffect[] | undefined): {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+} {
+  if (!Array.isArray(effects) || effects.length === 0) {
+    return { top: 0, right: 0, bottom: 0, left: 0 };
+  }
+
+  let top = 0;
+  let right = 0;
+  let bottom = 0;
+  let left = 0;
+
+  for (const effect of effects) {
+    if (effect.visible === false || resolveNodeOpacity(effect.opacity) <= 0)
+      continue;
+    if (effect.type === "blur") {
+      top = Math.max(top, effect.radius);
+      right = Math.max(right, effect.radius);
+      bottom = Math.max(bottom, effect.radius);
+      left = Math.max(left, effect.radius);
+      continue;
+    }
+    if (
+      effect.type !== "shadow" ||
+      effect.inner ||
+      !hasVisibleColor(effect.color)
+    )
+      continue;
+
+    const reach = Math.max(0, effect.blur + effect.spread);
+    top = Math.max(top, Math.max(0, reach - effect.offsetY));
+    right = Math.max(right, Math.max(0, reach + effect.offsetX));
+    bottom = Math.max(bottom, Math.max(0, reach + effect.offsetY));
+    left = Math.max(left, Math.max(0, reach - effect.offsetX));
+  }
+
+  return { top, right, bottom, left };
 }

@@ -1,5 +1,10 @@
 // @ts-nocheck
-import type { PenDocument, PenNode, PenPage } from "@cucumber/pen-types";
+import type {
+  PenDocument,
+  PenNode,
+  PenPage,
+  PenStyleDefinition,
+} from "@cucumber/pen-types";
 import {
   type ConversionContext,
   collectImageBlobs,
@@ -20,6 +25,9 @@ import type {
   FigmaImportLayoutMode,
   FigmaNodeChange,
 } from "./figma-types.js";
+import { mapFigmaEffects } from "./figma-effect-mapper.js";
+import { mapFigmaFills } from "./figma-fill-mapper.js";
+import { mapFigmaTextProps } from "./figma-text-mapper.js";
 
 /**
  * Resolve style references (fill, stroke, text, effect) to inline properties.
@@ -97,6 +105,62 @@ function resolveStyleReferences(nodeChanges: FigmaNodeChange[]): void {
   }
 }
 
+export function collectFigmaStyleDefinitions(
+  nodeChanges: FigmaNodeChange[],
+): Record<string, PenStyleDefinition> | undefined {
+  const definitions: Record<string, PenStyleDefinition> = {};
+
+  for (const nodeChange of nodeChanges) {
+    if (!nodeChange.styleType || !nodeChange.guid) continue;
+    const id = guidToString(nodeChange.guid);
+    const definition: PenStyleDefinition = {
+      source: "figma",
+      id,
+      name: nodeChange.name,
+      type: mapFigmaStyleDefinitionType(nodeChange.styleType),
+      fill: mapFigmaFills(nodeChange.fillPaints),
+      strokeFill: mapFigmaFills(nodeChange.strokePaints),
+      effects: mapFigmaEffects(nodeChange.effects),
+      variableRefs: mapFigmaVariableRefs(nodeChange),
+    };
+    if (nodeChange.styleType === "TEXT") {
+      const text = mapFigmaTextProps(nodeChange);
+      const { content: _content, ...textStyle } = text;
+      definition.text = removeUndefinedStyleFields(textStyle);
+    }
+    definitions[id] = removeUndefinedStyleFields(definition);
+  }
+
+  return Object.keys(definitions).length > 0 ? definitions : undefined;
+}
+
+function mapFigmaStyleDefinitionType(
+  styleType: NonNullable<FigmaNodeChange["styleType"]>,
+): PenStyleDefinition["type"] {
+  if (styleType === "TEXT") return "text";
+  if (styleType === "EFFECT") return "effect";
+  return "fill";
+}
+
+function mapFigmaVariableRefs(
+  nodeChange: FigmaNodeChange,
+): Record<string, unknown> | undefined {
+  return nodeChange.variableConsumptionMap &&
+    Object.keys(nodeChange.variableConsumptionMap).length > 0
+    ? nodeChange.variableConsumptionMap
+    : undefined;
+}
+
+function removeUndefinedStyleFields<T extends Record<string, unknown>>(
+  value: T,
+): T {
+  const cleaned: Record<string, unknown> = {};
+  for (const [key, nested] of Object.entries(value)) {
+    if (nested !== undefined) cleaned[key] = nested;
+  }
+  return cleaned as T;
+}
+
 /**
  * Convert a decoded .fig file to a PenDocument.
  */
@@ -114,6 +178,7 @@ export function figmaToPenDocument(
 
   // Resolve style references before tree building
   resolveStyleReferences(decoded.nodeChanges);
+  const styleDefinitions = collectFigmaStyleDefinitions(decoded.nodeChanges);
 
   const tree = buildTree(decoded.nodeChanges);
 
@@ -167,6 +232,7 @@ export function figmaToPenDocument(
     document: {
       version: "1",
       name: fileName,
+      styleDefinitions,
       pages: [penPage],
       children: [],
     },
@@ -191,6 +257,7 @@ export function figmaAllPagesToPenDocument(
   const warnings: string[] = [];
 
   resolveStyleReferences(decoded.nodeChanges);
+  const styleDefinitions = collectFigmaStyleDefinitions(decoded.nodeChanges);
 
   const tree = buildTree(decoded.nodeChanges);
   if (!tree) {
@@ -254,6 +321,7 @@ export function figmaAllPagesToPenDocument(
     document: {
       version: "1",
       name: fileName,
+      styleDefinitions,
       pages: penPages,
       children: [],
     },

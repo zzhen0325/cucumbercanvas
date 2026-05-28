@@ -26,6 +26,8 @@ export {
   convertRectangle,
   convertEllipse,
   convertLine,
+  convertRegularPolygon,
+  convertStar,
 } from "./shape-converter.js";
 export { convertText } from "./text-converter.js";
 export { convertVector } from "./path-converter.js";
@@ -45,7 +47,9 @@ import { convertVector } from "./path-converter.js";
 import {
   convertEllipse,
   convertLine,
+  convertRegularPolygon,
   convertRectangle,
+  convertStar,
 } from "./shape-converter.js";
 import { convertText } from "./text-converter.js";
 
@@ -107,11 +111,15 @@ export function convertNode(
       return convertEllipse(treeNode, parentStackMode, ctx);
 
     case "LINE":
-      return convertLine(treeNode, ctx);
+      return convertLine(treeNode, parentStackMode, ctx);
+
+    case "STAR":
+      return convertStar(treeNode, parentStackMode, ctx);
+
+    case "REGULAR_POLYGON":
+      return convertRegularPolygon(treeNode, parentStackMode, ctx);
 
     case "VECTOR":
-    case "STAR":
-    case "REGULAR_POLYGON":
     case "BOOLEAN_OPERATION":
       return convertVector(treeNode, parentStackMode, ctx);
 

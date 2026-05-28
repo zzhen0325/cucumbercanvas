@@ -5,7 +5,6 @@ import type {
   CanvasBounds,
   CanvasFill,
   CanvasStroke,
-  ContextSlots,
   PenEffect,
   PenNode,
 } from "@cucumber/canvas-core";
@@ -13,12 +12,18 @@ import {
   getCanvasImportedNodeMeta,
   getNodeBounds,
 } from "@cucumber/canvas-core";
-import type { VariableDefinition } from "@cucumber/pen-types";
+import type {
+  BlendMode,
+  StyledTextSegment,
+  VariableDefinition,
+} from "@cucumber/pen-types";
 import {
   AlignCenter,
   AlignJustify,
   AlignLeft,
   AlignRight,
+  ArrowDown,
+  ArrowUp,
   Box,
   ChevronDown,
   Columns3,
@@ -39,6 +44,7 @@ import {
   Plus,
   RotateCw,
   Rows3,
+  Scissors,
   SlidersHorizontal,
   Square,
   Type,
@@ -115,6 +121,26 @@ type ClearLayoutUpdate = Partial<PenNode> & {
 
 type CanvasVariableMap = Record<string, VariableDefinition>;
 
+type CanvasTransformMatrix = {
+  m00: number;
+  m01: number;
+  m02: number;
+  m10: number;
+  m11: number;
+  m12: number;
+};
+
+type LayoutRefEditableNode = PenNode & {
+  layoutRef?: NonNullable<PenNode["layoutRef"]>;
+};
+
+type MaskEditableNode = PenNode & {
+  mask?: NonNullable<PenNode["mask"]>;
+};
+
+type StyleRefKind = "fill" | "stroke" | "text" | "effect";
+type LayoutSizingMode = "fixed" | "fit_content" | "fill_container";
+
 function getNodeFill(node: PenNode): CanvasFill[] | undefined {
   return (node as NodeWithOptionalPaint).fill;
 }
@@ -182,10 +208,418 @@ function solidFillOpacity(fill?: CanvasFill): number {
   return Math.round(fill.opacity * 100);
 }
 
+function paintLayerOpacity(fill?: CanvasFill): number {
+  if (!fill || typeof fill.opacity !== "number") return 100;
+  return Math.round(fill.opacity * 100);
+}
+
+const BLEND_MODE_OPTIONS: Array<{ value: BlendMode; label: string }> = [
+  { value: "normal", label: "正常" },
+  { value: "pass_through", label: "穿透" },
+  { value: "multiply", label: "正片叠底" },
+  { value: "screen", label: "滤色" },
+  { value: "overlay", label: "叠加" },
+  { value: "darken", label: "变暗" },
+  { value: "lighten", label: "变亮" },
+  { value: "color_burn", label: "颜色加深" },
+  { value: "color_dodge", label: "颜色减淡" },
+  { value: "linear_burn", label: "线性加深" },
+  { value: "linear_dodge", label: "线性减淡" },
+  { value: "hard_light", label: "强光" },
+  { value: "soft_light", label: "柔光" },
+  { value: "difference", label: "差值" },
+  { value: "exclusion", label: "排除" },
+  { value: "hue", label: "色相" },
+  { value: "saturation", label: "饱和度" },
+  { value: "color", label: "颜色" },
+  { value: "luminosity", label: "明度" },
+];
+
+const FILL_TYPE_OPTIONS: Array<{ value: CanvasFill["type"]; label: string }> = [
+  { value: "solid", label: "纯色" },
+  { value: "linear_gradient", label: "线性渐变" },
+  { value: "radial_gradient", label: "径向渐变" },
+  { value: "angular_gradient", label: "角度渐变" },
+  { value: "diamond_gradient", label: "菱形渐变" },
+  { value: "image", label: "图片" },
+];
+
+type EffectInspectorType =
+  | "shadow"
+  | "inner_shadow"
+  | "blur"
+  | "background_blur";
+
+const EFFECT_TYPE_OPTIONS: Array<{
+  value: EffectInspectorType;
+  label: string;
+}> = [
+  { value: "shadow", label: "投影" },
+  { value: "inner_shadow", label: "内阴影" },
+  { value: "blur", label: "图层模糊" },
+  { value: "background_blur", label: "背景模糊" },
+];
+
+function paintLayerMeta(fill?: CanvasFill): {
+  visible?: boolean;
+  opacity?: number;
+  blendMode?: BlendMode;
+} {
+  const meta: { visible?: boolean; opacity?: number; blendMode?: BlendMode } =
+    {};
+  if (fill?.visible !== undefined) meta.visible = fill.visible;
+  if (typeof fill?.opacity === "number") meta.opacity = fill.opacity;
+  if (fill?.blendMode) meta.blendMode = fill.blendMode;
+  return meta;
+}
+
+function fillPrimaryColor(fill?: CanvasFill): string {
+  if (!fill) return "#d3f256";
+  if (fill.type === "solid") return fill.color;
+  if ("stops" in fill && fill.stops[0]?.color) return fill.stops[0].color;
+  return "#d3f256";
+}
+
+function createFillOfType(
+  type: CanvasFill["type"],
+  previous?: CanvasFill,
+): CanvasFill {
+  const meta = paintLayerMeta(previous);
+  const color = fillPrimaryColor(previous);
+  switch (type) {
+    case "solid":
+      return { type, color, ...meta };
+    case "linear_gradient":
+      return {
+        type,
+        angle: previous && "angle" in previous ? previous.angle : 0,
+        stops: [
+          { offset: 0, color },
+          { offset: 1, color: "#ffffff" },
+        ],
+        ...meta,
+      };
+    case "radial_gradient":
+      return {
+        type,
+        cx: 0.5,
+        cy: 0.5,
+        radius: previous && "radius" in previous ? previous.radius : 0.5,
+        stops: [
+          { offset: 0, color },
+          { offset: 1, color: "#ffffff" },
+        ],
+        ...meta,
+      };
+    case "angular_gradient":
+      return {
+        type,
+        angle: previous && "angle" in previous ? previous.angle : 0,
+        cx: 0.5,
+        cy: 0.5,
+        stops: [
+          { offset: 0, color },
+          { offset: 1, color: "#ffffff" },
+        ],
+        ...meta,
+      };
+    case "diamond_gradient":
+      return {
+        type,
+        angle: previous && "angle" in previous ? previous.angle : 0,
+        cx: 0.5,
+        cy: 0.5,
+        radius: previous && "radius" in previous ? previous.radius : 0.5,
+        stops: [
+          { offset: 0, color },
+          { offset: 1, color: "#ffffff" },
+        ],
+        ...meta,
+      };
+    case "image":
+      return {
+        type,
+        url: previous?.type === "image" ? previous.url : "",
+        mode: previous?.type === "image" ? previous.mode : "fill",
+        ...(previous?.type === "image" && previous.originalSize
+          ? { originalSize: previous.originalSize }
+          : {}),
+        ...(previous?.type === "image" && previous.transform
+          ? { transform: previous.transform }
+          : {}),
+        ...meta,
+      };
+  }
+}
+
+function effectInspectorType(effect: PenEffect): EffectInspectorType {
+  if (effect.type === "shadow") return effect.inner ? "inner_shadow" : "shadow";
+  return effect.type;
+}
+
+function effectMeta(effect?: PenEffect): {
+  visible?: boolean;
+  opacity?: number;
+  blendMode?: BlendMode;
+} {
+  const meta: { visible?: boolean; opacity?: number; blendMode?: BlendMode } =
+    {};
+  if (effect?.visible !== undefined) meta.visible = effect.visible;
+  if (typeof effect?.opacity === "number") meta.opacity = effect.opacity;
+  if (effect?.blendMode) meta.blendMode = effect.blendMode;
+  return meta;
+}
+
+function createEffectOfType(
+  type: EffectInspectorType,
+  previous?: PenEffect,
+): PenEffect {
+  const meta = effectMeta(previous);
+  if (type === "shadow" || type === "inner_shadow") {
+    const shadow = previous?.type === "shadow" ? previous : undefined;
+    return {
+      type: "shadow",
+      ...(type === "inner_shadow" ? { inner: true } : {}),
+      offsetX: shadow?.offsetX ?? 0,
+      offsetY: shadow?.offsetY ?? 4,
+      blur: shadow?.blur ?? 8,
+      spread: shadow?.spread ?? 0,
+      color: shadow?.color ?? "#00000040",
+      ...meta,
+    };
+  }
+  return {
+    type,
+    radius:
+      previous?.type === "blur" || previous?.type === "background_blur"
+        ? previous.radius
+        : 4,
+    ...meta,
+  };
+}
+
+function effectOpacity(effect?: PenEffect): number {
+  if (!effect || typeof effect.opacity !== "number") return 100;
+  return Math.round(effect.opacity * 100);
+}
+
+function formatDashPattern(pattern?: number[]): string {
+  if (!pattern || pattern.length === 0) return "";
+  return pattern.map((value) => formatNumber(value)).join(" ");
+}
+
+function parseDashPattern(value: string): number[] | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const numbers = trimmed.split(/[,\s]+/).map((part) => Number(part));
+  if (
+    numbers.some((part) => !Number.isFinite(part) || part < 0) ||
+    numbers.length === 0
+  ) {
+    return undefined;
+  }
+  return numbers;
+}
+
+function strokeWithDashPattern(
+  stroke: CanvasStroke,
+  dashPattern: number[] | undefined,
+): CanvasStroke {
+  const { dashPattern: _dashPattern, ...strokeWithoutDash } = stroke;
+  if (!dashPattern || dashPattern.length === 0) return strokeWithoutDash;
+  return { ...strokeWithoutDash, dashPattern };
+}
+
+function cornerRadiusTuple(
+  cornerRadius: unknown,
+): [number, number, number, number] {
+  if (Array.isArray(cornerRadius) && cornerRadius.length === 4) {
+    const values = cornerRadius.map((value) =>
+      Number.isFinite(Number(value)) ? Number(value) : 0,
+    );
+    return [values[0] ?? 0, values[1] ?? 0, values[2] ?? 0, values[3] ?? 0];
+  }
+  const radius =
+    typeof cornerRadius === "number" && Number.isFinite(cornerRadius)
+      ? cornerRadius
+      : 0;
+  return [radius, radius, radius, radius];
+}
+
+function strokeThicknessTuple(
+  thickness: CanvasStroke["thickness"] | undefined,
+): [number, number, number, number] {
+  if (Array.isArray(thickness) && thickness.length === 4) {
+    return [
+      Number(thickness[0]) || 0,
+      Number(thickness[1]) || 0,
+      Number(thickness[2]) || 0,
+      Number(thickness[3]) || 0,
+    ];
+  }
+  const width =
+    typeof thickness === "number" && Number.isFinite(thickness) ? thickness : 1;
+  return [width, width, width, width];
+}
+
+function paddingTuple(
+  padding: LayoutEditableNode["padding"],
+): [number, number, number, number] {
+  if (Array.isArray(padding)) {
+    if (padding.length === 2) {
+      return [
+        Number(padding[0]) || 0,
+        Number(padding[1]) || 0,
+        Number(padding[0]) || 0,
+        Number(padding[1]) || 0,
+      ];
+    }
+    if (padding.length === 4) {
+      return [
+        Number(padding[0]) || 0,
+        Number(padding[1]) || 0,
+        Number(padding[2]) || 0,
+        Number(padding[3]) || 0,
+      ];
+    }
+  }
+  const value =
+    typeof padding === "number" && Number.isFinite(padding) ? padding : 0;
+  return [value, value, value, value];
+}
+
+function nodeTransformMatrix(node: PenNode): CanvasTransformMatrix {
+  return {
+    m00: node.transform?.m00 ?? 1,
+    m01: node.transform?.m01 ?? 0,
+    m02: node.transform?.m02 ?? 0,
+    m10: node.transform?.m10 ?? 0,
+    m11: node.transform?.m11 ?? 1,
+    m12: node.transform?.m12 ?? 0,
+  };
+}
+
+function isStyledTextContent(
+  content: Extract<PenNode, { type: "text" }>["content"],
+): content is StyledTextSegment[] {
+  return Array.isArray(content);
+}
+
+function formatFontFallback(fallback?: string[]): string {
+  return fallback?.join(", ") ?? "";
+}
+
+function parseFontFallback(value: string): string[] | undefined {
+  const names = value
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+  return names.length > 0 ? names : undefined;
+}
+
+function formatOpenTypeFeatures(
+  features?: Record<string, boolean | number>,
+): string {
+  if (!features) return "";
+  return Object.entries(features)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(", ");
+}
+
+function parseOpenTypeFeatures(
+  value: string,
+): Record<string, boolean | number> | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const entries = trimmed
+    .split(/[,\n;]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const parsed: Record<string, boolean | number> = {};
+  for (const entry of entries) {
+    const [rawKey, rawValue = "true"] = entry.split("=");
+    const key = rawKey?.trim();
+    const valueText = rawValue.trim();
+    if (!key) continue;
+    if (valueText === "true") {
+      parsed[key] = true;
+    } else if (valueText === "false") {
+      parsed[key] = false;
+    } else {
+      const valueNumber = Number(valueText);
+      if (!Number.isFinite(valueNumber)) {
+        console.warn(
+          "[canvas-property-panel] ignored invalid OpenType feature value",
+          { entry },
+        );
+        continue;
+      }
+      parsed[key] = valueNumber;
+    }
+  }
+  return Object.keys(parsed).length > 0 ? parsed : undefined;
+}
+
+function segmentFillColor(segment: StyledTextSegment): string {
+  if (segment.fills?.[0]?.type === "solid") return segment.fills[0].color;
+  return segment.fill ?? "#111827";
+}
+
+function formatReferenceValue(value: unknown): string {
+  if (value === undefined) return "";
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
+}
+
+function parseReferenceObjectInput(
+  value: string,
+  label: string,
+): Record<string, unknown> | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return {};
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (isRecord(parsed)) return parsed;
+  } catch (error) {
+    console.warn("[canvas-property-panel] ignored invalid reference JSON", {
+      label,
+      error,
+    });
+    return undefined;
+  }
+  console.warn("[canvas-property-panel] ignored non-object reference JSON", {
+    label,
+  });
+  return undefined;
+}
+
+function parseReferenceArrayInput<T>(
+  value: string,
+  label: string,
+): T[] | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) return parsed as T[];
+  } catch (error) {
+    console.warn("[canvas-property-panel] ignored invalid reference JSON", {
+      label,
+      error,
+    });
+    return undefined;
+  }
+  console.warn("[canvas-property-panel] ignored non-array reference JSON", {
+    label,
+  });
+  return undefined;
+}
+
 // ─── NumberField ─────────────────────────────────────────────────────────────
 
 function NumberField({
   label,
+  ariaLabel,
   value,
   min,
   max,
@@ -195,6 +629,7 @@ function NumberField({
   onChange,
 }: {
   label: string;
+  ariaLabel?: string;
   value: number;
   min?: number;
   max?: number;
@@ -225,6 +660,7 @@ function NumberField({
     >
       <span className="mr-2 shrink-0 font-medium">{label}</span>
       <input
+        aria-label={ariaLabel ?? label}
         className="min-w-0 flex-1 bg-transparent text-sm font-medium text-foreground outline-none"
         type="number"
         min={min}
@@ -498,6 +934,229 @@ function PaintRow({
 
 // ─── FillSection ─────────────────────────────────────────────────────────────
 
+function FillLayerRow({
+  fill,
+  index,
+  count,
+  onUpdate,
+  onRemove,
+  onMove,
+}: {
+  fill: CanvasFill;
+  index: number;
+  count: number;
+  onUpdate: (fill: CanvasFill) => void;
+  onRemove: () => void;
+  onMove: (direction: "up" | "down") => void;
+}) {
+  const visible = fill.visible !== false;
+  const layerNumber = index + 1;
+  const opacity = paintLayerOpacity(fill);
+  const color = fillPrimaryColor(fill);
+
+  const updatePrimaryColor = (nextColor: string) => {
+    if (fill.type === "solid") {
+      onUpdate({ ...fill, color: nextColor });
+      return;
+    }
+    if ("stops" in fill) {
+      const stops =
+        fill.stops.length > 0
+          ? fill.stops.map((stop, stopIndex) =>
+              stopIndex === 0 ? { ...stop, color: nextColor } : stop,
+            )
+          : [
+              { offset: 0, color: nextColor },
+              { offset: 1, color: "#ffffff" },
+            ];
+      onUpdate({ ...fill, stops } as CanvasFill);
+    }
+  };
+
+  return (
+    <div className="space-y-2 rounded-lg border border-border/60 bg-muted/50 p-2 shadow-subtle">
+      <div className="grid grid-cols-[auto_1fr_auto] items-center gap-2">
+        <InspectorIconButton
+          icon={visible ? Eye : EyeOff}
+          label={
+            visible ? `隐藏填充 ${layerNumber}` : `显示填充 ${layerNumber}`
+          }
+          active={visible}
+          onClick={() => onUpdate({ ...fill, visible: !visible } as CanvasFill)}
+        />
+        <select
+          aria-label={`填充 ${layerNumber} 类型`}
+          className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+          value={fill.type}
+          onChange={(event) =>
+            onUpdate(
+              createFillOfType(
+                event.currentTarget.value as CanvasFill["type"],
+                fill,
+              ),
+            )
+          }
+        >
+          {FILL_TYPE_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <div className="flex items-center gap-1">
+          <InspectorIconButton
+            icon={ArrowUp}
+            label={`上移填充 ${layerNumber}`}
+            disabled={index === 0}
+            onClick={() => onMove("up")}
+          />
+          <InspectorIconButton
+            icon={ArrowDown}
+            label={`下移填充 ${layerNumber}`}
+            disabled={index === count - 1}
+            onClick={() => onMove("down")}
+          />
+          <InspectorIconButton
+            icon={Minus}
+            label={`移除填充 ${layerNumber}`}
+            onClick={onRemove}
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-[1fr_6.5rem] gap-2">
+        <div className="flex h-9 min-w-0 items-center gap-2 rounded-lg border border-border/60 bg-background px-3">
+          {fill.type === "image" ? (
+            <span className="text-xs font-medium text-muted-foreground">
+              图片
+            </span>
+          ) : (
+            <>
+              <ColorPickerPopover color={color} onChange={updatePrimaryColor} />
+              <span className="truncate text-sm font-medium text-foreground">
+                {color.replace(/^#/, "").toUpperCase()}
+              </span>
+            </>
+          )}
+        </div>
+        <NumberField
+          label="透明"
+          ariaLabel={`填充 ${layerNumber} 透明`}
+          suffix="%"
+          value={opacity}
+          min={0}
+          max={100}
+          onChange={(nextOpacity) =>
+            onUpdate({ ...fill, opacity: nextOpacity / 100 } as CanvasFill)
+          }
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <select
+          aria-label={`填充 ${layerNumber} 混合模式`}
+          className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+          value={fill.blendMode ?? "normal"}
+          onChange={(event) =>
+            onUpdate({
+              ...fill,
+              blendMode: event.currentTarget.value as BlendMode,
+            } as CanvasFill)
+          }
+        >
+          {BLEND_MODE_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        {"angle" in fill ? (
+          <NumberField
+            label="角度"
+            ariaLabel={`填充 ${layerNumber} 角度`}
+            value={fill.angle ?? 0}
+            step={1}
+            onChange={(angle) => onUpdate({ ...fill, angle } as CanvasFill)}
+          />
+        ) : "radius" in fill ? (
+          <NumberField
+            label="半径"
+            ariaLabel={`填充 ${layerNumber} 半径`}
+            value={fill.radius ?? 0}
+            min={0}
+            step={0.01}
+            onChange={(radius) => onUpdate({ ...fill, radius } as CanvasFill)}
+          />
+        ) : (
+          <div aria-hidden="true" />
+        )}
+      </div>
+      {fill.type === "image" ? (
+        <div className="space-y-2">
+          <input
+            aria-label={`填充 ${layerNumber} 图片地址`}
+            className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+            placeholder="Image URL / hash / blob"
+            value={fill.url}
+            onChange={(event) =>
+              onUpdate({ ...fill, url: event.currentTarget.value })
+            }
+          />
+          <div className="grid grid-cols-3 gap-2">
+            <select
+              aria-label={`填充 ${layerNumber} 图片模式`}
+              className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+              value={fill.mode ?? "fill"}
+              onChange={(event) =>
+                onUpdate({
+                  ...fill,
+                  mode: event.currentTarget.value as NonNullable<
+                    Extract<CanvasFill, { type: "image" }>["mode"]
+                  >,
+                })
+              }
+            >
+              <option value="fill">Fill</option>
+              <option value="fit">Fit</option>
+              <option value="stretch">Stretch</option>
+              <option value="tile">Tile</option>
+              <option value="crop">Crop</option>
+            </select>
+            <NumberField
+              label="原宽"
+              ariaLabel={`填充 ${layerNumber} 原始宽度`}
+              value={fill.originalSize?.width ?? 0}
+              min={0}
+              onChange={(width) =>
+                onUpdate({
+                  ...fill,
+                  originalSize: {
+                    width,
+                    height: fill.originalSize?.height ?? 0,
+                  },
+                })
+              }
+            />
+            <NumberField
+              label="原高"
+              ariaLabel={`填充 ${layerNumber} 原始高度`}
+              value={fill.originalSize?.height ?? 0}
+              min={0}
+              onChange={(height) =>
+                onUpdate({
+                  ...fill,
+                  originalSize: {
+                    width: fill.originalSize?.width ?? 0,
+                    height,
+                  },
+                })
+              }
+            />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function FillSection({
   fills,
   onUpdate,
@@ -505,28 +1164,26 @@ function FillSection({
   fills?: CanvasFill[];
   onUpdate: (updates: Partial<PenNode>) => void;
 }) {
-  const fill = fills?.[0];
-  const color = fill?.type === "solid" ? fill.color : "#d3f256";
-  const fillType = fill?.type ?? "solid";
-  const opacity = solidFillOpacity(fill);
+  const fillLayers = fills ?? [];
+  const updateFillAt = (index: number, nextFill: CanvasFill) => {
+    onUpdate({
+      fill: fillLayers.map((fill, fillIndex) =>
+        fillIndex === index ? nextFill : fill,
+      ),
+    } as Partial<PenNode>);
+  };
 
-  const handleColorChange = useCallback(
-    (newColor: string) => {
-      onUpdate({
-        fill: [{ type: "solid", color: newColor, opacity: opacity / 100 }],
-      } as Partial<PenNode>);
-    },
-    [onUpdate, opacity],
-  );
-
-  const handleOpacityChange = useCallback(
-    (nextOpacity: number) => {
-      onUpdate({
-        fill: [{ type: "solid", color, opacity: nextOpacity / 100 }],
-      } as Partial<PenNode>);
-    },
-    [color, onUpdate],
-  );
+  const moveFill = (index: number, direction: "up" | "down") => {
+    const nextIndex = direction === "up" ? index - 1 : index + 1;
+    if (nextIndex < 0 || nextIndex >= fillLayers.length) return;
+    const next = [...fillLayers];
+    const current = next[index];
+    const target = next[nextIndex];
+    if (!current || !target) return;
+    next[index] = target;
+    next[nextIndex] = current;
+    onUpdate({ fill: next } as Partial<PenNode>);
+  };
 
   return (
     <InspectorSection
@@ -539,7 +1196,7 @@ function FillSection({
             label="添加填充"
             onClick={() =>
               onUpdate({
-                fill: [{ type: "solid", color, opacity: opacity / 100 }],
+                fill: [...fillLayers, createFillOfType("solid")],
               } as Partial<PenNode>)
             }
           />
@@ -547,18 +1204,29 @@ function FillSection({
       }
     >
       <div className="space-y-2">
-        <PaintRow
-          color={color}
-          opacity={opacity}
-          onColorChange={handleColorChange}
-          onOpacityChange={handleOpacityChange}
-          onRemove={() => onUpdate({ fill: [] } as Partial<PenNode>)}
-        />
-        {fillType !== "solid" ? (
+        {fillLayers.length > 0 ? (
+          fillLayers.map((fill, index) => (
+            <FillLayerRow
+              key={`${fill.type}-${index}`}
+              fill={fill}
+              index={index}
+              count={fillLayers.length}
+              onUpdate={(nextFill) => updateFillAt(index, nextFill)}
+              onRemove={() =>
+                onUpdate({
+                  fill: fillLayers.filter(
+                    (_fill, fillIndex) => fillIndex !== index,
+                  ),
+                } as Partial<PenNode>)
+              }
+              onMove={(direction) => moveFill(index, direction)}
+            />
+          ))
+        ) : (
           <p className="text-xs text-muted-foreground">
-            当前为 {fillType}，颜色编辑会转换为纯色填充。
+            当前没有填充。点击加号添加一层可编辑填充。
           </p>
-        ) : null}
+        )}
       </div>
     </InspectorSection>
   );
@@ -575,8 +1243,29 @@ function StrokeSection({
 }) {
   const color = extractSolidStrokeColor(stroke) ?? "#111827";
   const width = typeof stroke?.thickness === "number" ? stroke.thickness : 1;
+  const edgeWidths = strokeThicknessTuple(stroke?.thickness);
   const strokeFill = stroke?.fill?.[0];
   const opacity = solidFillOpacity(strokeFill);
+  const [dashInput, setDashInput] = useState(
+    formatDashPattern(stroke?.dashPattern),
+  );
+
+  useEffect(() => {
+    setDashInput(formatDashPattern(stroke?.dashPattern));
+  }, [stroke?.dashPattern]);
+
+  const buildStroke = useCallback(
+    (): CanvasStroke => ({
+      ...(stroke ?? {
+        thickness: 1,
+        align: "inside",
+        fill: [{ type: "solid", color, opacity: opacity / 100 }],
+      }),
+      thickness: stroke?.thickness ?? 1,
+      fill: stroke?.fill ?? [{ type: "solid", color, opacity: opacity / 100 }],
+    }),
+    [color, opacity, stroke],
+  );
 
   const handleColorChange = useCallback(
     (newColor: string) => {
@@ -653,14 +1342,14 @@ function StrokeSection({
         />
         <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
           <select
+            aria-label="描边对齐"
             className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
             value={stroke?.align ?? "inside"}
             onChange={(event) =>
               onUpdate({
                 stroke: {
-                  ...(stroke ?? { fill: [{ type: "solid", color }] }),
+                  ...buildStroke(),
                   align: event.currentTarget.value as CanvasStroke["align"],
-                  thickness: width,
                 },
               } as Partial<PenNode>)
             }
@@ -682,6 +1371,117 @@ function StrokeSection({
             disabled
           />
         </div>
+        <div className="grid grid-cols-2 gap-2">
+          <select
+            aria-label="端点"
+            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+            value={stroke?.cap ?? "none"}
+            onChange={(event) =>
+              onUpdate({
+                stroke: {
+                  ...buildStroke(),
+                  cap: event.currentTarget.value as CanvasStroke["cap"],
+                },
+              } as Partial<PenNode>)
+            }
+          >
+            <option value="none">端点 无</option>
+            <option value="round">端点 圆头</option>
+            <option value="square">端点 方头</option>
+          </select>
+          <select
+            aria-label="连接"
+            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+            value={stroke?.join ?? "miter"}
+            onChange={(event) =>
+              onUpdate({
+                stroke: {
+                  ...buildStroke(),
+                  join: event.currentTarget.value as CanvasStroke["join"],
+                },
+              } as Partial<PenNode>)
+            }
+          >
+            <option value="miter">连接 斜接</option>
+            <option value="bevel">连接 斜切</option>
+            <option value="round">连接 圆角</option>
+          </select>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <label
+            className={cn(
+              "col-span-2 flex h-9 min-w-0 items-center rounded-lg border border-transparent bg-muted/70 px-3 text-xs text-muted-foreground shadow-subtle",
+              "focus-within:border-border focus-within:bg-background focus-within:ring-2 focus-within:ring-ring/20",
+            )}
+          >
+            <span className="mr-2 shrink-0 font-medium">虚线</span>
+            <input
+              className="min-w-0 flex-1 bg-transparent text-sm font-medium text-foreground outline-none"
+              value={dashInput}
+              placeholder="4 2"
+              onChange={(event) => setDashInput(event.currentTarget.value)}
+              onBlur={() => {
+                const parsed = parseDashPattern(dashInput);
+                if (dashInput.trim() && !parsed) {
+                  console.warn(
+                    "[canvas-property-panel] ignored invalid dash pattern",
+                    { value: dashInput },
+                  );
+                  setDashInput(formatDashPattern(stroke?.dashPattern));
+                  return;
+                }
+                onUpdate({
+                  stroke: strokeWithDashPattern(buildStroke(), parsed),
+                } as Partial<PenNode>);
+              }}
+            />
+          </label>
+          <NumberField
+            label="偏移"
+            value={stroke?.dashOffset ?? 0}
+            min={0}
+            step={0.5}
+            onChange={(dashOffset) =>
+              onUpdate({
+                stroke: { ...buildStroke(), dashOffset },
+              } as Partial<PenNode>)
+            }
+          />
+        </div>
+        <div className="grid grid-cols-5 gap-2">
+          {(["上", "右", "下", "左"] as const).map((label, index) => (
+            <NumberField
+              key={label}
+              label={label}
+              value={edgeWidths[index] ?? 0}
+              min={0}
+              step={0.5}
+              onChange={(edgeWidth) => {
+                const next = [...edgeWidths] as [
+                  number,
+                  number,
+                  number,
+                  number,
+                ];
+                next[index] = edgeWidth;
+                onUpdate({
+                  stroke: { ...buildStroke(), thickness: next },
+                } as Partial<PenNode>);
+              }}
+            />
+          ))}
+          <NumberField
+            label="斜接"
+            value={stroke?.miterLimit ?? 4}
+            min={1}
+            step={0.5}
+            onChange={(miterLimit) =>
+              onUpdate({
+                stroke: { ...buildStroke(), miterLimit },
+              } as Partial<PenNode>)
+            }
+          />
+        </div>
       </div>
     </InspectorSection>
   );
@@ -697,35 +1497,164 @@ function TextSection({
   onUpdate: (updates: Partial<PenNode>) => void;
 }) {
   const color = extractSolidFillColor(node.fill) ?? "#111827";
+  const content = node.content;
+  const updateSegment = (index: number, segment: StyledTextSegment) => {
+    if (!isStyledTextContent(content)) return;
+    onUpdate({
+      content: content.map((item, itemIndex) =>
+        itemIndex === index ? segment : item,
+      ),
+    } as Partial<PenNode>);
+  };
 
   return (
     <InspectorSection title="文本内容">
-      <textarea
-        className="h-20 w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-ring/20"
-        value={String(node.content ?? "")}
-        onChange={(event) =>
-          onUpdate({ content: event.currentTarget.value } as Partial<PenNode>)
-        }
-      />
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        <NumberField
-          label="字号"
-          value={node.fontSize ?? 16}
-          min={1}
-          onChange={(fontSize) => onUpdate({ fontSize } as Partial<PenNode>)}
-        />
-        <div className="flex h-9 items-center gap-2 rounded-lg border border-border/60 bg-muted/70 px-3 shadow-subtle">
-          <span className="shrink-0 text-xs font-medium text-muted-foreground">
-            颜色
-          </span>
-          <ColorPickerPopover
-            color={color}
-            onChange={(c) =>
+      <div className="space-y-2">
+        {!isStyledTextContent(content) ? (
+          <textarea
+            className="h-20 w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+            value={String(content ?? "")}
+            onChange={(event) =>
               onUpdate({
-                fill: [{ type: "solid", color: c }],
+                content: event.currentTarget.value,
               } as Partial<PenNode>)
             }
           />
+        ) : (
+          content.map((segment, index) => {
+            const segmentNumber = index + 1;
+            const segmentColor = segmentFillColor(segment);
+            return (
+              <div
+                key={`${segment.text}-${index}`}
+                className="space-y-2 rounded-lg border border-border/60 bg-muted/50 p-2 shadow-subtle"
+              >
+                <textarea
+                  aria-label={`文本段 ${segmentNumber}`}
+                  className="h-16 w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+                  value={segment.text}
+                  onChange={(event) =>
+                    updateSegment(index, {
+                      ...segment,
+                      text: event.currentTarget.value,
+                    })
+                  }
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    aria-label={`文本段 ${segmentNumber} 字体`}
+                    className="h-9 min-w-0 rounded-lg border border-transparent bg-background px-3 text-sm font-medium shadow-subtle outline-none focus:border-border focus:ring-2 focus:ring-ring/20"
+                    placeholder="Font family"
+                    value={segment.fontFamily ?? ""}
+                    onChange={(event) =>
+                      updateSegment(index, {
+                        ...segment,
+                        fontFamily: event.currentTarget.value,
+                      })
+                    }
+                  />
+                  <input
+                    aria-label={`文本段 ${segmentNumber} PostScript`}
+                    className="h-9 min-w-0 rounded-lg border border-transparent bg-background px-3 text-sm font-medium shadow-subtle outline-none focus:border-border focus:ring-2 focus:ring-ring/20"
+                    placeholder="PostScript"
+                    value={segment.fontPostScriptName ?? ""}
+                    onChange={(event) =>
+                      updateSegment(index, {
+                        ...segment,
+                        fontPostScriptName: event.currentTarget.value,
+                      })
+                    }
+                  />
+                  <NumberField
+                    label="字号"
+                    ariaLabel={`文本段 ${segmentNumber} 字号`}
+                    value={segment.fontSize ?? node.fontSize ?? 16}
+                    min={1}
+                    onChange={(fontSize) =>
+                      updateSegment(index, { ...segment, fontSize })
+                    }
+                  />
+                  <NumberField
+                    label="字距"
+                    ariaLabel={`文本段 ${segmentNumber} 字距`}
+                    value={segment.letterSpacing ?? 0}
+                    step={0.1}
+                    onChange={(letterSpacing) =>
+                      updateSegment(index, { ...segment, letterSpacing })
+                    }
+                  />
+                  <NumberField
+                    label="基线"
+                    ariaLabel={`文本段 ${segmentNumber} 基线`}
+                    value={segment.baselineShift ?? 0}
+                    step={0.5}
+                    onChange={(baselineShift) =>
+                      updateSegment(index, { ...segment, baselineShift })
+                    }
+                  />
+                  <select
+                    aria-label={`文本段 ${segmentNumber} 大小写`}
+                    className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+                    value={segment.textCase ?? "original"}
+                    onChange={(event) =>
+                      updateSegment(index, {
+                        ...segment,
+                        textCase: event.currentTarget.value as
+                          | "original"
+                          | "upper"
+                          | "lower"
+                          | "title",
+                      })
+                    }
+                  >
+                    <option value="original">原样</option>
+                    <option value="upper">大写</option>
+                    <option value="lower">小写</option>
+                    <option value="title">标题式</option>
+                  </select>
+                </div>
+                <div className="flex h-9 items-center gap-2 rounded-lg border border-border/60 bg-background px-3 shadow-subtle">
+                  <span className="shrink-0 text-xs font-medium text-muted-foreground">
+                    段颜色
+                  </span>
+                  <ColorPickerPopover
+                    color={segmentColor}
+                    onChange={(nextColor) =>
+                      updateSegment(index, {
+                        ...segment,
+                        fill: nextColor,
+                        fills: [{ type: "solid", color: nextColor }],
+                      })
+                    }
+                  />
+                  <span className="truncate text-sm font-medium text-foreground">
+                    {segmentColor.replace(/^#/, "").toUpperCase()}
+                  </span>
+                </div>
+              </div>
+            );
+          })
+        )}
+        <div className="grid grid-cols-2 gap-2">
+          <NumberField
+            label="字号"
+            value={node.fontSize ?? 16}
+            min={1}
+            onChange={(fontSize) => onUpdate({ fontSize } as Partial<PenNode>)}
+          />
+          <div className="flex h-9 items-center gap-2 rounded-lg border border-border/60 bg-muted/70 px-3 shadow-subtle">
+            <span className="shrink-0 text-xs font-medium text-muted-foreground">
+              颜色
+            </span>
+            <ColorPickerPopover
+              color={color}
+              onChange={(c) =>
+                onUpdate({
+                  fill: [{ type: "solid", color: c }],
+                } as Partial<PenNode>)
+              }
+            />
+          </div>
         </div>
       </div>
     </InspectorSection>
@@ -733,6 +1662,176 @@ function TextSection({
 }
 
 // ─── EffectsSection ─────────────────────────────────────────────────────────────
+
+function EffectLayerRow({
+  effect,
+  index,
+  count,
+  onUpdate,
+  onRemove,
+  onMove,
+}: {
+  effect: PenEffect;
+  index: number;
+  count: number;
+  onUpdate: (effect: PenEffect) => void;
+  onRemove: () => void;
+  onMove: (direction: "up" | "down") => void;
+}) {
+  const layerNumber = index + 1;
+  const visible = effect.visible !== false;
+  const opacity = effectOpacity(effect);
+  const effectType = effectInspectorType(effect);
+
+  return (
+    <div className="space-y-2 rounded-lg border border-border/60 bg-muted/50 p-2 shadow-subtle">
+      <div className="grid grid-cols-[auto_1fr_auto] items-center gap-2">
+        <InspectorIconButton
+          icon={visible ? Eye : EyeOff}
+          label={
+            visible ? `隐藏效果 ${layerNumber}` : `显示效果 ${layerNumber}`
+          }
+          active={visible}
+          onClick={() =>
+            onUpdate({ ...effect, visible: !visible } as PenEffect)
+          }
+        />
+        <select
+          aria-label={`效果 ${layerNumber} 类型`}
+          className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+          value={effectType}
+          onChange={(event) =>
+            onUpdate(
+              createEffectOfType(
+                event.currentTarget.value as EffectInspectorType,
+                effect,
+              ),
+            )
+          }
+        >
+          {EFFECT_TYPE_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <div className="flex items-center gap-1">
+          <InspectorIconButton
+            icon={ArrowUp}
+            label={`上移效果 ${layerNumber}`}
+            disabled={index === 0}
+            onClick={() => onMove("up")}
+          />
+          <InspectorIconButton
+            icon={ArrowDown}
+            label={`下移效果 ${layerNumber}`}
+            disabled={index === count - 1}
+            onClick={() => onMove("down")}
+          />
+          <InspectorIconButton
+            icon={Minus}
+            label={`移除效果 ${layerNumber}`}
+            onClick={onRemove}
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <NumberField
+          label="透明"
+          ariaLabel={`效果 ${layerNumber} 透明`}
+          suffix="%"
+          value={opacity}
+          min={0}
+          max={100}
+          onChange={(nextOpacity) =>
+            onUpdate({ ...effect, opacity: nextOpacity / 100 } as PenEffect)
+          }
+        />
+        <select
+          aria-label={`效果 ${layerNumber} 混合模式`}
+          className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+          value={effect.blendMode ?? "normal"}
+          onChange={(event) =>
+            onUpdate({
+              ...effect,
+              blendMode: event.currentTarget.value as BlendMode,
+            } as PenEffect)
+          }
+        >
+          {BLEND_MODE_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      {effect.type === "shadow" ? (
+        <>
+          <div className="grid grid-cols-[1fr_auto] gap-2">
+            <div className="flex h-9 min-w-0 items-center gap-2 rounded-lg border border-border/60 bg-background px-3">
+              <ColorPickerPopover
+                color={effect.color}
+                onChange={(color) => onUpdate({ ...effect, color })}
+              />
+              <span className="truncate text-sm font-medium text-foreground">
+                {effect.color.replace(/^#/, "").toUpperCase()}
+              </span>
+            </div>
+            <label className="flex h-9 items-center gap-2 rounded-lg border border-border/60 bg-background px-3 text-sm text-muted-foreground shadow-subtle">
+              <input
+                type="checkbox"
+                checked={effect.inner === true}
+                onChange={(event) =>
+                  onUpdate({
+                    ...effect,
+                    inner: event.currentTarget.checked,
+                  })
+                }
+              />
+              <span className="font-medium">内阴影</span>
+            </label>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            <NumberField
+              label="X"
+              ariaLabel={`效果 ${layerNumber} X`}
+              value={effect.offsetX ?? 0}
+              onChange={(offsetX) => onUpdate({ ...effect, offsetX })}
+            />
+            <NumberField
+              label="Y"
+              ariaLabel={`效果 ${layerNumber} Y`}
+              value={effect.offsetY ?? 0}
+              onChange={(offsetY) => onUpdate({ ...effect, offsetY })}
+            />
+            <NumberField
+              label="模糊"
+              ariaLabel={`效果 ${layerNumber} 模糊`}
+              value={effect.blur ?? 0}
+              min={0}
+              onChange={(blur) => onUpdate({ ...effect, blur })}
+            />
+            <NumberField
+              label="扩展"
+              ariaLabel={`效果 ${layerNumber} 扩展`}
+              value={effect.spread ?? 0}
+              onChange={(spread) => onUpdate({ ...effect, spread })}
+            />
+          </div>
+        </>
+      ) : (
+        <NumberField
+          label="半径"
+          ariaLabel={`效果 ${layerNumber} 半径`}
+          value={effect.radius ?? 4}
+          min={0}
+          step={0.5}
+          onChange={(radius) => onUpdate({ ...effect, radius })}
+        />
+      )}
+    </div>
+  );
+}
 
 function EffectsSection({
   node,
@@ -742,136 +1841,67 @@ function EffectsSection({
   onUpdate: (updates: Partial<PenNode>) => void;
 }) {
   const effects = (node as NodeWithOptionalPaint).effects ?? [];
-  const shadow = effects.find((e) => e.type === "shadow");
-  const blurFx = effects.find(
-    (e): e is PenEffect & { type: "blur"; radius: number } => e.type === "blur",
-  );
 
-  const toggleShadow = () => {
-    if (shadow) {
-      onUpdate({
-        effects: effects.filter((effect) => effect.type !== "shadow"),
-      } as Partial<PenNode>);
-      return;
-    }
-
-    const newEffects: PenEffect[] = effects.filter(
-      (effect) => effect.type !== "shadow",
-    );
-    newEffects.push({
-      type: "shadow",
-      offsetX: 0,
-      offsetY: 4,
-      blur: 8,
-      spread: 0,
-      color: "#00000040",
-    });
-    onUpdate({ effects: newEffects } as Partial<PenNode>);
+  const updateEffectAt = (index: number, nextEffect: PenEffect) => {
+    onUpdate({
+      effects: effects.map((effect, effectIndex) =>
+        effectIndex === index ? nextEffect : effect,
+      ),
+    } as Partial<PenNode>);
   };
 
-  const toggleBlur = () => {
-    if (blurFx) {
-      onUpdate({
-        effects: effects.filter((effect) => effect.type !== "blur"),
-      } as Partial<PenNode>);
-      return;
-    }
-
-    const newEffects: PenEffect[] = effects.filter(
-      (effect) => effect.type !== "blur",
-    );
-    newEffects.push({ type: "blur", radius: 4 });
-    onUpdate({ effects: newEffects } as Partial<PenNode>);
+  const moveEffect = (index: number, direction: "up" | "down") => {
+    const nextIndex = direction === "up" ? index - 1 : index + 1;
+    if (nextIndex < 0 || nextIndex >= effects.length) return;
+    const next = [...effects];
+    const current = next[index];
+    const target = next[nextIndex];
+    if (!current || !target) return;
+    next[index] = target;
+    next[nextIndex] = current;
+    onUpdate({ effects: next } as Partial<PenNode>);
   };
 
   return (
     <InspectorSection
       title="效果"
-      muted={!shadow && !blurFx}
+      muted={effects.length === 0}
       actions={
         <InspectorIconButton
           icon={Plus}
-          label="添加阴影"
-          onClick={toggleShadow}
+          label="添加效果"
+          onClick={() =>
+            onUpdate({
+              effects: [...effects, createEffectOfType("shadow")],
+            } as Partial<PenNode>)
+          }
         />
       }
     >
       <div className="space-y-2">
-        <button
-          type="button"
-          className={cn(
-            "flex h-9 w-full items-center justify-between rounded-lg border border-transparent bg-muted/70 px-3 text-sm font-medium shadow-subtle transition-colors hover:bg-muted",
-            shadow && "border-border bg-background",
-          )}
-          onClick={toggleShadow}
-        >
-          <span>阴影</span>
-          <span className="text-xs text-muted-foreground">
-            {shadow ? "已启用" : "未启用"}
-          </span>
-        </button>
-        {shadow ? (
-          <div className="grid grid-cols-3 gap-2">
-            <NumberField
-              label="X"
-              value={shadow.offsetX ?? 0}
-              onChange={(offsetX) => {
-                const updated = effects.map((effect) =>
-                  effect.type === "shadow" ? { ...effect, offsetX } : effect,
-                );
-                onUpdate({ effects: updated } as Partial<PenNode>);
-              }}
+        {effects.length > 0 ? (
+          effects.map((effect, index) => (
+            <EffectLayerRow
+              key={`${effect.type}-${index}`}
+              effect={effect}
+              index={index}
+              count={effects.length}
+              onUpdate={(nextEffect) => updateEffectAt(index, nextEffect)}
+              onRemove={() =>
+                onUpdate({
+                  effects: effects.filter(
+                    (_effect, effectIndex) => effectIndex !== index,
+                  ),
+                } as Partial<PenNode>)
+              }
+              onMove={(direction) => moveEffect(index, direction)}
             />
-            <NumberField
-              label="Y"
-              value={shadow.offsetY ?? 0}
-              onChange={(offsetY) => {
-                const updated = effects.map((effect) =>
-                  effect.type === "shadow" ? { ...effect, offsetY } : effect,
-                );
-                onUpdate({ effects: updated } as Partial<PenNode>);
-              }}
-            />
-            <NumberField
-              label="模糊"
-              value={shadow.blur ?? 0}
-              min={0}
-              onChange={(blur) => {
-                const updated = effects.map((effect) =>
-                  effect.type === "shadow" ? { ...effect, blur } : effect,
-                );
-                onUpdate({ effects: updated } as Partial<PenNode>);
-              }}
-            />
-          </div>
-        ) : null}
-        <button
-          type="button"
-          className={cn(
-            "flex h-9 w-full items-center justify-between rounded-lg border border-transparent bg-muted/70 px-3 text-sm font-medium shadow-subtle transition-colors hover:bg-muted",
-            blurFx && "border-border bg-background",
-          )}
-          onClick={toggleBlur}
-        >
-          <span>模糊</span>
-          <span className="text-xs text-muted-foreground">
-            {blurFx ? "已启用" : "未启用"}
-          </span>
-        </button>
-        {blurFx ? (
-          <NumberField
-            label="半径"
-            value={blurFx.radius ?? 4}
-            min={0}
-            step={0.5}
-            onChange={(radius) => {
-              const updated = effects.map((effect) =>
-                effect.type === "blur" ? { ...effect, radius } : effect,
-              );
-              onUpdate({ effects: updated } as Partial<PenNode>);
-            }}
-          />
-        ) : null}
+          ))
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            当前没有效果。点击加号添加投影、内阴影、图层模糊或背景模糊。
+          </p>
+        )}
       </div>
     </InspectorSection>
   );
@@ -891,6 +1921,7 @@ function AutoLayoutSection({
   const layoutMode: "none" | "vertical" | "horizontal" = hasLayout
     ? (n.layout as "vertical" | "horizontal")
     : "none";
+  const edgePadding = paddingTuple(n.padding);
 
   return (
     <InspectorSection
@@ -965,8 +1996,30 @@ function AutoLayoutSection({
                 }
               />
             </div>
+            <div className="grid grid-cols-4 gap-2">
+              {(["上", "右", "下", "左"] as const).map((label, index) => (
+                <NumberField
+                  key={label}
+                  label={label}
+                  ariaLabel={`内边距${label}`}
+                  value={edgePadding[index] ?? 0}
+                  min={0}
+                  onChange={(paddingValue) => {
+                    const next = [...edgePadding] as [
+                      number,
+                      number,
+                      number,
+                      number,
+                    ];
+                    next[index] = paddingValue;
+                    onUpdate({ padding: next } as Partial<PenNode>);
+                  }}
+                />
+              ))}
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <select
+                aria-label="主轴对齐"
                 className="h-9 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
                 value={n.justifyContent ?? "start"}
                 onChange={(event) =>
@@ -982,6 +2035,7 @@ function AutoLayoutSection({
                 <option value="space_around">主轴 环绕</option>
               </select>
               <select
+                aria-label="交叉对齐"
                 className="h-9 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
                 value={n.alignItems ?? "start"}
                 onChange={(event) =>
@@ -993,6 +2047,7 @@ function AutoLayoutSection({
                 <option value="start">交叉 起始</option>
                 <option value="center">交叉 居中</option>
                 <option value="end">交叉 结束</option>
+                <option value="stretch">交叉 拉伸</option>
               </select>
             </div>
           </>
@@ -1230,6 +2285,21 @@ function TypographySection({
   node: Extract<PenNode, { type: "text" }>;
   onUpdate: (updates: Partial<PenNode>) => void;
 }) {
+  const [fallbackInput, setFallbackInput] = useState(
+    formatFontFallback(node.fontFallback),
+  );
+  const [openTypeInput, setOpenTypeInput] = useState(
+    formatOpenTypeFeatures(node.openTypeFeatures),
+  );
+
+  useEffect(() => {
+    setFallbackInput(formatFontFallback(node.fontFallback));
+  }, [node.fontFallback]);
+
+  useEffect(() => {
+    setOpenTypeInput(formatOpenTypeFeatures(node.openTypeFeatures));
+  }, [node.openTypeFeatures]);
+
   return (
     <InspectorSection
       title="字体排印"
@@ -1251,6 +2321,17 @@ function TypographySection({
             } as Partial<PenNode>)
           }
         />
+        <input
+          aria-label="PostScript 字体名"
+          className="h-9 w-full rounded-lg border border-transparent bg-muted/70 px-3 text-sm font-medium shadow-subtle outline-none focus:border-border focus:bg-background focus:ring-2 focus:ring-ring/20"
+          placeholder="PostScript name"
+          value={node.fontPostScriptName ?? ""}
+          onChange={(event) =>
+            onUpdate({
+              fontPostScriptName: event.currentTarget.value,
+            } as Partial<PenNode>)
+          }
+        />
         <div className="grid grid-cols-2 gap-2">
           <NumberField
             label="W"
@@ -1267,6 +2348,24 @@ function TypographySection({
             min={1}
             onChange={(lineHeight) =>
               onUpdate({ lineHeight } as Partial<PenNode>)
+            }
+          />
+          <NumberField
+            label="段距"
+            ariaLabel="段落间距"
+            value={node.paragraphSpacing ?? 0}
+            min={0}
+            onChange={(paragraphSpacing) =>
+              onUpdate({ paragraphSpacing } as Partial<PenNode>)
+            }
+          />
+          <NumberField
+            label="基线"
+            ariaLabel="基线偏移"
+            value={node.baselineShift ?? 0}
+            step={0.5}
+            onChange={(baselineShift) =>
+              onUpdate({ baselineShift } as Partial<PenNode>)
             }
           />
         </div>
@@ -1292,6 +2391,120 @@ function TypographySection({
             }
           />
         </div>
+        <div className="grid grid-cols-2 gap-2">
+          <select
+            aria-label="垂直对齐"
+            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+            value={node.textAlignVertical ?? "top"}
+            onChange={(event) =>
+              onUpdate({
+                textAlignVertical: event.currentTarget.value as
+                  | "top"
+                  | "middle"
+                  | "bottom",
+              } as Partial<PenNode>)
+            }
+          >
+            <option value="top">顶部</option>
+            <option value="middle">居中</option>
+            <option value="bottom">底部</option>
+          </select>
+          <select
+            aria-label="文本自适应"
+            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+            value={node.textGrowth ?? "fixed-width-height"}
+            onChange={(event) =>
+              onUpdate({
+                textGrowth: event.currentTarget.value as
+                  | "auto"
+                  | "fixed-width"
+                  | "fixed-width-height",
+              } as Partial<PenNode>)
+            }
+          >
+            <option value="auto">自动宽高</option>
+            <option value="fixed-width">固定宽</option>
+            <option value="fixed-width-height">固定宽高</option>
+          </select>
+          <select
+            aria-label="大小写"
+            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+            value={node.textCase ?? "original"}
+            onChange={(event) =>
+              onUpdate({
+                textCase: event.currentTarget.value as
+                  | "original"
+                  | "upper"
+                  | "lower"
+                  | "title",
+              } as Partial<PenNode>)
+            }
+          >
+            <option value="original">原样</option>
+            <option value="upper">大写</option>
+            <option value="lower">小写</option>
+            <option value="title">标题式</option>
+          </select>
+          <select
+            aria-label="列表样式"
+            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+            value={node.listStyle ?? "none"}
+            onChange={(event) =>
+              onUpdate({
+                listStyle: event.currentTarget.value as
+                  | "none"
+                  | "ordered"
+                  | "unordered",
+              } as Partial<PenNode>)
+            }
+          >
+            <option value="none">无列表</option>
+            <option value="ordered">有序列表</option>
+            <option value="unordered">无序列表</option>
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <NumberField
+            label="缩进"
+            ariaLabel="文本缩进"
+            value={node.indent ?? 0}
+            min={0}
+            onChange={(indent) => onUpdate({ indent } as Partial<PenNode>)}
+          />
+          <NumberField
+            label="悬挂"
+            ariaLabel="悬挂缩进"
+            value={node.hangingIndent ?? 0}
+            min={0}
+            onChange={(hangingIndent) =>
+              onUpdate({ hangingIndent } as Partial<PenNode>)
+            }
+          />
+        </div>
+        <input
+          aria-label="字体 fallback"
+          className="h-9 w-full rounded-lg border border-transparent bg-muted/70 px-3 text-sm font-medium shadow-subtle outline-none focus:border-border focus:bg-background focus:ring-2 focus:ring-ring/20"
+          placeholder="Fallback fonts, comma separated"
+          value={fallbackInput}
+          onChange={(event) => setFallbackInput(event.currentTarget.value)}
+          onBlur={() =>
+            onUpdate({
+              fontFallback: parseFontFallback(fallbackInput),
+            } as Partial<PenNode>)
+          }
+        />
+        <input
+          aria-label="OpenType 特性"
+          className="h-9 w-full rounded-lg border border-transparent bg-muted/70 px-3 text-sm font-medium shadow-subtle outline-none focus:border-border focus:bg-background focus:ring-2 focus:ring-ring/20"
+          placeholder="liga=true, kern=1"
+          value={openTypeInput}
+          onChange={(event) => setOpenTypeInput(event.currentTarget.value)}
+          onBlur={() =>
+            onUpdate({
+              openTypeFeatures: parseOpenTypeFeatures(openTypeInput),
+            } as Partial<PenNode>)
+          }
+        />
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
@@ -1321,7 +2534,175 @@ function TypographySection({
             <Underline className="h-4 w-4" />
             Underline
           </button>
+          <button
+            type="button"
+            className={cn(
+              "flex h-9 items-center justify-center gap-2 rounded-lg border border-transparent bg-muted/70 text-sm font-medium shadow-subtle transition-colors hover:bg-muted",
+              node.strikethrough && "border-border bg-background",
+            )}
+            onClick={() =>
+              onUpdate({
+                strikethrough: !node.strikethrough,
+              } as Partial<PenNode>)
+            }
+          >
+            Strike
+          </button>
         </div>
+      </div>
+    </InspectorSection>
+  );
+}
+
+function MaskSection({
+  node,
+  onUpdate,
+}: {
+  node: PenNode;
+  onUpdate: (updates: Partial<PenNode>) => void;
+}) {
+  const maskNode = node as MaskEditableNode;
+  const mask = maskNode.mask ?? {};
+  const updateMask = (updates: NonNullable<PenNode["mask"]>) => {
+    onUpdate({
+      mask: {
+        ...mask,
+        ...updates,
+      },
+    } as Partial<PenNode>);
+  };
+
+  return (
+    <InspectorSection
+      title="遮罩"
+      muted={mask.enabled !== true}
+      actions={<InspectorIconButton icon={Scissors} label="遮罩" disabled />}
+    >
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <label className="flex h-9 items-center gap-2 rounded-lg border border-border/60 bg-muted/70 px-3 text-sm text-muted-foreground shadow-subtle">
+            <input
+              type="checkbox"
+              checked={mask.enabled === true}
+              onChange={(event) =>
+                updateMask({ enabled: event.currentTarget.checked })
+              }
+            />
+            <span className="font-medium">启用遮罩</span>
+          </label>
+          <select
+            aria-label="遮罩类型"
+            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+            value={mask.type ?? "alpha"}
+            onChange={(event) =>
+              updateMask({
+                type: event.currentTarget.value as "alpha" | "vector",
+              })
+            }
+          >
+            <option value="alpha">Alpha</option>
+            <option value="vector">Vector</option>
+          </select>
+        </div>
+        <input
+          aria-label="遮罩来源节点"
+          className="h-9 w-full rounded-lg border border-transparent bg-muted/70 px-3 text-sm font-medium shadow-subtle outline-none focus:border-border focus:bg-background focus:ring-2 focus:ring-ring/20"
+          placeholder="source node id"
+          value={mask.sourceNodeId ?? ""}
+          onChange={(event) =>
+            updateMask({ sourceNodeId: event.currentTarget.value })
+          }
+        />
+        <label className="flex h-9 items-center gap-2 rounded-lg border border-border/60 bg-muted/70 px-3 text-sm text-muted-foreground shadow-subtle">
+          <input
+            type="checkbox"
+            checked={mask.shouldBreakMaskChain === true}
+            onChange={(event) =>
+              updateMask({ shouldBreakMaskChain: event.currentTarget.checked })
+            }
+          />
+          <span className="font-medium">断开遮罩链</span>
+        </label>
+      </div>
+    </InspectorSection>
+  );
+}
+
+function DesignReferencesSection({
+  node,
+  onUpdate,
+}: {
+  node: PenNode;
+  onUpdate: (updates: Partial<PenNode>) => void;
+}) {
+  const [variableRefsInput, setVariableRefsInput] = useState(
+    formatReferenceValue(node.variableRefs),
+  );
+
+  useEffect(() => {
+    setVariableRefsInput(formatReferenceValue(node.variableRefs));
+  }, [node.variableRefs]);
+
+  const styleRefs = node.styleRefs ?? {};
+  const updateStyleRef = (kind: StyleRefKind, id: string) => {
+    const next = { ...styleRefs };
+    const trimmedId = id.trim();
+    if (trimmedId) {
+      next[kind] = {
+        source: next[kind]?.source ?? "figma",
+        id: trimmedId,
+      };
+    } else {
+      delete next[kind];
+    }
+    onUpdate({ styleRefs: next } as Partial<PenNode>);
+  };
+
+  return (
+    <InspectorSection
+      title="样式引用"
+      actions={<InspectorIconButton icon={Link} label="样式引用" disabled />}
+    >
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          {(
+            [
+              ["fill", "填充样式"],
+              ["stroke", "描边样式"],
+              ["text", "文本样式"],
+              ["effect", "效果样式"],
+            ] as const
+          ).map(([kind, label]) => (
+            <input
+              key={kind}
+              aria-label={label}
+              className="h-9 min-w-0 rounded-lg border border-transparent bg-muted/70 px-3 text-sm font-medium shadow-subtle outline-none focus:border-border focus:bg-background focus:ring-2 focus:ring-ring/20"
+              placeholder={`${label} ID`}
+              value={styleRefs[kind]?.id ?? ""}
+              onChange={(event) =>
+                updateStyleRef(kind, event.currentTarget.value)
+              }
+            />
+          ))}
+        </div>
+        <textarea
+          aria-label="变量引用 JSON"
+          className="h-20 w-full resize-none rounded-lg border border-transparent bg-muted/70 px-3 py-2 font-mono text-xs shadow-subtle outline-none focus:border-border focus:bg-background focus:ring-2 focus:ring-ring/20"
+          placeholder='{"fills/0/color":"VariableID"}'
+          value={variableRefsInput}
+          onChange={(event) => setVariableRefsInput(event.currentTarget.value)}
+          onBlur={() => {
+            const parsed = parseReferenceObjectInput(
+              variableRefsInput,
+              "variableRefs",
+            );
+            if (!parsed) {
+              setVariableRefsInput(formatReferenceValue(node.variableRefs));
+              return;
+            }
+            onUpdate({ variableRefs: parsed } as Partial<PenNode>);
+          }}
+        />
       </div>
     </InspectorSection>
   );
@@ -1334,8 +2715,57 @@ function ComponentRefSection({
   node: PenNode;
   onUpdate: (updates: Partial<PenNode>) => void;
 }) {
-  if (node.type !== "frame" && node.type !== "ref") return null;
+  const shouldShow =
+    node.type === "frame" || node.type === "ref" || Boolean(node.componentRef);
   const record = node as unknown as Record<string, unknown>;
+  const componentRef = node.componentRef ?? {
+    source: "figma",
+    type: node.type === "ref" ? "instance" : "component",
+  };
+  const [variantInput, setVariantInput] = useState(
+    formatReferenceValue(componentRef.variantProperties),
+  );
+  const [componentPropertiesInput, setComponentPropertiesInput] = useState(
+    formatReferenceValue(componentRef.componentProperties),
+  );
+  const [assignmentsInput, setAssignmentsInput] = useState(
+    formatReferenceValue(componentRef.propertyAssignments),
+  );
+  const [overridesInput, setOverridesInput] = useState(
+    formatReferenceValue(componentRef.overrides),
+  );
+
+  useEffect(() => {
+    setVariantInput(formatReferenceValue(componentRef.variantProperties));
+  }, [componentRef.variantProperties]);
+
+  useEffect(() => {
+    setComponentPropertiesInput(
+      formatReferenceValue(componentRef.componentProperties),
+    );
+  }, [componentRef.componentProperties]);
+
+  useEffect(() => {
+    setAssignmentsInput(formatReferenceValue(componentRef.propertyAssignments));
+  }, [componentRef.propertyAssignments]);
+
+  useEffect(() => {
+    setOverridesInput(formatReferenceValue(componentRef.overrides));
+  }, [componentRef.overrides]);
+
+  const updateComponentRef = (
+    updates: Partial<NonNullable<PenNode["componentRef"]>>,
+  ) => {
+    onUpdate({
+      componentRef: {
+        ...componentRef,
+        ...updates,
+        source: updates.source ?? componentRef.source ?? "figma",
+      },
+    } as Partial<PenNode>);
+  };
+
+  if (!shouldShow) return null;
 
   return (
     <InspectorSection
@@ -1366,6 +2796,155 @@ function ComponentRefSection({
           }
         />
       ) : null}
+      <div className="mt-2 space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <select
+            aria-label="组件引用类型"
+            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+            value={componentRef.type}
+            onChange={(event) =>
+              updateComponentRef({
+                type: event.currentTarget.value as NonNullable<
+                  PenNode["componentRef"]
+                >["type"],
+              })
+            }
+          >
+            <option value="component">Component</option>
+            <option value="instance">Instance</option>
+            <option value="variant">Variant</option>
+          </select>
+          <input
+            aria-label="组件引用来源"
+            className="h-9 min-w-0 rounded-lg border border-transparent bg-muted/70 px-3 text-sm font-medium shadow-subtle outline-none focus:border-border focus:bg-background focus:ring-2 focus:ring-ring/20"
+            placeholder="source"
+            value={componentRef.source ?? "figma"}
+            onChange={(event) =>
+              updateComponentRef({ source: event.currentTarget.value })
+            }
+          />
+          <input
+            aria-label="组件引用 ID"
+            className="h-9 min-w-0 rounded-lg border border-transparent bg-muted/70 px-3 text-sm font-medium shadow-subtle outline-none focus:border-border focus:bg-background focus:ring-2 focus:ring-ring/20"
+            placeholder="id"
+            value={componentRef.id ?? ""}
+            onChange={(event) =>
+              updateComponentRef({ id: event.currentTarget.value })
+            }
+          />
+          <input
+            aria-label="组件引用 Key"
+            className="h-9 min-w-0 rounded-lg border border-transparent bg-muted/70 px-3 text-sm font-medium shadow-subtle outline-none focus:border-border focus:bg-background focus:ring-2 focus:ring-ring/20"
+            placeholder="key"
+            value={componentRef.key ?? ""}
+            onChange={(event) =>
+              updateComponentRef({ key: event.currentTarget.value })
+            }
+          />
+          <input
+            aria-label="组件来源 ID"
+            className="h-9 min-w-0 rounded-lg border border-transparent bg-muted/70 px-3 text-sm font-medium shadow-subtle outline-none focus:border-border focus:bg-background focus:ring-2 focus:ring-ring/20"
+            placeholder="componentId"
+            value={componentRef.componentId ?? ""}
+            onChange={(event) =>
+              updateComponentRef({ componentId: event.currentTarget.value })
+            }
+          />
+          <NumberField
+            label="覆写"
+            ariaLabel="组件覆写数量"
+            value={componentRef.overrideCount ?? 0}
+            min={0}
+            onChange={(overrideCount) => updateComponentRef({ overrideCount })}
+          />
+        </div>
+        <textarea
+          aria-label="组件变体 JSON"
+          className="h-16 w-full resize-none rounded-lg border border-transparent bg-muted/70 px-3 py-2 font-mono text-xs shadow-subtle outline-none focus:border-border focus:bg-background focus:ring-2 focus:ring-ring/20"
+          placeholder='{"Size":"Large"}'
+          value={variantInput}
+          onChange={(event) => setVariantInput(event.currentTarget.value)}
+          onBlur={() => {
+            const parsed = parseReferenceObjectInput(
+              variantInput,
+              "variantProperties",
+            );
+            if (!parsed) {
+              setVariantInput(
+                formatReferenceValue(componentRef.variantProperties),
+              );
+              return;
+            }
+            updateComponentRef({
+              variantProperties: parsed as Record<
+                string,
+                string | number | boolean
+              >,
+            });
+          }}
+        />
+        <textarea
+          aria-label="组件属性 JSON"
+          className="h-16 w-full resize-none rounded-lg border border-transparent bg-muted/70 px-3 py-2 font-mono text-xs shadow-subtle outline-none focus:border-border focus:bg-background focus:ring-2 focus:ring-ring/20"
+          placeholder='{"label":"Submit"}'
+          value={componentPropertiesInput}
+          onChange={(event) =>
+            setComponentPropertiesInput(event.currentTarget.value)
+          }
+          onBlur={() => {
+            const parsed = parseReferenceObjectInput(
+              componentPropertiesInput,
+              "componentProperties",
+            );
+            if (!parsed) {
+              setComponentPropertiesInput(
+                formatReferenceValue(componentRef.componentProperties),
+              );
+              return;
+            }
+            updateComponentRef({ componentProperties: parsed });
+          }}
+        />
+        <textarea
+          aria-label="组件属性赋值 JSON"
+          className="h-16 w-full resize-none rounded-lg border border-transparent bg-muted/70 px-3 py-2 font-mono text-xs shadow-subtle outline-none focus:border-border focus:bg-background focus:ring-2 focus:ring-ring/20"
+          placeholder='{"buttonText":"Start"}'
+          value={assignmentsInput}
+          onChange={(event) => setAssignmentsInput(event.currentTarget.value)}
+          onBlur={() => {
+            const parsed = parseReferenceObjectInput(
+              assignmentsInput,
+              "propertyAssignments",
+            );
+            if (!parsed) {
+              setAssignmentsInput(
+                formatReferenceValue(componentRef.propertyAssignments),
+              );
+              return;
+            }
+            updateComponentRef({ propertyAssignments: parsed });
+          }}
+        />
+        <textarea
+          aria-label="组件覆写 JSON"
+          className="h-20 w-full resize-none rounded-lg border border-transparent bg-muted/70 px-3 py-2 font-mono text-xs shadow-subtle outline-none focus:border-border focus:bg-background focus:ring-2 focus:ring-ring/20"
+          placeholder='[{"source":"figma","path":"1/2","properties":["fill"]}]'
+          value={overridesInput}
+          onChange={(event) => setOverridesInput(event.currentTarget.value)}
+          onBlur={() => {
+            const parsed = parseReferenceArrayInput<
+              NonNullable<
+                NonNullable<PenNode["componentRef"]>["overrides"]
+              >[number]
+            >(overridesInput, "overrides");
+            if (!parsed) {
+              setOverridesInput(formatReferenceValue(componentRef.overrides));
+              return;
+            }
+            updateComponentRef({ overrides: parsed });
+          }}
+        />
+      </div>
     </InspectorSection>
   );
 }
@@ -1463,6 +3042,222 @@ function LayoutSizeSection({
   );
 }
 
+function LayoutConstraintsSection({
+  node,
+  bounds,
+  onUpdate,
+}: {
+  node: PenNode;
+  bounds: CanvasBounds;
+  onUpdate: (updates: Partial<PenNode>) => void;
+}) {
+  const layoutNode = node as LayoutRefEditableNode;
+  const measuredNode = node as PenNode & { width?: unknown; height?: unknown };
+  const layoutRef = layoutNode.layoutRef ?? { source: "figma" };
+  const widthMode =
+    measuredNode.width === "fit_content" ||
+    measuredNode.width === "fill_container"
+      ? measuredNode.width
+      : (layoutRef.widthMode ?? "fixed");
+  const heightMode =
+    measuredNode.height === "fit_content" ||
+    measuredNode.height === "fill_container"
+      ? measuredNode.height
+      : (layoutRef.heightMode ?? "fixed");
+
+  const updateLayoutRef = (
+    nextLayoutRef: Partial<NonNullable<PenNode["layoutRef"]>>,
+  ) => {
+    onUpdate({
+      layoutRef: {
+        ...layoutRef,
+        ...nextLayoutRef,
+        source: layoutRef.source ?? "figma",
+      },
+    } as Partial<PenNode>);
+  };
+
+  const updateSizingMode = (
+    axis: "width" | "height",
+    mode: LayoutSizingMode,
+  ) => {
+    const sizeValue = axis === "width" ? bounds.width : bounds.height;
+    const nodeSize = mode === "fixed" ? sizeValue : mode;
+    onUpdate({
+      [axis]: nodeSize,
+      layoutRef: {
+        ...layoutRef,
+        source: layoutRef.source ?? "figma",
+        [`${axis}Mode`]: mode,
+      },
+    } as Partial<PenNode>);
+  };
+
+  return (
+    <InspectorSection
+      title="布局约束"
+      actions={<InspectorIconButton icon={Grid2X2} label="布局约束" disabled />}
+    >
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <select
+            aria-label="宽度模式"
+            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+            value={widthMode}
+            onChange={(event) =>
+              updateSizingMode(
+                "width",
+                event.currentTarget.value as LayoutSizingMode,
+              )
+            }
+          >
+            <option value="fixed">宽度 固定</option>
+            <option value="fit_content">宽度 Hug</option>
+            <option value="fill_container">宽度 Fill</option>
+          </select>
+          <select
+            aria-label="高度模式"
+            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+            value={heightMode}
+            onChange={(event) =>
+              updateSizingMode(
+                "height",
+                event.currentTarget.value as LayoutSizingMode,
+              )
+            }
+          >
+            <option value="fixed">高度 固定</option>
+            <option value="fit_content">高度 Hug</option>
+            <option value="fill_container">高度 Fill</option>
+          </select>
+          <select
+            aria-label="子项定位"
+            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+            value={layoutRef.positioning ?? "auto"}
+            onChange={(event) =>
+              updateLayoutRef({
+                positioning: event.currentTarget.value as "auto" | "absolute",
+              })
+            }
+          >
+            <option value="auto">自动流</option>
+            <option value="absolute">绝对定位</option>
+          </select>
+          <select
+            aria-label="自身对齐"
+            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+            value={layoutRef.alignSelf ?? "auto"}
+            onChange={(event) =>
+              updateLayoutRef({
+                alignSelf: event.currentTarget.value as NonNullable<
+                  PenNode["layoutRef"]
+                >["alignSelf"],
+              })
+            }
+          >
+            <option value="auto">自身 自动</option>
+            <option value="start">自身 起始</option>
+            <option value="center">自身 居中</option>
+            <option value="end">自身 结束</option>
+            <option value="stretch">自身 拉伸</option>
+            <option value="baseline">自身 基线</option>
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <NumberField
+            label="Grow"
+            ariaLabel="布局 Grow"
+            value={layoutRef.grow ?? 0}
+            min={0}
+            step={0.1}
+            onChange={(grow) => updateLayoutRef({ grow })}
+          />
+          <label className="flex h-9 items-center gap-2 rounded-lg border border-border/60 bg-muted/70 px-3 text-sm text-muted-foreground shadow-subtle">
+            <input
+              type="checkbox"
+              checked={layoutRef.clipContent === true}
+              onChange={(event) =>
+                updateLayoutRef({ clipContent: event.currentTarget.checked })
+              }
+            />
+            <Scissors className="h-4 w-4" />
+            <span className="font-medium">布局裁剪</span>
+          </label>
+        </div>
+      </div>
+    </InspectorSection>
+  );
+}
+
+function TransformSection({
+  node,
+  onUpdate,
+}: {
+  node: PenNode;
+  onUpdate: (updates: Partial<PenNode>) => void;
+}) {
+  const transform = nodeTransformMatrix(node);
+  const updateTransform = (key: keyof CanvasTransformMatrix, value: number) => {
+    onUpdate({
+      transform: { ...transform, [key]: value },
+    } as Partial<PenNode>);
+  };
+
+  return (
+    <InspectorSection
+      title="变换"
+      actions={
+        <InspectorIconButton icon={SlidersHorizontal} label="矩阵" disabled />
+      }
+    >
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <NumberField
+            label="Scale X"
+            ariaLabel="Scale X"
+            value={node.scaleX ?? 1}
+            step={0.01}
+            onChange={(scaleX) => onUpdate({ scaleX } as Partial<PenNode>)}
+          />
+          <NumberField
+            label="Scale Y"
+            ariaLabel="Scale Y"
+            value={node.scaleY ?? 1}
+            step={0.01}
+            onChange={(scaleY) => onUpdate({ scaleY } as Partial<PenNode>)}
+          />
+          <NumberField
+            label="Skew X"
+            ariaLabel="Skew X"
+            value={node.skewX ?? 0}
+            step={0.1}
+            onChange={(skewX) => onUpdate({ skewX } as Partial<PenNode>)}
+          />
+          <NumberField
+            label="Skew Y"
+            ariaLabel="Skew Y"
+            value={node.skewY ?? 0}
+            step={0.1}
+            onChange={(skewY) => onUpdate({ skewY } as Partial<PenNode>)}
+          />
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {(["m00", "m01", "m02", "m10", "m11", "m12"] as const).map((key) => (
+            <NumberField
+              key={key}
+              label={key}
+              ariaLabel={`矩阵 ${key}`}
+              value={transform[key]}
+              step={0.01}
+              onChange={(value) => updateTransform(key, value)}
+            />
+          ))}
+        </div>
+      </div>
+    </InspectorSection>
+  );
+}
+
 function AppearanceSection({
   node,
   onUpdate,
@@ -1471,11 +3266,21 @@ function AppearanceSection({
   onUpdate: (updates: Partial<PenNode>) => void;
 }) {
   const cornerRadius = (node as { cornerRadius?: unknown }).cornerRadius;
+  const cornerRadii = cornerRadiusTuple(cornerRadius);
+  const cornerSmoothing =
+    typeof (node as { cornerSmoothing?: unknown }).cornerSmoothing === "number"
+      ? ((node as { cornerSmoothing?: number }).cornerSmoothing ?? 0)
+      : 0;
+  const clipContent = (node as { clipContent?: boolean }).clipContent === true;
+  const isolated = (node as { isolated?: boolean }).isolated === true;
   const canEditCornerRadius =
     node.type === "frame" ||
     node.type === "rectangle" ||
     node.type === "image" ||
     node.type === "polygon";
+  const canClipContent = node.type === "frame" || node.type === "group";
+  const canEditCornerSmoothing =
+    node.type === "frame" || node.type === "group" || node.type === "rectangle";
 
   return (
     <InspectorSection
@@ -1489,38 +3294,297 @@ function AppearanceSection({
               onUpdate({ visible: node.visible === false } as Partial<PenNode>)
             }
           />
-          <InspectorIconButton icon={Droplet} label="混合模式" disabled />
+          <InspectorIconButton
+            icon={Droplet}
+            label="混合模式"
+            active={Boolean(node.blendMode && node.blendMode !== "normal")}
+            disabled
+          />
         </>
       }
     >
-      <div className="grid grid-cols-2 gap-2">
-        <NumberField
-          label="透明"
-          suffix="%"
-          value={Math.round(Number(node.opacity ?? 1) * 100)}
-          min={0}
-          max={100}
-          onChange={(opacity) =>
-            onUpdate({ opacity: clamp(opacity, 0, 100) / 100 })
-          }
-        />
-        <NumberField
-          label="圆角"
-          value={
-            typeof cornerRadius === "number" && canEditCornerRadius
-              ? cornerRadius
-              : 0
-          }
-          min={0}
-          muted={!canEditCornerRadius}
-          onChange={(nextCornerRadius) => {
-            if (!canEditCornerRadius) return;
-            onUpdate({ cornerRadius: nextCornerRadius } as Partial<PenNode>);
-          }}
-        />
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <NumberField
+            label="透明"
+            suffix="%"
+            value={Math.round(Number(node.opacity ?? 1) * 100)}
+            min={0}
+            max={100}
+            onChange={(opacity) =>
+              onUpdate({ opacity: clamp(opacity, 0, 100) / 100 })
+            }
+          />
+          <NumberField
+            label="圆角"
+            value={canEditCornerRadius ? cornerRadii[0] : 0}
+            min={0}
+            muted={!canEditCornerRadius}
+            onChange={(nextCornerRadius) => {
+              if (!canEditCornerRadius) return;
+              onUpdate({ cornerRadius: nextCornerRadius } as Partial<PenNode>);
+            }}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <select
+            aria-label="图层混合模式"
+            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+            value={node.blendMode ?? "normal"}
+            onChange={(event) =>
+              onUpdate({
+                blendMode: event.currentTarget.value as BlendMode,
+              } as Partial<PenNode>)
+            }
+          >
+            {BLEND_MODE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <div aria-hidden="true" />
+        </div>
+        {canEditCornerRadius ? (
+          <div className="grid grid-cols-4 gap-2">
+            {(["左上", "右上", "右下", "左下"] as const).map((label, index) => (
+              <NumberField
+                key={label}
+                label={label}
+                value={cornerRadii[index] ?? 0}
+                min={0}
+                onChange={(nextRadius) => {
+                  const next = [...cornerRadii] as [
+                    number,
+                    number,
+                    number,
+                    number,
+                  ];
+                  next[index] = nextRadius;
+                  onUpdate({ cornerRadius: next } as Partial<PenNode>);
+                }}
+              />
+            ))}
+          </div>
+        ) : null}
+        <div className="grid grid-cols-2 gap-2">
+          <NumberField
+            label="平滑"
+            suffix="%"
+            value={Math.round(cornerSmoothing * 100)}
+            min={0}
+            max={100}
+            muted={!canEditCornerSmoothing}
+            onChange={(nextSmoothing) => {
+              if (!canEditCornerSmoothing) return;
+              onUpdate({
+                cornerSmoothing: clamp(nextSmoothing, 0, 100) / 100,
+              } as Partial<PenNode>);
+            }}
+          />
+          {canClipContent ? (
+            <label className="flex h-9 items-center gap-2 rounded-lg border border-border/60 bg-muted/70 px-3 text-sm text-muted-foreground shadow-subtle">
+              <input
+                type="checkbox"
+                checked={clipContent}
+                onChange={(event) =>
+                  onUpdate({
+                    clipContent: event.currentTarget.checked,
+                  } as Partial<PenNode>)
+                }
+              />
+              <Scissors className="h-4 w-4" />
+              <span className="font-medium">裁剪内容</span>
+            </label>
+          ) : (
+            <div aria-hidden="true" />
+          )}
+          {canClipContent ? (
+            <label className="flex h-9 items-center gap-2 rounded-lg border border-border/60 bg-muted/70 px-3 text-sm text-muted-foreground shadow-subtle">
+              <input
+                type="checkbox"
+                checked={isolated}
+                onChange={(event) =>
+                  onUpdate({
+                    isolated: event.currentTarget.checked,
+                  } as Partial<PenNode>)
+                }
+              />
+              <Box className="h-4 w-4" />
+              <span className="font-medium">隔离混合</span>
+            </label>
+          ) : null}
+        </div>
       </div>
     </InspectorSection>
   );
+}
+
+function ShapeSection({
+  node,
+  onUpdate,
+}: {
+  node: PenNode;
+  onUpdate: (updates: Partial<PenNode>) => void;
+}) {
+  if (node.type === "ellipse") {
+    return (
+      <InspectorSection title="椭圆弧形">
+        <div className="grid grid-cols-3 gap-2">
+          <NumberField
+            label="起始"
+            ariaLabel="起始角度"
+            value={node.startAngle ?? 0}
+            step={1}
+            onChange={(startAngle) =>
+              onUpdate({ startAngle } as Partial<PenNode>)
+            }
+          />
+          <NumberField
+            label="扫过"
+            ariaLabel="扫过角度"
+            value={node.sweepAngle ?? 360}
+            step={1}
+            onChange={(sweepAngle) =>
+              onUpdate({ sweepAngle } as Partial<PenNode>)
+            }
+          />
+          <NumberField
+            label="内径"
+            ariaLabel="内径比例"
+            value={node.innerRadius ?? 0}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(innerRadius) =>
+              onUpdate({ innerRadius } as Partial<PenNode>)
+            }
+          />
+        </div>
+      </InspectorSection>
+    );
+  }
+
+  if (node.type === "polygon") {
+    return (
+      <InspectorSection title="多边形">
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <select
+              aria-label="多边形类型"
+              className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+              value={node.polygonKind ?? "polygon"}
+              onChange={(event) =>
+                onUpdate({
+                  polygonKind: event.currentTarget.value as "polygon" | "star",
+                } as Partial<PenNode>)
+              }
+            >
+              <option value="polygon">多边形</option>
+              <option value="star">星形</option>
+            </select>
+            <NumberField
+              label="边数"
+              value={node.polygonCount ?? 3}
+              min={3}
+              onChange={(polygonCount) =>
+                onUpdate({ polygonCount } as Partial<PenNode>)
+              }
+            />
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <NumberField
+              label="起始"
+              ariaLabel="多边形起始角度"
+              value={node.startAngle ?? -90}
+              step={1}
+              onChange={(startAngle) =>
+                onUpdate({ startAngle } as Partial<PenNode>)
+              }
+            />
+            <NumberField
+              label="内径"
+              ariaLabel="星形内径比例"
+              value={node.innerRadius ?? 0.5}
+              min={0.01}
+              max={1}
+              step={0.01}
+              muted={(node.polygonKind ?? "polygon") !== "star"}
+              onChange={(innerRadius) =>
+                onUpdate({ innerRadius } as Partial<PenNode>)
+              }
+            />
+            <NumberField
+              label="圆角"
+              ariaLabel="多边形圆角"
+              value={node.cornerRadius ?? 0}
+              min={0}
+              onChange={(cornerRadius) =>
+                onUpdate({ cornerRadius } as Partial<PenNode>)
+              }
+            />
+          </div>
+        </div>
+      </InspectorSection>
+    );
+  }
+
+  if (node.type === "path") {
+    return (
+      <InspectorSection title="路径">
+        <div className="grid grid-cols-2 gap-2">
+          <select
+            aria-label="路径填充规则"
+            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+            value={node.fillRule ?? "nonzero"}
+            onChange={(event) =>
+              onUpdate({
+                fillRule: event.currentTarget.value as "nonzero" | "evenodd",
+              } as Partial<PenNode>)
+            }
+          >
+            <option value="nonzero">Nonzero</option>
+            <option value="evenodd">Evenodd</option>
+          </select>
+          <label className="flex h-9 items-center gap-2 rounded-lg border border-border/60 bg-muted/70 px-3 text-sm text-muted-foreground shadow-subtle">
+            <input
+              type="checkbox"
+              checked={node.closed === true}
+              onChange={(event) =>
+                onUpdate({
+                  closed: event.currentTarget.checked,
+                } as Partial<PenNode>)
+              }
+            />
+            <span className="font-medium">闭合路径</span>
+          </label>
+        </div>
+      </InspectorSection>
+    );
+  }
+
+  if (node.type === "line") {
+    return (
+      <InspectorSection title="线条">
+        <div className="grid grid-cols-2 gap-2">
+          <NumberField
+            label="X2"
+            ariaLabel="终点 X"
+            value={node.x2 ?? 0}
+            onChange={(x2) => onUpdate({ x2 } as Partial<PenNode>)}
+          />
+          <NumberField
+            label="Y2"
+            ariaLabel="终点 Y"
+            value={node.y2 ?? 0}
+            onChange={(y2) => onUpdate({ y2 } as Partial<PenNode>)}
+          />
+        </div>
+      </InspectorSection>
+    );
+  }
+
+  return null;
 }
 
 function SelectedColorsSection({ node }: { node: PenNode }) {
@@ -1556,7 +3620,6 @@ function SelectedColorsSection({ node }: { node: PenNode }) {
 
 export function CanvasPropertyPanel({
   node,
-  context,
   variables,
   onVariablesChange,
   onUpdate,
@@ -1564,7 +3627,6 @@ export function CanvasPropertyPanel({
   onBindAgent,
 }: {
   node: PenNode;
-  context?: ContextSlots;
   variables?: CanvasVariableMap;
   onVariablesChange?: (variables: CanvasVariableMap) => void;
   onUpdate: (updates: Partial<PenNode>) => void;
@@ -1640,10 +3702,18 @@ export function CanvasPropertyPanel({
           onUpdate={onUpdate}
         />
         <LayoutSizeSection bounds={bounds} onBoundsChange={updateBounds} />
+        <LayoutConstraintsSection
+          node={node}
+          bounds={bounds}
+          onUpdate={onUpdate}
+        />
+        <TransformSection node={node} onUpdate={onUpdate} />
         {node.type === "frame" || node.type === "group" ? (
           <AutoLayoutSection node={node} onUpdate={onUpdate} />
         ) : null}
         <AppearanceSection node={node} onUpdate={onUpdate} />
+        <MaskSection node={node} onUpdate={onUpdate} />
+        <ShapeSection node={node} onUpdate={onUpdate} />
         {node.type === "text" ? (
           <TypographySection node={node} onUpdate={onUpdate} />
         ) : null}
@@ -1673,36 +3743,8 @@ export function CanvasPropertyPanel({
           onVariablesChange={onVariablesChange}
           onUpdate={onUpdate}
         />
+        <DesignReferencesSection node={node} onUpdate={onUpdate} />
         <ComponentRefSection node={node} onUpdate={onUpdate} />
-        {node.type === "polygon" ? (
-          <InspectorSection title="多边形">
-            <NumberField
-              label="边数"
-              value={node.polygonCount ?? 3}
-              min={3}
-              onChange={(polygonCount) =>
-                onUpdate({ polygonCount } as Partial<PenNode>)
-              }
-            />
-          </InspectorSection>
-        ) : null}
-        {context ? (
-          <InspectorSection title="规则">
-            <textarea
-              id={`${node.id}-rules`}
-              className="h-20 w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none transition-colors focus:ring-2 focus:ring-ring/20"
-              value={context.rules?.join("\n") ?? ""}
-              onChange={(event) => {
-                const lines = event.currentTarget.value
-                  .split("\n")
-                  .filter(Boolean);
-                onUpdate({
-                  contextSlots: { ...(node.contextSlots ?? {}), rules: lines },
-                } as Partial<PenNode>);
-              }}
-            />
-          </InspectorSection>
-        ) : null}
         {node.type === "frame" ? (
           <AgentBindingSection node={node} onBindAgent={onBindAgent} />
         ) : null}

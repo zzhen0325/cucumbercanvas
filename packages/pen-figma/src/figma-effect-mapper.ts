@@ -1,5 +1,6 @@
 // @ts-nocheck
 import type { PenEffect } from "@cucumber/pen-types";
+import { mapFigmaBlendMode } from "./figma-blend-mode.js";
 import { figmaColorToHex } from "./figma-color-utils.js";
 import type { FigmaEffect } from "./figma-types.js";
 
@@ -13,7 +14,6 @@ export function mapFigmaEffects(
   const mapped: PenEffect[] = [];
 
   for (const effect of effects) {
-    if (effect.visible === false) continue;
     const pen = mapSingleEffect(effect);
     if (pen) mapped.push(pen);
   }
@@ -32,7 +32,8 @@ function mapSingleEffect(effect: FigmaEffect): PenEffect | null {
         offsetY: effect.offset?.y ?? 0,
         blur: effect.radius ?? 0,
         spread: effect.spread ?? 0,
-        color: effect.color ? figmaColorToHex(effect.color) : "#00000040",
+        color: effect.color ? figmaEffectColorToHex(effect.color) : "#000000",
+        ...effectLayerProps(effect),
       };
     }
 
@@ -40,6 +41,7 @@ function mapSingleEffect(effect: FigmaEffect): PenEffect | null {
       return {
         type: "blur",
         radius: effect.radius ?? 0,
+        ...effectLayerProps(effect),
       };
     }
 
@@ -47,10 +49,30 @@ function mapSingleEffect(effect: FigmaEffect): PenEffect | null {
       return {
         type: "background_blur",
         radius: effect.radius ?? 0,
+        ...effectLayerProps(effect),
       };
     }
 
     default:
       return null;
   }
+}
+
+function figmaEffectColorToHex(color: FigmaEffect["color"]): string {
+  if (!color) return "#000000";
+  return figmaColorToHex({ ...color, a: 1 });
+}
+
+function effectLayerProps(effect: FigmaEffect): {
+  visible?: boolean;
+  opacity?: number;
+  blendMode?: ReturnType<typeof mapFigmaBlendMode>;
+} {
+  const blendMode = mapFigmaBlendMode(effect.blendMode);
+  const opacity = effect.opacity ?? effect.color?.a;
+  return {
+    ...(effect.visible === false ? { visible: false } : {}),
+    ...(opacity !== undefined && opacity < 1 ? { opacity } : {}),
+    ...(blendMode ? { blendMode } : {}),
+  };
 }

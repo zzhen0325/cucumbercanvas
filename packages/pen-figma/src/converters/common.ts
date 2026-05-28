@@ -1,6 +1,15 @@
 // @ts-nocheck
-import type { PenNode, SizingBehavior } from "@cucumber/pen-types";
+import type {
+  PenAutoLayoutRef,
+  PenComponentRef,
+  PenComponentOverrideRef,
+  PenNode,
+  PenNodeStyleRefs,
+  SizingBehavior,
+} from "@cucumber/pen-types";
 import { mapHeightSizing, mapWidthSizing } from "../figma-layout-mapper.js";
+import { mapFigmaAutoLayoutRef } from "../figma-layout-mapper.js";
+import { mapFigmaBlendMode } from "../figma-blend-mode.js";
 import type { TreeNode } from "../figma-tree-builder.js";
 import type {
   FigmaDerivedSymbolDataEntry,
@@ -160,9 +169,17 @@ export function mapCornerRadius(
   return undefined;
 }
 
+export function mapCornerSmoothing(figma: FigmaNodeChange): number | undefined {
+  return typeof figma.cornerSmoothing === "number" &&
+    figma.cornerSmoothing > 0
+    ? figma.cornerSmoothing
+    : undefined;
+}
+
 export function commonProps(
   figma: FigmaNodeChange,
   id: string,
+  parentStackMode?: string,
 ): {
   id: string;
   name?: string;
@@ -171,24 +188,284 @@ export function commonProps(
   rotation?: number;
   opacity?: number;
   locked?: boolean;
+  visible?: boolean;
   flipX?: boolean;
   flipY?: boolean;
+  transform?: ReturnType<typeof normalizeFigmaTransform>;
+  scaleX?: number;
+  scaleY?: number;
+  skewX?: number;
+  skewY?: number;
+  blendMode?: ReturnType<typeof mapFigmaBlendMode>;
+  styleRefs?: PenNodeStyleRefs;
+  componentRef?: PenComponentRef;
+  layoutRef?: PenAutoLayoutRef;
+  variableRefs?: Record<string, unknown>;
+  meta?: Record<string, unknown>;
+  mask?: {
+    enabled?: boolean;
+    type?: "alpha" | "vector";
+    shouldBreakMaskChain?: boolean;
+  };
 } {
   const { x, y } = extractPosition(figma);
   const flip = extractFlip(figma.transform);
+  const transformParts = decomposeTransform(figma.transform);
+  const layoutRef = mapFigmaAutoLayoutRef(figma, parentStackMode);
   return {
     id,
     name: figma.name || undefined,
     x,
     y,
     rotation: extractRotation(figma.transform),
+    transform: normalizeFigmaTransform(figma.transform),
+    ...transformParts,
     opacity:
       figma.opacity !== undefined && figma.opacity < 1
         ? figma.opacity
         : undefined,
     locked: figma.locked || undefined,
+    visible: figma.visible === false ? false : undefined,
+    blendMode: mapFigmaBlendMode(figma.blendMode),
+    styleRefs: mapFigmaStyleRefs(figma),
+    componentRef: mapFigmaComponentRef(figma),
+    layoutRef,
+    meta: layoutRef ? { autoLayout: stripAutoLayoutSource(layoutRef) } : undefined,
+    variableRefs: mapFigmaVariableRefs(figma),
+    mask: mapFigmaMask(figma),
     ...flip,
   };
+}
+
+function stripAutoLayoutSource(
+  layoutRef: PenAutoLayoutRef,
+): Omit<PenAutoLayoutRef, "source"> {
+  const { source: _source, ...autoLayout } = layoutRef;
+  return autoLayout;
+}
+
+function mapFigmaComponentRef(
+  figma: FigmaNodeChange,
+): PenComponentRef | undefined {
+  if (figma.type === "SYMBOL") {
+    const componentProperties =
+      figma.componentProperties ?? figma.componentPropertyDefinitions;
+    return {
+      source: "figma",
+      type: figma.variantProperties ? "variant" : "component",
+      ...(figma.guid ? { id: guidToExternalId(figma.guid) } : {}),
+      ...(figma.componentKey ? { key: figma.componentKey } : {}),
+      ...(figma.variantProperties
+        ? { variantProperties: figma.variantProperties }
+        : {}),
+      ...(componentProperties ? { componentProperties } : {}),
+    };
+  }
+
+  if (figma.type === "INSTANCE" || figma.symbolData || figma.overriddenSymbolID) {
+    const componentGuid = figma.overriddenSymbolID ?? figma.symbolData?.symbolID;
+    const overrides = figma.symbolData?.symbolOverrides ?? [];
+    const overridePaths = mapFigmaOverridePaths(overrides);
+    const overrideRefs = mapFigmaOverrideRefs(overrides);
+    return {
+      source: "figma",
+      type: "instance",
+      ...(figma.guid ? { id: guidToExternalId(figma.guid) } : {}),
+      ...(figma.componentKey ? { key: figma.componentKey } : {}),
+      ...(componentGuid
+        ? { componentId: guidToExternalId(componentGuid) }
+        : {}),
+      ...(figma.variantProperties
+        ? { variantProperties: figma.variantProperties }
+        : {}),
+      ...(figma.componentProperties
+        ? { componentProperties: figma.componentProperties }
+        : {}),
+      ...(figma.componentPropAssignments
+        ? { propertyAssignments: figma.componentPropAssignments }
+        : {}),
+      ...(overrides.length > 0 ? { overrideCount: overrides.length } : {}),
+      ...(overridePaths.length > 0 ? { overridePaths } : {}),
+      ...(overrideRefs.length > 0 ? { overrides: overrideRefs } : {}),
+    };
+  }
+
+  return undefined;
+}
+
+function mapFigmaOverridePaths(
+  overrides: Array<{ guidPath?: { guids?: FigmaGUID[] } }>,
+): string[] {
+  return overrides
+    .map((override) =>
+      override.guidPath?.guids?.map(guidToExternalId).join("/"),
+    )
+    .filter((path): path is string => Boolean(path));
+}
+
+function mapFigmaOverrideRefs(
+  overrides: FigmaSymbolOverride[],
+): PenComponentOverrideRef[] {
+  return overrides
+    .map((override) => {
+      const pathIds = override.guidPath?.guids?.map(guidToExternalId) ?? [];
+      const values = summarizeFigmaOverrideValues(override);
+      const properties = Object.keys(values);
+      if (pathIds.length === 0 && properties.length === 0) return undefined;
+
+      return {
+        source: "figma",
+        ...(pathIds.length > 0 ? { path: pathIds.join("/") } : {}),
+        ...(pathIds.length > 0 ? { pathIds } : {}),
+        ...(pathIds.length > 0 ? { targetId: pathIds[pathIds.length - 1] } : {}),
+        properties,
+        ...(properties.length > 0 ? { values } : {}),
+      };
+    })
+    .filter((ref): ref is PenComponentOverrideRef => Boolean(ref));
+}
+
+function summarizeFigmaOverrideValues(
+  override: FigmaSymbolOverride,
+): Record<string, unknown> {
+  const values: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(override) as Array<
+    [keyof FigmaSymbolOverride | string, unknown]
+  >) {
+    if (key === "guidPath" || key === "guid" || key === "parentIndex") continue;
+    if (value === undefined) continue;
+    values[key] = sanitizeOverrideValue(value);
+  }
+  return values;
+}
+
+function sanitizeOverrideValue(value: unknown): unknown {
+  if (value === null) return null;
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(sanitizeOverrideValue);
+  }
+  if (typeof value === "object") {
+    const sanitized: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value)) {
+      if (nested !== undefined) sanitized[key] = sanitizeOverrideValue(nested);
+    }
+    return sanitized;
+  }
+  return String(value);
+}
+
+function mapFigmaStyleRefs(figma: FigmaNodeChange): PenNodeStyleRefs | undefined {
+  const refs: PenNodeStyleRefs = {};
+  const fill = mapStyleRef(figma.styleIdForFill);
+  const stroke = mapStyleRef(figma.styleIdForStrokeFill);
+  const text = mapStyleRef(figma.styleIdForText);
+  const effect = mapStyleRef(figma.styleIdForEffect);
+  if (fill) refs.fill = fill;
+  if (stroke) refs.stroke = stroke;
+  if (text) refs.text = text;
+  if (effect) refs.effect = effect;
+  return Object.keys(refs).length > 0 ? refs : undefined;
+}
+
+function mapStyleRef(
+  ref: { guid?: FigmaGUID } | undefined,
+): PenNodeStyleRefs[keyof PenNodeStyleRefs] | undefined {
+  return ref?.guid
+    ? {
+        source: "figma",
+        id: guidToExternalId(ref.guid),
+      }
+    : undefined;
+}
+
+function guidToExternalId(guid: FigmaGUID): string {
+  return `${guid.sessionID}:${guid.localID}`;
+}
+
+function mapFigmaVariableRefs(
+  figma: FigmaNodeChange,
+): Record<string, unknown> | undefined {
+  return figma.variableConsumptionMap &&
+    Object.keys(figma.variableConsumptionMap).length > 0
+    ? figma.variableConsumptionMap
+    : undefined;
+}
+
+function mapFigmaMask(figma: FigmaNodeChange):
+  | {
+      enabled?: boolean;
+      type?: "alpha" | "vector";
+      shouldBreakMaskChain?: boolean;
+    }
+  | undefined {
+  if (!figma.isMask && !figma.shouldBreakMaskChain) return undefined;
+  return {
+    ...(figma.isMask ? { enabled: true } : {}),
+    type: figma.maskType === "VECTOR" ? "vector" : "alpha",
+    ...(figma.shouldBreakMaskChain ? { shouldBreakMaskChain: true } : {}),
+  };
+}
+
+function normalizeFigmaTransform(
+  transform?: FigmaMatrix,
+): FigmaMatrix | undefined {
+  if (!transform) return undefined;
+  return {
+    m00: roundTransformNumber(transform.m00),
+    m01: roundTransformNumber(transform.m01),
+    m02: roundTransformNumber(transform.m02),
+    m10: roundTransformNumber(transform.m10),
+    m11: roundTransformNumber(transform.m11),
+    m12: roundTransformNumber(transform.m12),
+  };
+}
+
+function decomposeTransform(transform?: FigmaMatrix): {
+  scaleX?: number;
+  scaleY?: number;
+  skewX?: number;
+  skewY?: number;
+} {
+  if (!transform) return {};
+  const scaleX = Math.hypot(transform.m00, transform.m10);
+  const scaleY = Math.hypot(transform.m01, transform.m11);
+  const skewX =
+    scaleX > 0.0001
+      ? Math.atan2(
+          transform.m00 * transform.m01 + transform.m10 * transform.m11,
+          scaleX * scaleX,
+        ) *
+        (180 / Math.PI)
+      : 0;
+  const skewY =
+    scaleY > 0.0001
+      ? Math.atan2(
+          transform.m00 * transform.m01 + transform.m10 * transform.m11,
+          scaleY * scaleY,
+        ) *
+        (180 / Math.PI)
+      : 0;
+  return {
+    ...(Math.abs(scaleX - 1) > 0.001
+      ? { scaleX: roundTransformNumber(scaleX) }
+      : {}),
+    ...(Math.abs(scaleY - 1) > 0.001
+      ? { scaleY: roundTransformNumber(scaleY) }
+      : {}),
+    ...(Math.abs(skewX) > 0.001 ? { skewX: roundTransformNumber(skewX) } : {}),
+    ...(Math.abs(skewY) > 0.001 ? { skewY: roundTransformNumber(skewY) } : {}),
+  };
+}
+
+function roundTransformNumber(value: number): number {
+  return Math.round(value * 1000000) / 1000000;
 }
 
 // --- Image helpers ---

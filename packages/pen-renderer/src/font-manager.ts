@@ -1,4 +1,4 @@
-import type { TypefaceFontProvider, CanvasKit } from 'canvaskit-wasm';
+import type { CanvasKit, TypefaceFontProvider } from 'canvaskit-wasm';
 
 export interface FontManagerOptions {
   /** Base URL for bundled font files. Default: '/fonts/' */
@@ -104,6 +104,8 @@ export class SkiaFontManager {
   private nativeFontSet: Set<string> | null = null;
   /** Full native font entries with blob accessors, keyed by lowercase family name */
   private nativeFontMap = new Map<string, NativeFontEntry[]>();
+  /** Full native font entries keyed by lowercase PostScript name for Figma-precise font matching */
+  private nativeFontPostScriptMap = new Map<string, NativeFontEntry>();
   /** Current permission state for native font access (Local Font Access API) */
   nativeFontPermission: NativeFontPermission = 'prompt';
 
@@ -141,6 +143,12 @@ export class SkiaFontManager {
     return this.loadedFamilies.has(family.toLowerCase());
   }
 
+  /** Check if a PostScript font alias is ready for CanvasKit Paragraph rendering. */
+  isPostScriptFontReady(postScriptName: string | undefined): boolean {
+    const key = normalizeFontKey(postScriptName);
+    return key ? this.loadedFamilies.has(key) : false;
+  }
+
   /** Check if a font family is bundled (available offline) */
   isBundled(family: string): boolean {
     return family.toLowerCase() in BUNDLED_FONTS;
@@ -155,23 +163,28 @@ export class SkiaFontManager {
    * Build a font fallback chain for the Paragraph API.
    * Only includes fonts actually registered in the TypefaceFontProvider.
    */
-  getFallbackChain(primaryFamily: string): string[] {
+  getFallbackChain(primaryFamily: string, postScriptName?: string): string[] {
     const chain: string[] = [];
+    const postScriptKey = normalizeFontKey(postScriptName);
+    if (postScriptName && postScriptKey && this.loadedFamilies.has(postScriptKey)) {
+      pushUniqueFontFamily(chain, postScriptName.trim());
+    }
+
     const lower = primaryFamily.toLowerCase();
     if (this.loadedFamilies.has(lower)) {
-      chain.push(primaryFamily);
+      pushUniqueFontFamily(chain, primaryFamily);
     }
-    if (this.loadedFamilies.has(lower + ' ext')) {
-      chain.push(primaryFamily + ' Ext');
+    if (this.loadedFamilies.has(`${lower} ext`)) {
+      pushUniqueFontFamily(chain, `${primaryFamily} Ext`);
     }
     if (lower !== 'noto sans sc' && this.loadedFamilies.has('noto sans sc')) {
-      chain.push('Noto Sans SC');
+      pushUniqueFontFamily(chain, 'Noto Sans SC');
     }
     if (lower !== 'inter') {
-      if (this.loadedFamilies.has('inter')) chain.push('Inter');
-      if (this.loadedFamilies.has('inter ext')) chain.push('Inter Ext');
+      if (this.loadedFamilies.has('inter')) pushUniqueFontFamily(chain, 'Inter');
+      if (this.loadedFamilies.has('inter ext')) pushUniqueFontFamily(chain, 'Inter Ext');
     }
-    if (chain.length === 0) chain.push('Inter');
+    if (chain.length === 0) pushUniqueFontFamily(chain, 'Inter');
     return chain;
   }
 
@@ -225,6 +238,33 @@ export class SkiaFontManager {
   }
 
   /**
+   * Ensure a native font variant is registered under its exact PostScript name.
+   * Figma text style data often identifies the concrete face this way, while
+   * family names alone are ambiguous across weights and styles.
+   */
+  async ensureFontByPostScript(
+    postScriptName: string | undefined,
+    family: string,
+    weights: number[] = [400, 500, 600, 700],
+  ): Promise<boolean> {
+    const postScriptKey = normalizeFontKey(postScriptName);
+    if (!postScriptName || !postScriptKey) {
+      return this.ensureFont(family, weights);
+    }
+    if (this.loadedFamilies.has(postScriptKey)) return true;
+
+    const pendingKey = `postscript:${postScriptKey}`;
+    const existing = this.pendingFetches.get(pendingKey);
+    if (existing) return existing;
+
+    const promise = this._loadPostScriptFontData(postScriptName, family, weights);
+    this.pendingFetches.set(pendingKey, promise);
+    const result = await promise;
+    this.pendingFetches.delete(pendingKey);
+    return result;
+  }
+
+  /**
    * Load multiple font families concurrently.
    */
   async ensureFonts(families: string[]): Promise<Set<string>> {
@@ -232,7 +272,8 @@ export class SkiaFontManager {
     const results = await Promise.allSettled(unique.map((f) => this.ensureFont(f)));
     const loaded = new Set<string>();
     results.forEach((r, i) => {
-      if (r.status === 'fulfilled' && r.value) loaded.add(unique[i]!);
+      const family = unique[i];
+      if (r.status === 'fulfilled' && r.value && family) loaded.add(family);
     });
     return loaded;
   }
@@ -273,6 +314,7 @@ export class SkiaFontManager {
 
       const families = new Set<string>();
       this.nativeFontMap.clear();
+      this.nativeFontPostScriptMap.clear();
 
       for (const f of fonts) {
         const key = f.family.toLowerCase();
@@ -289,6 +331,9 @@ export class SkiaFontManager {
         const existing = this.nativeFontMap.get(key) ?? [];
         existing.push(entry);
         this.nativeFontMap.set(key, existing);
+
+        const postScriptKey = normalizeFontKey(f.postscriptName);
+        if (postScriptKey) this.nativeFontPostScriptMap.set(postScriptKey, entry);
       }
 
       this.nativeFontSet = families;
@@ -427,6 +472,41 @@ export class SkiaFontManager {
     return false;
   }
 
+  private async _loadPostScriptFontData(
+    postScriptName: string,
+    family: string,
+    weights: number[],
+  ): Promise<boolean> {
+    await this.getNativeFontSet();
+
+    const postScriptKey = normalizeFontKey(postScriptName);
+    const entry = postScriptKey
+      ? this.nativeFontPostScriptMap.get(postScriptKey)
+      : undefined;
+
+    if (!entry) {
+      return this.ensureFont(family, weights);
+    }
+
+    try {
+      const blob = await entry.blob();
+      const buffer = await blob.arrayBuffer();
+      if (buffer.byteLength > 0 && this.registerFont(buffer, postScriptName)) {
+        console.log(
+          `[FontManager] Loaded native PostScript font "${postScriptName}" for family "${family}".`,
+        );
+        return true;
+      }
+    } catch (e) {
+      console.warn(
+        `[FontManager] Failed to load native PostScript font "${postScriptName}":`,
+        e instanceof Error ? e.message : String(e),
+      );
+    }
+
+    return this.ensureFont(family, weights);
+  }
+
   private async _fetchLocalFonts(
     family: string,
     urls: string[],
@@ -444,8 +524,9 @@ export class SkiaFontManager {
       for (let i = 0; i < buffers.length; i++) {
         const buf = buffers[i];
         if (!buf) continue;
-        const relPath = relPaths[i]!;
-        const regName = relPath.includes('-ext-') ? family + ' Ext' : family;
+        const relPath = relPaths[i];
+        if (!relPath) continue;
+        const regName = relPath.includes('-ext-') ? `${family} Ext` : family;
         if (this.registerFont(buf, regName)) registered++;
       }
       return registered > 0;
@@ -481,9 +562,11 @@ export class SkiaFontManager {
         const css = await cssResp.text();
 
         const urls: string[] = [];
-        let match: RegExpExecArray | null;
-        while ((match = cdn.fontUrlPattern.exec(css)) !== null) {
-          urls.push(match[1]!);
+        let match = cdn.fontUrlPattern.exec(css);
+        while (match !== null) {
+          const fontUrl = match[1];
+          if (fontUrl) urls.push(fontUrl);
+          match = cdn.fontUrlPattern.exec(css);
         }
         if (urls.length === 0) continue;
 
@@ -535,6 +618,7 @@ export class SkiaFontManager {
     this.pendingFetches.clear();
     this.nativeFontSet = null;
     this.nativeFontMap.clear();
+    this.nativeFontPostScriptMap.clear();
   }
 }
 
@@ -543,6 +627,18 @@ export class SkiaFontManager {
 // ---------------------------------------------------------------------------
 
 const localFontCache = new Map<string, boolean>();
+
+function normalizeFontKey(fontName: string | undefined): string | null {
+  const normalized = fontName?.trim().toLowerCase();
+  return normalized ? normalized : null;
+}
+
+function pushUniqueFontFamily(chain: string[], family: string): void {
+  const normalized = normalizeFontKey(family);
+  if (!normalized) return;
+  if (chain.some((existing) => existing.toLowerCase() === normalized)) return;
+  chain.push(family);
+}
 
 function isFontLocallyAvailable(family: string): boolean {
   const key = family.toLowerCase();

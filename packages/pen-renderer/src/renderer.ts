@@ -410,9 +410,7 @@ export class PenRenderer {
     this.nodeRenderer.zoom = this._zoom;
 
     // Draw all render nodes
-    for (const rn of this.renderNodes) {
-      this.nodeRenderer.drawNode(canvas, rn);
-    }
+    this.nodeRenderer.drawRenderNodes(canvas, this.renderNodes);
 
     this.drawEditorOverlays(canvas);
 

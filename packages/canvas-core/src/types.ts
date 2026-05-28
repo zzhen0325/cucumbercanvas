@@ -4,6 +4,11 @@ export type {
   PenDocument,
   PenNodeType,
   SizingBehavior,
+  PenTransformMatrix,
+  PenAutoLayoutRef,
+  PenComponentRef,
+  PenExternalStyleRef,
+  PenNodeStyleRefs,
   ContainerRole,
   InheritPolicy,
   ContextSlots,
@@ -38,6 +43,8 @@ export type {
   GradientStop,
   LinearGradientFill,
   RadialGradientFill,
+  AngularGradientFill,
+  DiamondGradientFill,
   ImageFill,
   PenFill,
   PenStroke,
@@ -203,6 +210,7 @@ export type CanvasImportWarningCode =
   | "unsupported_tag"
   | "partial_fidelity"
   | "layout_degraded"
+  | "component_editability_limited"
   | "component_metadata_dropped"
   | "effects_dropped";
 
@@ -212,7 +220,8 @@ export type CanvasImportedLayoutAlign =
   | "center"
   | "end"
   | "space_between"
-  | "baseline";
+  | "baseline"
+  | "stretch";
 export type CanvasImportedSizingMode =
   | "fixed"
   | "fit_content"

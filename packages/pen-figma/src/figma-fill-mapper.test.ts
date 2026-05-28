@@ -9,7 +9,7 @@ describe("mapFigmaFills", () => {
         type: "IMAGE",
         visible: true,
         opacity: 1,
-        imageScaleMode: "STRETCH",
+        imageScaleMode: "CROP",
         originalImageWidth: 2644,
         originalImageHeight: 1696,
         transform: {
@@ -33,7 +33,7 @@ describe("mapFigmaFills", () => {
       {
         type: "image",
         url: "__hash:1a5f26ddcd1ff2db3595b845fbe9a1771c46ae3f",
-        mode: "stretch",
+        mode: "crop",
         originalSize: {
           width: 2644,
           height: 1696,
@@ -80,5 +80,133 @@ describe("mapFigmaFills", () => {
         transform: undefined,
       },
     ]);
+  });
+
+  it("preserves hidden paint layers and blend modes for editable fidelity", () => {
+    const fills = mapFigmaFills([
+      {
+        type: "SOLID",
+        visible: false,
+        opacity: 0.4,
+        blendMode: "MULTIPLY",
+        color: { r: 1, g: 0, b: 0, a: 1 },
+      },
+      {
+        type: "GRADIENT_ANGULAR",
+        visible: true,
+        blendMode: "SCREEN",
+        stops: [
+          { position: 0, color: { r: 0, g: 0, b: 0, a: 1 } },
+          { position: 1, color: { r: 1, g: 1, b: 1, a: 1 } },
+        ],
+      },
+      {
+        type: "GRADIENT_DIAMOND",
+        stops: [
+          { position: 0, color: { r: 0, g: 0, b: 1, a: 1 } },
+          { position: 1, color: { r: 0, g: 1, b: 0, a: 1 } },
+        ],
+      },
+    ]);
+
+    expect(fills).toEqual([
+      {
+        type: "solid",
+        color: "#ff0000",
+        opacity: 0.4,
+        visible: false,
+        blendMode: "multiply",
+      },
+      {
+        type: "angular_gradient",
+        cx: 0.5,
+        cy: 0.5,
+        angle: 0,
+        stops: [
+          { offset: 0, color: "#000000" },
+          { offset: 1, color: "#ffffff" },
+        ],
+        blendMode: "screen",
+      },
+      {
+        type: "diamond_gradient",
+        cx: 0.5,
+        cy: 0.5,
+        radius: 0.5,
+        angle: 0,
+        stops: [
+          { offset: 0, color: "#0000ff" },
+          { offset: 1, color: "#00ff00" },
+        ],
+      },
+    ]);
+  });
+
+  it("derives editable gradient geometry from Figma paint transforms", () => {
+    const transform = {
+      m00: 0.8,
+      m01: 0.1,
+      m02: 0.05,
+      m10: 0.2,
+      m11: 0.6,
+      m12: 0.1,
+    };
+    const stops = [
+      { position: 0, color: { r: 0, g: 0, b: 0, a: 1 } },
+      { position: 1, color: { r: 1, g: 1, b: 1, a: 1 } },
+    ];
+
+    const fills = mapFigmaFills([
+      { type: "GRADIENT_LINEAR", transform, stops },
+      { type: "GRADIENT_RADIAL", transform, stops },
+      { type: "GRADIENT_ANGULAR", transform, stops },
+      { type: "GRADIENT_DIAMOND", transform, stops },
+    ]);
+
+    expect(fills?.[0]).toMatchObject({
+      type: "linear_gradient",
+      angle: 76,
+      transform,
+    });
+    expect(fills?.[0]?.type === "linear_gradient" && fills[0].x1).toBeCloseTo(
+      0.1,
+    );
+    expect(fills?.[0]?.type === "linear_gradient" && fills[0].y1).toBeCloseTo(
+      0.4,
+    );
+    expect(fills?.[0]?.type === "linear_gradient" && fills[0].x2).toBeCloseTo(
+      0.9,
+    );
+    expect(fills?.[0]?.type === "linear_gradient" && fills[0].y2).toBeCloseTo(
+      0.6,
+    );
+    expect(fills?.[1]).toMatchObject({
+      type: "radial_gradient",
+      cx: 0.5,
+      cy: 0.5,
+      transform,
+    });
+    expect(fills?.[1]?.type === "radial_gradient" && fills[1].radius).toBeCloseTo(
+      0.3582,
+      4,
+    );
+    expect(fills?.[2]).toMatchObject({
+      type: "angular_gradient",
+      cx: 0.5,
+      cy: 0.5,
+      angle: 76,
+      transform,
+    });
+    expect(fills?.[3]).toMatchObject({
+      type: "diamond_gradient",
+      cx: 0.5,
+      cy: 0.5,
+      angle: 76,
+      transform,
+    });
+    expect(fills?.[3]?.type === "diamond_gradient" && fills[3].radius).toBeCloseTo(
+      0.3582,
+      4,
+    );
   });
 });

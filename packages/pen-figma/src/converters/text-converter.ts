@@ -36,7 +36,7 @@ export function convertText(
 
   return {
     type: "text",
-    ...commonProps(figma, id),
+    ...commonProps(figma, id, parentStackMode),
     width,
     height: resolveHeight(figma, parentStackMode, ctx),
     ...textProps,

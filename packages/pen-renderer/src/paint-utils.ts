@@ -1,47 +1,52 @@
-import type { CanvasKit } from 'canvaskit-wasm';
-import type { PenFill, PenStroke } from '@cucumber/pen-types';
-import { DEFAULT_FILL, DEFAULT_STROKE_WIDTH } from '@cucumber/pen-core';
+import { DEFAULT_FILL, DEFAULT_STROKE_WIDTH } from "@cucumber/pen-core";
+import type { PenFill, PenStroke } from "@cucumber/pen-types";
+import type { CanvasKit } from "canvaskit-wasm";
 
-export { cssFontFamily } from '@cucumber/pen-core';
+export { cssFontFamily } from "@cucumber/pen-core";
 
 // ---------------------------------------------------------------------------
 // Color parsing — ck.Color4f takes 0-1 floats for all channels (r, g, b, a)
 // ---------------------------------------------------------------------------
 
 export function parseColor(ck: CanvasKit, color: string): Float32Array {
-  if (color.startsWith('#')) {
+  if (color.startsWith("#")) {
     const hex = color.slice(1);
     if (hex.length === 8) {
-      const r = parseInt(hex.slice(0, 2), 16) / 255;
-      const g = parseInt(hex.slice(2, 4), 16) / 255;
-      const b = parseInt(hex.slice(4, 6), 16) / 255;
-      const a = parseInt(hex.slice(6, 8), 16) / 255;
+      const r = Number.parseInt(hex.slice(0, 2), 16) / 255;
+      const g = Number.parseInt(hex.slice(2, 4), 16) / 255;
+      const b = Number.parseInt(hex.slice(4, 6), 16) / 255;
+      const a = Number.parseInt(hex.slice(6, 8), 16) / 255;
       return ck.Color4f(r, g, b, a);
     }
     if (hex.length === 6) {
-      const r = parseInt(hex.slice(0, 2), 16) / 255;
-      const g = parseInt(hex.slice(2, 4), 16) / 255;
-      const b = parseInt(hex.slice(4, 6), 16) / 255;
+      const r = Number.parseInt(hex.slice(0, 2), 16) / 255;
+      const g = Number.parseInt(hex.slice(2, 4), 16) / 255;
+      const b = Number.parseInt(hex.slice(4, 6), 16) / 255;
       return ck.Color4f(r, g, b, 1);
     }
     if (hex.length === 3) {
-      const r = parseInt(hex[0]! + hex[0]!, 16) / 255;
-      const g = parseInt(hex[1]! + hex[1]!, 16) / 255;
-      const b = parseInt(hex[2]! + hex[2]!, 16) / 255;
+      const rHex = hex.charAt(0);
+      const gHex = hex.charAt(1);
+      const bHex = hex.charAt(2);
+      const r = Number.parseInt(rHex + rHex, 16) / 255;
+      const g = Number.parseInt(gHex + gHex, 16) / 255;
+      const b = Number.parseInt(bHex + bHex, 16) / 255;
       return ck.Color4f(r, g, b, 1);
     }
   }
-  if (color === 'transparent') return ck.Color4f(0, 0, 0, 0);
-  if (color === 'white') return ck.Color4f(1, 1, 1, 1);
-  if (color === 'black') return ck.Color4f(0, 0, 0, 1);
+  if (color === "transparent") return ck.Color4f(0, 0, 0, 0);
+  if (color === "white") return ck.Color4f(1, 1, 1, 1);
+  if (color === "black") return ck.Color4f(0, 0, 0, 1);
   // rgba() parsing
-  const rgbaMatch = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+  const rgbaMatch = color.match(
+    /rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/,
+  );
   if (rgbaMatch) {
     return ck.Color4f(
-      parseInt(rgbaMatch[1]!) / 255,
-      parseInt(rgbaMatch[2]!) / 255,
-      parseInt(rgbaMatch[3]!) / 255,
-      rgbaMatch[4] !== undefined ? parseFloat(rgbaMatch[4]!) : 1,
+      Number.parseInt(rgbaMatch[1] ?? "0", 10) / 255,
+      Number.parseInt(rgbaMatch[2] ?? "0", 10) / 255,
+      Number.parseInt(rgbaMatch[3] ?? "0", 10) / 255,
+      rgbaMatch[4] !== undefined ? Number.parseFloat(rgbaMatch[4]) : 1,
     );
   }
   return ck.Color4f(0.82, 0.835, 0.858, 1); // fallback #d1d5db
@@ -55,7 +60,7 @@ export function cornerRadiusValue(
   cr: number | [number, number, number, number] | undefined,
 ): number {
   if (cr === undefined) return 0;
-  if (typeof cr === 'number') return cr;
+  if (typeof cr === "number") return cr;
   return cr[0];
 }
 
@@ -63,7 +68,7 @@ export function cornerRadii(
   cr: number | [number, number, number, number] | undefined,
 ): [number, number, number, number] {
   if (cr === undefined) return [0, 0, 0, 0];
-  if (typeof cr === 'number') return [cr, cr, cr, cr];
+  if (typeof cr === "number") return [cr, cr, cr, cr];
   return cr;
 }
 
@@ -72,12 +77,19 @@ export function cornerRadii(
 // ---------------------------------------------------------------------------
 
 export function resolveFillColor(fills?: PenFill[] | string): string {
-  if (typeof fills === 'string') return fills;
+  if (typeof fills === "string") return fills;
   if (!fills || fills.length === 0) return DEFAULT_FILL;
-  const first = fills[0];
+  const first = fills.find(
+    (fill) => fill.visible !== false && (fill.opacity ?? 1) > 0,
+  );
   if (!first) return DEFAULT_FILL;
-  if (first.type === 'solid') return first.color;
-  if (first.type === 'linear_gradient' || first.type === 'radial_gradient') {
+  if (first.type === "solid") return first.color;
+  if (
+    first.type === "linear_gradient" ||
+    first.type === "radial_gradient" ||
+    first.type === "angular_gradient" ||
+    first.type === "diamond_gradient"
+  ) {
     return first.stops[0]?.color ?? DEFAULT_FILL;
   }
   return DEFAULT_FILL;
@@ -85,17 +97,28 @@ export function resolveFillColor(fills?: PenFill[] | string): string {
 
 export function resolveStrokeColor(stroke?: PenStroke): string | undefined {
   if (!stroke) return undefined;
-  if (typeof stroke === 'string') return stroke;
-  if (typeof stroke.fill === 'string') return stroke.fill;
-  if (stroke.fill && stroke.fill.length > 0) return resolveFillColor(stroke.fill);
-  if ('color' in stroke && typeof (stroke as any).color === 'string') return (stroke as any).color;
+  if (typeof stroke === "string") return stroke;
+  if (typeof stroke.fill === "string") return stroke.fill;
+  if (stroke.fill && stroke.fill.length > 0) {
+    if (
+      !stroke.fill.some(
+        (fill) => fill.visible !== false && (fill.opacity ?? 1) > 0,
+      )
+    ) {
+      return undefined;
+    }
+    return resolveFillColor(stroke.fill);
+  }
+  const legacyStroke = stroke as PenStroke & { color?: unknown };
+  if (typeof legacyStroke.color === "string") return legacyStroke.color;
   return undefined;
 }
 
 export function resolveStrokeWidth(stroke?: PenStroke): number {
   if (!stroke) return 0;
-  if (typeof stroke.thickness === 'number') return stroke.thickness;
-  if (typeof stroke.thickness === 'object' && !Array.isArray(stroke.thickness)) return 0;
+  if (typeof stroke.thickness === "number") return stroke.thickness;
+  if (typeof stroke.thickness === "object" && !Array.isArray(stroke.thickness))
+    return 0;
   return stroke.thickness?.[0] ?? DEFAULT_STROKE_WIDTH;
 }
 
@@ -108,7 +131,12 @@ export function shouldUseTransparentFallbackFill(
   stroke?: PenStroke,
   isContainer = false,
 ): boolean {
-  const hasExplicitFill = typeof fills === 'string' ? fills.length > 0 : !!fills?.length;
+  const hasExplicitFill =
+    typeof fills === "string"
+      ? fills.length > 0
+      : !!fills?.some(
+          (fill) => fill.visible !== false && (fill.opacity ?? 1) > 0,
+        );
   return !hasExplicitFill && (isContainer || hasVisibleStroke(stroke));
 }
 
@@ -129,16 +157,21 @@ function isCJK(ch: string): boolean {
 }
 
 /** Word-wrap a single line of text, appending wrapped lines to `out`. */
-export function wrapLine(ctx: CanvasRenderingContext2D, text: string, maxW: number, out: string[]) {
+export function wrapLine(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxW: number,
+  out: string[],
+) {
   if (ctx.measureText(text).width <= maxW) {
     out.push(text);
     return;
   }
 
-  let current = '';
+  let current = "";
   let i = 0;
   while (i < text.length) {
-    const ch = text[i]!;
+    const ch = text.charAt(i);
     if (isCJK(ch)) {
       const test = current + ch;
       if (ctx.measureText(test).width > maxW && current) {
@@ -148,19 +181,21 @@ export function wrapLine(ctx: CanvasRenderingContext2D, text: string, maxW: numb
         current = test;
       }
       i++;
-    } else if (ch === ' ') {
+    } else if (ch === " ") {
       const test = current + ch;
       if (ctx.measureText(test).width > maxW && current) {
         out.push(current);
-        current = '';
+        current = "";
       } else {
         current = test;
       }
       i++;
     } else {
-      let word = '';
-      while (i < text.length && text[i]! !== ' ' && !isCJK(text[i]!)) {
-        word += text[i]!;
+      let word = "";
+      while (i < text.length) {
+        const next = text.charAt(i);
+        if (next === " " || isCJK(next)) break;
+        word += next;
         i++;
       }
       const test = current + word;

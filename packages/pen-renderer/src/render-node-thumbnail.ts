@@ -11,9 +11,14 @@
 //   - CanvasKit is not available in tests / SSR: detect and fall back to null.
 //   - The output shape (data URL | null) is stable for test assertions.
 
-import type { PenDocument, PenNode } from '@cucumber/pen-types';
-import { getAllChildren, getDefaultTheme, resolveNodeForCanvas } from '@cucumber/pen-core';
-import { flattenToRenderNodes, resolveRefs } from './document-flattener.js';
+import {
+  getAllChildren,
+  getDefaultTheme,
+  resolveNodeForCanvas,
+} from "@cucumber/pen-core";
+import type { PenDocument, PenNode } from "@cucumber/pen-types";
+import { flattenToRenderNodes, resolveRefs } from "./document-flattener.js";
+import type { RenderNode } from "./types.js";
 
 export interface ThumbnailContext {
   /** Full document used for ref node resolution. */
@@ -40,7 +45,7 @@ export async function renderNodeThumbnail(
 ): Promise<string | null> {
   try {
     // Guard: need a valid node object.
-    if (!node || typeof node !== 'object') return null;
+    if (!node || typeof node !== "object") return null;
 
     const size = ctx.size ?? 128;
     if (!Number.isFinite(size) || size <= 0) return null;
@@ -50,7 +55,9 @@ export async function renderNodeThumbnail(
     // component originals. For non-ref nodes it is a shallow identity pass.
     // getAllChildren handles both single-page (document.children) and multi-page
     // (document.pages[i].children) layouts — refs can cross pages so we need all.
-    const rootNodes: PenNode[] = ctx.document ? getAllChildren(ctx.document) : [];
+    const rootNodes: PenNode[] = ctx.document
+      ? getAllChildren(ctx.document)
+      : [];
     let resolvedNodes: PenNode[];
     try {
       resolvedNodes = resolveRefs([node], rootNodes);
@@ -67,11 +74,15 @@ export async function renderNodeThumbnail(
     const variables = ctx.document?.variables ?? {};
     const themes = ctx.document?.themes;
     const activeTheme = getDefaultTheme(themes);
-    const variableResolved = resolveNodeForCanvas(resolvedNode, variables, activeTheme);
+    const variableResolved = resolveNodeForCanvas(
+      resolvedNode,
+      variables,
+      activeTheme,
+    );
 
     // Flatten to RenderNode array so we have absolute coordinates, auto-layout
     // positions, and text pre-measurements for all descendants.
-    let renderNodes;
+    let renderNodes: RenderNode[];
     try {
       renderNodes = flattenToRenderNodes([variableResolved]);
     } catch {
@@ -81,9 +92,9 @@ export async function renderNodeThumbnail(
     if (!renderNodes || renderNodes.length === 0) return null;
 
     // Detect CanvasKit availability — not available in tests or SSR.
-    let ck: import('canvaskit-wasm').CanvasKit | null = null;
+    let ck: import("canvaskit-wasm").CanvasKit | null = null;
     try {
-      const { getCanvasKit } = await import('./init.js');
+      const { getCanvasKit } = await import("./init.js");
       ck = getCanvasKit();
     } catch {
       return null;
@@ -95,10 +106,11 @@ export async function renderNodeThumbnail(
     }
 
     // OffscreenCanvas guard — not available in Node.js.
-    if (typeof OffscreenCanvas === 'undefined') return null;
+    if (typeof OffscreenCanvas === "undefined") return null;
 
     // Determine scaling: fit the node's bounding box into the requested size.
-    const rootRenderNode = renderNodes[0]!;
+    const rootRenderNode = renderNodes[0];
+    if (!rootRenderNode) return null;
     const nodeW = rootRenderNode.absW > 0 ? rootRenderNode.absW : size;
     const nodeH = rootRenderNode.absH > 0 ? rootRenderNode.absH : size;
     const scale = Math.min(size / nodeW, size / nodeH);
@@ -115,11 +127,9 @@ export async function renderNodeThumbnail(
       skCanvas.clear(ck.TRANSPARENT);
       skCanvas.scale(scale, scale);
 
-      const { SkiaNodeRenderer } = await import('./node-renderer.js');
+      const { SkiaNodeRenderer } = await import("./node-renderer.js");
       const renderer = new SkiaNodeRenderer(ck);
-      for (const rn of renderNodes) {
-        renderer.drawNode(skCanvas, rn);
-      }
+      renderer.drawRenderNodes(skCanvas, renderNodes);
 
       skSurface.flush();
       const imgSnapshot = skSurface.makeImageSnapshot();
@@ -129,7 +139,9 @@ export async function renderNodeThumbnail(
       if (!pngBytes) return null;
 
       // Convert raw PNG bytes to a data URL via Blob + FileReader.
-      const blob = new Blob([pngBytes as Uint8Array<ArrayBuffer>], { type: 'image/png' });
+      const blob = new Blob([pngBytes as Uint8Array<ArrayBuffer>], {
+        type: "image/png",
+      });
       const dataUrl = await blobToDataUrl(blob);
       return dataUrl;
     } finally {
@@ -147,7 +159,7 @@ async function blobToDataUrl(blob: Blob): Promise<string | null> {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result;
-      resolve(typeof result === 'string' ? result : null);
+      resolve(typeof result === "string" ? result : null);
     };
     reader.onerror = () => resolve(null);
     reader.readAsDataURL(blob);

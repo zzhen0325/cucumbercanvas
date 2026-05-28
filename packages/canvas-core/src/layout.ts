@@ -1,13 +1,13 @@
-import type { PenDocument, PenNode } from '@cucumber/pen-types';
-import { findNode, getNodeBounds } from './document.js';
-import { applyCanvasOperation } from './operations.js';
+import type { PenDocument, PenNode } from "@cucumber/pen-types";
+import { findNode, getNodeBounds } from "./document.js";
+import { applyCanvasOperation } from "./operations.js";
 import {
-  getCanvasImportedNodeMeta,
+  type CanvasBounds,
   type CanvasImportedAutoLayoutMeta,
   type CanvasImportedLayoutAlign,
   type CanvasImportedPadding,
-  type CanvasBounds,
-} from './types.js';
+  getCanvasImportedNodeMeta,
+} from "./types.js";
 
 export interface ApplyImportedAutoLayoutOptions {
   contentInsetTop?: number;
@@ -43,7 +43,11 @@ export function applyImportedAutoLayout(
   nodeId: string,
   options: ApplyImportedAutoLayoutOptions = {},
 ): PenDocument {
-  const { doc: next, changed } = reflowImportedAutoLayoutTree(doc, nodeId, options);
+  const { doc: next, changed } = reflowImportedAutoLayoutTree(
+    doc,
+    nodeId,
+    options,
+  );
   if (!changed) {
     return doc;
   }
@@ -73,7 +77,12 @@ function reflowImportedAutoLayoutTree(
 
   const autoLayout = getImportedAutoLayout(node);
   if (autoLayout) {
-    const result = reflowImportedAutoLayoutChildren(currentDoc, node, autoLayout, options);
+    const result = reflowImportedAutoLayoutChildren(
+      currentDoc,
+      node,
+      autoLayout,
+      options,
+    );
     currentDoc = result.doc;
     changed = result.changed;
   }
@@ -84,6 +93,20 @@ function reflowImportedAutoLayoutTree(
     const result = reflowImportedAutoLayoutTree(currentDoc, child.id, options);
     currentDoc = result.doc;
     changed = result.changed || changed;
+  }
+
+  if (autoLayout && changed && hasFitContentSizing(autoLayout)) {
+    const latestNode = findNode(currentDoc, nodeId);
+    if (isContainerNode(latestNode)) {
+      const result = reflowImportedAutoLayoutChildren(
+        currentDoc,
+        latestNode,
+        autoLayout,
+        options,
+      );
+      currentDoc = result.doc;
+      changed = result.changed || changed;
+    }
   }
 
   return { doc: currentDoc, changed };
@@ -107,10 +130,11 @@ function reflowImportedAutoLayoutChildren(
     return { doc, changed: false };
   }
 
-  const direction = autoLayout.layout ?? 'vertical';
+  const direction = autoLayout.layout ?? "vertical";
   const gap = Math.max(autoLayout.gap ?? 0, 0);
-  const [paddingTop, paddingRight, paddingBottom, paddingLeft] =
-    expandPadding(autoLayout.padding);
+  const [paddingTop, paddingRight, paddingBottom, paddingLeft] = expandPadding(
+    autoLayout.padding,
+  );
 
   const nodeX = node.x ?? 0;
   const nodeY = node.y ?? 0;
@@ -152,7 +176,7 @@ function reflowImportedAutoLayoutChildren(
         grow: 0,
       };
     })
-    .filter((entry) => entry.autoLayout?.positioning !== 'absolute');
+    .filter((entry) => entry.autoLayout?.positioning !== "absolute");
 
   if (flowEntries.length === 0) {
     return { doc, changed: false };
@@ -160,8 +184,14 @@ function reflowImportedAutoLayoutChildren(
 
   // --- Grow and cross-axis sizing ---
   for (const entry of flowEntries) {
-    entry.grow = Math.max(entry.autoLayout?.grow ?? 0, 0);
-    applyCrossAxisSizing(entry, direction, contentWidth, contentHeight);
+    entry.grow = resolveMainAxisGrow(entry, direction);
+    applyCrossAxisSizing(
+      entry,
+      direction,
+      contentWidth,
+      contentHeight,
+      autoLayout.alignItems,
+    );
     applySingleChildFill(
       entry,
       flowEntries.length,
@@ -173,7 +203,7 @@ function reflowImportedAutoLayoutChildren(
 
   // --- Main-axis space distribution (grow) ---
   const mainAxisAvailable =
-    direction === 'horizontal' ? contentWidth : contentHeight;
+    direction === "horizontal" ? contentWidth : contentHeight;
   const totalGap = gap * Math.max(flowEntries.length - 1, 0);
   const fixedMainSize = flowEntries.reduce(
     (sum, entry) => sum + getMainAxisSize(entry.bounds, direction),
@@ -195,26 +225,73 @@ function reflowImportedAutoLayoutChildren(
     }
   }
 
+  const fitBounds = resolveFitContentBounds(
+    autoLayout,
+    direction,
+    flowEntries,
+    gap,
+    {
+      width: nodeBounds.width,
+      height: nodeBounds.height,
+      paddingTop,
+      paddingRight,
+      paddingBottom,
+      paddingLeft,
+      contentInsetTop: options.contentInsetTop ?? 0,
+      contentInsetRight: options.contentInsetRight ?? 0,
+      contentInsetBottom: options.contentInsetBottom ?? 0,
+      contentInsetLeft: options.contentInsetLeft ?? 0,
+    },
+  );
+  const layoutContentWidth =
+    fitBounds.width !== undefined
+      ? Math.max(
+          fitBounds.width -
+            paddingLeft -
+            paddingRight -
+            (options.contentInsetLeft ?? 0) -
+            (options.contentInsetRight ?? 0),
+          0,
+        )
+      : contentWidth;
+  const layoutContentHeight =
+    fitBounds.height !== undefined
+      ? Math.max(
+          fitBounds.height -
+            paddingTop -
+            paddingBottom -
+            (options.contentInsetTop ?? 0) -
+            (options.contentInsetBottom ?? 0),
+          0,
+        )
+      : contentHeight;
+
   // --- Justification ---
   const usedMainSpace =
     flowEntries.reduce(
       (sum, entry) => sum + getMainAxisSize(entry.bounds, direction),
       0,
     ) + totalGap;
-  const freeMainSpace = Math.max(mainAxisAvailable - usedMainSpace, 0);
+  const layoutMainAxisAvailable =
+    direction === "horizontal" ? layoutContentWidth : layoutContentHeight;
+  const freeMainSpace = Math.max(layoutMainAxisAvailable - usedMainSpace, 0);
 
   let leadingMainSpace = 0;
   let gapBetweenItems = gap;
-  if (autoLayout.justifyContent === 'center') {
+  if (autoLayout.justifyContent === "center") {
     leadingMainSpace = freeMainSpace / 2;
-  } else if (autoLayout.justifyContent === 'end') {
+  } else if (autoLayout.justifyContent === "end") {
     leadingMainSpace = freeMainSpace;
   } else if (
-    autoLayout.justifyContent === 'space_between' &&
+    autoLayout.justifyContent === "space_between" &&
     flowEntries.length > 1
   ) {
     gapBetweenItems = gap + freeMainSpace / (flowEntries.length - 1);
   }
+  const baselineTarget =
+    direction === "horizontal"
+      ? resolveBaselineTarget(flowEntries, autoLayout)
+      : undefined;
 
   // --- Apply position updates ---
   let cursor = leadingMainSpace;
@@ -229,28 +306,32 @@ function reflowImportedAutoLayoutChildren(
       height: entry.bounds.height,
     };
 
-    if (direction === 'horizontal') {
+    if (direction === "horizontal") {
       nextBounds.x = contentX + cursor;
+      const crossAlign = resolveCrossAxisAlign(
+        autoLayout.alignItems,
+        entry.autoLayout?.alignSelf,
+      );
       nextBounds.y =
-        contentY +
-        resolveCrossAxisOffset(
-          contentHeight,
-          entry.bounds.height,
-          resolveCrossAxisAlign(
-            autoLayout.alignItems,
-            entry.autoLayout?.alignSelf,
-          ),
-        );
+        crossAlign === "baseline" && baselineTarget !== undefined
+          ? contentY + baselineTarget - getBaselineOffset(entry)
+          : contentY +
+            resolveCrossAxisOffset(
+              layoutContentHeight,
+              entry.bounds.height,
+              crossAlign,
+            );
     } else {
+      const crossAlign = resolveCrossAxisAlign(
+        autoLayout.alignItems,
+        entry.autoLayout?.alignSelf,
+      );
       nextBounds.x =
         contentX +
         resolveCrossAxisOffset(
-          contentWidth,
+          layoutContentWidth,
           entry.bounds.width,
-          resolveCrossAxisAlign(
-            autoLayout.alignItems,
-            entry.autoLayout?.alignSelf,
-          ),
+          crossAlign,
         );
       nextBounds.y = contentY + cursor;
     }
@@ -264,7 +345,7 @@ function reflowImportedAutoLayoutChildren(
 
     if (!areBoundsEqual(currentBounds, nextBounds)) {
       currentDoc = applyCanvasOperation(currentDoc, {
-        type: 'updateNode',
+        type: "updateNode",
         nodeId: entry.node.id,
         updates: {
           x: nextBounds.x,
@@ -279,6 +360,31 @@ function reflowImportedAutoLayoutChildren(
     cursor += getMainAxisSize(entry.bounds, direction) + gapBetweenItems;
   }
 
+  const nextNodeBounds: Partial<CanvasBounds> = {};
+  if (
+    fitBounds.width !== undefined &&
+    !approximatelyEqual(nodeBounds.width, fitBounds.width)
+  ) {
+    nextNodeBounds.width = fitBounds.width;
+  }
+  if (
+    fitBounds.height !== undefined &&
+    !approximatelyEqual(nodeBounds.height, fitBounds.height)
+  ) {
+    nextNodeBounds.height = fitBounds.height;
+  }
+  if (
+    nextNodeBounds.width !== undefined ||
+    nextNodeBounds.height !== undefined
+  ) {
+    currentDoc = applyCanvasOperation(currentDoc, {
+      type: "updateNode",
+      nodeId: node.id,
+      updates: nextNodeBounds,
+    });
+    changed = true;
+  }
+
   return { doc: currentDoc, changed };
 }
 
@@ -288,33 +394,54 @@ function reflowImportedAutoLayoutChildren(
 
 function applyCrossAxisSizing(
   entry: FlowLayoutEntry,
-  direction: 'horizontal' | 'vertical',
+  direction: "horizontal" | "vertical",
   contentWidth: number,
   contentHeight: number,
+  containerAlign?: CanvasImportedLayoutAlign,
 ): void {
-  const align = resolveCrossAxisAlign(undefined, entry.autoLayout?.alignSelf);
-  if (direction === 'horizontal') {
+  const align = resolveCrossAxisAlign(
+    containerAlign,
+    entry.autoLayout?.alignSelf,
+  );
+  if (direction === "horizontal") {
     if (
-      entry.autoLayout?.heightMode === 'fill_container' ||
-      align === 'stretch'
+      entry.autoLayout?.heightMode === "fill_container" ||
+      align === "stretch"
     ) {
       entry.bounds.height = contentHeight;
     }
     return;
   }
 
-  if (
-    entry.autoLayout?.widthMode === 'fill_container' ||
-    align === 'stretch'
-  ) {
+  if (entry.autoLayout?.widthMode === "fill_container" || align === "stretch") {
     entry.bounds.width = contentWidth;
   }
+}
+
+function resolveMainAxisGrow(
+  entry: FlowLayoutEntry,
+  direction: "horizontal" | "vertical",
+): number {
+  const explicitGrow = Math.max(entry.autoLayout?.grow ?? 0, 0);
+  if (explicitGrow > 0) return explicitGrow;
+  if (isMainAxisFillContainer(entry, direction)) return 1;
+  return 0;
+}
+
+function isMainAxisFillContainer(
+  entry: FlowLayoutEntry,
+  direction: "horizontal" | "vertical",
+): boolean {
+  if (direction === "horizontal") {
+    return entry.autoLayout?.widthMode === "fill_container";
+  }
+  return entry.autoLayout?.heightMode === "fill_container";
 }
 
 function applySingleChildFill(
   entry: FlowLayoutEntry,
   siblingCount: number,
-  direction: 'horizontal' | 'vertical',
+  direction: "horizontal" | "vertical",
   contentWidth: number,
   contentHeight: number,
 ): void {
@@ -323,17 +450,84 @@ function applySingleChildFill(
   }
 
   if (
-    direction === 'horizontal' &&
-    entry.autoLayout?.widthMode === 'fill_container'
+    direction === "horizontal" &&
+    entry.autoLayout?.widthMode === "fill_container"
   ) {
     entry.bounds.width = contentWidth;
   }
   if (
-    direction === 'vertical' &&
-    entry.autoLayout?.heightMode === 'fill_container'
+    direction === "vertical" &&
+    entry.autoLayout?.heightMode === "fill_container"
   ) {
     entry.bounds.height = contentHeight;
   }
+}
+
+function hasFitContentSizing(
+  autoLayout: CanvasImportedAutoLayoutMeta,
+): boolean {
+  return (
+    autoLayout.widthMode === "fit_content" ||
+    autoLayout.heightMode === "fit_content"
+  );
+}
+
+function resolveFitContentBounds(
+  autoLayout: CanvasImportedAutoLayoutMeta,
+  direction: "horizontal" | "vertical",
+  flowEntries: FlowLayoutEntry[],
+  gap: number,
+  options: {
+    width: number;
+    height: number;
+    paddingTop: number;
+    paddingRight: number;
+    paddingBottom: number;
+    paddingLeft: number;
+    contentInsetTop: number;
+    contentInsetRight: number;
+    contentInsetBottom: number;
+    contentInsetLeft: number;
+  },
+): { width?: number; height?: number } {
+  if (
+    autoLayout.widthMode !== "fit_content" &&
+    autoLayout.heightMode !== "fit_content"
+  ) {
+    return {};
+  }
+
+  const totalGap = gap * Math.max(flowEntries.length - 1, 0);
+  const mainSize =
+    flowEntries.reduce(
+      (sum, entry) => sum + getMainAxisSize(entry.bounds, direction),
+      0,
+    ) + totalGap;
+  const crossSize = flowEntries.reduce(
+    (max, entry) => Math.max(max, getCrossAxisSize(entry.bounds, direction)),
+    0,
+  );
+  const contentWidth = direction === "horizontal" ? mainSize : crossSize;
+  const contentHeight = direction === "horizontal" ? crossSize : mainSize;
+
+  return {
+    width:
+      autoLayout.widthMode === "fit_content"
+        ? contentWidth +
+          options.paddingLeft +
+          options.paddingRight +
+          options.contentInsetLeft +
+          options.contentInsetRight
+        : undefined,
+    height:
+      autoLayout.heightMode === "fit_content"
+        ? contentHeight +
+          options.paddingTop +
+          options.paddingBottom +
+          options.contentInsetTop +
+          options.contentInsetBottom
+        : undefined,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -342,25 +536,59 @@ function applySingleChildFill(
 
 function resolveCrossAxisAlign(
   containerAlign: CanvasImportedLayoutAlign | undefined,
-  childAlign: CanvasImportedAutoLayoutMeta['alignSelf'] | undefined,
-): 'start' | 'center' | 'end' | 'stretch' {
-  if (childAlign === 'stretch') return 'stretch';
-  if (childAlign === 'center') return 'center';
-  if (childAlign === 'end') return 'end';
-  if (childAlign === 'baseline') return 'start';
-  if (containerAlign === 'center') return 'center';
-  if (containerAlign === 'end') return 'end';
-  return 'start';
+  childAlign: CanvasImportedAutoLayoutMeta["alignSelf"] | undefined,
+): "start" | "center" | "end" | "stretch" | "baseline" {
+  if (childAlign === "stretch") return "stretch";
+  if (childAlign === "center") return "center";
+  if (childAlign === "end") return "end";
+  if (childAlign === "baseline") return "baseline";
+  if (containerAlign === "center") return "center";
+  if (containerAlign === "end") return "end";
+  if (containerAlign === "baseline") return "baseline";
+  if (containerAlign === "stretch") return "stretch";
+  return "start";
 }
 
 function resolveCrossAxisOffset(
   contentSize: number,
   childSize: number,
-  align: 'start' | 'center' | 'end' | 'stretch',
+  align: "start" | "center" | "end" | "stretch" | "baseline",
 ): number {
-  if (align === 'center') return Math.max((contentSize - childSize) / 2, 0);
-  if (align === 'end') return Math.max(contentSize - childSize, 0);
+  if (align === "center") return Math.max((contentSize - childSize) / 2, 0);
+  if (align === "end") return Math.max(contentSize - childSize, 0);
   return 0;
+}
+
+function resolveBaselineTarget(
+  entries: FlowLayoutEntry[],
+  autoLayout: CanvasImportedAutoLayoutMeta,
+): number | undefined {
+  const baselineOffsets = entries
+    .filter(
+      (entry) =>
+        resolveCrossAxisAlign(
+          autoLayout.alignItems,
+          entry.autoLayout?.alignSelf,
+        ) === "baseline",
+    )
+    .map(getBaselineOffset);
+  return baselineOffsets.length > 0 ? Math.max(...baselineOffsets) : undefined;
+}
+
+function getBaselineOffset(entry: FlowLayoutEntry): number {
+  if (entry.node.type !== "text") {
+    return entry.bounds.height;
+  }
+  const textNode = entry.node as PenNode & {
+    fontSize?: number;
+    baselineShift?: number;
+  };
+  const fontSize =
+    typeof textNode.fontSize === "number"
+      ? textNode.fontSize
+      : entry.bounds.height;
+  const baseline = fontSize * 0.8 + (textNode.baselineShift ?? 0);
+  return Math.max(0, Math.min(entry.bounds.height, baseline));
 }
 
 // ---------------------------------------------------------------------------
@@ -369,21 +597,28 @@ function resolveCrossAxisOffset(
 
 function getMainAxisSize(
   bounds: CanvasBounds,
-  direction: 'horizontal' | 'vertical',
+  direction: "horizontal" | "vertical",
 ): number {
-  return direction === 'horizontal' ? bounds.width : bounds.height;
+  return direction === "horizontal" ? bounds.width : bounds.height;
 }
 
 function setMainAxisSize(
   bounds: CanvasBounds,
-  direction: 'horizontal' | 'vertical',
+  direction: "horizontal" | "vertical",
   size: number,
 ): void {
-  if (direction === 'horizontal') {
+  if (direction === "horizontal") {
     bounds.width = size;
     return;
   }
   bounds.height = size;
+}
+
+function getCrossAxisSize(
+  bounds: CanvasBounds,
+  direction: "horizontal" | "vertical",
+): number {
+  return direction === "horizontal" ? bounds.height : bounds.width;
 }
 
 // ---------------------------------------------------------------------------
@@ -394,8 +629,9 @@ function expandPadding(
   padding?: CanvasImportedPadding,
 ): [number, number, number, number] {
   if (padding === undefined) return [0, 0, 0, 0];
-  if (typeof padding === 'number') return [padding, padding, padding, padding];
-  if (padding.length === 2) return [padding[0], padding[1], padding[0], padding[1]];
+  if (typeof padding === "number") return [padding, padding, padding, padding];
+  if (padding.length === 2)
+    return [padding[0], padding[1], padding[0], padding[1]];
   return padding;
 }
 
@@ -406,7 +642,7 @@ function expandPadding(
 function isContainerNode(node: PenNode | undefined): node is ContainerPenNode {
   return Boolean(
     node &&
-      'children' in node &&
+      "children" in node &&
       Array.isArray((node as unknown as Record<string, unknown>).children),
   );
 }

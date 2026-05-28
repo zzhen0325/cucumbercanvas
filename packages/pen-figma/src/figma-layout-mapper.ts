@@ -1,5 +1,9 @@
 // @ts-nocheck
-import type { ContainerProps, SizingBehavior } from "@cucumber/pen-types";
+import type {
+  ContainerProps,
+  PenAutoLayoutRef,
+  SizingBehavior,
+} from "@cucumber/pen-types";
 import type { FigmaNodeChange } from "./figma-types.js";
 
 /**
@@ -59,6 +63,45 @@ export function mapFigmaLayout(
   return result;
 }
 
+export function mapFigmaAutoLayoutRef(
+  node: FigmaNodeChange,
+  parentStackMode?: string,
+): PenAutoLayoutRef | undefined {
+  const layout = mapFigmaLayout(node);
+  const ref: PenAutoLayoutRef = {
+    source: "figma",
+    ...layout,
+    alignItems: mapAutoLayoutAlignItems(node.stackCounterAlignItems),
+    widthMode: mapWidthSizingMode(node, parentStackMode),
+    heightMode: mapHeightSizingMode(node, parentStackMode),
+    alignSelf: mapAlignSelf(node.stackChildAlignSelf),
+    positioning: node.stackPositioning
+      ? node.stackPositioning === "ABSOLUTE"
+        ? "absolute"
+        : "auto"
+      : undefined,
+    grow:
+      node.stackChildPrimaryGrow !== undefined && node.stackChildPrimaryGrow > 0
+        ? node.stackChildPrimaryGrow
+        : undefined,
+  };
+
+  return hasAutoLayoutRefValue(ref) ? ref : undefined;
+}
+
+function mapAutoLayoutAlignItems(
+  align?: string,
+): PenAutoLayoutRef["alignItems"] {
+  if (align === "BASELINE") return "baseline";
+  return align ? (mapAlignItems(align) as PenAutoLayoutRef["alignItems"]) : undefined;
+}
+
+function hasAutoLayoutRefValue(ref: PenAutoLayoutRef): boolean {
+  return Object.entries(ref).some(
+    ([key, value]) => key !== "source" && value !== undefined,
+  );
+}
+
 function mapPadding(
   node: FigmaNodeChange,
 ): number | [number, number] | [number, number, number, number] | undefined {
@@ -113,6 +156,43 @@ function mapAlignItems(align: string): ContainerProps["alignItems"] {
     default:
       return undefined;
   }
+}
+
+function mapAlignSelf(align?: string): PenAutoLayoutRef["alignSelf"] {
+  switch (align) {
+    case "MIN":
+      return "start";
+    case "CENTER":
+      return "center";
+    case "MAX":
+      return "end";
+    case "STRETCH":
+      return "stretch";
+    case "BASELINE":
+      return "baseline";
+    default:
+      return undefined;
+  }
+}
+
+function mapWidthSizingMode(
+  node: FigmaNodeChange,
+  parentStackMode?: string,
+): PenAutoLayoutRef["widthMode"] {
+  const width = mapWidthSizing(node, parentStackMode);
+  return width === "fit_content" || width === "fill_container"
+    ? width
+    : "fixed";
+}
+
+function mapHeightSizingMode(
+  node: FigmaNodeChange,
+  parentStackMode?: string,
+): PenAutoLayoutRef["heightMode"] {
+  const height = mapHeightSizing(node, parentStackMode);
+  return height === "fit_content" || height === "fill_container"
+    ? height
+    : "fixed";
 }
 
 /**

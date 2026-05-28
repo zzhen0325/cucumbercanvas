@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-28T10:55:00+08:00",
+  "updatedAt": "2026-05-28T20:25:22+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -107,10 +107,12 @@
       "status": "active",
       "priority": "P0",
       "owner": "product-engineering",
-      "summary": "Cucumber canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit behind a standalone CanvasApi contract, PenDocument.pages is the only supported durable shape, legacy flat-map/root-children data fails fast, and paste/batch drag-drop import, edit, and export flows produce editable PenNode trees with explicit degradation warnings.",
+      "summary": "Cucumber canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit behind a standalone CanvasApi contract, PenDocument.pages is the only supported durable shape, legacy flat-map/root-children data fails fast, and paste/batch drag-drop import, edit, and export flows produce editable PenNode trees with high-fidelity Figma layer/fill/stroke cap/effect spread/style/PostScript-aware text/layout stretch/transform/shape/mask/component override-path metadata plus matching property-panel controls for layered fills, blend modes, ordered effects, strokes, transforms, text fidelity, layout constraints, masks, style refs, variable refs, component refs, clipping, and shape details, with explicit degradation warnings.",
       "artifacts": [
         "packages/canvas-core",
         "packages/pen-figma",
+        "packages/pen-figma/src/figma-image-resolver.ts",
+        "packages/pen-figma/src/figma-image-resolver.test.ts",
         "packages/canvas-core/src/clipboard.ts",
         "packages/canvas-core/src/geometry.ts",
         "packages/canvas-core/src/history.ts",
@@ -129,6 +131,10 @@
         "apps/web/src/components/canvas/canvas-selection-helpers.ts",
         "apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx",
         "packages/pen-renderer/src/renderer.ts",
+        "packages/pen-renderer/src/node-renderer.ts",
+        "packages/pen-renderer/src/node-renderer.test.ts",
+        "packages/pen-renderer/src/text-renderer.ts",
+        "packages/pen-renderer/src/text-renderer.test.ts",
         "packages/pen-renderer/src/document-flattener.ts",
         "packages/pen-renderer/src/spatial-index.ts",
         "packages/pen-renderer/src/types.ts",

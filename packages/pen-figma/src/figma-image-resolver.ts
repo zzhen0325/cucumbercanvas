@@ -45,14 +45,21 @@ function blobToDataUrl(bytes: Uint8Array): string {
     mime = "image/webp";
   }
 
-  // Convert to base64
-  let binary = "";
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  return `data:${mime};base64,${bytesToBase64(bytes)}`;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  if (typeof btoa === "function") {
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let index = 0; index < bytes.byteLength; index += chunkSize) {
+      const chunk = bytes.subarray(index, index + chunkSize);
+      binary += String.fromCharCode(...chunk);
+    }
+    return btoa(binary);
   }
-  const base64 = btoa(binary);
-  return `data:${mime};base64,${base64}`;
+
+  return Buffer.from(bytes).toString("base64");
 }
 
 function resolveRef(
@@ -71,18 +78,53 @@ function resolveRef(
   return null;
 }
 
+function isUnresolvedImageRef(url: unknown): url is string {
+  return (
+    typeof url === "string" &&
+    (url.startsWith("__blob:") || url.startsWith("__hash:"))
+  );
+}
+
+function patchImageFillArray(
+  fills: unknown,
+  dataUrls: Map<number, string>,
+  hashDataUrls: Map<string, string>,
+): number {
+  if (!Array.isArray(fills)) return 0;
+
+  let resolved = 0;
+  for (const fill of fills) {
+    if (fill?.type !== "image") continue;
+    const imgFill = fill as ImageFill;
+    if (!isUnresolvedImageRef(imgFill.url)) continue;
+
+    const url = resolveRef(imgFill.url, dataUrls, hashDataUrls);
+    if (url) {
+      imgFill.url = url;
+      resolved++;
+    }
+  }
+  return resolved;
+}
+
 function patchNode(
   node: PenNode,
   dataUrls: Map<number, string>,
   hashDataUrls: Map<string, string>,
 ): number {
   let resolved = 0;
+  const record = node as PenNode & {
+    fill?: unknown;
+    fills?: unknown;
+    stroke?: { fill?: unknown };
+    children?: unknown;
+  };
 
   // Patch ImageNode src
   if (
     node.type === "image" &&
     node.src &&
-    (node.src.startsWith("__blob:") || node.src.startsWith("__hash:"))
+    isUnresolvedImageRef(node.src)
   ) {
     const url = resolveRef(node.src, dataUrls, hashDataUrls);
     if (url) {
@@ -91,29 +133,14 @@ function patchNode(
     }
   }
 
-  // Patch image fills
-  if ("fill" in node && Array.isArray(node.fill)) {
-    for (const fill of node.fill) {
-      if (fill.type === "image") {
-        const imgFill = fill as ImageFill;
-        if (
-          imgFill.url &&
-          (imgFill.url.startsWith("__blob:") ||
-            imgFill.url.startsWith("__hash:"))
-        ) {
-          const url = resolveRef(imgFill.url, dataUrls, hashDataUrls);
-          if (url) {
-            imgFill.url = url;
-            resolved++;
-          }
-        }
-      }
-    }
-  }
+  // Patch image fills on node fills, legacy plural fills, and stroke fills.
+  resolved += patchImageFillArray(record.fill, dataUrls, hashDataUrls);
+  resolved += patchImageFillArray(record.fills, dataUrls, hashDataUrls);
+  resolved += patchImageFillArray(record.stroke?.fill, dataUrls, hashDataUrls);
 
   // Recurse into children
-  if ("children" in node && Array.isArray(node.children)) {
-    for (const child of node.children) {
+  if (Array.isArray(record.children)) {
+    for (const child of record.children) {
       resolved += patchNode(child, dataUrls, hashDataUrls);
     }
   }

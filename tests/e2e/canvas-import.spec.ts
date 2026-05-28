@@ -194,7 +194,7 @@ test.describe("canvas import harness", () => {
       '"justifyContent": "center"',
     );
     await expect(page.getByTestId("selected-meta")).toContainText(
-      '"component_metadata_dropped"',
+      '"component_editability_limited"',
     );
     await expect(page.getByTestId("document-snapshot")).toContainText(
       '"nodeCount": 5',

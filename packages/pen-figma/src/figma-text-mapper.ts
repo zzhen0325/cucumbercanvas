@@ -2,6 +2,7 @@
 import type { TextNode } from "@cucumber/pen-types";
 import type { StyledTextSegment } from "@cucumber/pen-types";
 import { figmaColorToHex } from "./figma-color-utils.js";
+import { mapFigmaFills } from "./figma-fill-mapper.js";
 import type { FigmaNodeChange } from "./figma-types.js";
 
 /**
@@ -13,20 +14,30 @@ export function mapFigmaTextProps(
   TextNode,
   | "content"
   | "fontFamily"
+  | "fontPostScriptName"
   | "fontSize"
   | "fontWeight"
   | "fontStyle"
   | "letterSpacing"
   | "lineHeight"
+  | "paragraphSpacing"
+  | "listStyle"
+  | "indent"
+  | "hangingIndent"
+  | "baselineShift"
+  | "openTypeFeatures"
+  | "fontFallback"
   | "textAlign"
   | "textAlignVertical"
   | "textGrowth"
   | "underline"
   | "strikethrough"
+  | "textCase"
 > {
   const result: ReturnType<typeof mapFigmaTextProps> = {
     content: applyTextCase(buildContent(node), node.textCase),
     fontFamily: node.fontName?.family,
+    fontPostScriptName: node.fontName?.postscript,
     fontSize: node.fontSize,
     fontWeight: parseFontWeight(node.fontName?.style),
     fontStyle: node.fontName?.style?.toLowerCase().includes("italic")
@@ -34,9 +45,17 @@ export function mapFigmaTextProps(
       : undefined,
     letterSpacing: mapLetterSpacing(node),
     lineHeight: mapLineHeight(node),
+    paragraphSpacing: node.paragraphSpacing,
+    listStyle: mapListStyle(node),
+    indent: node.paragraphIndent,
+    hangingIndent: node.hangingIndent ?? node.listSpacing,
+    baselineShift: node.baselineShift,
+    openTypeFeatures: mapOpenTypeFeatures(node),
+    fontFallback: mapFontFallback(node),
     textAlign: mapTextAlign(node.textAlignHorizontal),
     textAlignVertical: mapTextAlignVertical(node.textAlignVertical),
     textGrowth: mapTextGrowth(node.textAutoResize),
+    textCase: mapTextCase(node.textCase),
   };
 
   if (node.textDecoration === "UNDERLINE") result.underline = true;
@@ -68,7 +87,23 @@ function applyTextCase(
     return transform(content);
   }
 
-  return content.map((seg) => ({ ...seg, text: transform(seg.text) }));
+  return content.map((seg) =>
+    seg.textCase ? seg : { ...seg, text: transform(seg.text) },
+  );
+}
+
+function applyTextCaseToString(text: string, textCase?: string): string {
+  if (!textCase || textCase === "ORIGINAL") return text;
+  switch (textCase) {
+    case "UPPER":
+      return text.toUpperCase();
+    case "LOWER":
+      return text.toLowerCase();
+    case "TITLE":
+      return text.replace(/\b\w/g, (c) => c.toUpperCase());
+    default:
+      return text;
+  }
 }
 
 function buildContent(node: FigmaNodeChange): string | StyledTextSegment[] {
@@ -105,7 +140,12 @@ function buildContent(node: FigmaNodeChange): string | StyledTextSegment[] {
   // If all segments have no style overrides, return plain string
   if (
     segments.every(
-      (s) => !s.fontFamily && !s.fontSize && !s.fontWeight && !s.fill,
+      (s) =>
+        !s.fontFamily &&
+        !s.fontSize &&
+        !s.fontWeight &&
+        !s.fill &&
+        !s.fills,
     )
   ) {
     return text;
@@ -127,6 +167,8 @@ function buildSegment(
 
   const segment: StyledTextSegment = { text };
   if (override.fontName?.family) segment.fontFamily = override.fontName.family;
+  if (override.fontName?.postscript)
+    segment.fontPostScriptName = override.fontName.postscript;
   if (override.fontSize) segment.fontSize = override.fontSize;
   const weight = parseFontWeight(override.fontName?.style);
   if (weight) segment.fontWeight = weight;
@@ -135,25 +177,96 @@ function buildSegment(
   }
   if (override.textDecoration === "UNDERLINE") segment.underline = true;
   if (override.textDecoration === "STRIKETHROUGH") segment.strikethrough = true;
+  if (override.textCase) {
+    segment.textCase = mapTextCase(override.textCase);
+    segment.text = applyTextCaseToString(segment.text, override.textCase);
+  }
+  if (override.lineHeight) segment.lineHeight = mapLineHeight(override);
+  if (override.letterSpacing) segment.letterSpacing = mapLetterSpacing(override);
+  if (override.baselineShift !== undefined) {
+    segment.baselineShift = override.baselineShift;
+  }
+  const fallback = mapFontFallback(override);
+  if (fallback) segment.fontFallback = fallback;
+  const openTypeFeatures = mapOpenTypeFeatures(override);
+  if (openTypeFeatures) segment.openTypeFeatures = openTypeFeatures;
 
-  // Text fill color
-  if (override.fillPaints?.[0]?.color) {
-    segment.fill = figmaColorToHex(override.fillPaints[0].color);
+  const segmentFills = mapFigmaFills(override.fillPaints);
+  if (segmentFills) {
+    segment.fills = segmentFills;
+  }
+
+  // Legacy text fill color shortcut for code paths that cannot consume paint stacks.
+  const firstSolidFill = override.fillPaints?.find(
+    (paint) => paint.visible !== false && paint.type === "SOLID" && paint.color,
+  );
+  if (firstSolidFill?.color) {
+    segment.fill = figmaColorToHex(firstSolidFill.color);
   }
 
   return segment;
 }
 
+function mapListStyle(node: FigmaNodeChange): TextNode["listStyle"] {
+  const raw =
+    node.listStyle ?? node.listType ?? (node.hangingList as any)?.type ?? "NONE";
+  switch (raw) {
+    case "ORDERED":
+      return "ordered";
+    case "UNORDERED":
+      return "unordered";
+    case "NONE":
+      return undefined;
+    default:
+      return undefined;
+  }
+}
+
+function mapOpenTypeFeatures(
+  node: FigmaNodeChange,
+): TextNode["openTypeFeatures"] {
+  const features = node.openTypeFeatures ?? node.opentypeFlags;
+  return features && Object.keys(features).length > 0 ? features : undefined;
+}
+
+function mapFontFallback(node: FigmaNodeChange): string[] | undefined {
+  const fallbackNames = node.fontFallbacks ?? node.fallbackFontNames;
+  const families =
+    fallbackNames
+      ?.map((font) => font.family ?? font.postscript)
+      .filter((font): font is string => Boolean(font)) ?? [];
+  return families.length > 0 ? families : undefined;
+}
+
+function mapTextCase(textCase?: string): TextNode["textCase"] {
+  switch (textCase) {
+    case "ORIGINAL":
+      return "original";
+    case "UPPER":
+      return "upper";
+    case "LOWER":
+      return "lower";
+    case "TITLE":
+      return "title";
+    default:
+      return undefined;
+  }
+}
+
 function parseFontWeight(style?: string): number | undefined {
   if (!style) return undefined;
   const lower = style.toLowerCase();
+  const compact = lower.replace(/[\s_-]+/g, "");
   if (lower.includes("thin") || lower.includes("hairline")) return 100;
-  if (lower.includes("extralight") || lower.includes("ultralight")) return 200;
+  if (compact.includes("extralight") || compact.includes("ultralight"))
+    return 200;
   if (lower.includes("light")) return 300;
   if (lower.includes("regular") || lower.includes("normal")) return 400;
   if (lower.includes("medium")) return 500;
-  if (lower.includes("semibold") || lower.includes("demibold")) return 600;
-  if (lower.includes("extrabold") || lower.includes("ultrabold")) return 800;
+  if (compact.includes("semibold") || compact.includes("demibold"))
+    return 600;
+  if (compact.includes("extrabold") || compact.includes("ultrabold"))
+    return 800;
   if (lower.includes("bold")) return 700;
   if (lower.includes("black") || lower.includes("heavy")) return 900;
   return undefined;

@@ -2,7 +2,11 @@
 import type { PenNode } from "@cucumber/pen-types";
 import { parseFigFile } from "./fig-parser.js";
 import { resolveImageBlobs } from "./figma-image-resolver.js";
-import { figmaNodeChangesToPenNodes } from "./figma-node-mapper.js";
+import {
+  collectFigmaStyleDefinitions,
+  figmaNodeChangesToPenNodes,
+  getFigmaPages,
+} from "./figma-node-mapper.js";
 
 /**
  * Quick check: does this HTML string contain Figma clipboard markers?
@@ -154,24 +158,49 @@ export function extractFigmaClipboardData(
 export function figmaClipboardToNodes(
   buffer: ArrayBuffer,
   html?: string,
-): { nodes: PenNode[]; warnings: string[] } {
+): {
+  nodes: PenNode[];
+  warnings: string[];
+  styleDefinitions?: Record<string, unknown>;
+} {
   const decoded = parseFigFile(buffer);
-  // Use 'preserve' layout mode (same as .fig file import) so that:
-  // 1. Auto-layout children are reversed to correct flow order
-  // 2. Image nodes get numeric pixel dimensions instead of sizing strings
+  const pages = getFigmaPages(decoded);
+  const styleDefinitions = collectFigmaStyleDefinitions(decoded.nodeChanges);
+  // Use 'preserve' layout mode (same as .fig file import) so visual geometry
+  // stays absolute and image/text nodes get numeric pixel dimensions.
   const { nodes, warnings, imageBlobs } = figmaNodeChangesToPenNodes(
     decoded,
     "preserve",
   );
 
   // Resolve embedded image blobs to data URLs
+  const unresolvedBefore = countUnresolvedImages(nodes);
+  let resolvedImageCount = 0;
   if (imageBlobs.size > 0 || decoded.imageFiles.size > 0) {
-    resolveImageBlobs(nodes, imageBlobs, decoded.imageFiles);
+    resolvedImageCount = resolveImageBlobs(nodes, imageBlobs, decoded.imageFiles);
   }
 
-  // Handle unresolved image references — clipboard data often lacks image
-  // binary data.  Convert unresolvable image nodes to placeholder rectangles.
-  fixUnresolvedImages(nodes);
+  // Clipboard data often lacks image binary data. Keep unresolved references in
+  // place so the renderer can show a diagnostic missing-image placeholder.
+  const unresolvedAfter = countUnresolvedImages(nodes);
+  if (unresolvedAfter > 0) {
+    warnings.push(
+      `Figma 剪贴板中仍有 ${unresolvedAfter} 个图片引用缺少可解析的二进制内容，已保留诊断占位。`,
+    );
+  }
+
+  console.info("[pen-figma] clipboard.decoded", {
+    nodeChangeCount: decoded.nodeChanges.length,
+    pageCount: pages.length,
+    pageNames: pages.map((page) => page.name),
+    imageFileCount: decoded.imageFiles.size,
+    imageBlobCount: imageBlobs.size,
+    resolvedImageCount,
+    unresolvedImageRefsBefore: unresolvedBefore,
+    unresolvedImageRefsAfter: unresolvedAfter,
+    warningCount: warnings.length,
+    converterWarnings: warnings,
+  });
 
   // Enrich nodes with style hints extracted from the clipboard HTML.
   // Figma clipboard HTML contains styled elements (with inline CSS) that
@@ -184,57 +213,56 @@ export function figmaClipboardToNodes(
     }
   }
 
-  return { nodes, warnings };
+  return { nodes, warnings, styleDefinitions };
 }
 
 /**
- * Walk the node tree and convert image nodes with unresolved __blob:/__hash:
- * references into placeholder rectangles.  Clipboard data often lacks the
- * actual image binary, so leaving these as image nodes with broken src would
- * render as invisible/broken elements.
+ * Walk the node tree and count image nodes/fills with unresolved __blob:/__hash:
+ * references. These are kept intact so the renderer can show a diagnostic
+ * placeholder instead of silently losing the image layer.
  */
-function fixUnresolvedImages(nodes: PenNode[]): void {
-  for (let i = 0; i < nodes.length; i++) {
-    const node = nodes[i];
-    // Convert standalone image nodes with unresolved references to rectangles
+function countUnresolvedImages(nodes: PenNode[]): number {
+  let count = 0;
+  for (const node of nodes) {
+    const record = node as PenNode & {
+      fill?: unknown;
+      fills?: unknown;
+      stroke?: { fill?: unknown };
+      children?: unknown;
+    };
     if (
       node.type === "image" &&
       node.src &&
-      (node.src.startsWith("__blob:") || node.src.startsWith("__hash:"))
+      isUnresolvedImageUrl(node.src)
     ) {
-      const rect: PenNode = {
-        type: "rectangle",
-        id: node.id,
-        name: node.name,
-        x: node.x,
-        y: node.y,
-        width: node.width,
-        height: node.height,
-        cornerRadius: node.cornerRadius,
-        opacity: node.opacity,
-        fill: [{ type: "solid", color: "#E5E7EB" }],
-      };
-      nodes[i] = rect;
+      count += 1;
     }
-    // Fix unresolved image fills on rectangles/ellipses/frames —
-    // __blob: and __hash: are internal references that the image loader
-    // cannot fetch; replace with a placeholder solid fill.
-    if ("fill" in node && Array.isArray(node.fill)) {
-      for (let j = node.fill.length - 1; j >= 0; j--) {
-        const fill = node.fill[j];
-        if (fill.type === "image" && "url" in fill) {
-          const url = (fill as any).url as string;
-          if (url?.startsWith("__blob:") || url?.startsWith("__hash:")) {
-            node.fill[j] = { type: "solid", color: "#E5E7EB" };
-          }
-        }
-      }
-    }
-    // Recurse into children
-    if ("children" in node && Array.isArray(node.children)) {
-      fixUnresolvedImages(node.children);
+    count += countUnresolvedImageFills(record.fill);
+    count += countUnresolvedImageFills(record.fills);
+    count += countUnresolvedImageFills(record.stroke?.fill);
+    if (Array.isArray(record.children)) {
+      count += countUnresolvedImages(record.children);
     }
   }
+  return count;
+}
+
+function countUnresolvedImageFills(fills: unknown): number {
+  if (!Array.isArray(fills)) return 0;
+  let count = 0;
+  for (const fill of fills) {
+    if (fill?.type === "image" && isUnresolvedImageUrl(fill.url)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function isUnresolvedImageUrl(url: unknown): url is string {
+  return (
+    typeof url === "string" &&
+    (url.startsWith("__blob:") || url.startsWith("__hash:"))
+  );
 }
 
 // ---------------------------------------------------------------------------

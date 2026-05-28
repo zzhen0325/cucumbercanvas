@@ -16,6 +16,7 @@ import {
   type ConversionContext,
   commonProps,
   mapCornerRadius,
+  mapCornerSmoothing,
   resolveHeight,
   resolveWidth,
   scaleTreeChildren,
@@ -40,35 +41,31 @@ export function convertFrame(
   const id = ctx.generateId();
   const children = _convertChildren(treeNode, ctx);
 
-  // In preserve mode, only apply auto-layout properties for frames that actually
-  // have stackMode set.  Frames without stackMode use absolute x,y positioning.
-  // For auto-layout frames, children order must be reversed because the tree
-  // builder sorts descending (for z-stacking) but layout needs ascending (flow order).
+  // In preserve mode, Figma child transforms already contain the visual layout.
+  // Do not emit executable auto-layout props, otherwise the renderer computes a
+  // second layout pass and moves layers away from their imported coordinates.
   const hasAutoLayout = figma.stackMode && figma.stackMode !== "NONE";
   const layout =
     ctx.layoutMode === "preserve"
-      ? hasAutoLayout
-        ? mapFigmaLayout(figma)
-        : figma.frameMaskDisabled !== true
-          ? { clipContent: true }
-          : {}
+      ? figma.frameMaskDisabled !== true
+        ? { clipContent: true }
+        : {}
       : mapFigmaLayout(figma);
 
-  // Reverse children order for auto-layout frames in preserve mode:
-  // tree builder sorts descending by position (z-stacking), but auto-layout
-  // needs ascending order (first child = start of layout flow).
   const orderedChildren =
-    hasAutoLayout && ctx.layoutMode === "preserve" && children.length > 1
+    hasAutoLayout && ctx.layoutMode !== "preserve" && children.length > 1
       ? [...children].reverse()
       : children;
 
   return {
     type: "frame",
-    ...commonProps(figma, id),
+    ...commonProps(figma, id, parentStackMode),
     width: resolveWidth(figma, parentStackMode, ctx),
     height: resolveHeight(figma, parentStackMode, ctx),
     ...layout,
     cornerRadius: mapCornerRadius(figma),
+    cornerSmoothing: mapCornerSmoothing(figma),
+    isolated: mapFigmaIsolation(figma),
     fill:
       mapFigmaFills(figma.fillPaints) ?? mapFigmaFills(figma.backgroundPaints),
     stroke: mapFigmaStroke(figma),
@@ -88,7 +85,7 @@ export function convertGroup(
 
   return {
     type: "group",
-    ...commonProps(figma, id),
+    ...commonProps(figma, id, parentStackMode),
     width: resolveWidth(figma, parentStackMode, ctx),
     height: resolveHeight(figma, parentStackMode, ctx),
     children: children.length > 0 ? children : undefined,
@@ -108,32 +105,37 @@ export function convertComponent(
   const hasAutoLayout = figma.stackMode && figma.stackMode !== "NONE";
   const layout =
     ctx.layoutMode === "preserve"
-      ? hasAutoLayout
-        ? mapFigmaLayout(figma)
-        : figma.frameMaskDisabled !== true
-          ? { clipContent: true }
-          : {}
+      ? figma.frameMaskDisabled !== true
+        ? { clipContent: true }
+        : {}
       : mapFigmaLayout(figma);
 
   const orderedChildren =
-    hasAutoLayout && ctx.layoutMode === "preserve" && children.length > 1
+    hasAutoLayout && ctx.layoutMode !== "preserve" && children.length > 1
       ? [...children].reverse()
       : children;
 
   return {
     type: "frame",
-    ...commonProps(figma, id),
+    ...commonProps(figma, id, parentStackMode),
     reusable: true,
     width: resolveWidth(figma, parentStackMode, ctx),
     height: resolveHeight(figma, parentStackMode, ctx),
     ...layout,
     cornerRadius: mapCornerRadius(figma),
+    cornerSmoothing: mapCornerSmoothing(figma),
+    isolated: mapFigmaIsolation(figma),
     fill:
       mapFigmaFills(figma.fillPaints) ?? mapFigmaFills(figma.backgroundPaints),
     stroke: mapFigmaStroke(figma),
     effects: mapFigmaEffects(figma.effects),
     children: orderedChildren.length > 0 ? orderedChildren : undefined,
   };
+}
+
+function mapFigmaIsolation(figma: FigmaNodeChange): boolean | undefined {
+  if (!figma.blendMode) return undefined;
+  return figma.blendMode === "PASS_THROUGH" ? false : true;
 }
 
 export function convertInstance(
@@ -188,7 +190,7 @@ export function convertInstance(
     const id = ctx.generateId();
     return {
       type: "ref",
-      ...commonProps(figma, id),
+      ...commonProps(figma, id, parentStackMode),
       ref: componentPenId,
     };
   }
@@ -224,20 +226,48 @@ function mergeSymbolProps(
     "stackChildPrimaryGrow",
     "stackChildAlignSelf",
     "frameMaskDisabled",
+    "stackPositioning",
   ];
 
   // Visual properties — fills/strokes for the frame itself
   const visualKeys: (keyof FigmaNodeChange)[] = [
     "fillPaints",
+    "backgroundPaints",
     "strokePaints",
     "strokeWeight",
     "strokeAlign",
+    "strokeCap",
+    "strokeJoin",
+    "strokeMiterLimit",
+    "dashPattern",
+    "dashOffset",
+    "borderStrokeWeightsIndependent",
+    "borderTopWeight",
+    "borderRightWeight",
+    "borderBottomWeight",
+    "borderLeftWeight",
     "cornerRadius",
+    "cornerSmoothing",
     "rectangleCornerRadiiIndependent",
     "rectangleTopLeftCornerRadius",
     "rectangleTopRightCornerRadius",
     "rectangleBottomLeftCornerRadius",
     "rectangleBottomRightCornerRadius",
+    "effects",
+    "blendMode",
+    "isMask",
+    "maskType",
+    "shouldBreakMaskChain",
+    "styleIdForFill",
+    "styleIdForStrokeFill",
+    "styleIdForText",
+    "styleIdForEffect",
+    "variableConsumptionMap",
+    "componentKey",
+    "variantProperties",
+    "componentProperties",
+    "componentPropertyDefinitions",
+    "componentPropAssignments",
   ];
 
   for (const key of [...layoutKeys, ...visualKeys]) {
@@ -529,15 +559,9 @@ function applyInstanceOverrides(
         "phase",
         "symbolData",
         "derivedSymbolData",
-        "componentKey",
-        "variableConsumptionMap",
         "parameterConsumptionMap",
         "prototypeInteractions",
-        "styleIdForFill",
-        "styleIdForStrokeFill",
-        "styleIdForText",
         "overrideLevel",
-        "componentPropAssignments",
         "proportionsConstrained",
         "fontVersion",
       ]);

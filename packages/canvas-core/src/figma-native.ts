@@ -1,5 +1,13 @@
 import { figmaClipboardToNodes } from "@cucumber/pen-figma";
-import type { PenNode } from "@cucumber/pen-types";
+import type {
+  BlendMode,
+  PenComponentOverrideRef,
+  PenComponentRef,
+  PenNode,
+  PenNodeStyleRefs,
+  PenStyleDefinition,
+  PenTransformMatrix,
+} from "@cucumber/pen-types";
 import { decompress as zstdDecompress } from "fzstd";
 import { ByteBuffer, compileSchema, decodeBinarySchema } from "kiwi-schema";
 import * as UZIP from "uzip";
@@ -22,6 +30,7 @@ import type {
   CanvasFill,
   CanvasStroke,
   ImageTransform,
+  PaintTransform,
   StyledTextSegment,
 } from "./styles.js";
 import type {
@@ -42,6 +51,7 @@ export interface FigmaNativeParseResult {
   rootNodeIds: string[];
   nodes: (ImportNode | PenNode)[];
   assets: CanvasAsset[];
+  styleDefinitions?: Record<string, PenStyleDefinition>;
   warnings: FigmaNativeWarning[];
 }
 
@@ -156,6 +166,9 @@ export function parseFigmaClipboardNative(
         rootNodeIds: openPencilResult.nodes.map((node) => node.id),
         nodes: openPencilResult.nodes,
         assets: collectImageAssets(openPencilResult.nodes),
+        styleDefinitions: openPencilResult.styleDefinitions as
+          | Record<string, PenStyleDefinition>
+          | undefined,
         warnings: openPencilResult.warnings.map((message) => ({
           code: "partial_fidelity",
           message,
@@ -165,6 +178,9 @@ export function parseFigmaClipboardNative(
   } catch (error) {
     console.warn("[figma-native] pen-figma clipboard decode failed", {
       error,
+      fallbackReason:
+        error instanceof Error ? error.message : "unknown pen-figma error",
+      fallbackStrategy: "legacy-cucumber-native",
     });
   }
 
@@ -175,6 +191,11 @@ export function parseFigmaClipboardNative(
 
   const treeRoots = buildTreeForClipboard(decoded.nodeChanges);
   if (treeRoots.length === 0) {
+    console.info("[figma-native] clipboard legacy decode produced no roots", {
+      nodeChangeCount: decoded.nodeChanges.length,
+      imageFileCount: decoded.imageFiles.size,
+      fallbackStrategy: "none",
+    });
     return null;
   }
 
@@ -190,6 +211,11 @@ export function parseFigmaClipboardNative(
     imageAssetCache: new Map<string, { asset: CanvasAsset; url: string }>(),
     symbolTree,
   };
+  const styleDefinitions = collectFigmaNativeStyleDefinitions(
+    decoded.nodeChanges,
+    decoded,
+    state,
+  );
 
   const rootNodeIds: string[] = [];
   for (const root of treeRoots) {
@@ -200,13 +226,34 @@ export function parseFigmaClipboardNative(
   }
 
   if (rootNodeIds.length === 0) {
+    console.info(
+      "[figma-native] clipboard legacy conversion produced no nodes",
+      {
+        nodeChangeCount: decoded.nodeChanges.length,
+        rootCount: treeRoots.length,
+        imageFileCount: decoded.imageFiles.size,
+        warningCount: warnings.length,
+        fallbackStrategy: "none",
+      },
+    );
     return null;
   }
+
+  console.info("[figma-native] clipboard decoded with legacy converter", {
+    nodeChangeCount: decoded.nodeChanges.length,
+    rootCount: treeRoots.length,
+    imageFileCount: decoded.imageFiles.size,
+    convertedNodeCount: state.nodes.length,
+    assetCount: state.assets.length,
+    warningCount: warnings.length,
+    fallbackStrategy: "legacy-cucumber-native",
+  });
 
   return {
     rootNodeIds,
     nodes: state.nodes,
     assets: state.assets,
+    styleDefinitions,
     warnings: dedupeWarnings(warnings),
   };
 }
@@ -547,6 +594,79 @@ function resolveStyleReferences(nodeChanges: FigmaNodeChange[]): void {
   }
 }
 
+function collectFigmaNativeStyleDefinitions(
+  nodeChanges: FigmaNodeChange[],
+  decoded: FigmaDecodedFile,
+  state: FigmaConvertState,
+): Record<string, PenStyleDefinition> | undefined {
+  const definitions: Record<string, PenStyleDefinition> = {};
+
+  for (const nodeChange of nodeChanges) {
+    if (!nodeChange.styleType || !nodeChange.guid) continue;
+    const id = guidToString(nodeChange.guid);
+    const definition: PenStyleDefinition = {
+      source: "figma",
+      id,
+      name: nodeChange.name,
+      type: mapFigmaNativeStyleDefinitionType(nodeChange.styleType),
+      fill: getPaintFills(nodeChange.fillPaints, decoded, state),
+      strokeFill: getPaintFills(nodeChange.strokePaints, decoded, state),
+      effects: convertFigmaEffects(nodeChange.effects),
+      variableRefs: getFigmaVariableRefs(nodeChange),
+    };
+
+    if (nodeChange.styleType === "TEXT") {
+      definition.text = removeUndefinedStyleFields({
+        fontFamily: nodeChange.fontName?.family,
+        fontPostScriptName: nodeChange.fontName?.postscript,
+        fontSize: nodeChange.fontSize,
+        fontWeight: nodeChange.fontName
+          ? extractFontWeight(nodeChange.fontName)
+          : undefined,
+        fontStyle: nodeChange.fontName?.style?.toLowerCase().includes("italic")
+          ? ("italic" as const)
+          : undefined,
+        letterSpacing: mapFigmaLetterSpacing(nodeChange),
+        lineHeight: mapFigmaLineHeight(nodeChange),
+        paragraphSpacing: nodeChange.paragraphSpacing,
+        listStyle: mapFigmaListStyle(nodeChange),
+        indent: nodeChange.paragraphIndent,
+        hangingIndent: nodeChange.hangingIndent,
+        baselineShift: nodeChange.baselineShift,
+        openTypeFeatures: getFigmaOpenTypeFeatures(nodeChange),
+        fontFallback: getFigmaFontFallback(nodeChange),
+        textAlign: mapTextAlign(nodeChange.textAlignHorizontal),
+        textAlignVertical: mapTextAlignVertical(nodeChange.textAlignVertical),
+        underline: nodeChange.textDecoration === "UNDERLINE" ? true : undefined,
+        strikethrough:
+          nodeChange.textDecoration === "STRIKETHROUGH" ? true : undefined,
+        textCase: mapFigmaTextCase(nodeChange.textCase),
+        textGrowth: mapTextGrowth(nodeChange.textAutoResize),
+      });
+    }
+
+    definitions[id] = removeUndefinedStyleFields(definition);
+  }
+
+  return Object.keys(definitions).length > 0 ? definitions : undefined;
+}
+
+function mapFigmaNativeStyleDefinitionType(
+  styleType: NonNullable<FigmaNodeChange["styleType"]>,
+): PenStyleDefinition["type"] {
+  if (styleType === "TEXT") return "text";
+  if (styleType === "EFFECT") return "effect";
+  return "fill";
+}
+
+function removeUndefinedStyleFields<T extends object>(value: T): T {
+  const cleaned: Record<string, unknown> = {};
+  for (const [key, nested] of Object.entries(value)) {
+    if (nested !== undefined) cleaned[key] = nested;
+  }
+  return cleaned as T;
+}
+
 function convertFigmaTreeNode(
   treeNode: FigmaTreeNode,
   parentId: string | null,
@@ -694,12 +814,14 @@ function convertFigmaGroupLike(
     parentId,
     title: figma.name ?? figma.type ?? "Imported group",
     bounds,
+    ...getFigmaLayerProps(figma),
     childrenOrder: childIds,
     fills: frameFills,
     stroke: frameStroke,
     cornerRadius: nodeType === "frame" ? figma.cornerRadius : undefined,
     locked: figma.locked,
     visible: figma.visible,
+    mask: getFigmaMask(figma),
     effects: convertFigmaEffects(figma.effects),
     ...layoutProps,
     meta: createFigmaMeta(figma, { parentStackMode }),
@@ -745,6 +867,168 @@ function getFigmaLayoutProps(
     props.clipContent = true;
   }
   return props;
+}
+
+function getFigmaMask(figma: FigmaNodeChange): ImportNode["mask"] {
+  if (!figma.isMask && !figma.shouldBreakMaskChain) return undefined;
+  return {
+    ...(figma.isMask ? { enabled: true } : {}),
+    type: figma.maskType === "VECTOR" ? "vector" : "alpha",
+    ...(figma.shouldBreakMaskChain ? { shouldBreakMaskChain: true } : {}),
+  };
+}
+
+function getFigmaStyleRefs(
+  figma: FigmaNodeChange,
+): PenNodeStyleRefs | undefined {
+  const refs: PenNodeStyleRefs = {};
+  const fill = getFigmaStyleRef(figma.styleIdForFill);
+  const stroke = getFigmaStyleRef(figma.styleIdForStrokeFill);
+  const text = getFigmaStyleRef(figma.styleIdForText);
+  const effect = getFigmaStyleRef(figma.styleIdForEffect);
+  if (fill) refs.fill = fill;
+  if (stroke) refs.stroke = stroke;
+  if (text) refs.text = text;
+  if (effect) refs.effect = effect;
+  return Object.keys(refs).length > 0 ? refs : undefined;
+}
+
+function getFigmaStyleRef(
+  ref: { guid?: FigmaGUID } | undefined,
+): PenNodeStyleRefs[keyof PenNodeStyleRefs] | undefined {
+  return ref?.guid
+    ? { source: "figma", id: guidToString(ref.guid) }
+    : undefined;
+}
+
+export function mapFigmaNativeComponentRef(
+  figma: FigmaNodeChange,
+): PenComponentRef | undefined {
+  if (figma.type === "SYMBOL") {
+    const componentProperties =
+      figma.componentProperties ?? figma.componentPropertyDefinitions;
+    return {
+      source: "figma",
+      type: figma.variantProperties ? "variant" : "component",
+      ...(figma.guid ? { id: guidToString(figma.guid) } : {}),
+      ...(figma.componentKey ? { key: figma.componentKey } : {}),
+      ...(figma.variantProperties
+        ? { variantProperties: figma.variantProperties }
+        : {}),
+      ...(componentProperties ? { componentProperties } : {}),
+    };
+  }
+
+  if (
+    figma.type === "INSTANCE" ||
+    figma.symbolData ||
+    figma.overriddenSymbolID
+  ) {
+    const componentGuid =
+      figma.overriddenSymbolID ?? figma.symbolData?.symbolID;
+    const overrides = figma.symbolData?.symbolOverrides ?? [];
+    const overridePaths = getFigmaOverridePaths(overrides);
+    const overrideRefs = getFigmaOverrideRefs(overrides);
+    return {
+      source: "figma",
+      type: "instance",
+      ...(figma.guid ? { id: guidToString(figma.guid) } : {}),
+      ...(figma.componentKey ? { key: figma.componentKey } : {}),
+      ...(componentGuid ? { componentId: guidToString(componentGuid) } : {}),
+      ...(figma.variantProperties
+        ? { variantProperties: figma.variantProperties }
+        : {}),
+      ...(figma.componentProperties
+        ? { componentProperties: figma.componentProperties }
+        : {}),
+      ...(figma.componentPropAssignments
+        ? { propertyAssignments: figma.componentPropAssignments }
+        : {}),
+      ...(overrides.length > 0 ? { overrideCount: overrides.length } : {}),
+      ...(overridePaths.length > 0 ? { overridePaths } : {}),
+      ...(overrideRefs.length > 0 ? { overrides: overrideRefs } : {}),
+    };
+  }
+
+  return undefined;
+}
+
+function getFigmaOverridePaths(
+  overrides: Array<{ guidPath?: { guids?: FigmaGUID[] } }>,
+): string[] {
+  return overrides
+    .map((override) => override.guidPath?.guids?.map(guidToString).join("/"))
+    .filter((path): path is string => Boolean(path));
+}
+
+function getFigmaOverrideRefs(
+  overrides: FigmaNodeChange[],
+): PenComponentOverrideRef[] {
+  return overrides
+    .map((override) => {
+      const pathIds = override.guidPath?.guids?.map(guidToString) ?? [];
+      const values = summarizeFigmaOverrideValues(override);
+      const properties = Object.keys(values);
+      if (pathIds.length === 0 && properties.length === 0) return undefined;
+
+      return {
+        source: "figma",
+        ...(pathIds.length > 0 ? { path: pathIds.join("/") } : {}),
+        ...(pathIds.length > 0 ? { pathIds } : {}),
+        ...(pathIds.length > 0
+          ? { targetId: pathIds[pathIds.length - 1] }
+          : {}),
+        properties,
+        ...(properties.length > 0 ? { values } : {}),
+      };
+    })
+    .filter((ref): ref is PenComponentOverrideRef => Boolean(ref));
+}
+
+function summarizeFigmaOverrideValues(
+  override: FigmaNodeChange,
+): Record<string, unknown> {
+  const values: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(override) as Array<
+    [keyof FigmaNodeChange | string, unknown]
+  >) {
+    if (key === "guidPath" || key === "guid" || key === "parentIndex") continue;
+    if (value === undefined) continue;
+    values[key] = sanitizeFigmaOverrideValue(value);
+  }
+  return values;
+}
+
+function sanitizeFigmaOverrideValue(value: unknown): unknown {
+  if (value === null) return null;
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(sanitizeFigmaOverrideValue);
+  }
+  if (typeof value === "object") {
+    const sanitized: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value)) {
+      if (nested !== undefined)
+        sanitized[key] = sanitizeFigmaOverrideValue(nested);
+    }
+    return sanitized;
+  }
+  return String(value);
+}
+
+function getFigmaVariableRefs(
+  figma: FigmaNodeChange,
+): Record<string, unknown> | undefined {
+  return figma.variableConsumptionMap &&
+    Object.keys(figma.variableConsumptionMap).length > 0
+    ? figma.variableConsumptionMap
+    : undefined;
 }
 
 function convertFigmaInstance(
@@ -815,6 +1099,7 @@ function convertFigmaRectangle(
     parentId,
     title: figma.name ?? "Imported rectangle",
     bounds: getNodeBounds(figma),
+    ...getFigmaLayerProps(figma),
     fills: getPaintFills(
       figma.fillPaints ?? figma.backgroundPaints,
       decoded,
@@ -824,6 +1109,7 @@ function convertFigmaRectangle(
     cornerRadius: figma.cornerRadius,
     locked: figma.locked,
     visible: figma.visible,
+    mask: getFigmaMask(figma),
     effects: convertFigmaEffects(figma.effects),
     meta: createFigmaMeta(figma, { parentStackMode }),
   });
@@ -838,20 +1124,86 @@ function convertFigmaEllipse(
   parentStackMode?: FigmaNodeChange["stackMode"],
 ): string {
   const nodeId = createNodeId("ellipse");
+  const arcProps = mapFigmaNativeArcData(figma.arcData);
+  const layerProps = getFigmaLayerProps(figma);
+  if (
+    arcProps.startAngle !== undefined ||
+    arcProps.sweepAngle !== undefined ||
+    arcProps.innerRadius !== undefined
+  ) {
+    const start = arcProps.startAngle ?? 0;
+    const sweep = arcProps.sweepAngle ?? 360;
+    if (layerProps.flipX) {
+      arcProps.startAngle = normalizeAngle(180 - start - sweep);
+      arcProps.sweepAngle = sweep;
+      layerProps.flipX = undefined;
+    }
+    if (layerProps.flipY) {
+      arcProps.startAngle = normalizeAngle(360 - start - sweep);
+      arcProps.sweepAngle = sweep;
+      layerProps.flipY = undefined;
+    }
+  }
   state.nodes.push({
     id: nodeId,
     type: "ellipse",
     parentId,
     title: figma.name ?? "Imported ellipse",
     bounds: getNodeBounds(figma),
+    ...layerProps,
+    ...arcProps,
     fills: getPaintFills(figma.fillPaints, decoded, state),
     stroke: getPaintStroke(figma, decoded, state),
     locked: figma.locked,
     visible: figma.visible,
+    mask: getFigmaMask(figma),
     effects: convertFigmaEffects(figma.effects),
     meta: createFigmaMeta(figma, { parentStackMode }),
   });
   return nodeId;
+}
+
+export function mapFigmaNativeArcData(arc: FigmaNodeChange["arcData"]): {
+  startAngle?: number;
+  sweepAngle?: number;
+  innerRadius?: number;
+} {
+  if (!arc) return {};
+  const startRad = arc.startingAngle ?? 0;
+  const endRad = arc.endingAngle ?? Math.PI * 2;
+  const inner = arc.innerRadius ?? 0;
+
+  let actualStartRad: number;
+  let sweepRad: number;
+  if (endRad >= startRad) {
+    actualStartRad = startRad;
+    sweepRad = endRad - startRad;
+  } else {
+    actualStartRad = endRad;
+    sweepRad = startRad - endRad;
+  }
+
+  const startDeg = (actualStartRad * 180) / Math.PI;
+  const sweepDeg = (sweepRad * 180) / Math.PI;
+  const result: {
+    startAngle?: number;
+    sweepAngle?: number;
+    innerRadius?: number;
+  } = {};
+  if (Math.abs(startDeg) > 0.1) {
+    result.startAngle = Math.round(startDeg * 100) / 100;
+  }
+  if (Math.abs(sweepDeg - 360) > 0.1) {
+    result.sweepAngle = Math.round(sweepDeg * 100) / 100;
+  }
+  if (inner > 0.001) {
+    result.innerRadius = Math.round(inner * 1000) / 1000;
+  }
+  return result;
+}
+
+function normalizeAngle(angle: number): number {
+  return ((angle % 360) + 360) % 360;
 }
 
 function convertFigmaLine(
@@ -869,6 +1221,7 @@ function convertFigmaLine(
     parentId,
     title: figma.name ?? "Imported line",
     bounds,
+    ...getFigmaLayerProps(figma),
     stroke: getPaintStroke(
       {
         ...figma,
@@ -881,6 +1234,7 @@ function convertFigmaLine(
     y2: bounds.y,
     locked: figma.locked,
     visible: figma.visible,
+    mask: getFigmaMask(figma),
     effects: convertFigmaEffects(figma.effects),
     meta: createFigmaMeta(figma, { parentStackMode }),
   });
@@ -895,7 +1249,7 @@ function convertFigmaText(
   parentStackMode?: FigmaNodeChange["stackMode"],
 ): string {
   const nodeId = createNodeId("text");
-  const text = buildFigmaTextContent(figma);
+  const text = buildFigmaTextContent(figma, decoded, state);
   const title = getPlainTextContent(text).trim() || figma.name || "Text";
   state.nodes.push({
     id: nodeId,
@@ -905,12 +1259,20 @@ function convertFigmaText(
     text,
     fontSize: Math.max(12, figma.fontSize ?? 16),
     fontFamily: figma.fontName?.family,
+    fontPostScriptName: figma.fontName?.postscript,
     fontWeight: figma.fontName ? extractFontWeight(figma.fontName) : undefined,
     fontStyle: figma.fontName?.style?.toLowerCase().includes("italic")
       ? "italic"
       : undefined,
     letterSpacing: mapFigmaLetterSpacing(figma),
     lineHeight: mapFigmaLineHeight(figma),
+    paragraphSpacing: figma.paragraphSpacing,
+    listStyle: mapFigmaListStyle(figma),
+    indent: figma.paragraphIndent,
+    hangingIndent: figma.hangingIndent ?? figma.listSpacing,
+    baselineShift: figma.baselineShift,
+    openTypeFeatures: getFigmaOpenTypeFeatures(figma),
+    fontFallback: getFigmaFontFallback(figma),
     fills: getPaintFills(figma.fillPaints, decoded, state) ?? [
       { type: "solid", color: "#111827" },
     ],
@@ -918,10 +1280,13 @@ function convertFigmaText(
     textAlignVertical: mapTextAlignVertical(figma.textAlignVertical),
     underline: figma.textDecoration === "UNDERLINE" ? true : undefined,
     strikethrough: figma.textDecoration === "STRIKETHROUGH" ? true : undefined,
+    textCase: mapFigmaTextCase(figma.textCase),
     textGrowth: mapTextGrowth(figma.textAutoResize),
     bounds: getNodeBounds(figma),
+    ...getFigmaLayerProps(figma),
     locked: figma.locked,
     visible: figma.visible,
+    mask: getFigmaMask(figma),
     effects: convertFigmaEffects(figma.effects),
     meta: createFigmaMeta(figma, { parentStackMode }),
   });
@@ -950,14 +1315,17 @@ function convertFigmaVector(
       parentId,
       title: figma.name ?? "Imported vector fallback",
       bounds: getNodeBounds(figma),
+      ...getFigmaLayerProps(figma),
       fills: getPaintFills(figma.fillPaints, decoded, state),
       stroke: getPaintStroke(figma, decoded, state),
       locked: figma.locked,
       visible: figma.visible,
+      mask: getFigmaMask(figma),
       effects: convertFigmaEffects(figma.effects),
       meta: createFigmaMeta(figma, {
         degradationHints: ["partial_fidelity"],
         parentStackMode,
+        vectorFallback: true,
       }),
     });
     return pathId;
@@ -969,15 +1337,32 @@ function convertFigmaVector(
     parentId,
     title: figma.name ?? "Imported vector",
     d: path,
+    fillRule: mapFigmaNativeVectorFillRule(figma),
     bounds: normalizePathBounds(figma, path),
+    ...getFigmaLayerProps(figma),
     fills: getPaintFills(figma.fillPaints, decoded, state),
     stroke: getPaintStroke(figma, decoded, state),
     locked: figma.locked,
     visible: figma.visible,
+    mask: getFigmaMask(figma),
     effects: convertFigmaEffects(figma.effects),
     meta: createFigmaMeta(figma, { parentStackMode }),
   });
   return pathId;
+}
+
+export function mapFigmaNativeVectorFillRule(
+  figma: Pick<FigmaNodeChange, "fillGeometry" | "strokeGeometry">,
+): "nonzero" | "evenodd" | undefined {
+  const geometries = figma.fillGeometry?.length
+    ? figma.fillGeometry
+    : figma.strokeGeometry;
+  const windingRules = geometries
+    ?.map((path) => path.windingRule)
+    .filter(Boolean);
+  if (windingRules?.includes("ODD")) return "evenodd";
+  if (windingRules?.includes("NONZERO")) return "nonzero";
+  return undefined;
 }
 
 export function mergeSymbolProps(
@@ -1008,14 +1393,32 @@ export function mergeSymbolProps(
     "strokeCap",
     "strokeJoin",
     "dashPattern",
+    "dashOffset",
+    "strokeMiterLimit",
     "borderStrokeWeightsIndependent",
     "borderTopWeight",
     "borderRightWeight",
     "borderBottomWeight",
     "borderLeftWeight",
     "cornerRadius",
+    "cornerSmoothing",
     "effects",
+    "blendMode",
+    "arcData",
     "frameMaskDisabled",
+    "isMask",
+    "maskType",
+    "shouldBreakMaskChain",
+    "styleIdForFill",
+    "styleIdForStrokeFill",
+    "styleIdForText",
+    "styleIdForEffect",
+    "variableConsumptionMap",
+    "componentKey",
+    "variantProperties",
+    "componentProperties",
+    "componentPropertyDefinitions",
+    "componentPropAssignments",
     "textAlignVertical",
     "textDecoration",
     "textCase",
@@ -1473,10 +1876,6 @@ function applyOverrideToNode(
     "phase",
     "symbolData",
     "derivedSymbolData",
-    "styleIdForFill",
-    "styleIdForStrokeFill",
-    "styleIdForText",
-    "styleIdForEffect",
   ]);
 
   for (const [key, value] of Object.entries(override) as Array<
@@ -1569,8 +1968,8 @@ function pushFigmaWarnings(
 
   if (figma.type === "SYMBOL" || figma.type === "INSTANCE") {
     warnings.push({
-      code: "component_metadata_dropped",
-      message: `Figma 组件/实例 "${figma.name ?? "Unnamed"}" 当前仅保留可编辑结构，不保留引用语义。`,
+      code: "component_editability_limited",
+      message: `Figma 组件/实例 "${figma.name ?? "Unnamed"}" 已保留引用/override 元数据，但当前仍以内联可编辑节点呈现，variant 重连能力有限。`,
       originNodeId,
       originNodeType,
     });
@@ -1594,9 +1993,13 @@ function createFigmaMeta(
   options?: {
     degradationHints?: string[];
     parentStackMode?: FigmaNodeChange["stackMode"];
+    vectorFallback?: boolean;
   },
 ): CanvasImportedNodeMeta {
   const autoLayout = getFigmaAutoLayoutMeta(figma, options?.parentStackMode);
+  const styleRefs = getFigmaStyleRefs(figma);
+  const componentRef = mapFigmaNativeComponentRef(figma);
+  const variableRefs = getFigmaVariableRefs(figma);
   return {
     source: "figma-paste",
     originNodeType: "figma-native",
@@ -1604,6 +2007,44 @@ function createFigmaMeta(
     figmaNodeType: figma.type,
     degradationHints: options?.degradationHints,
     autoLayout,
+    ...(options?.vectorFallback
+      ? { vectorFallback: getFigmaVectorFallbackMeta(figma) }
+      : {}),
+    ...(styleRefs ? { figmaStyleRefs: styleRefs } : {}),
+    ...(componentRef ? { figmaComponentRef: componentRef } : {}),
+    ...(variableRefs ? { figmaVariableRefs: variableRefs } : {}),
+  };
+}
+
+function getFigmaVectorFallbackMeta(
+  figma: FigmaNodeChange,
+): Record<string, unknown> {
+  const booleanOperation =
+    (figma as Record<string, unknown>).booleanOperation ??
+    (figma as Record<string, unknown>).booleanOperationType ??
+    (figma as Record<string, unknown>).operation;
+  const fillWindingRules = figma.fillGeometry
+    ?.map((path) => path.windingRule)
+    .filter(Boolean);
+  const strokeWindingRules = figma.strokeGeometry
+    ?.map((path) => path.windingRule)
+    .filter(Boolean);
+
+  return {
+    source: "figma",
+    nodeType: figma.type,
+    fallbackReason: "path_not_decodable",
+    ...(booleanOperation ? { booleanOperation } : {}),
+    ...(figma.vectorData?.normalizedSize
+      ? { normalizedSize: figma.vectorData.normalizedSize }
+      : {}),
+    ...(figma.vectorData?.vectorNetworkBlob !== undefined
+      ? { vectorNetworkBlob: figma.vectorData.vectorNetworkBlob }
+      : {}),
+    fillGeometryCount: figma.fillGeometry?.length ?? 0,
+    strokeGeometryCount: figma.strokeGeometry?.length ?? 0,
+    ...(fillWindingRules?.length ? { fillWindingRules } : {}),
+    ...(strokeWindingRules?.length ? { strokeWindingRules } : {}),
   };
 }
 
@@ -1673,6 +2114,122 @@ function getNodeBounds(figma: FigmaNodeChange): {
     : undefined;
 
   return rotation ? { x, y, width, height, rotation } : { x, y, width, height };
+}
+
+function getFigmaLayerProps(
+  figma: FigmaNodeChange,
+): Pick<
+  ImportNode,
+  | "transform"
+  | "scaleX"
+  | "scaleY"
+  | "skewX"
+  | "skewY"
+  | "blendMode"
+  | "flipX"
+  | "flipY"
+> {
+  return {
+    transform: normalizeFigmaTransform(figma.transform),
+    ...decomposeTransform(figma.transform),
+    ...extractFlip(figma.transform),
+    blendMode: mapFigmaBlendMode(figma.blendMode),
+  };
+}
+
+function normalizeFigmaTransform(
+  transform?: FigmaMatrix,
+): PenTransformMatrix | undefined {
+  if (!transform) return undefined;
+  return {
+    m00: roundTransformNumber(transform.m00),
+    m01: roundTransformNumber(transform.m01),
+    m02: roundTransformNumber(transform.m02),
+    m10: roundTransformNumber(transform.m10),
+    m11: roundTransformNumber(transform.m11),
+    m12: roundTransformNumber(transform.m12),
+  };
+}
+
+function decomposeTransform(
+  transform?: FigmaMatrix,
+): Pick<ImportNode, "scaleX" | "scaleY" | "skewX" | "skewY"> {
+  if (!transform) return {};
+  const scaleX = Math.hypot(transform.m00, transform.m10);
+  const scaleY = Math.hypot(transform.m01, transform.m11);
+  const dot = transform.m00 * transform.m01 + transform.m10 * transform.m11;
+  const skewX =
+    scaleX > 0.0001 ? Math.atan2(dot, scaleX * scaleX) * (180 / Math.PI) : 0;
+  const skewY =
+    scaleY > 0.0001 ? Math.atan2(dot, scaleY * scaleY) * (180 / Math.PI) : 0;
+  return {
+    ...(Math.abs(scaleX - 1) > 0.001
+      ? { scaleX: roundTransformNumber(scaleX) }
+      : {}),
+    ...(Math.abs(scaleY - 1) > 0.001
+      ? { scaleY: roundTransformNumber(scaleY) }
+      : {}),
+    ...(Math.abs(skewX) > 0.001 ? { skewX: roundTransformNumber(skewX) } : {}),
+    ...(Math.abs(skewY) > 0.001 ? { skewY: roundTransformNumber(skewY) } : {}),
+  };
+}
+
+function extractFlip(
+  transform?: FigmaMatrix,
+): Pick<ImportNode, "flipX" | "flipY"> {
+  if (!transform) return {};
+  const det = transform.m00 * transform.m11 - transform.m01 * transform.m10;
+  if (det >= -0.001) return {};
+  return transform.m00 < 0 ? { flipX: true } : { flipY: true };
+}
+
+function mapFigmaBlendMode(mode?: string): BlendMode | undefined {
+  switch (mode) {
+    case "PASS_THROUGH":
+      return "pass_through";
+    case "NORMAL":
+      return "normal";
+    case "DARKEN":
+      return "darken";
+    case "MULTIPLY":
+      return "multiply";
+    case "LINEAR_BURN":
+      return "linear_burn";
+    case "COLOR_BURN":
+      return "color_burn";
+    case "LIGHTEN":
+      return "lighten";
+    case "SCREEN":
+      return "screen";
+    case "LINEAR_DODGE":
+      return "linear_dodge";
+    case "COLOR_DODGE":
+      return "color_dodge";
+    case "OVERLAY":
+      return "overlay";
+    case "SOFT_LIGHT":
+      return "soft_light";
+    case "HARD_LIGHT":
+      return "hard_light";
+    case "DIFFERENCE":
+      return "difference";
+    case "EXCLUSION":
+      return "exclusion";
+    case "HUE":
+      return "hue";
+    case "SATURATION":
+      return "saturation";
+    case "COLOR":
+      return "color";
+    case "LUMINOSITY":
+      return "luminosity";
+    default:
+      return undefined;
+  }
+}
+
+function roundTransformNumber(value: number): number {
+  return Math.round(value * 1000000) / 1000000;
 }
 
 function normalizePathBounds(figma: FigmaNodeChange, path: string) {
@@ -1843,7 +2400,9 @@ function hasComplexPaint(paints?: FigmaPaint[]): boolean {
         paint.type !== "SOLID" &&
         paint.type !== "IMAGE" &&
         paint.type !== "GRADIENT_LINEAR" &&
-        paint.type !== "GRADIENT_RADIAL",
+        paint.type !== "GRADIENT_RADIAL" &&
+        paint.type !== "GRADIENT_ANGULAR" &&
+        paint.type !== "GRADIENT_DIAMOND",
     ),
   );
 }
@@ -1856,41 +2415,87 @@ function getPaintFills(
   if (!paints || paints.length === 0) return undefined;
   const result: CanvasFill[] = [];
   for (const paint of paints) {
-    if (paint.visible === false) continue;
     if (paint.type === "SOLID" && paint.color) {
       result.push({
         type: "solid",
         color: figmaColorToHex(paint.color),
         opacity: paint.opacity,
+        ...paintLayerProps(paint),
       });
     } else if (paint.type === "GRADIENT_LINEAR" && paint.stops) {
+      const transform = normalizePaintTransform(paint.transform);
+      const line = paint.transform
+        ? linearGradientFromTransform(paint.transform)
+        : undefined;
       result.push({
         type: "linear_gradient",
-        angle: paint.transform
-          ? gradientAngleFromTransform(paint.transform)
-          : undefined,
+        angle: line?.angle,
+        x1: line?.x1,
+        y1: line?.y1,
+        x2: line?.x2,
+        y2: line?.y2,
+        transform,
         stops: paint.stops.map((s) => ({
           offset: s.position ?? 0,
           color: figmaColorToHex(s.color),
         })),
         opacity: paint.opacity,
+        ...paintLayerProps(paint),
       });
-    } else if (
-      (paint.type === "GRADIENT_RADIAL" ||
-        paint.type === "GRADIENT_ANGULAR" ||
-        paint.type === "GRADIENT_DIAMOND") &&
-      paint.stops
-    ) {
+    } else if (paint.type === "GRADIENT_RADIAL" && paint.stops) {
+      const transform = normalizePaintTransform(paint.transform);
+      const radial = paint.transform
+        ? radialGradientFromTransform(paint.transform)
+        : undefined;
       result.push({
         type: "radial_gradient",
-        cx: 0.5,
-        cy: 0.5,
-        radius: 0.5,
+        cx: radial?.cx ?? 0.5,
+        cy: radial?.cy ?? 0.5,
+        radius: radial?.radius ?? 0.5,
+        transform,
         stops: paint.stops.map((s) => ({
           offset: s.position ?? 0,
           color: figmaColorToHex(s.color),
         })),
         opacity: paint.opacity,
+        ...paintLayerProps(paint),
+      });
+    } else if (paint.type === "GRADIENT_ANGULAR" && paint.stops) {
+      const transform = normalizePaintTransform(paint.transform);
+      const angular = paint.transform
+        ? angularGradientFromTransform(paint.transform)
+        : undefined;
+      result.push({
+        type: "angular_gradient",
+        cx: angular?.cx ?? 0.5,
+        cy: angular?.cy ?? 0.5,
+        angle: angular?.angle,
+        transform,
+        stops: paint.stops.map((s) => ({
+          offset: s.position ?? 0,
+          color: figmaColorToHex(s.color),
+        })),
+        opacity: paint.opacity,
+        ...paintLayerProps(paint),
+      });
+    } else if (paint.type === "GRADIENT_DIAMOND" && paint.stops) {
+      const transform = normalizePaintTransform(paint.transform);
+      const diamond = paint.transform
+        ? diamondGradientFromTransform(paint.transform)
+        : undefined;
+      result.push({
+        type: "diamond_gradient",
+        cx: diamond?.cx ?? 0.5,
+        cy: diamond?.cy ?? 0.5,
+        radius: diamond?.radius ?? 0.5,
+        angle: diamond?.angle,
+        transform,
+        stops: paint.stops.map((s) => ({
+          offset: s.position ?? 0,
+          color: figmaColorToHex(s.color),
+        })),
+        opacity: paint.opacity,
+        ...paintLayerProps(paint),
       });
     } else if (paint.type === "IMAGE") {
       const imageFill = getImagePaintFill(paint, decoded, state);
@@ -1902,16 +2507,26 @@ function getPaintFills(
   return result.length > 0 ? result : undefined;
 }
 
+export function mapFigmaNativePaints(
+  paints?: FigmaPaint[],
+): CanvasFill[] | undefined {
+  return getPaintFills(paints);
+}
+
+export function mapFigmaNativeStroke(
+  figma: FigmaNodeChange,
+): CanvasStroke | undefined {
+  return getPaintStroke(figma);
+}
+
 function getPaintStroke(
   figma: FigmaNodeChange,
   decoded?: FigmaDecodedFile,
   state?: FigmaConvertState,
 ): CanvasStroke | undefined {
-  const visibleStrokes = (figma.strokePaints ?? []).filter(
-    (paint) => paint.visible !== false,
-  );
-  if (visibleStrokes.length === 0) return undefined;
-  const fill = getPaintFills(visibleStrokes, decoded, state);
+  if (!figma.strokePaints || figma.strokePaints.length === 0) return undefined;
+  const fill = getPaintFills(figma.strokePaints, decoded, state);
+  if (!fill || fill.length === 0) return undefined;
   const thickness = figma.borderStrokeWeightsIndependent
     ? ([
         figma.borderTopWeight ?? 0,
@@ -1926,13 +2541,91 @@ function getPaintStroke(
     cap: mapStrokeCap(figma.strokeCap),
     join: mapStrokeJoin(figma.strokeJoin),
     dashPattern: figma.dashPattern?.length ? figma.dashPattern : undefined,
+    dashOffset: figma.dashOffset,
+    miterLimit: figma.strokeMiterLimit,
     fill,
   };
 }
 
 function gradientAngleFromTransform(transform: FigmaMatrix): number {
-  const mathAngle = Math.atan2(transform.m10, transform.m00) * (180 / Math.PI);
+  return gradientAngleFromVector(transform.m00, transform.m10);
+}
+
+function gradientAngleFromVector(x: number, y: number): number {
+  const mathAngle = Math.atan2(y, x) * (180 / Math.PI);
   return Math.round(90 - mathAngle);
+}
+
+function applyGradientTransform(
+  transform: FigmaMatrix,
+  x: number,
+  y: number,
+): { x: number; y: number } {
+  return {
+    x: transform.m00 * x + transform.m01 * y + transform.m02,
+    y: transform.m10 * x + transform.m11 * y + transform.m12,
+  };
+}
+
+function linearGradientFromTransform(transform: FigmaMatrix): {
+  angle: number;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+} {
+  const start = applyGradientTransform(transform, 0, 0.5);
+  const end = applyGradientTransform(transform, 1, 0.5);
+  return {
+    angle: gradientAngleFromVector(end.x - start.x, end.y - start.y),
+    x1: start.x,
+    y1: start.y,
+    x2: end.x,
+    y2: end.y,
+  };
+}
+
+function radialGradientFromTransform(transform: FigmaMatrix): {
+  cx: number;
+  cy: number;
+  radius: number;
+} {
+  const center = applyGradientTransform(transform, 0.5, 0.5);
+  const edgeX = applyGradientTransform(transform, 1, 0.5);
+  const edgeY = applyGradientTransform(transform, 0.5, 1);
+  const rx = Math.hypot(edgeX.x - center.x, edgeX.y - center.y);
+  const ry = Math.hypot(edgeY.x - center.x, edgeY.y - center.y);
+  return {
+    cx: center.x,
+    cy: center.y,
+    radius: Math.max(0.0001, (rx + ry) / 2),
+  };
+}
+
+function angularGradientFromTransform(transform: FigmaMatrix): {
+  cx: number;
+  cy: number;
+  angle: number;
+} {
+  const center = applyGradientTransform(transform, 0.5, 0.5);
+  return {
+    cx: center.x,
+    cy: center.y,
+    angle: gradientAngleFromTransform(transform),
+  };
+}
+
+function diamondGradientFromTransform(transform: FigmaMatrix): {
+  cx: number;
+  cy: number;
+  radius: number;
+  angle: number;
+} {
+  const radial = radialGradientFromTransform(transform);
+  return {
+    ...radial,
+    angle: gradientAngleFromTransform(transform),
+  };
 }
 
 function getImagePaintFill(
@@ -1940,23 +2633,38 @@ function getImagePaintFill(
   decoded: FigmaDecodedFile | undefined,
   state: FigmaConvertState | undefined,
 ): CanvasFill | undefined {
-  if (!decoded || !state) {
-    return undefined;
-  }
-  const resolved = resolveImagePaint(paint, decoded, state.imageAssetCache);
+  const unresolvedUrl = getUnresolvedImagePaintUrl(paint);
+  const resolved =
+    decoded && state
+      ? resolveImagePaint(paint, decoded, state.imageAssetCache)
+      : null;
   if (!resolved) {
-    state.warnings.push({
+    if (!unresolvedUrl) {
+      state?.warnings.push({
+        code: "partial_fidelity",
+        message: "Figma 图片填充缺少可解析的图片引用，已跳过该图片填充。",
+      });
+      return undefined;
+    }
+    state?.warnings.push({
       code: "partial_fidelity",
-      message: "Figma 图片填充缺少可解析的图片二进制，已跳过该图片填充。",
+      message:
+        "Figma 图片填充缺少可解析的图片二进制，已保留图片引用占位以便后续资源修复。",
     });
-    return undefined;
-  }
-  if (!state.assets.some((asset) => asset.id === resolved.asset.id)) {
+  } else if (
+    state &&
+    !state.assets.some((asset) => asset.id === resolved.asset.id)
+  ) {
     state.assets.push(resolved.asset);
   }
+  const imageUrl = resolved?.url ?? unresolvedUrl;
+  if (!imageUrl) {
+    return undefined;
+  }
+
   return {
     type: "image",
-    url: resolved.url,
+    url: imageUrl,
     mode: mapImageScaleMode(paint.imageScaleMode),
     originalSize: normalizeOriginalSize(
       paint.originalImageWidth,
@@ -1964,6 +2672,30 @@ function getImagePaintFill(
     ),
     transform: normalizeImageTransform(paint.transform),
     opacity: paint.opacity,
+    ...paintLayerProps(paint),
+  };
+}
+
+function getUnresolvedImagePaintUrl(paint: FigmaPaint): string | undefined {
+  if (paint.image?.hash?.length) {
+    return `__hash:${Array.from(paint.image.hash)
+      .map((value) => value.toString(16).padStart(2, "0"))
+      .join("")}`;
+  }
+  if (paint.image?.dataBlob !== undefined) {
+    return `__blob:${paint.image.dataBlob}`;
+  }
+  return undefined;
+}
+
+function paintLayerProps(paint: FigmaPaint): {
+  visible?: boolean;
+  blendMode?: BlendMode;
+} {
+  const blendMode = mapFigmaBlendMode(paint.blendMode);
+  return {
+    ...(paint.visible === false ? { visible: false } : {}),
+    ...(blendMode ? { blendMode } : {}),
   };
 }
 
@@ -1987,6 +2719,12 @@ function normalizeOriginalSize(
 function normalizeImageTransform(
   transform?: FigmaMatrix,
 ): ImageTransform | undefined {
+  return normalizePaintTransform(transform);
+}
+
+function normalizePaintTransform(
+  transform?: FigmaMatrix,
+): PaintTransform | undefined {
   if (!transform) return undefined;
   const epsilon = 0.000001;
   if (
@@ -2011,8 +2749,10 @@ function normalizeImageTransform(
 
 function mapImageScaleMode(
   mode?: FigmaPaint["imageScaleMode"],
-): "stretch" | "fill" | "fit" | "tile" {
+): "stretch" | "fill" | "fit" | "tile" | "crop" {
   switch (mode) {
+    case "CROP":
+      return "crop";
     case "FIT":
       return "fit";
     case "STRETCH":
@@ -2069,11 +2809,19 @@ function extractFontWeight(fontName: { family?: string; style?: string }):
   | number
   | undefined {
   const style = fontName.style ?? "";
-  if (/\b(bold|700|800|900)\b/i.test(style)) return 700;
-  if (/\b(semibold|600)\b/i.test(style)) return 600;
-  if (/\b(medium|500)\b/i.test(style)) return 500;
-  if (/\b(light|300)\b/i.test(style)) return 300;
-  if (/\b(thin|100)\b/i.test(style)) return 100;
+  const compact = style.toLowerCase().replace(/[\s_-]+/g, "");
+  if (compact.includes("thin") || compact.includes("100")) return 100;
+  if (compact.includes("extralight") || compact.includes("200")) return 200;
+  if (compact.includes("light") || compact.includes("300")) return 300;
+  if (compact.includes("medium") || compact.includes("500")) return 500;
+  if (compact.includes("semibold") || compact.includes("600")) return 600;
+  if (compact.includes("extrabold") || compact.includes("800")) return 800;
+  if (
+    compact.includes("bold") ||
+    compact.includes("700") ||
+    compact.includes("900")
+  )
+    return 700;
   return undefined;
 }
 
@@ -2140,14 +2888,13 @@ function figmaColorToHex(color: FigmaColor, opacity?: number): string {
     .padStart(2, "0")}`;
 }
 
-/** Convert Figma effects to CanvasEffect[]. Returns undefined if no visible effects. */
+/** Convert Figma effects to CanvasEffect[]. Hidden effects are retained for edit fidelity. */
 function convertFigmaEffects(
   effects?: import("./figma-native-types.js").FigmaEffect[],
 ): CanvasEffect[] | undefined {
   if (!effects || effects.length === 0) return undefined;
   const mapped: CanvasEffect[] = [];
   for (const effect of effects) {
-    if (effect.visible === false) continue;
     switch (effect.type) {
       case "DROP_SHADOW":
       case "INNER_SHADOW": {
@@ -2158,7 +2905,10 @@ function convertFigmaEffects(
           offsetY: effect.offset?.y ?? 0,
           blur: effect.radius ?? 0,
           spread: effect.spread ?? 0,
-          color: effect.color ? figmaColorToHex(effect.color) : "#00000040",
+          color: effect.color
+            ? figmaColorToHex({ ...effect.color, a: 1 })
+            : "#000000",
+          ...effectLayerProps(effect),
         });
         break;
       }
@@ -2166,6 +2916,7 @@ function convertFigmaEffects(
         mapped.push({
           type: "blur",
           radius: effect.radius ?? 0,
+          ...effectLayerProps(effect),
         });
         break;
       }
@@ -2173,12 +2924,35 @@ function convertFigmaEffects(
         mapped.push({
           type: "background_blur",
           radius: effect.radius ?? 0,
+          ...effectLayerProps(effect),
         });
         break;
       }
     }
   }
   return mapped.length > 0 ? mapped : undefined;
+}
+
+export function mapFigmaNativeEffects(
+  effects?: import("./figma-native-types.js").FigmaEffect[],
+): CanvasEffect[] | undefined {
+  return convertFigmaEffects(effects);
+}
+
+function effectLayerProps(
+  effect: import("./figma-native-types.js").FigmaEffect,
+): {
+  visible?: boolean;
+  opacity?: number;
+  blendMode?: BlendMode;
+} {
+  const blendMode = mapFigmaBlendMode(effect.blendMode);
+  const opacity = effect.opacity ?? effect.color?.a;
+  return {
+    ...(effect.visible === false ? { visible: false } : {}),
+    ...(opacity !== undefined && opacity < 1 ? { opacity } : {}),
+    ...(blendMode ? { blendMode } : {}),
+  };
 }
 
 function mapTextAlign(
@@ -2215,13 +2989,15 @@ function mapTextAlignVertical(
 
 function buildFigmaTextContent(
   figma: FigmaNodeChange,
+  decoded?: FigmaDecodedFile,
+  state?: FigmaConvertState,
 ): string | StyledTextSegment[] {
   const text = figma.textData?.characters ?? figma.name ?? "Text";
   const styleIds = figma.textData?.characterStyleIDs;
   const table = figma.textData?.styleOverrideTable;
   const content =
     styleIds && table && styleIds.length > 0 && table.length > 0
-      ? buildStyledTextSegments(text, styleIds, table)
+      ? buildStyledTextSegments(text, styleIds, table, decoded, state)
       : text;
   return applyFigmaTextCase(content, figma.textCase);
 }
@@ -2236,6 +3012,8 @@ function buildStyledTextSegments(
   text: string,
   styleIds: number[],
   table: FigmaNodeChange[],
+  decoded?: FigmaDecodedFile,
+  state?: FigmaConvertState,
 ): string | StyledTextSegment[] {
   const segments: StyledTextSegment[] = [];
   let currentStyleId = styleIds[0] ?? 0;
@@ -2248,7 +3026,15 @@ function buildStyledTextSegments(
     }
     const segmentText = text.slice(segmentStart, index);
     if (segmentText) {
-      segments.push(buildStyledTextSegment(segmentText, currentStyleId, table));
+      segments.push(
+        buildStyledTextSegment(
+          segmentText,
+          currentStyleId,
+          table,
+          decoded,
+          state,
+        ),
+      );
     }
     currentStyleId = nextStyleId;
     segmentStart = index;
@@ -2263,6 +3049,7 @@ function buildStyledTextSegments(
         !segment.fontWeight &&
         !segment.fontStyle &&
         !segment.fill &&
+        !segment.fills &&
         !segment.underline &&
         !segment.strikethrough,
     )
@@ -2276,6 +3063,8 @@ function buildStyledTextSegment(
   text: string,
   styleId: number,
   table: FigmaNodeChange[],
+  decoded?: FigmaDecodedFile,
+  state?: FigmaConvertState,
 ): StyledTextSegment {
   if (styleId === 0) {
     return { text };
@@ -2287,9 +3076,13 @@ function buildStyledTextSegment(
   const fillPaint = override.fillPaints?.find(
     (paint) => paint.visible !== false && paint.type === "SOLID" && paint.color,
   );
+  const fills = getPaintFills(override.fillPaints, decoded, state);
+  const textCase = mapFigmaTextCase(override.textCase);
+  const casedText = applyFigmaTextCase(text, override.textCase);
   return {
-    text,
+    text: typeof casedText === "string" ? casedText : text,
     fontFamily: override.fontName?.family,
+    fontPostScriptName: override.fontName?.postscript,
     fontSize: override.fontSize,
     fontWeight: override.fontName
       ? extractFontWeight(override.fontName)
@@ -2298,10 +3091,57 @@ function buildStyledTextSegment(
       ? "italic"
       : undefined,
     fill: fillPaint?.color ? figmaColorToHex(fillPaint.color) : undefined,
+    fills,
     underline: override.textDecoration === "UNDERLINE" ? true : undefined,
     strikethrough:
       override.textDecoration === "STRIKETHROUGH" ? true : undefined,
+    textCase,
+    lineHeight: mapFigmaLineHeight(override),
+    letterSpacing: mapFigmaLetterSpacing(override),
+    baselineShift: override.baselineShift,
+    fontFallback: getFigmaFontFallback(override),
+    openTypeFeatures: getFigmaOpenTypeFeatures(override),
   };
+}
+
+function mapFigmaListStyle(
+  figma: FigmaNodeChange,
+): "none" | "ordered" | "unordered" | undefined {
+  const raw =
+    figma.listStyle ??
+    figma.listType ??
+    (
+      figma.hangingList as
+        | { type?: "NONE" | "ORDERED" | "UNORDERED" }
+        | undefined
+    )?.type ??
+    "NONE";
+  switch (raw) {
+    case "ORDERED":
+      return "ordered";
+    case "UNORDERED":
+      return "unordered";
+    case "NONE":
+      return undefined;
+    default:
+      return undefined;
+  }
+}
+
+function getFigmaOpenTypeFeatures(
+  figma: FigmaNodeChange,
+): Record<string, boolean | number> | undefined {
+  const features = figma.openTypeFeatures ?? figma.opentypeFlags;
+  return features && Object.keys(features).length > 0 ? features : undefined;
+}
+
+function getFigmaFontFallback(figma: FigmaNodeChange): string[] | undefined {
+  const fallbackNames = figma.fontFallbacks ?? figma.fallbackFontNames;
+  const families =
+    fallbackNames
+      ?.map((font) => font.family ?? font.postscript)
+      .filter((font): font is string => Boolean(font)) ?? [];
+  return families.length > 0 ? families : undefined;
 }
 
 function applyFigmaTextCase(
@@ -2325,10 +3165,31 @@ function applyFigmaTextCase(
   };
   return typeof content === "string"
     ? transform(content)
-    : content.map((segment) => ({
-        ...segment,
-        text: transform(segment.text),
-      }));
+    : content.map((segment) =>
+        segment.textCase
+          ? segment
+          : {
+              ...segment,
+              text: transform(segment.text),
+            },
+      );
+}
+
+function mapFigmaTextCase(
+  textCase?: FigmaNodeChange["textCase"],
+): "original" | "upper" | "lower" | "title" | undefined {
+  switch (textCase) {
+    case "ORIGINAL":
+      return "original";
+    case "UPPER":
+      return "upper";
+    case "LOWER":
+      return "lower";
+    case "TITLE":
+      return "title";
+    default:
+      return undefined;
+  }
 }
 
 function resolveImagePaint(

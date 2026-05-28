@@ -311,6 +311,17 @@ async function fileToImportPayload(
       items: [{ type: "image/svg+xml", text: text || undefined }],
     };
   }
+  if (isReadableFigmaFile(file)) {
+    return {
+      files: [
+        {
+          type,
+          name: file.name || undefined,
+          arrayBuffer: await blobToArrayBuffer(file),
+        },
+      ],
+    };
+  }
   if (isReadableFileClipboardType(type)) {
     return {
       files: [await blobToClipboardFile(file)],
@@ -457,6 +468,13 @@ async function blobToClipboardFile(
   const type = blob.type || explicitType || "application/octet-stream";
   const name =
     "name" in blob && typeof blob.name === "string" ? blob.name : undefined;
+  if (name && /\.fig$/i.test(name)) {
+    return {
+      type,
+      name,
+      arrayBuffer: await blobToArrayBuffer(blob),
+    };
+  }
   const dataUrl = await blobToDataUrl(blob, type);
   const dimensions = await readImageDimensions(dataUrl, type);
   return {
@@ -473,6 +491,18 @@ async function blobToDataUrl(blob: Blob, type: string): Promise<string> {
   }
   const buffer = await blob.arrayBuffer();
   return `data:${type};base64,${arrayBufferToBase64(buffer)}`;
+}
+
+async function blobToArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
+  if (typeof blob.arrayBuffer === "function") {
+    return blob.arrayBuffer();
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(blob);
+  });
 }
 
 async function blobToText(blob: Blob): Promise<string> {
@@ -567,6 +597,10 @@ function isReadableSvgFile(file: File): boolean {
     file.type === "text/svg" ||
     file.name.toLowerCase().endsWith(".svg")
   );
+}
+
+function isReadableFigmaFile(file: File): boolean {
+  return file.name.toLowerCase().endsWith(".fig") || file.type.includes("fig");
 }
 
 function shouldEnrichPasteWithClipboardApi(
