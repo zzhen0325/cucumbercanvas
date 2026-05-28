@@ -128,17 +128,12 @@ export function CanvasLogoMenu({
       const reader = new FileReader();
       reader.onload = () => {
         const svgMarkup = String(reader.result ?? "");
-        const inserted = canvasApi.importSvgMarkup(svgMarkup);
-        if (inserted.length > 0) {
-          toastSuccess(
-            `SVG 已导入 ${inserted.length} 个节点，如有兼容性提醒会显示在画布顶部。`,
-          );
-        }
+        canvasApi.importSvgMarkup(svgMarkup);
       };
       reader.onerror = () => toastError("SVG 文件读取失败");
       reader.readAsText(file);
     },
-    [canvasApi, toastError, toastSuccess],
+    [canvasApi, toastError],
   );
 
   const handleCopy = useCallback(() => {
@@ -162,12 +157,7 @@ export function CanvasLogoMenu({
       toastSuccess(`已粘贴 ${internal.length} 个节点`);
       return;
     }
-    const imported = await canvasApi.pasteFromSystemClipboard();
-    if (imported.length > 0) {
-      toastSuccess(
-        `已从系统剪贴板导入 ${imported.length} 个节点，请留意画布顶部兼容性提醒。`,
-      );
-    }
+    await canvasApi.pasteFromSystemClipboard();
   }, [canvasApi, toastSuccess]);
 
   return (

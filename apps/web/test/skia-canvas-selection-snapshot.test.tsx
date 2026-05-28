@@ -335,6 +335,109 @@ describe("SkiaCanvas selection snapshots", () => {
     }
   });
 
+  it("drags an unselected node from the initial pointer gesture", async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    const originalSetPointerCapture = HTMLElement.prototype.setPointerCapture;
+    const originalReleasePointerCapture =
+      HTMLElement.prototype.releasePointerCapture;
+    const originalHasPointerCapture = HTMLElement.prototype.hasPointerCapture;
+    globalThis.ResizeObserver =
+      MockResizeObserver as unknown as typeof ResizeObserver;
+    HTMLElement.prototype.setPointerCapture = vi.fn();
+    HTMLElement.prototype.releasePointerCapture = vi.fn();
+    HTMLElement.prototype.hasPointerCapture = vi.fn(() => true);
+    const apiRef: { current: CanvasApi | null } = { current: null };
+    const onDocumentChange = vi.fn();
+    const rectNode = {
+      id: "rect-1",
+      type: "rectangle",
+      x: 20,
+      y: 30,
+      width: 80,
+      height: 60,
+    } as const;
+    penRendererMockState.hitTest.mockReturnValue(rectNode);
+
+    try {
+      const { container } = render(
+        <SkiaCanvas
+          initialContent={{
+            version: "cucumber-canvas-v1",
+            activePageId: "page-default",
+            pages: [
+              { id: "page-default", name: "Page 1", children: [rectNode] },
+            ],
+            children: [],
+            viewport: { x: 0, y: 0, zoom: 1, backgroundColor: "#ffffff" },
+          }}
+          onApiReady={(readyApi) => {
+            apiRef.current = readyApi;
+          }}
+          onDocumentChange={onDocumentChange}
+        />,
+      );
+
+      await waitFor(() => expect(apiRef.current).not.toBeNull());
+      await waitFor(() =>
+        expect(container.querySelector("canvas")).not.toBeNull(),
+      );
+      onDocumentChange.mockClear();
+      const canvasElement = container.querySelector("canvas") as HTMLElement;
+      const stage = canvasElement.parentElement?.parentElement;
+      if (!stage) throw new Error("Canvas stage was not initialized.");
+      const firePointerEvent = (
+        type: "pointerdown" | "pointermove" | "pointerup",
+        options: { clientX: number; clientY: number; pointerId: number },
+      ) => {
+        const event = new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          clientX: options.clientX,
+          clientY: options.clientY,
+        });
+        Object.defineProperty(event, "pointerId", {
+          configurable: true,
+          value: options.pointerId,
+        });
+        fireEvent(stage, event);
+      };
+
+      await act(async () => {
+        firePointerEvent("pointerdown", {
+          clientX: 10,
+          clientY: 10,
+          pointerId: 11,
+        });
+        firePointerEvent("pointermove", {
+          clientX: 50,
+          clientY: 35,
+          pointerId: 11,
+        });
+        firePointerEvent("pointerup", {
+          clientX: 50,
+          clientY: 35,
+          pointerId: 11,
+        });
+      });
+
+      const movedNode = apiRef.current?.getDocument().pages?.[0]?.children[0];
+      expect(movedNode).toMatchObject({
+        id: "rect-1",
+        x: 60,
+        y: 55,
+      });
+      expect(apiRef.current?.getDocument().selection).toEqual(["rect-1"]);
+      expect(onDocumentChange).toHaveBeenCalledTimes(1);
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver;
+      HTMLElement.prototype.setPointerCapture = originalSetPointerCapture;
+      HTMLElement.prototype.releasePointerCapture =
+        originalReleasePointerCapture;
+      HTMLElement.prototype.hasPointerCapture = originalHasPointerCapture;
+    }
+  });
+
   it("draws lines, arrows, and frames from the pointer drag bounds", async () => {
     const originalResizeObserver = globalThis.ResizeObserver;
     const originalSetPointerCapture = HTMLElement.prototype.setPointerCapture;

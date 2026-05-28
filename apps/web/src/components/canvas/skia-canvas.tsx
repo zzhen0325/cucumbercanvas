@@ -255,6 +255,7 @@ type DrawableCanvasTool = DrawableShapeTool | "container" | "line" | "arrow";
 type ResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
 
 const MIN_DRAW_SIZE = 2;
+const MOVE_COMMIT_THRESHOLD_PX = 2;
 const CANVAS_SELECTION_COLOR = "#37BFF9";
 const DEFAULT_RECT_FILL = "#d3f256";
 const DEFAULT_SHAPE_FILL = "#f8fafc";
@@ -468,6 +469,7 @@ export const SkiaCanvas = memo(
           startX: number;
           startY: number;
           origins: Record<string, CanvasBounds>;
+          hasMoved: boolean;
         }
       | {
           kind: "resize";
@@ -925,12 +927,30 @@ export const SkiaCanvas = memo(
                 startX: event.clientX,
                 startY: event.clientY,
                 origins,
+                hasMoved: false,
               };
               event.currentTarget.setPointerCapture(event.pointerId);
               return;
             }
-            // Click select
+
+            // Select and arm movement immediately so press-dragging a fresh
+            // target behaves the same as dragging an already-selected node.
             setSelection([hit.id]);
+            const node = findNode(docRef.current, hit.id, activePageId);
+            if (!node || node.locked) return;
+            dragRef.current = {
+              kind: "move",
+              nodeIds: [hit.id],
+              startX: event.clientX,
+              startY: event.clientY,
+              origins: { [hit.id]: getNodeBounds(node) },
+              hasMoved: false,
+            };
+            event.currentTarget.setPointerCapture(event.pointerId);
+            console.info("[skia-canvas] selection.drag.armed", {
+              nodeId: hit.id,
+              reason: "direct_pointer_down",
+            });
             return;
           }
 
@@ -1095,8 +1115,18 @@ export const SkiaCanvas = memo(
 
         if (drag.kind === "move") {
           const vp = renderer.getViewport();
-          const dx = (event.clientX - drag.startX) / vp.zoom;
-          const dy = (event.clientY - drag.startY) / vp.zoom;
+          const screenDx = event.clientX - drag.startX;
+          const screenDy = event.clientY - drag.startY;
+          if (
+            !drag.hasMoved &&
+            Math.hypot(screenDx, screenDy) < MOVE_COMMIT_THRESHOLD_PX
+          ) {
+            return;
+          }
+          drag.hasMoved = true;
+
+          const dx = screenDx / vp.zoom;
+          const dy = screenDy / vp.zoom;
 
           let next = docRef.current;
           for (const nodeId of drag.nodeIds) {
@@ -1235,7 +1265,7 @@ export const SkiaCanvas = memo(
           penTool.onMouseUp();
           suppressNextClickRef.current = true;
         }
-        if (drag?.kind === "move") {
+        if (drag?.kind === "move" && drag.hasMoved) {
           const activePageId = activePageIdRef.current;
           const rect = canvasContainerRef.current?.getBoundingClientRect();
           if (renderer && rect) {
@@ -1266,7 +1296,7 @@ export const SkiaCanvas = memo(
           }
         }
         if (
-          drag?.kind === "move" ||
+          (drag?.kind === "move" && drag.hasMoved) ||
           drag?.kind === "resize" ||
           drag?.kind === "rotate"
         ) {
@@ -1275,6 +1305,9 @@ export const SkiaCanvas = memo(
             kind: drag.kind,
             nodeCount: drag.kind === "move" ? drag.nodeIds.length : 1,
           });
+        }
+        if (drag?.kind === "move" && drag.hasMoved) {
+          suppressNextClickRef.current = true;
         }
         if (drag?.kind === "marquee") {
           setEditorOverlay({ marquee: null });
@@ -1676,11 +1709,7 @@ export const SkiaCanvas = memo(
         notifySelectionForDoc(inserted.doc, inserted.insertedIds);
         if (parsed.warnings.length > 0) {
           toast.toast(
-            `${parsed.sourceLabel} 已导入 ${inserted.insertedIds.length} 个节点，包含 ${parsed.warnings.length} 条兼容性提醒。`,
-          );
-        } else {
-          toast.success(
-            `${parsed.sourceLabel} 已导入 ${inserted.insertedIds.length} 个节点。`,
+            `导入存在 ${parsed.warnings.length} 条兼容性提醒，请查看画布顶部说明。`,
           );
         }
         console.info("[skia-canvas] clipboard.imported", {
@@ -1756,7 +1785,6 @@ export const SkiaCanvas = memo(
         let nextDoc = docRef.current;
         const insertedIds: string[] = [];
         let warningCount = 0;
-        const sourceLabels = new Set<string>();
 
         parsedEntries.forEach((entry, index) => {
           const bounds = entry.bounds;
@@ -1775,20 +1803,15 @@ export const SkiaCanvas = memo(
           nextDoc = inserted.doc;
           insertedIds.push(...inserted.insertedIds);
           warningCount += entry.parsed.warnings.length;
-          sourceLabels.add(entry.parsed.sourceLabel);
         });
 
         commitDocument(nextDoc, { selection: insertedIds });
         setSelection(insertedIds, { notifyScene: false });
         notifySelectionForDoc(nextDoc, insertedIds);
-        const label =
-          sourceLabels.size === 1 ? Array.from(sourceLabels)[0] : "文件";
         if (warningCount > 0) {
           toast.toast(
-            `${label} 已导入 ${insertedIds.length} 个节点，包含 ${warningCount} 条兼容性提醒。`,
+            `导入存在 ${warningCount} 条兼容性提醒，请查看画布顶部说明。`,
           );
-        } else {
-          toast.success(`${label} 已导入 ${insertedIds.length} 个节点。`);
         }
         console.info("[skia-canvas] file-drop.grid-imported", {
           activePageId: activePageIdRef.current,

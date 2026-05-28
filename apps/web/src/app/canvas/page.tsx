@@ -40,8 +40,6 @@ import {
 } from "../../lib/server-api";
 
 type CanvasImportSummary = {
-  sourceLabel: string;
-  importedCount: number;
   warningCount: number;
   degradationHints: string[];
 };
@@ -175,9 +173,12 @@ function CanvasPageContent() {
     const degradationHints = Array.from(
       new Set(imported.flatMap((element) => element.degradationHints ?? [])),
     );
+    if (warningCount === 0 && degradationHints.length === 0) {
+      setImportSummary(null);
+      setShowImportWarnings(false);
+      return;
+    }
     setImportSummary({
-      sourceLabel: imported[0]?.importSourceLabel ?? "导入内容",
-      importedCount: imported.length,
       warningCount,
       degradationHints,
     });
@@ -388,24 +389,24 @@ function CanvasPageContent() {
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
                 <p className="font-medium">
-                  {importSummary.sourceLabel} 已导入并选中{" "}
-                  {importSummary.importedCount} 个可编辑节点
+                  导入存在{" "}
+                  {Math.max(
+                    importSummary.warningCount,
+                    importSummary.degradationHints.length,
+                  )}{" "}
+                  条兼容性提醒
                 </p>
                 <p className="text-muted-foreground">
-                  {importSummary.warningCount > 0
-                    ? `包含 ${importSummary.warningCount} 条兼容性提醒`
-                    : "未检测到兼容性提醒"}
+                  部分内容可能无法完全保留原始设计语义
                 </p>
               </div>
-              {importSummary.warningCount > 0 ? (
-                <button
-                  type="button"
-                  className="shrink-0 rounded-full border border-border px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  onClick={() => setShowImportWarnings((value) => !value)}
-                >
-                  {showImportWarnings ? "收起提醒" : "查看兼容性提醒"}
-                </button>
-              ) : null}
+              <button
+                type="button"
+                className="shrink-0 rounded-full border border-border px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                onClick={() => setShowImportWarnings((value) => !value)}
+              >
+                {showImportWarnings ? "收起提醒" : "查看详情"}
+              </button>
             </div>
             {showImportWarnings && importSummary.degradationHints.length > 0 ? (
               <div className="mt-2 rounded-xl bg-muted/60 px-3 py-2 text-[11px] text-muted-foreground">

@@ -45,6 +45,7 @@ describe("useCanvasKeyboardShortcuts paste handling", () => {
         root?.unmount();
       });
     }
+    window.getSelection()?.removeAllRanges();
     container?.remove();
     root = null;
     container = null;
@@ -94,6 +95,53 @@ describe("useCanvasKeyboardShortcuts paste handling", () => {
     document.dispatchEvent(event);
 
     expect(options.pasteClipboard).toHaveBeenCalledOnce();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("lets the browser copy selected DOM text instead of stealing Ctrl+C for canvas copy", async () => {
+    const options = createOptions({
+      copySelection: vi.fn().mockReturnValue(true),
+    });
+    await mountHook(options);
+
+    const text = document.createElement("p");
+    text.textContent = "Copyable assistant response";
+    document.body.appendChild(text);
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    const event = new KeyboardEvent("keydown", {
+      key: "c",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(event);
+
+    expect(options.copySelection).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+
+    text.remove();
+  });
+
+  it("uses Ctrl+C for canvas copy when no DOM text is selected", async () => {
+    const options = createOptions({
+      copySelection: vi.fn().mockReturnValue(true),
+    });
+    await mountHook(options);
+
+    const event = new KeyboardEvent("keydown", {
+      key: "c",
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(event);
+
+    expect(options.copySelection).toHaveBeenCalledOnce();
     expect(event.defaultPrevented).toBe(true);
   });
 

@@ -9,6 +9,20 @@ type CanvasToolShortcut =
   | "container"
   | "pen";
 
+function isEditableTarget(target: HTMLElement | null) {
+  return (
+    target?.tagName === "INPUT" ||
+    target?.tagName === "TEXTAREA" ||
+    target?.isContentEditable
+  );
+}
+
+function hasNativeTextSelection() {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed) return false;
+  return selection.toString().length > 0;
+}
+
 export function useCanvasKeyboardShortcuts(options: {
   undo: () => void;
   redo: () => void;
@@ -28,11 +42,7 @@ export function useCanvasKeyboardShortcuts(options: {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (
-        target?.tagName === "INPUT" ||
-        target?.tagName === "TEXTAREA" ||
-        target?.isContentEditable
-      ) {
+      if (isEditableTarget(target) || hasNativeTextSelection()) {
         return;
       }
 
@@ -53,8 +63,9 @@ export function useCanvasKeyboardShortcuts(options: {
       }
 
       if (isMod && key === "c") {
-        event.preventDefault();
-        options.copySelection();
+        if (options.copySelection()) {
+          event.preventDefault();
+        }
         return;
       }
 
