@@ -88,6 +88,7 @@ import { CanvasPropertyPanel } from "./property-panel/canvas-property-panel";
 import {
   type ClipboardImportContext,
   readClipboardImportPayload,
+  readDataTransferImportPayload,
   useCanvasClipboardImport,
 } from "./use-canvas-clipboard-import";
 import { useCanvasKeyboardShortcuts } from "./use-canvas-keyboard-shortcuts";
@@ -405,6 +406,8 @@ export const SkiaCanvas = memo(
     const [activeTool, setActiveTool] = useState<CanvasTool>("select");
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [editingText, setEditingText] = useState<TextEditState | null>(null);
+    const [isFileDragActive, setIsFileDragActive] = useState(false);
+    const fileDragDepthRef = useRef(0);
     const editorOverlayRef = useRef<EditorOverlayState>({
       selectedIds: [],
       selectionColor: CANVAS_SELECTION_COLOR,
@@ -1621,7 +1624,11 @@ export const SkiaCanvas = memo(
     }, [commitDocument, notifySelectionForDoc, selectedIds, setSelection]);
 
     const importFromPayload = useCallback(
-      (payload: ClipboardImportPayload, context?: ClipboardImportContext) => {
+      (
+        payload: ClipboardImportPayload,
+        context?: ClipboardImportContext,
+        options?: { scenePoint?: { x: number; y: number } },
+      ) => {
         const parsed = parseClipboardImport(payload);
         if (!parsed) {
           console.info("[skia-canvas] clipboard.import.ignored", {
@@ -1648,11 +1655,12 @@ export const SkiaCanvas = memo(
           x: ((rect?.width ?? 0) / 2 - viewport.panX) / viewport.zoom,
           y: ((rect?.height ?? 0) / 2 - viewport.panY) / viewport.zoom,
         };
+        const targetCenter = options?.scenePoint ?? viewportCenter;
         const offsetX = importBounds
-          ? viewportCenter.x - (importBounds.x + importBounds.width / 2)
+          ? targetCenter.x - (importBounds.x + importBounds.width / 2)
           : 0;
         const offsetY = importBounds
-          ? viewportCenter.y - (importBounds.y + importBounds.height / 2)
+          ? targetCenter.y - (importBounds.y + importBounds.height / 2)
           : 0;
         const inserted = insertCanvasImportResult(docRef.current, parsed, {
           parentId: getPrimarySelectedContainerId(
@@ -1683,6 +1691,8 @@ export const SkiaCanvas = memo(
           source: parsed.source,
           strategy: getClipboardImportStrategy(parsed),
           importSessionId: parsed.importSessionId,
+          placement: options?.scenePoint ? "drop-point" : "viewport-center",
+          targetCenter,
           rootCount: parsed.rootNodeIds.length,
           assetCount: parsed.assets.length,
           insertedCount: inserted.insertedIds.length,
@@ -1698,6 +1708,114 @@ export const SkiaCanvas = memo(
         return inserted.insertedIds;
       },
       [commitDocument, notifySelectionForDoc, selectedIds, setSelection, toast],
+    );
+
+    const resetFileDragState = useCallback(() => {
+      fileDragDepthRef.current = 0;
+      setIsFileDragActive(false);
+    }, []);
+
+    const handleDragEnter = useCallback(
+      (event: React.DragEvent<HTMLDivElement>) => {
+        if (!hasFileDataTransfer(event.dataTransfer)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        fileDragDepthRef.current += 1;
+        event.dataTransfer.dropEffect = "copy";
+        setIsFileDragActive(true);
+      },
+      [],
+    );
+
+    const handleDragOver = useCallback(
+      (event: React.DragEvent<HTMLDivElement>) => {
+        if (!hasFileDataTransfer(event.dataTransfer)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.dataTransfer.dropEffect = "copy";
+      },
+      [],
+    );
+
+    const handleDragLeave = useCallback(
+      (event: React.DragEvent<HTMLDivElement>) => {
+        if (!hasFileDataTransfer(event.dataTransfer)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        fileDragDepthRef.current = Math.max(0, fileDragDepthRef.current - 1);
+        if (fileDragDepthRef.current === 0) {
+          setIsFileDragActive(false);
+        }
+      },
+      [],
+    );
+
+    const handleDrop = useCallback(
+      (event: React.DragEvent<HTMLDivElement>) => {
+        if (!hasFileDataTransfer(event.dataTransfer)) return;
+        event.preventDefault();
+        event.stopPropagation();
+
+        const dataTransfer = event.dataTransfer;
+        const renderer = rendererRef.current;
+        const rect = canvasContainerRef.current?.getBoundingClientRect();
+        const scenePoint =
+          renderer && rect
+            ? screenToScene(
+                event.clientX,
+                event.clientY,
+                rect,
+                renderer.getViewport(),
+              )
+            : undefined;
+        resetFileDragState();
+
+        console.info("[skia-canvas] file-drop.detected", {
+          activePageId: activePageIdRef.current,
+          mimeTypes: Array.from(dataTransfer.types ?? []),
+          fileCount: dataTransfer.files?.length ?? 0,
+          scenePoint,
+        });
+
+        void readDataTransferImportPayload(dataTransfer).then(
+          ({ payload, context }) => {
+            try {
+              const insertedIds = importFromPayload(payload, context, {
+                scenePoint,
+              });
+              if (insertedIds.length === 0) {
+                console.info("[skia-canvas] file-drop.import.ignored", {
+                  activePageId: activePageIdRef.current,
+                  mimeTypes: context.mimeTypes,
+                  fileTypes: context.fileTypes ?? [],
+                  fileCount: payload.files?.length ?? 0,
+                });
+                toast.error(
+                  "暂不支持拖入这些文件。请使用 PNG、JPG、WebP、GIF 或 SVG 文件。",
+                );
+              }
+            } catch (error) {
+              console.warn("[skia-canvas] file-drop.import.failed", {
+                activePageId: activePageIdRef.current,
+                error,
+              });
+              toast.error(
+                error instanceof Error
+                  ? error.message
+                  : "文件导入失败，请确认文件内容可读取后重试。",
+              );
+            }
+          },
+          (error) => {
+            console.warn("[skia-canvas] file-drop.read.failed", {
+              activePageId: activePageIdRef.current,
+              error,
+            });
+            toast.error("文件读取失败，请确认文件内容可读取后重试。");
+          },
+        );
+      },
+      [importFromPayload, resetFileDragState, toast],
     );
 
     const pasteFromSystemClipboard = useCallback(async () => {
@@ -2660,9 +2778,23 @@ export const SkiaCanvas = memo(
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
         onDoubleClick={handleDoubleClick}
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
         {/* CanvasKit canvas container */}
         <div ref={canvasContainerRef} className="absolute inset-0" />
+
+        {isFileDragActive ? (
+          <div className="pointer-events-none absolute inset-3 z-30 rounded-lg border border-dashed border-primary/60 bg-background/65 shadow-inner backdrop-blur-[2px]">
+            <div className="flex h-full items-center justify-center">
+              <div className="rounded-lg border border-border bg-card/90 px-4 py-2 text-sm font-medium text-foreground shadow-card">
+                释放文件进入画布
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {editingText && textEditOverlay ? (
           <textarea
@@ -2800,6 +2932,14 @@ function isDragDrawableTool(tool: CanvasTool): tool is DrawableCanvasTool {
     tool === "container" ||
     tool === "line" ||
     tool === "arrow"
+  );
+}
+
+function hasFileDataTransfer(dataTransfer: DataTransfer | null): boolean {
+  if (!dataTransfer) return false;
+  if (Array.from(dataTransfer.types ?? []).includes("Files")) return true;
+  return Array.from(dataTransfer.items ?? []).some(
+    (item) => item.kind === "file",
   );
 }
 

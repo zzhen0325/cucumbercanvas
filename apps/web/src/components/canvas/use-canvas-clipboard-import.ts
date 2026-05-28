@@ -5,7 +5,7 @@ import type {
 import { useEffect } from "react";
 
 export interface ClipboardImportContext {
-  trigger: "paste-event" | "clipboard-api";
+  trigger: "paste-event" | "clipboard-api" | "drop-event";
   mimeTypes: string[];
   itemTypes?: string[];
   fileTypes?: string[];
@@ -57,20 +57,31 @@ export async function readClipboardImportPayloadFromEvent(
   event: ClipboardEvent,
 ): Promise<ClipboardImportReadResult> {
   const payload = getClipboardImportPayloadFromEvent(event);
-  const files = collectClipboardFiles(event.clipboardData);
-  const resolvedFiles = await Promise.all(
-    files.map((file) => blobToClipboardFile(file)),
+  const enriched = await readFilesFromDataTransfer(event.clipboardData);
+  return mergeDataTransferFilePayload(
+    { payload, context: getClipboardImportContextFromEvent(event) },
+    enriched,
   );
-  return {
-    payload: {
-      ...payload,
-      files:
-        resolvedFiles.length > 0
-          ? mergeClipboardFiles(payload.files, resolvedFiles)
-          : payload.files,
-    },
-    context: getClipboardImportContextFromEvent(event),
+}
+
+export async function readDataTransferImportPayload(
+  dataTransfer: DataTransfer | null | undefined,
+): Promise<ClipboardImportReadResult> {
+  const items = collectClipboardTextItems(dataTransfer);
+  const payload: ClipboardImportPayload = {
+    html: dataTransfer?.getData("text/html") || undefined,
+    text: dataTransfer?.getData("text/plain") || undefined,
+    svg: dataTransfer?.getData("image/svg+xml") || undefined,
+    items: items.length > 0 ? items : undefined,
   };
+  const enriched = await readFilesFromDataTransfer(dataTransfer);
+  return mergeDataTransferFilePayload(
+    {
+      payload,
+      context: getDataTransferImportContext(dataTransfer, "drop-event"),
+    },
+    enriched,
+  );
 }
 
 export async function readClipboardImportPayload(): Promise<ClipboardImportReadResult> {
@@ -213,6 +224,7 @@ function collectClipboardTextItems(
 ): Array<{ type: string; text?: string }> {
   const byType = new Map<string, { type: string; text?: string }>();
   for (const type of Array.from(clipboardData?.types ?? [])) {
+    if (!type || type === "Files") continue;
     const text = clipboardData?.getData(type) ?? "";
     byType.set(type, { type, text: text || undefined });
   }
@@ -238,6 +250,77 @@ function collectClipboardFiles(
     files.set(getFileDedupKey(file), file);
   }
   return Array.from(files.values());
+}
+
+async function readFilesFromDataTransfer(
+  clipboardData: DataTransfer | null | undefined,
+): Promise<{
+  files: ClipboardImportFile[];
+  items: Array<{ type: string; text?: string }>;
+  svg?: string;
+}> {
+  const files = collectClipboardFiles(clipboardData);
+  const resolved = await Promise.all(
+    files.map(async (file) => {
+      if (isReadableSvgFile(file)) {
+        const text = await blobToText(file);
+        return {
+          item: { type: "image/svg+xml", text },
+          svg: text || undefined,
+        };
+      }
+      return { file: await blobToClipboardFile(file) };
+    }),
+  );
+  return {
+    files: resolved
+      .map((entry) => entry.file)
+      .filter((file): file is ClipboardImportFile => Boolean(file)),
+    items: resolved.flatMap(
+      (entry): Array<{ type: string; text?: string }> =>
+        entry.item ? [entry.item] : [],
+    ),
+    svg: resolved.find((entry) => entry.svg)?.svg,
+  };
+}
+
+function mergeDataTransferFilePayload(
+  base: ClipboardImportReadResult,
+  enriched: {
+    files: ClipboardImportFile[];
+    items: Array<{ type: string; text?: string }>;
+    svg?: string;
+  },
+): ClipboardImportReadResult {
+  const files = mergeClipboardFiles(base.payload.files, enriched.files);
+  const items = mergeClipboardTextItems(base.payload.items, enriched.items);
+  return {
+    context: base.context,
+    payload: {
+      ...base.payload,
+      svg: base.payload.svg ?? enriched.svg,
+      items: items.length > 0 ? items : undefined,
+      files: files.length > 0 ? files : undefined,
+    },
+  };
+}
+
+function getDataTransferImportContext(
+  dataTransfer: DataTransfer | null | undefined,
+  trigger: ClipboardImportContext["trigger"],
+): ClipboardImportContext {
+  const mimeTypes = getClipboardDataMimeTypes(dataTransfer);
+  const itemTypes = getClipboardItemTypes(dataTransfer);
+  const fileTypes = getClipboardFileTypes(dataTransfer);
+  const context: ClipboardImportContext = {
+    trigger,
+    mimeTypes,
+    hasHtml: mimeTypes.includes("text/html"),
+    hasText: mimeTypes.includes("text/plain"),
+  };
+  if (itemTypes.length > 0) context.itemTypes = itemTypes;
+  if (fileTypes.length > 0) context.fileTypes = fileTypes;
+  return context;
 }
 
 function getClipboardDataMimeTypes(
@@ -415,6 +498,14 @@ function isReadableFileClipboardType(type: string): boolean {
     type.startsWith("image/") ||
     type === "application/octet-stream" ||
     type.includes("figma")
+  );
+}
+
+function isReadableSvgFile(file: File): boolean {
+  return (
+    file.type === "image/svg+xml" ||
+    file.type === "text/svg" ||
+    file.name.toLowerCase().endsWith(".svg")
   );
 }
 

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   readClipboardImportPayload,
   readClipboardImportPayloadFromEvent,
+  readDataTransferImportPayload,
   useCanvasClipboardImport,
 } from "@/components/canvas/use-canvas-clipboard-import";
 
@@ -34,6 +35,27 @@ function createPasteEvent(data: Record<string, string>, files: File[] = []) {
     },
   });
   return event;
+}
+
+function createDataTransfer(data: Record<string, string>, files: File[] = []) {
+  const items = [
+    ...Object.keys(data).map((type) => ({
+      kind: "string",
+      type,
+      getAsFile: () => null,
+    })),
+    ...files.map((file) => ({
+      kind: "file",
+      type: file.type,
+      getAsFile: () => file,
+    })),
+  ];
+  return {
+    types: [...Object.keys(data), ...(files.length > 0 ? ["Files"] : [])],
+    items,
+    files,
+    getData: (type: string) => data[type] ?? "",
+  } as unknown as DataTransfer;
 }
 
 function HookHarness({
@@ -184,6 +206,38 @@ describe("useCanvasClipboardImport", () => {
       configurable: true,
       value: originalImage,
     });
+  });
+
+  it("reads drop event SVG files as SVG import payloads", async () => {
+    const file = new File(
+      ["<svg><rect width='10' height='10' /></svg>"],
+      "asset.svg",
+      {
+        type: "image/svg+xml",
+      },
+    );
+
+    const result = await readDataTransferImportPayload(
+      createDataTransfer({}, [file]),
+    );
+
+    expect(result.context).toMatchObject({
+      trigger: "drop-event",
+      mimeTypes: ["Files", "image/svg+xml"],
+      fileTypes: ["image/svg+xml"],
+      hasHtml: false,
+      hasText: false,
+    });
+    expect(result.payload.svg).toBe(
+      "<svg><rect width='10' height='10' /></svg>",
+    );
+    expect(result.payload.items).toEqual([
+      {
+        type: "image/svg+xml",
+        text: "<svg><rect width='10' height='10' /></svg>",
+      },
+    ]);
+    expect(result.payload.files).toBeUndefined();
   });
 
   it("falls back to readText when clipboard.read is unavailable or blocked", async () => {
