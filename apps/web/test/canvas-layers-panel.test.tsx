@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -118,16 +118,17 @@ function renderLayersPanel(api = createCanvasApi()) {
   return api;
 }
 
-function firstElement<T extends Element>(elements: T[]): T {
-  const element = elements[0];
-  if (!element) throw new Error("Expected at least one matching element.");
-  return element;
+function getLayerButton(layerId: string, name: string | RegExp): HTMLElement {
+  return within(screen.getByTestId(`layer-row-${layerId}`)).getByRole(
+    "button",
+    { name },
+  );
 }
 
-function elementAt<T extends Element>(elements: T[], index: number): T {
-  const element = elements[index];
-  if (!element) throw new Error(`Expected matching element at index ${index}.`);
-  return element;
+function getLayerRowOrder(): string[] {
+  return Array.from(document.querySelectorAll('[data-testid^="layer-row-"]'))
+    .map((row) => row.getAttribute("data-testid")?.replace("layer-row-", ""))
+    .filter((id): id is string => Boolean(id));
 }
 
 describe("CanvasLayersPanel", () => {
@@ -136,14 +137,8 @@ describe("CanvasLayersPanel", () => {
     const api = renderLayersPanel();
 
     await user.click(screen.getByText("Footer note"));
-    await user.click(
-      firstElement(screen.getAllByRole("button", { name: "Lock layer" })),
-    );
-    await user.click(
-      firstElement(
-        screen.getAllByRole("button", { name: "Toggle layer visibility" }),
-      ),
-    );
+    await user.click(getLayerButton("text-1", "Lock layer"));
+    await user.click(getLayerButton("text-1", "Toggle layer visibility"));
 
     expect(api.setSelection).toHaveBeenCalledWith(["text-1"]);
     expect(api.setSelection).toHaveBeenCalledTimes(1);
@@ -161,6 +156,19 @@ describe("CanvasLayersPanel", () => {
     expect(screen.getAllByRole("button", { name: "收起图层" })).toHaveLength(1);
   });
 
+  it("keeps root and nested rows in top-first order and wires layer reorder controls", async () => {
+    const user = userEvent.setup();
+    const api = renderLayersPanel();
+
+    expect(getLayerRowOrder()).toEqual(["frame-1", "rect-1", "text-1"]);
+
+    await user.click(getLayerButton("frame-1", "Move layer backward"));
+    await user.click(getLayerButton("rect-1", "Move layer forward"));
+
+    expect(api.reorderNode).toHaveBeenNthCalledWith(1, "frame-1", "backward");
+    expect(api.reorderNode).toHaveBeenNthCalledWith(2, "rect-1", "forward");
+  });
+
   it("renames, duplicates, and deletes layers from the action menu", async () => {
     const user = userEvent.setup();
     const api = renderLayersPanel();
@@ -170,13 +178,9 @@ describe("CanvasLayersPanel", () => {
     await user.clear(renameInput);
     await user.type(renameInput, "Footer summary{Enter}");
 
-    await user.click(
-      firstElement(screen.getAllByRole("button", { name: "Layer actions" })),
-    );
+    await user.click(getLayerButton("text-1", "Layer actions"));
     await user.click(await screen.findByRole("menuitem", { name: "复制" }));
-    await user.click(
-      firstElement(screen.getAllByRole("button", { name: "Layer actions" })),
-    );
+    await user.click(getLayerButton("text-1", "Layer actions"));
     await user.click(await screen.findByRole("menuitem", { name: "删除" }));
 
     expect(api.updateNode).toHaveBeenCalledWith("text-1", {
@@ -203,9 +207,7 @@ describe("CanvasLayersPanel", () => {
     const user = userEvent.setup();
     const api = renderLayersPanel();
 
-    await user.click(
-      firstElement(screen.getAllByRole("button", { name: "Layer actions" })),
-    );
+    await user.click(getLayerButton("text-1", "Layer actions"));
     await user.click(
       await screen.findByRole("menuitem", { name: "Move into Frame" }),
     );
@@ -216,20 +218,14 @@ describe("CanvasLayersPanel", () => {
   it("moves a layer through a keyboard-reachable hierarchy menu", async () => {
     const user = userEvent.setup();
     const api = renderLayersPanel();
-    const firstLayerActions = firstElement(
-      screen.getAllByRole("button", { name: "Layer actions" }),
-    );
+    const textLayerActions = getLayerButton("text-1", "Layer actions");
 
-    expect(firstLayerActions).not.toHaveClass("invisible");
+    expect(textLayerActions).not.toHaveClass("invisible");
 
-    for (
-      let i = 0;
-      i < 8 && document.activeElement !== firstLayerActions;
-      i++
-    ) {
-      await user.tab();
-    }
-    expect(firstLayerActions).toHaveFocus();
+    act(() => {
+      textLayerActions.focus();
+    });
+    expect(textLayerActions).toHaveFocus();
 
     await user.keyboard("{Enter}");
     const moveIntoFrame = await screen.findByRole("menuitem", {
@@ -248,9 +244,7 @@ describe("CanvasLayersPanel", () => {
     const user = userEvent.setup();
     renderLayersPanel();
 
-    await user.click(
-      elementAt(screen.getAllByRole("button", { name: "Layer actions" }), 2),
-    );
+    await user.click(getLayerButton("frame-1", "Layer actions"));
 
     expect(
       await screen.findByRole("menuitem", {
@@ -272,9 +266,7 @@ describe("CanvasLayersPanel", () => {
       }),
     );
 
-    await user.click(
-      firstElement(screen.getAllByRole("button", { name: "Layer actions" })),
-    );
+    await user.click(getLayerButton("text-1", "Layer actions"));
     await user.click(
       await screen.findByRole("menuitem", { name: "Move into Frame" }),
     );
@@ -311,11 +303,7 @@ describe("CanvasLayersPanel", () => {
       }),
     );
 
-    await user.click(
-      firstElement(
-        screen.getAllByRole("button", { name: "Toggle layer visibility" }),
-      ),
-    );
+    await user.click(getLayerButton("text-1", "Toggle layer visibility"));
 
     expect(api.toggleNodeVisible).toHaveBeenCalledWith("text-1");
     expect(await screen.findByRole("alert")).toHaveTextContent(

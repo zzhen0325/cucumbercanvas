@@ -760,12 +760,14 @@ function reorderNodeInDoc(
 
   let targetIndex = operation.targetIndex;
   if (targetIndex === undefined) {
-    if (operation.direction === "back") targetIndex = 0;
-    if (operation.direction === "backward")
-      targetIndex = Math.max(0, currentIndex - 1);
-    if (operation.direction === "forward")
-      targetIndex = Math.min(currentSiblings.length - 1, currentIndex + 1);
     if (operation.direction === "front" || operation.direction === undefined) {
+      targetIndex = 0;
+    }
+    if (operation.direction === "backward")
+      targetIndex = Math.min(currentSiblings.length - 1, currentIndex + 1);
+    if (operation.direction === "forward")
+      targetIndex = Math.max(0, currentIndex - 1);
+    if (operation.direction === "back") {
       targetIndex = currentSiblings.length - 1;
     }
   }

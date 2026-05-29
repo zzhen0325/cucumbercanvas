@@ -1,13 +1,13 @@
 export type ToolType =
-  | 'select'
-  | 'frame'
-  | 'rectangle'
-  | 'ellipse'
-  | 'line'
-  | 'polygon'
-  | 'path'
-  | 'text'
-  | 'hand';
+  | "select"
+  | "frame"
+  | "rectangle"
+  | "ellipse"
+  | "line"
+  | "polygon"
+  | "path"
+  | "text"
+  | "hand";
 
 export interface ViewportState {
   zoom: number;

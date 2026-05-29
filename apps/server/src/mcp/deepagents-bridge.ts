@@ -8,11 +8,13 @@ import { resolveMcpToolContext, unwrapMcpToolResult } from "./utils.js";
 export function bridgeMcpServerToolsToDeepAgent(
   server: CucumberMcpServer,
 ): StructuredTool[] {
-  return server.getTools().map((toolDef) =>
-    bridgeSingleMcpToolToDeepAgent(toolDef, async (args, runtime) =>
-      server.callTool(toolDef.name, args, resolveMcpToolContext(runtime)),
-    ),
-  );
+  return server
+    .getTools()
+    .map((toolDef) =>
+      bridgeSingleMcpToolToDeepAgent(toolDef, async (args, runtime) =>
+        server.callTool(toolDef.name, args, resolveMcpToolContext(runtime)),
+      ),
+    );
 }
 
 export function bridgeMcpToolToDeepAgent(

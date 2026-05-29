@@ -9,8 +9,8 @@ import {
 import type {
   CanvasBounds,
   CanvasDocumentState,
-  CucumberCanvasDocument,
   CanvasViewport,
+  CucumberCanvasDocument,
 } from "./types.js";
 
 let idCounter = 0;

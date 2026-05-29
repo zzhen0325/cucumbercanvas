@@ -1,11 +1,14 @@
 "use client";
 
-import { type BuiltinProviderConfig, type BuiltinProviderPreset } from "@cucumber/shared";
+import type {
+  BuiltinProviderConfig,
+  BuiltinProviderPreset,
+} from "@cucumber/shared";
 import { Eye, EyeOff, Key, Pencil, Plus, Trash2 } from "lucide-react";
 import { useCallback, useState } from "react";
 
-import { BUILTIN_PROVIDER_PRESETS } from "@/lib/builtin-provider-presets";
 import { useAgentSettings } from "@/hooks/use-agent-settings";
+import { BUILTIN_PROVIDER_PRESETS } from "@/lib/builtin-provider-presets";
 
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
@@ -28,7 +31,8 @@ function ProviderForm({
 }) {
   const [preset, setPreset] = useState<string | null>(
     initial
-      ? (BUILTIN_PROVIDER_PRESETS.find((p) => p.id === initial.type)?.id ?? null)
+      ? (BUILTIN_PROVIDER_PRESETS.find((p) => p.id === initial.type)?.id ??
+          null)
       : null,
   );
   const [displayName, setDisplayName] = useState(initial?.displayName ?? "");
@@ -38,7 +42,7 @@ function ProviderForm({
   const [showKey, setShowKey] = useState(false);
 
   const selectedPreset = preset
-    ? BUILTIN_PROVIDER_PRESETS.find((p) => p.id === preset) ?? null
+    ? (BUILTIN_PROVIDER_PRESETS.find((p) => p.id === preset) ?? null)
     : null;
 
   const canSave =
@@ -135,15 +139,22 @@ function ProviderForm({
         <Button variant="ghost" size="sm" onClick={onCancel}>
           Cancel
         </Button>
-        <Button size="sm" onClick={() => onSave({
-          displayName: displayName.trim(),
-          type: (selectedPreset?.type ?? "openai-compat") as BuiltinProviderConfig["type"],
-          apiKey: apiKey.trim(),
-          model: model.trim(),
-          baseURL: baseURL.trim() || undefined,
-          enabled: initial?.enabled ?? true,
-          region: "global",
-        })} disabled={!canSave}>
+        <Button
+          size="sm"
+          onClick={() =>
+            onSave({
+              displayName: displayName.trim(),
+              type: (selectedPreset?.type ??
+                "openai-compat") as BuiltinProviderConfig["type"],
+              apiKey: apiKey.trim(),
+              model: model.trim(),
+              baseURL: baseURL.trim() || undefined,
+              enabled: initial?.enabled ?? true,
+              region: "global",
+            })
+          }
+          disabled={!canSave}
+        >
           {initial ? "Save" : "Add Provider"}
         </Button>
       </div>
@@ -262,10 +273,7 @@ export function AgentProviderSection() {
       </div>
 
       {showForm && (
-        <ProviderForm
-          onSave={handleAdd}
-          onCancel={() => setShowForm(false)}
-        />
+        <ProviderForm onSave={handleAdd} onCancel={() => setShowForm(false)} />
       )}
 
       {settings.builtinProviders.map((bp) => (

@@ -68,21 +68,30 @@ describe("Login page", () => {
     mockSearchParams.mockReturnValue(new URLSearchParams());
   });
 
-
   it("renders split screen with brand panel and login form", async () => {
     render(
       <AuthProvider>
         <LoginPage />
       </AuthProvider>,
     );
-    expect((await screen.findByText("Cucumber Studio")).textContent).toBe("Cucumber Studio");
-    expect(screen.getByText(/Send login link/i).textContent).toContain("Send login link");
-    expect(screen.getByText(/Continue with Google/i).textContent).toContain("Continue with Google");
-    expect(screen.getByRole("link", { name: /create one/i }).getAttribute("href")).toBe("/register");
+    expect((await screen.findByText("Cucumber Studio")).textContent).toBe(
+      "Cucumber Studio",
+    );
+    expect(screen.getByText(/Send login link/i).textContent).toContain(
+      "Send login link",
+    );
+    expect(screen.getByText(/Continue with Google/i).textContent).toContain(
+      "Continue with Google",
+    );
+    expect(
+      screen.getByRole("link", { name: /create one/i }).getAttribute("href"),
+    ).toBe("/register");
   });
 
   it("shows callback errors from the query string as a banner", async () => {
-    mockSearchParams.mockReturnValue(new URLSearchParams("error=auth_exchange_failed"));
+    mockSearchParams.mockReturnValue(
+      new URLSearchParams("error=auth_exchange_failed"),
+    );
 
     render(
       <AuthProvider>
@@ -125,7 +134,9 @@ describe("Login page", () => {
       </AuthProvider>,
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: /use password instead/i }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /use password instead/i }),
+    );
     fireEvent.change(screen.getByLabelText(/email/i), {
       target: { value: "user@example.com" },
     });

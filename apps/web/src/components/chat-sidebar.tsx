@@ -283,7 +283,7 @@ export function ChatSidebar({
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, scrollToBottom]);
+  }, [scrollToBottom]);
 
   // ── Fetch image models for @mention picker ──
   useEffect(() => {
@@ -701,6 +701,9 @@ export function ChatSidebar({
       autoTitleSession,
       accessTokenRef,
       activeSessionIdRef,
+      setStreaming,
+      showToast,
+      startStream,
     ],
   );
 
@@ -835,7 +838,12 @@ export function ChatSidebar({
           type="button"
           className="group inline-flex items-center gap-1 rounded-xl bg-card/80 backdrop-blur-sm border border-border px-2.5 py-1.5 text-xs text-foreground/60 shadow-sm hover:bg-card hover:text-foreground transition-colors cursor-pointer md:px-2.5 md:py-1.5 min-h-[36px] md:min-h-0"
         >
-          <svg className="size-4 md:size-3.5" viewBox="0 0 24 24" fill="none">
+          <svg
+            aria-hidden="true"
+            className="size-4 md:size-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+          >
             <path
               fill="currentColor"
               fillOpacity={0.9}
@@ -886,7 +894,12 @@ export function ChatSidebar({
           className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
           title="Collapse panel"
         >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+          <svg
+            aria-hidden="true"
+            className="h-4 w-4"
+            viewBox="0 0 24 24"
+            fill="none"
+          >
             <path
               d="M4 3.25a.75.75 0 0 1 .75.75v16a.75.75 0 0 1-1.5 0V4A.75.75 0 0 1 4 3.25m9.47 2.22a.75.75 0 0 1 1.06 0l6 6a.75.75 0 0 1 0 1.06l-6 6a.75.75 0 1 1-1.06-1.06l4.72-4.72H8a.75.75 0 0 1 0-1.5h10.19l-4.72-4.72a.75.75 0 0 1 0-1.06"
               fill="currentColor"
@@ -981,6 +994,9 @@ export function ChatSidebar({
         <div
           className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px] animate-in fade-in duration-200"
           onClick={onToggle}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") onToggle();
+          }}
         />
         {/* Chat panel — full screen on mobile, fixed-width drawer on tablet */}
         <div

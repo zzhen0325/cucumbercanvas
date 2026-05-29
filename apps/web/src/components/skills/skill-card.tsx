@@ -5,12 +5,16 @@ import {
   MoreHorizontal,
   ShieldCheck,
   Sparkles,
-  Users,
   UserPen,
+  Users,
 } from "lucide-react";
 import { useCallback } from "react";
 
-import type { SkillCategory, SkillListItem, SkillSource } from "@cucumber/shared";
+import type {
+  SkillCategory,
+  SkillListItem,
+  SkillSource,
+} from "@cucumber/shared";
 
 import {
   DropdownMenu,
@@ -115,7 +119,8 @@ export function SkillCard({
   // Non-null assertion is safe: every possible SkillSource key is present in SOURCE_CONFIG.
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const sourceEntry =
-    (SOURCE_CONFIG[skill.source as keyof typeof SOURCE_CONFIG] ?? SOURCE_CONFIG.system)!;
+    SOURCE_CONFIG[skill.source as keyof typeof SOURCE_CONFIG] ??
+    SOURCE_CONFIG.system;
   const { label: sourceLabel, icon: SourceIcon } = sourceEntry;
 
   const handleToggle = useCallback(

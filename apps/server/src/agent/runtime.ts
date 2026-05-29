@@ -270,7 +270,7 @@ type CreateAgentRuntimeOptions = {
   agentFactory?: CucumberAgentFactory;
   agentRunMetadataService?: AgentRunMetadataService;
   connectionManager?: ConnectionManager;
-  createUserClient?: (accessToken: string) => unknown;
+  createUserClient?: (accessToken: string) => UserSupabaseClient;
   env: ServerEnv;
   eventBuffer?: CanvasEventBuffer;
   eventDelayMs?: number;

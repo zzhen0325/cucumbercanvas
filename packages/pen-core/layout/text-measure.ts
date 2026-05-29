@@ -1,21 +1,21 @@
-import type { PenNode } from '@cucumber/pen-types';
+import type { PenNode } from "@cucumber/pen-types";
 
 // ---------------------------------------------------------------------------
 // Sizing parser (shared by layout engine and text height estimation)
 // ---------------------------------------------------------------------------
 
 /** Parse a sizing value. Handles number, "fit_content", "fill_container" and parenthesized forms. */
-export function parseSizing(value: unknown): number | 'fit' | 'fill' {
-  if (typeof value === 'number') return value;
-  if (typeof value !== 'string') return 0;
-  if (value.startsWith('fill_container')) return 'fill';
-  if (value.startsWith('fit_content')) {
+export function parseSizing(value: unknown): number | "fit" | "fill" {
+  if (typeof value === "number") return value;
+  if (typeof value !== "string") return 0;
+  if (value.startsWith("fill_container")) return "fill";
+  if (value.startsWith("fit_content")) {
     const match = value.match(/\((\d+(?:\.\d+)?)\)/);
-    if (match && match[1]) return parseFloat(match[1]);
-    return 'fit';
+    if (match?.[1]) return Number.parseFloat(match[1]);
+    return "fit";
   }
-  const n = parseFloat(value);
-  return isNaN(n) ? 0 : n;
+  const n = Number.parseFloat(value);
+  return Number.isNaN(n) ? 0 : n;
 }
 
 // ---------------------------------------------------------------------------
@@ -67,8 +67,11 @@ export function hasCjkText(text: string): boolean {
  * Values based on typical proportional font width scaling.
  */
 function fontWeightFactor(fontWeight?: string | number): number {
-  const w = typeof fontWeight === 'string' ? parseInt(fontWeight, 10) : (fontWeight ?? 400);
-  if (isNaN(w) || w <= 400) return 1.0;
+  const w =
+    typeof fontWeight === "string"
+      ? Number.parseInt(fontWeight, 10)
+      : (fontWeight ?? 400);
+  if (Number.isNaN(w) || w <= 400) return 1.0;
   if (w <= 500) return 1.03;
   if (w <= 600) return 1.06;
   if (w <= 700) return 1.09;
@@ -80,9 +83,9 @@ export function estimateGlyphWidth(
   fontSize: number,
   fontWeight?: string | number,
 ): number {
-  if (ch === '\n' || ch === '\r') return 0;
-  if (ch === '\t') return fontSize * 1.2;
-  if (ch === ' ') return fontSize * 0.33;
+  if (ch === "\n" || ch === "\r") return 0;
+  if (ch === "\t") return fontSize * 1.2;
+  if (ch === " ") return fontSize * 0.33;
 
   const wf = fontWeightFactor(fontWeight);
   const code = ch.codePointAt(0) ?? 0;
@@ -103,7 +106,7 @@ export function estimateLineWidth(
   let visibleChars = 0;
   for (const ch of text) {
     width += estimateGlyphWidth(ch, fontSize, fontWeight);
-    if (ch !== '\n' && ch !== '\r') visibleChars += 1;
+    if (ch !== "\n" && ch !== "\r") visibleChars += 1;
   }
   if (visibleChars > 1 && letterSpacing !== 0) {
     width += (visibleChars - 1) * letterSpacing;
@@ -125,7 +128,12 @@ export function estimateTextWidth(
 ): number {
   const lines = text.split(/\r?\n/);
   const maxLine = lines.reduce((max, line) => {
-    const lineWidth = estimateLineWidth(line, fontSize, letterSpacing, fontWeight);
+    const lineWidth = estimateLineWidth(
+      line,
+      fontSize,
+      letterSpacing,
+      fontWeight,
+    );
     const safeLineWidth = lineWidth * widthSafetyFactor(line);
     return Math.max(max, safeLineWidth);
   }, 0);
@@ -146,7 +154,10 @@ export function estimateTextWidthPrecise(
 ): number {
   const lines = text.split(/\r?\n/);
   return lines.reduce((max, line) => {
-    return Math.max(max, estimateLineWidth(line, fontSize, letterSpacing, fontWeight));
+    return Math.max(
+      max,
+      estimateLineWidth(line, fontSize, letterSpacing, fontWeight),
+    );
   }, 0);
 }
 
@@ -155,14 +166,15 @@ export function estimateTextWidthPrecise(
 // ---------------------------------------------------------------------------
 
 export function resolveTextContent(node: PenNode): string {
-  if (node.type !== 'text') return '';
-  if (typeof node.content === 'string') return node.content;
-  if (Array.isArray(node.content)) return node.content.map((s) => s.text).join('');
+  if (node.type !== "text") return "";
+  if (typeof node.content === "string") return node.content;
+  if (Array.isArray(node.content))
+    return node.content.map((s) => s.text).join("");
   // Fallback: MCP/CLI nodes may use `text` instead of `content`
-  if (typeof (node as unknown as Record<string, unknown>).text === 'string') {
+  if (typeof (node as unknown as Record<string, unknown>).text === "string") {
     return (node as unknown as Record<string, unknown>).text as string;
   }
-  return '';
+  return "";
 }
 
 export function countExplicitTextLines(text: string): number {
@@ -181,7 +193,7 @@ export function countExplicitTextLines(text: string): number {
  * We nudge down proportionally to compensate.
  */
 export function getTextOpticalCenterYOffset(node: PenNode): number {
-  if (node.type !== 'text') return 0;
+  if (node.type !== "text") return 0;
   const text = resolveTextContent(node).trim();
   if (!text) return 0;
   if (countExplicitTextLines(text) > 1) return 0;
@@ -212,7 +224,8 @@ export function countWrappedLinesFallback(
 ): number {
   return rawLines.reduce((sum, line) => {
     const lineWidth =
-      estimateLineWidth(line, fontSize, letterSpacing, fontWeight) * widthSafetyFactor(line);
+      estimateLineWidth(line, fontSize, letterSpacing, fontWeight) *
+      widthSafetyFactor(line);
     return sum + Math.max(1, Math.ceil(lineWidth / wrapWidth));
   }, 0);
 }
@@ -242,11 +255,17 @@ export function setWrappedLineCounter(counter: WrappedLineCounter): void {
 // ---------------------------------------------------------------------------
 
 /** Estimate text height including multi-line wrapping when available width is known. */
-export function estimateTextHeight(node: PenNode, availableWidth?: number): number {
+export function estimateTextHeight(
+  node: PenNode,
+  availableWidth?: number,
+): number {
   // Access text-specific properties via Record to avoid union type issues
   const n = node as unknown as Record<string, unknown>;
-  const fontSize = typeof n.fontSize === 'number' ? n.fontSize : 16;
-  const lineHeight = typeof n.lineHeight === 'number' ? n.lineHeight : defaultLineHeight(fontSize);
+  const fontSize = typeof n.fontSize === "number" ? n.fontSize : 16;
+  const lineHeight =
+    typeof n.lineHeight === "number"
+      ? n.lineHeight
+      : defaultLineHeight(fontSize);
   // Fabric.js uses _fontSizeMult = 1.13 for the glyph height of a single line.
   // lineHeight spacing applies *between* lines, not below the last line.
   const FABRIC_FONT_MULT = 1.13;
@@ -256,19 +275,20 @@ export function estimateTextHeight(node: PenNode, availableWidth?: number): numb
   // Get text content
   const rawContent = n.content;
   const content =
-    typeof rawContent === 'string'
+    typeof rawContent === "string"
       ? rawContent
       : Array.isArray(rawContent)
-        ? rawContent.map((s: { text: string }) => s.text).join('')
-        : '';
+        ? rawContent.map((s: { text: string }) => s.text).join("")
+        : "";
   if (!content) return glyphH;
 
   // Determine the effective text width for wrapping estimation
   let textWidth = 0;
-  if ('width' in node) {
+  if ("width" in node) {
     const w = parseSizing(node.width);
-    if (typeof w === 'number' && w > 0) textWidth = w;
-    else if (w === 'fill' && availableWidth && availableWidth > 0) textWidth = availableWidth;
+    if (typeof w === "number" && w > 0) textWidth = w;
+    else if (w === "fill" && availableWidth && availableWidth > 0)
+      textWidth = availableWidth;
   }
 
   // If no width constraint is known, still count explicit newlines
@@ -281,17 +301,33 @@ export function estimateTextHeight(node: PenNode, availableWidth?: number): numb
   // Use custom wrapped line counter if set (e.g. Canvas 2D), else fallback
   const fontWeight = n.fontWeight as string | number | undefined;
   const fontFamily =
-    (typeof n.fontFamily === 'string' ? n.fontFamily : '') ||
+    (typeof n.fontFamily === "string" ? n.fontFamily : "") ||
     'Inter, -apple-system, "Noto Sans SC", "PingFang SC", system-ui, sans-serif';
-  const letterSpacing = typeof n.letterSpacing === 'number' ? n.letterSpacing : 0;
+  const letterSpacing =
+    typeof n.letterSpacing === "number" ? n.letterSpacing : 0;
   const rawLines = content.split(/\r?\n/);
   // Add tolerance matching the renderer's wrapLine (w + fontSize * 0.2)
   const wrapWidth = textWidth + fontSize * 0.2;
 
   const wrappedLineCount = _wrappedLineCounter
-    ? _wrappedLineCounter(rawLines, wrapWidth, fontSize, fontWeight, fontFamily, letterSpacing)
-    : countWrappedLinesFallback(rawLines, wrapWidth, fontSize, letterSpacing, fontWeight);
+    ? _wrappedLineCounter(
+        rawLines,
+        wrapWidth,
+        fontSize,
+        fontWeight,
+        fontFamily,
+        letterSpacing,
+      )
+    : countWrappedLinesFallback(
+        rawLines,
+        wrapWidth,
+        fontSize,
+        letterSpacing,
+        fontWeight,
+      );
 
   const totalLines = Math.max(1, wrappedLineCount);
-  return Math.round(totalLines <= 1 ? glyphH : (totalLines - 1) * lineStep + glyphH);
+  return Math.round(
+    totalLines <= 1 ? glyphH : (totalLines - 1) * lineStep + glyphH,
+  );
 }

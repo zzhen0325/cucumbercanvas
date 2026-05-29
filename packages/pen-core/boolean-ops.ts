@@ -1,7 +1,7 @@
-import { nanoid } from 'nanoid';
-import type { PenNode, PathNode } from '@cucumber/pen-types';
+import type { PathNode, PenNode } from "@cucumber/pen-types";
+import { nanoid } from "nanoid";
 
-export type BooleanOpType = 'union' | 'subtract' | 'intersect' | 'exclude';
+export type BooleanOpType = "union" | "subtract" | "intersect" | "exclude";
 
 // ---------------------------------------------------------------------------
 // Paper.js scope — headless (no canvas needed)
@@ -42,8 +42,24 @@ interface PaperModule {
   Point: new (x: number, y: number) => unknown;
 }
 
+type GlobalRequire = typeof globalThis & {
+  require?: (mid: string) => unknown;
+};
+
 let paperModule: PaperModule | null | undefined;
 let scope: PaperScope | null = null;
+
+function readRequired<T>(
+  items: ArrayLike<T>,
+  index: number,
+  context: string,
+): T {
+  const value = items[index];
+  if (value === undefined) {
+    throw new Error(`${context} is missing at index ${index}`);
+  }
+  return value;
+}
 
 /**
  * Inject a Paper.js module from ESM import (for browser/Next.js environments
@@ -61,11 +77,10 @@ function getPaperModule(): PaperModule | null {
     // Indirect require via globalThis to load paper.js at runtime without
     // triggering esbuild's direct-eval warning. The assignment to globalThis
     // happens once; subsequent calls read from the cached paperModule.
-    const _r =
-      ((globalThis as any)['require'] as ((mid: string) => unknown) | undefined) ??
-      ((typeof (globalThis as any)['require'] !== 'undefined') ? (globalThis as any)['require'] : undefined);
-    if (!_r) throw new Error('require not available');
-    paperModule = _r('paper') as PaperModule;
+    const maybeRequire = (globalThis as GlobalRequire).require;
+    const _r = typeof maybeRequire === "function" ? maybeRequire : undefined;
+    if (!_r) throw new Error("require not available");
+    paperModule = _r("paper") as PaperModule;
   } catch {
     paperModule = null;
   }
@@ -75,7 +90,7 @@ function getPaperModule(): PaperModule | null {
 function getScope(): PaperScope {
   const paper = getPaperModule();
   if (!paper) {
-    throw new Error('paper runtime is unavailable');
+    throw new Error("paper runtime is unavailable");
   }
   if (!scope) {
     scope = new paper.PaperScope();
@@ -90,21 +105,25 @@ function getScope(): PaperScope {
 // ---------------------------------------------------------------------------
 
 function sizeVal(v: number | string | undefined, fallback: number): number {
-  if (typeof v === 'number') return v;
-  if (typeof v === 'string') {
+  if (typeof v === "number") return v;
+  if (typeof v === "string") {
     const m = v.match(/\((\d+(?:\.\d+)?)\)/);
-    if (m && m[1]) return parseFloat(m[1]);
-    const n = parseFloat(v);
-    if (!isNaN(n)) return n;
+    if (m?.[1]) return Number.parseFloat(m[1]);
+    const n = Number.parseFloat(v);
+    if (!Number.isNaN(n)) return n;
   }
   return fallback;
 }
 
-function rectToPath(w: number, h: number, cr?: number | [number, number, number, number]): string {
-  if (!cr || (typeof cr === 'number' && cr === 0)) {
+function rectToPath(
+  w: number,
+  h: number,
+  cr?: number | [number, number, number, number],
+): string {
+  if (!cr || (typeof cr === "number" && cr === 0)) {
     return `M 0 0 L ${w} 0 L ${w} ${h} L 0 ${h} Z`;
   }
-  let [tl, tr, br, bl] = typeof cr === 'number' ? [cr, cr, cr, cr] : cr;
+  let [tl, tr, br, bl] = typeof cr === "number" ? [cr, cr, cr, cr] : cr;
   const maxR = Math.min(w, h) / 2;
   tl = Math.min(tl, maxR);
   tr = Math.min(tr, maxR);
@@ -113,17 +132,17 @@ function rectToPath(w: number, h: number, cr?: number | [number, number, number,
   return [
     `M ${tl} 0`,
     `L ${w - tr} 0`,
-    tr > 0 ? `A ${tr} ${tr} 0 0 1 ${w} ${tr}` : '',
+    tr > 0 ? `A ${tr} ${tr} 0 0 1 ${w} ${tr}` : "",
     `L ${w} ${h - br}`,
-    br > 0 ? `A ${br} ${br} 0 0 1 ${w - br} ${h}` : '',
+    br > 0 ? `A ${br} ${br} 0 0 1 ${w - br} ${h}` : "",
     `L ${bl} ${h}`,
-    bl > 0 ? `A ${bl} ${bl} 0 0 1 0 ${h - bl}` : '',
+    bl > 0 ? `A ${bl} ${bl} 0 0 1 0 ${h - bl}` : "",
     `L 0 ${tl}`,
-    tl > 0 ? `A ${tl} ${tl} 0 0 1 ${tl} 0` : '',
-    'Z',
+    tl > 0 ? `A ${tl} ${tl} 0 0 1 ${tl} 0` : "",
+    "Z",
   ]
     .filter(Boolean)
-    .join(' ');
+    .join(" ");
 }
 
 function ellipseToPath(rx: number, ry: number): string {
@@ -134,8 +153,8 @@ function ellipseToPath(rx: number, ry: number): string {
     `A ${rx} ${ry} 0 0 1 0 ${ry}`,
     `A ${rx} ${ry} 0 0 1 ${rx} 0`,
     `A ${rx} ${ry} 0 0 1 ${rx * 2} ${ry}`,
-    'Z',
-  ].join(' ');
+    "Z",
+  ].join(" ");
 }
 
 function polygonToPath(count: number, w: number, h: number): string {
@@ -144,10 +163,10 @@ function polygonToPath(count: number, w: number, h: number): string {
     const angle = (i * 2 * Math.PI) / count - Math.PI / 2;
     raw.push([Math.cos(angle), Math.sin(angle)]);
   }
-  let minX = Infinity,
-    maxX = -Infinity,
-    minY = Infinity,
-    maxY = -Infinity;
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
   for (const [rx, ry] of raw) {
     if (rx < minX) minX = rx;
     if (rx > maxX) maxX = rx;
@@ -158,37 +177,37 @@ function polygonToPath(count: number, w: number, h: number): string {
   const rh = maxY - minY;
   const parts: string[] = [];
   for (let i = 0; i < count; i++) {
-    const pt = raw[i]!;
+    const pt = readRequired(raw, i, "polygon point");
     const px = ((pt[0] - minX) / rw) * w;
     const py = ((pt[1] - minY) / rh) * h;
     parts.push(i === 0 ? `M ${px} ${py}` : `L ${px} ${py}`);
   }
-  parts.push('Z');
-  return parts.join(' ');
+  parts.push("Z");
+  return parts.join(" ");
 }
 
 /** Convert a shape node to an SVG path `d` string in local coordinates (origin at 0,0). */
 function nodeToLocalPath(node: PenNode): string | null {
   switch (node.type) {
-    case 'rectangle':
-    case 'frame': {
+    case "rectangle":
+    case "frame": {
       const w = sizeVal(node.width, 100);
       const h = sizeVal(node.height, 100);
       return rectToPath(w, h, node.cornerRadius);
     }
-    case 'ellipse': {
+    case "ellipse": {
       const w = sizeVal(node.width, 100);
       const h = sizeVal(node.height, 100);
       return ellipseToPath(w / 2, h / 2);
     }
-    case 'polygon': {
+    case "polygon": {
       const w = sizeVal(node.width, 100);
       const h = sizeVal(node.height, 100);
       return polygonToPath(node.polygonCount || 6, w, h);
     }
-    case 'path':
+    case "path":
       return node.d;
-    case 'line':
+    case "line":
       return `M 0 0 L ${(node.x2 ?? (node.x ?? 0) + 100) - (node.x ?? 0)} ${(node.y2 ?? node.y ?? 0) - (node.y ?? 0)}`;
     default:
       return null;
@@ -200,12 +219,20 @@ function nodeToLocalPath(node: PenNode): string | null {
 // ---------------------------------------------------------------------------
 
 /** Types that can participate in boolean operations. */
-const BOOLEAN_TYPES = new Set(['rectangle', 'ellipse', 'polygon', 'path', 'line', 'frame']);
-const BOOLEAN_TYPE_LABELS = 'rectangles, ellipses, polygons, paths, lines, and frames';
+const BOOLEAN_TYPES = new Set([
+  "rectangle",
+  "ellipse",
+  "polygon",
+  "path",
+  "line",
+  "frame",
+]);
+const BOOLEAN_TYPE_LABELS =
+  "rectangles, ellipses, polygons, paths, lines, and frames";
 
 export function getBooleanOpRejectionReason(nodes: PenNode[]): string | null {
   if (nodes.length < 2) {
-    return 'Select at least two shape or path nodes before running a boolean operation.';
+    return "Select at least two shape or path nodes before running a boolean operation.";
   }
 
   if (nodes.some((n) => !BOOLEAN_TYPES.has(n.type))) {
@@ -253,7 +280,10 @@ function nodeToPaperPath(node: PenNode): PaperPathItem | null {
  * Execute a boolean operation on the given PenNodes.
  * Returns a new PathNode with the result, or null on failure.
  */
-export function executeBooleanOp(nodes: PenNode[], operation: BooleanOpType): PathNode | null {
+export function executeBooleanOp(
+  nodes: PenNode[],
+  operation: BooleanOpType,
+): PathNode | null {
   if (nodes.length < 2) return null;
 
   if (!getPaperModule()) return null;
@@ -264,21 +294,21 @@ export function executeBooleanOp(nodes: PenNode[], operation: BooleanOpType): Pa
   const paths = paperPaths as PaperPathItem[];
 
   // Accumulate: fold left with the boolean operation
-  let result: PaperPathItem | null = paths[0]!;
+  let result: PaperPathItem | null = readRequired(paths, 0, "first path");
   for (let i = 1; i < paths.length; i++) {
-    const p = paths[i]!;
+    const p = readRequired(paths, i, "boolean path");
     switch (operation) {
-      case 'union':
-        result = result!.unite(p);
+      case "union":
+        result = result?.unite(p);
         break;
-      case 'subtract':
-        result = result!.subtract(p);
+      case "subtract":
+        result = result?.subtract(p);
         break;
-      case 'intersect':
-        result = result!.intersect(p);
+      case "intersect":
+        result = result?.intersect(p);
         break;
-      case 'exclude':
-        result = result!.exclude(p);
+      case "exclude":
+        result = result?.exclude(p);
         break;
     }
   }
@@ -304,22 +334,22 @@ export function executeBooleanOp(nodes: PenNode[], operation: BooleanOpType): Pa
 
   // Build the label
   const opLabels: Record<BooleanOpType, string> = {
-    union: 'Union',
-    subtract: 'Subtract',
-    intersect: 'Intersect',
-    exclude: 'Exclude',
+    union: "Union",
+    subtract: "Subtract",
+    intersect: "Intersect",
+    exclude: "Exclude",
   };
 
   // Inherit style from first operand
-  const first = nodes[0]!;
-  const fill = 'fill' in first ? first.fill : undefined;
-  const stroke = 'stroke' in first ? first.stroke : undefined;
-  const effects = 'effects' in first ? first.effects : undefined;
+  const first = readRequired(nodes, 0, "first boolean operand");
+  const fill = "fill" in first ? first.fill : undefined;
+  const stroke = "stroke" in first ? first.stroke : undefined;
+  const effects = "effects" in first ? first.effects : undefined;
   const opacity = first.opacity;
 
   return {
     id: nanoid(),
-    type: 'path',
+    type: "path",
     name: opLabels[operation],
     d: originPathData,
     x: bounds.x,

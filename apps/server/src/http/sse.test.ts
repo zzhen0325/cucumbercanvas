@@ -1,7 +1,10 @@
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { RequestAuthenticator } from "../supabase/user.js";
+import type {
+  RequestAuthenticator,
+  UserSupabaseClient,
+} from "../supabase/user.js";
 import { CanvasEventBuffer } from "../ws/event-buffer.js";
 import { registerSseRoutes } from "./sse.js";
 
@@ -105,18 +108,19 @@ async function createHarness() {
 
   await registerSseRoutes(app, {
     auth,
-    createUserClient: () => ({
-      from: () => ({
-        select: () => ({
-          eq: () => ({
-            maybeSingle: async () => ({
-              data: { id: "canvas-1" },
-              error: null,
+    createUserClient: () =>
+      ({
+        from: () => ({
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: { id: "canvas-1" },
+                error: null,
+              }),
             }),
           }),
         }),
-      }),
-    }),
+      }) as unknown as UserSupabaseClient,
     eventBuffer,
     webOrigin: "http://localhost:3000",
   });

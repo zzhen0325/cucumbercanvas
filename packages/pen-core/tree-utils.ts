@@ -170,7 +170,8 @@ export function updateNodeInTree(
   };
 
   for (let i = 0; i < nodes.length; i++) {
-    const node = nodes[i]!;
+    const node = nodes[i];
+    if (!node) continue;
 
     if (node.id === id) {
       if (!hasNodeChanges(node)) return nodes;

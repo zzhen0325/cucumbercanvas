@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
 import { FileText, Plus, X } from "lucide-react";
+import { useCallback, useState } from "react";
 
 import type { SkillCategory } from "@cucumber/shared";
 
@@ -83,6 +83,12 @@ interface CreateSkillDialogProps {
   }) => Promise<void>;
 }
 
+type DraftSkillFile = {
+  content: string;
+  filePath: string;
+  id: string;
+};
+
 export function CreateSkillDialog({
   open,
   onOpenChange,
@@ -92,13 +98,16 @@ export function CreateSkillDialog({
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<SkillCategory>("custom");
   const [skillContent, setSkillContent] = useState("");
-  const [files, setFiles] = useState<Array<{ filePath: string; content: string }>>([]);
+  const [files, setFiles] = useState<DraftSkillFile[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   // -- File management helpers --
 
   const addFile = useCallback(() => {
-    setFiles((prev) => [...prev, { filePath: "", content: "" }]);
+    setFiles((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), filePath: "", content: "" },
+    ]);
   }, []);
 
   const removeFile = useCallback((index: number) => {
@@ -136,9 +145,9 @@ export function CreateSkillDialog({
       if (!name.trim() || !description.trim() || !skillContent.trim()) return;
 
       // Only include files where both filePath and content are non-empty
-      const validFiles = files.filter(
-        (f) => f.filePath.trim() && f.content.trim(),
-      );
+      const validFiles = files
+        .filter((f) => f.filePath.trim() && f.content.trim())
+        .map(({ content, filePath }) => ({ content, filePath }));
 
       setSubmitting(true);
       try {
@@ -154,7 +163,15 @@ export function CreateSkillDialog({
         setSubmitting(false);
       }
     },
-    [name, description, category, skillContent, files, onSubmit, handleOpenChange],
+    [
+      name,
+      description,
+      category,
+      skillContent,
+      files,
+      onSubmit,
+      handleOpenChange,
+    ],
   );
 
   const canSubmit =
@@ -244,12 +261,7 @@ export function CreateSkillDialog({
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <Label>附属文件（可选）</Label>
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                onClick={addFile}
-              >
+              <Button type="button" variant="ghost" size="xs" onClick={addFile}>
                 <Plus className="size-3" />
                 添加
               </Button>
@@ -264,7 +276,7 @@ export function CreateSkillDialog({
 
                   return (
                     <div
-                      key={index}
+                      key={file.id}
                       className="relative rounded-lg border border-border bg-secondary/40 p-3 space-y-2"
                     >
                       {/* Remove button */}

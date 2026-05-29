@@ -485,7 +485,7 @@ export function CanvasLayersPanel({
     ) => {
       const activeElements = nextElements.filter((el) => !el.isDeleted);
       orderedElementsRef.current = activeElements;
-      setElements([...activeElements].reverse());
+      setElements(activeElements);
       setFiles(nextFiles);
       setSelectedIds(appState.selectedElementIds ?? {});
     },

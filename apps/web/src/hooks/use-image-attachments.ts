@@ -33,7 +33,12 @@ export type ReadyAttachment = {
 };
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
-const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+const ALLOWED_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+]);
 
 export function useImageAttachments(accessToken: string, projectId?: string) {
   const [attachments, setAttachments] = useState<ImageAttachmentState[]>([]);
@@ -98,7 +103,12 @@ export function useImageAttachments(accessToken: string, projectId?: string) {
             setAttachments((prev) =>
               prev.map((a) =>
                 a.id === id
-                  ? { ...a, uploading: false, assetId: res.asset.id, url: res.url }
+                  ? {
+                      ...a,
+                      uploading: false,
+                      assetId: res.asset.id,
+                      url: res.url,
+                    }
                   : a,
               ),
             );
@@ -108,7 +118,12 @@ export function useImageAttachments(accessToken: string, projectId?: string) {
             setAttachments((prev) =>
               prev.map((a) =>
                 a.id === id
-                  ? { ...a, uploading: false, error: err instanceof Error ? err.message : "Upload failed" }
+                  ? {
+                      ...a,
+                      uploading: false,
+                      error:
+                        err instanceof Error ? err.message : "Upload failed",
+                    }
                   : a,
               ),
             );
@@ -161,7 +176,12 @@ export function useImageAttachments(accessToken: string, projectId?: string) {
           setAttachments((prev) =>
             prev.map((a) =>
               a.id === id
-                ? { ...a, uploading: false, assetId: res.asset.id, url: res.url }
+                ? {
+                    ...a,
+                    uploading: false,
+                    assetId: res.asset.id,
+                    url: res.url,
+                  }
                 : a,
             ),
           );
@@ -171,7 +191,11 @@ export function useImageAttachments(accessToken: string, projectId?: string) {
           setAttachments((prev) =>
             prev.map((a) =>
               a.id === id
-                ? { ...a, uploading: false, error: err instanceof Error ? err.message : "Upload failed" }
+                ? {
+                    ...a,
+                    uploading: false,
+                    error: err instanceof Error ? err.message : "Upload failed",
+                  }
                 : a,
             ),
           );
@@ -204,10 +228,12 @@ export function useImageAttachments(accessToken: string, projectId?: string) {
   const isUploading = attachments.some((a) => a.uploading);
 
   const readyAttachments = attachments
-    .filter((a) => a.assetId && a.url && !a.error)
+    .filter((a): a is typeof a & { assetId: string; url: string } =>
+      Boolean(a.assetId && a.url && !a.error),
+    )
     .map((a) => ({
-      assetId: a.assetId!,
-      url: a.url!,
+      assetId: a.assetId,
+      url: a.url,
       mimeType: a.mimeType,
       source: a.source,
       ...(a.name ? { name: a.name } : {}),

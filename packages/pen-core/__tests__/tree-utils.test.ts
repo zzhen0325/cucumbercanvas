@@ -13,7 +13,7 @@ import {
   removeNodeFromTree,
   setActivePageChildren,
   updateNodeInTree,
-} from "../tree-utils";
+} from "../tree-utils.js";
 
 const frame = (id: string, children: PenNode[] = []): PenNode => ({
   id,

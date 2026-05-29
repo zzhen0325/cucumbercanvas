@@ -4,10 +4,10 @@
  * Used when renaming or deleting a variable to keep the tree consistent.
  */
 
-import type { PenNode } from '@cucumber/pen-types';
-import type { PenFill } from '@cucumber/pen-types';
-import type { VariableDefinition } from '@cucumber/pen-types';
-import { resolveVariableRef } from './resolve.js';
+import type { PenNode } from "@cucumber/pen-types";
+import type { PenFill } from "@cucumber/pen-types";
+import type { VariableDefinition } from "@cucumber/pen-types";
+import { resolveVariableRef } from "./resolve.js";
 
 /**
  * Replace all occurrences of `$oldRef` with `$newRef` in the node tree.
@@ -27,23 +27,25 @@ export function replaceVariableRefsInTree(
     if (val !== oldToken) return val;
     if (replacement) return replacement;
     const resolved = resolveVariableRef(oldToken, variables, activeTheme);
-    return typeof resolved === 'string' ? resolved : val;
+    return typeof resolved === "string" ? resolved : val;
   }
 
   function resolveOrReplaceNumeric(val: string | number): string | number {
-    if (typeof val !== 'string' || val !== oldToken) return val;
+    if (typeof val !== "string" || val !== oldToken) return val;
     if (replacement) return replacement;
     const resolved = resolveVariableRef(oldToken, variables, activeTheme);
-    return typeof resolved === 'number' ? resolved : val;
+    return typeof resolved === "number" ? resolved : val;
   }
 
-  function replaceFills(fills: PenFill[] | string | undefined): PenFill[] | string | undefined {
-    if (!fills || typeof fills === 'string') return fills;
+  function replaceFills(
+    fills: PenFill[] | string | undefined,
+  ): PenFill[] | string | undefined {
+    if (!fills || typeof fills === "string") return fills;
     return fills.map((f) => {
-      if (f.type === 'solid' && f.color === oldToken) {
+      if (f.type === "solid" && f.color === oldToken) {
         return { ...f, color: resolveOrReplace(f.color) };
       }
-      if (f.type === 'linear_gradient' || f.type === 'radial_gradient') {
+      if (f.type === "linear_gradient" || f.type === "radial_gradient") {
         const newStops = f.stops.map((s) =>
           s.color === oldToken ? { ...s, color: resolveOrReplace(s.color) } : s,
         );
@@ -58,26 +60,33 @@ export function replaceVariableRefsInTree(
     let changed = false;
 
     // Opacity
-    if (typeof node.opacity === 'string' && node.opacity === oldToken) {
+    if (typeof node.opacity === "string" && node.opacity === oldToken) {
       out.opacity = resolveOrReplaceNumeric(node.opacity);
       changed = true;
     }
 
     // Gap
-    if ('gap' in node && (node as unknown as Record<string, unknown>).gap === oldToken) {
+    if (
+      "gap" in node &&
+      (node as unknown as Record<string, unknown>).gap === oldToken
+    ) {
       out.gap = resolveOrReplaceNumeric(oldToken);
       changed = true;
     }
 
     // Padding
-    if ('padding' in node && (node as unknown as Record<string, unknown>).padding === oldToken) {
+    if (
+      "padding" in node &&
+      (node as unknown as Record<string, unknown>).padding === oldToken
+    ) {
       out.padding = resolveOrReplaceNumeric(oldToken);
       changed = true;
     }
 
     // Fill
-    if ('fill' in node && (node as unknown as Record<string, unknown>).fill) {
-      const fills = (node as unknown as Record<string, unknown>).fill as PenFill[];
+    if ("fill" in node && (node as unknown as Record<string, unknown>).fill) {
+      const fills = (node as unknown as Record<string, unknown>)
+        .fill as PenFill[];
       const newFills = replaceFills(fills);
       if (newFills !== fills) {
         out.fill = newFills;
@@ -86,11 +95,18 @@ export function replaceVariableRefsInTree(
     }
 
     // Stroke fill & thickness
-    if ('stroke' in node && (node as unknown as Record<string, unknown>).stroke) {
-      const stroke = (node as unknown as Record<string, unknown>).stroke as Record<string, unknown>;
+    if (
+      "stroke" in node &&
+      (node as unknown as Record<string, unknown>).stroke
+    ) {
+      const stroke = (node as unknown as Record<string, unknown>)
+        .stroke as Record<string, unknown>;
       const newStroke = { ...stroke };
       let strokeChanged = false;
-      if (typeof stroke.thickness === 'string' && stroke.thickness === oldToken) {
+      if (
+        typeof stroke.thickness === "string" &&
+        stroke.thickness === oldToken
+      ) {
         newStroke.thickness = resolveOrReplaceNumeric(oldToken);
         strokeChanged = true;
       }
@@ -108,20 +124,21 @@ export function replaceVariableRefsInTree(
     }
 
     // Effects
-    if ('effects' in node && Array.isArray((node as unknown as Record<string, unknown>).effects)) {
-      const effects = (node as unknown as Record<string, unknown>).effects as Record<
-        string,
-        unknown
-      >[];
+    if (
+      "effects" in node &&
+      Array.isArray((node as unknown as Record<string, unknown>).effects)
+    ) {
+      const effects = (node as unknown as Record<string, unknown>)
+        .effects as Record<string, unknown>[];
       const newEffects = effects.map((e) => {
         const ne = { ...e };
         let ec = false;
-        if (typeof e.color === 'string' && e.color === oldToken) {
+        if (typeof e.color === "string" && e.color === oldToken) {
           ne.color = resolveOrReplace(e.color as string);
           ec = true;
         }
-        for (const key of ['blur', 'offsetX', 'offsetY', 'spread']) {
-          if (typeof e[key] === 'string' && e[key] === oldToken) {
+        for (const key of ["blur", "offsetX", "offsetY", "spread"]) {
+          if (typeof e[key] === "string" && e[key] === oldToken) {
             ne[key] = resolveOrReplaceNumeric(oldToken);
             ec = true;
           }
@@ -133,15 +150,29 @@ export function replaceVariableRefsInTree(
     }
 
     // Text content
-    if (node.type === 'text' && typeof node.content === 'string' && node.content === oldToken) {
+    if (
+      node.type === "text" &&
+      typeof node.content === "string" &&
+      node.content === oldToken
+    ) {
       out.content = resolveOrReplace(node.content);
       changed = true;
     }
 
     // Recurse children
-    if ('children' in node && (node as unknown as Record<string, unknown>).children) {
-      const children = (node as unknown as Record<string, unknown>).children as PenNode[];
-      out.children = replaceVariableRefsInTree(children, oldRef, newRef, variables, activeTheme);
+    if (
+      "children" in node &&
+      (node as unknown as Record<string, unknown>).children
+    ) {
+      const children = (node as unknown as Record<string, unknown>)
+        .children as PenNode[];
+      out.children = replaceVariableRefsInTree(
+        children,
+        oldRef,
+        newRef,
+        variables,
+        activeTheme,
+      );
       changed = true;
     }
 

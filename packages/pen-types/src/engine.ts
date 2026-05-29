@@ -1,5 +1,5 @@
-import type { PenDocument } from './pen.js';
-import type { ViewportState, ToolType } from './canvas.js';
+import type { ToolType, ViewportState } from "./canvas.js";
+import type { PenDocument } from "./pen.js";
 
 // ---------------------------------------------------------------------------
 // Engine Options
@@ -28,13 +28,13 @@ export interface DesignEngineOptions {
 
 export interface DesignEngineEvents {
   /** Fired after document mutation (batch-aware: only once per batch). */
-  'document:change': (doc: PenDocument) => void;
-  'selection:change': (ids: string[]) => void;
-  'viewport:change': (state: ViewportState) => void;
-  'tool:change': (tool: ToolType) => void;
-  'history:change': (state: { canUndo: boolean; canRedo: boolean }) => void;
-  'node:hover': (id: string | null) => void;
-  'page:change': (pageId: string) => void;
+  "document:change": (doc: PenDocument) => void;
+  "selection:change": (ids: string[]) => void;
+  "viewport:change": (state: ViewportState) => void;
+  "tool:change": (tool: ToolType) => void;
+  "history:change": (state: { canUndo: boolean; canRedo: boolean }) => void;
+  "node:hover": (id: string | null) => void;
+  "page:change": (pageId: string) => void;
   /** Fired after canvas re-render (browser adapter only). */
   render: () => void;
 }
@@ -44,15 +44,15 @@ export interface DesignEngineEvents {
 // ---------------------------------------------------------------------------
 
 export type CodePlatform =
-  | 'react'
-  | 'html'
-  | 'css'
-  | 'vue'
-  | 'svelte'
-  | 'flutter'
-  | 'swiftui'
-  | 'compose'
-  | 'react-native';
+  | "react"
+  | "html"
+  | "css"
+  | "vue"
+  | "svelte"
+  | "flutter"
+  | "swiftui"
+  | "compose"
+  | "react-native";
 
 export interface CodeResult {
   files: Array<{ filename: string; content: string; language: string }>;
@@ -63,9 +63,9 @@ export interface CodeResult {
 // Icon Lookup
 // ---------------------------------------------------------------------------
 
-export interface IconLookupFn {
-  (name: string): { d: string; iconId: string; style: 'stroke' | 'fill' } | null;
-}
+export type IconLookupFn = (
+  name: string,
+) => { d: string; iconId: string; style: "stroke" | "fill" } | null;
 
 // ---------------------------------------------------------------------------
 // Canvas Interaction Types
@@ -102,7 +102,7 @@ export interface InsertionIndicator {
   x: number;
   y: number;
   length: number;
-  orientation: 'horizontal' | 'vertical';
+  orientation: "horizontal" | "vertical";
 }
 
 export interface ContainerHighlight {

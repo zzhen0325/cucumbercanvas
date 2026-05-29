@@ -1,4 +1,16 @@
-import type { CanvasKit, Path } from 'canvaskit-wasm';
+import type { CanvasKit, Path } from "canvaskit-wasm";
+
+function readRequired<T>(
+  items: ArrayLike<T>,
+  index: number,
+  context: string,
+): T {
+  const value = items[index];
+  if (value === undefined) {
+    throw new Error(`${context} is missing at index ${index}`);
+  }
+  return value;
+}
 
 /**
  * Normalize SVG path data for CanvasKit's parser:
@@ -10,13 +22,13 @@ import type { CanvasKit, Path } from 'canvaskit-wasm';
 export function sanitizeSvgPath(d: string): string {
   let result = d
     // Add space between command letter and following number/sign
-    .replace(/([MLCQZAHVSmlcqzahvsTt])([0-9.+-])/g, '$1 $2')
+    .replace(/([MLCQZAHVSmlcqzahvsTt])([0-9.+-])/g, "$1 $2")
     // Add space between digit and following negative sign (number separator)
-    .replace(/(\d)-/g, '$1 -')
+    .replace(/(\d)-/g, "$1 -")
     // Replace commas with spaces
-    .replace(/,/g, ' ')
+    .replace(/,/g, " ")
     // Collapse multiple spaces
-    .replace(/\s+/g, ' ')
+    .replace(/\s+/g, " ")
     .trim();
 
   // Separate concatenated arc flags: in SVG arc commands, the large-arc and
@@ -24,13 +36,13 @@ export function sanitizeSvgPath(d: string): string {
   // other and with the following number. e.g. "a2 2 0 012 2" -> "a2 2 0 0 1 2 2"
   result = result.replace(
     /([aA])\s*([\d.e+-]+)\s+([\d.e+-]+)\s+([\d.e+-]+)\s+([01])([01])([\d.+-])/g,
-    '$1 $2 $3 $4 $5 $6 $7',
+    "$1 $2 $3 $4 $5 $6 $7",
   );
   // Handle the case where all three (rotation + flags) are concatenated without spaces,
   // e.g. "a4 4 0100-8" where 0100 = rotation=0, large-arc=1, sweep=0, then 0 is start of x
   result = result.replace(
     /([aA])\s*([\d.e+-]+)\s+([\d.e+-]+)\s+(\d)([01])([01])([\d.+-])/g,
-    '$1 $2 $3 $4 $5 $6 $7',
+    "$1 $2 $3 $4 $5 $6 $7",
   );
 
   return result;
@@ -69,7 +81,7 @@ function arcToCubics(
   const y1p = dy;
 
   // Correct radii
-  let lambda = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry);
+  const lambda = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry);
   if (lambda > 1) {
     const s = Math.sqrt(lambda);
     rx *= s;
@@ -81,7 +93,8 @@ function arcToCubics(
   const x1pSq = x1p * x1p;
   const y1pSq = y1p * y1p;
 
-  let sq = (rxSq * rySq - rxSq * y1pSq - rySq * x1pSq) / (rxSq * y1pSq + rySq * x1pSq);
+  let sq =
+    (rxSq * rySq - rxSq * y1pSq - rySq * x1pSq) / (rxSq * y1pSq + rySq * x1pSq);
   if (sq < 0) sq = 0;
   let root = Math.sqrt(sq);
   if (largeArc === sweep) root = -root;
@@ -103,7 +116,12 @@ function arcToCubics(
   };
 
   const theta1 = angle(1, 0, (x1p - cxp) / rx, (y1p - cyp) / ry);
-  let dTheta = angle((x1p - cxp) / rx, (y1p - cyp) / ry, (-x1p - cxp) / rx, (-y1p - cyp) / ry);
+  let dTheta = angle(
+    (x1p - cxp) / rx,
+    (y1p - cyp) / ry,
+    (-x1p - cxp) / rx,
+    (-y1p - cyp) / ry,
+  );
 
   if (!sweep && dTheta > 0) dTheta -= 2 * Math.PI;
   if (sweep && dTheta < 0) dTheta += 2 * Math.PI;
@@ -116,12 +134,14 @@ function arcToCubics(
     const t1 = theta1 + i * segAngle;
     const t2 = t1 + segAngle;
     const alpha =
-      (Math.sin(segAngle) * (Math.sqrt(4 + 3 * Math.pow(Math.tan(segAngle / 2), 2)) - 1)) / 3;
+      (Math.sin(segAngle) *
+        (Math.sqrt(4 + 3 * Math.tan(segAngle / 2) ** 2) - 1)) /
+      3;
 
-    const cos1 = Math.cos(t1),
-      sin1 = Math.sin(t1);
-    const cos2 = Math.cos(t2),
-      sin2 = Math.sin(t2);
+    const cos1 = Math.cos(t1);
+    const sin1 = Math.sin(t1);
+    const cos2 = Math.cos(t2);
+    const sin2 = Math.sin(t2);
 
     const p1x = cx + rx * cos1;
     const p1y = cy + ry * sin1;
@@ -146,24 +166,26 @@ export function tryManualPathParse(ck: CanvasKit, d: string): Path | null {
   try {
     const path = new ck.Path();
     // Replace NaN/Infinity with 0 so commands keep their parameter count.
-    const cleaned = d.replace(/-?NaN/g, '0').replace(/-?Infinity/g, '0');
+    const cleaned = d.replace(/-?NaN/g, "0").replace(/-?Infinity/g, "0");
     // Tokenize: split on commands and extract numbers
-    const tokens = cleaned.match(/[MLCQZAHVSmlcqzahvs]|[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/g);
+    const tokens = cleaned.match(
+      /[MLCQZAHVSmlcqzahvs]|[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/g,
+    );
     if (!tokens || tokens.length === 0) return null;
 
     let i = 0;
-    let lastCmd = '';
-    let cx = 0,
-      cy = 0; // current point
+    let lastCmd = "";
+    let cx = 0;
+    let cy = 0; // current point
 
     while (i < tokens.length) {
-      let cmd: string = tokens[i]!;
+      let cmd: string = readRequired(tokens, i, "path token");
       if (/^[MLCQZAHVSmlcqzahvs]$/.test(cmd)) {
         lastCmd = cmd;
         i++;
       } else if (lastCmd) {
         // Implicit repeat of last command (M becomes L after first pair)
-        cmd = lastCmd === 'M' ? 'L' : lastCmd === 'm' ? 'l' : lastCmd;
+        cmd = lastCmd === "M" ? "L" : lastCmd === "m" ? "l" : lastCmd;
       } else {
         i++;
         continue;
@@ -172,8 +194,8 @@ export function tryManualPathParse(ck: CanvasKit, d: string): Path | null {
       const nums = (count: number): number[] => {
         const result: number[] = [];
         for (let j = 0; j < count && i < tokens.length; j++) {
-          const n = parseFloat(tokens[i]!);
-          if (isNaN(n)) break;
+          const n = Number.parseFloat(readRequired(tokens, i, "path token"));
+          if (Number.isNaN(n)) break;
           result.push(n);
           i++;
         }
@@ -181,144 +203,209 @@ export function tryManualPathParse(ck: CanvasKit, d: string): Path | null {
       };
 
       switch (cmd) {
-        case 'M': {
+        case "M": {
           const p = nums(2);
           if (p.length === 2) {
-            path.moveTo(p[0]!, p[1]!);
-            cx = p[0]!;
-            cy = p[1]!;
-            lastCmd = 'L';
+            path.moveTo(
+              readRequired(p, 0, "path command parameter"),
+              readRequired(p, 1, "path command parameter"),
+            );
+            cx = readRequired(p, 0, "path command parameter");
+            cy = readRequired(p, 1, "path command parameter");
+            lastCmd = "L";
           }
           break;
         }
-        case 'm': {
+        case "m": {
           const p = nums(2);
           if (p.length === 2) {
-            path.moveTo(cx + p[0]!, cy + p[1]!);
-            cx += p[0]!;
-            cy += p[1]!;
-            lastCmd = 'l';
+            path.moveTo(
+              cx + readRequired(p, 0, "path command parameter"),
+              cy + readRequired(p, 1, "path command parameter"),
+            );
+            cx += readRequired(p, 0, "path command parameter");
+            cy += readRequired(p, 1, "path command parameter");
+            lastCmd = "l";
           }
           break;
         }
-        case 'L': {
+        case "L": {
           const p = nums(2);
           if (p.length === 2) {
-            path.lineTo(p[0]!, p[1]!);
-            cx = p[0]!;
-            cy = p[1]!;
+            path.lineTo(
+              readRequired(p, 0, "path command parameter"),
+              readRequired(p, 1, "path command parameter"),
+            );
+            cx = readRequired(p, 0, "path command parameter");
+            cy = readRequired(p, 1, "path command parameter");
           }
           break;
         }
-        case 'l': {
+        case "l": {
           const p = nums(2);
           if (p.length === 2) {
-            path.lineTo(cx + p[0]!, cy + p[1]!);
-            cx += p[0]!;
-            cy += p[1]!;
+            path.lineTo(
+              cx + readRequired(p, 0, "path command parameter"),
+              cy + readRequired(p, 1, "path command parameter"),
+            );
+            cx += readRequired(p, 0, "path command parameter");
+            cy += readRequired(p, 1, "path command parameter");
           }
           break;
         }
-        case 'H': {
+        case "H": {
           const p = nums(1);
           if (p.length === 1) {
-            path.lineTo(p[0]!, cy);
-            cx = p[0]!;
+            path.lineTo(readRequired(p, 0, "path command parameter"), cy);
+            cx = readRequired(p, 0, "path command parameter");
           }
           break;
         }
-        case 'h': {
+        case "h": {
           const p = nums(1);
           if (p.length === 1) {
-            path.lineTo(cx + p[0]!, cy);
-            cx += p[0]!;
+            path.lineTo(cx + readRequired(p, 0, "path command parameter"), cy);
+            cx += readRequired(p, 0, "path command parameter");
           }
           break;
         }
-        case 'V': {
+        case "V": {
           const p = nums(1);
           if (p.length === 1) {
-            path.lineTo(cx, p[0]!);
-            cy = p[0]!;
+            path.lineTo(cx, readRequired(p, 0, "path command parameter"));
+            cy = readRequired(p, 0, "path command parameter");
           }
           break;
         }
-        case 'v': {
+        case "v": {
           const p = nums(1);
           if (p.length === 1) {
-            path.lineTo(cx, cy + p[0]!);
-            cy += p[0]!;
+            path.lineTo(cx, cy + readRequired(p, 0, "path command parameter"));
+            cy += readRequired(p, 0, "path command parameter");
           }
           break;
         }
-        case 'C': {
+        case "C": {
           const p = nums(6);
           if (p.length === 6) {
-            path.cubicTo(p[0]!, p[1]!, p[2]!, p[3]!, p[4]!, p[5]!);
-            cx = p[4]!;
-            cy = p[5]!;
+            path.cubicTo(
+              readRequired(p, 0, "path command parameter"),
+              readRequired(p, 1, "path command parameter"),
+              readRequired(p, 2, "path command parameter"),
+              readRequired(p, 3, "path command parameter"),
+              readRequired(p, 4, "path command parameter"),
+              readRequired(p, 5, "path command parameter"),
+            );
+            cx = readRequired(p, 4, "path command parameter");
+            cy = readRequired(p, 5, "path command parameter");
           }
           break;
         }
-        case 'c': {
+        case "c": {
           const p = nums(6);
           if (p.length === 6) {
-            path.cubicTo(cx + p[0]!, cy + p[1]!, cx + p[2]!, cy + p[3]!, cx + p[4]!, cy + p[5]!);
-            cx += p[4]!;
-            cy += p[5]!;
+            path.cubicTo(
+              cx + readRequired(p, 0, "path command parameter"),
+              cy + readRequired(p, 1, "path command parameter"),
+              cx + readRequired(p, 2, "path command parameter"),
+              cy + readRequired(p, 3, "path command parameter"),
+              cx + readRequired(p, 4, "path command parameter"),
+              cy + readRequired(p, 5, "path command parameter"),
+            );
+            cx += readRequired(p, 4, "path command parameter");
+            cy += readRequired(p, 5, "path command parameter");
           }
           break;
         }
-        case 'Q': {
+        case "Q": {
           const p = nums(4);
           if (p.length === 4) {
-            path.quadTo(p[0]!, p[1]!, p[2]!, p[3]!);
-            cx = p[2]!;
-            cy = p[3]!;
+            path.quadTo(
+              readRequired(p, 0, "path command parameter"),
+              readRequired(p, 1, "path command parameter"),
+              readRequired(p, 2, "path command parameter"),
+              readRequired(p, 3, "path command parameter"),
+            );
+            cx = readRequired(p, 2, "path command parameter");
+            cy = readRequired(p, 3, "path command parameter");
           }
           break;
         }
-        case 'q': {
+        case "q": {
           const p = nums(4);
           if (p.length === 4) {
-            path.quadTo(cx + p[0]!, cy + p[1]!, cx + p[2]!, cy + p[3]!);
-            cx += p[2]!;
-            cy += p[3]!;
+            path.quadTo(
+              cx + readRequired(p, 0, "path command parameter"),
+              cy + readRequired(p, 1, "path command parameter"),
+              cx + readRequired(p, 2, "path command parameter"),
+              cy + readRequired(p, 3, "path command parameter"),
+            );
+            cx += readRequired(p, 2, "path command parameter");
+            cy += readRequired(p, 3, "path command parameter");
           }
           break;
         }
-        case 'S': {
+        case "S": {
           const p = nums(4);
           if (p.length === 4) {
-            path.cubicTo(cx, cy, p[0]!, p[1]!, p[2]!, p[3]!);
-            cx = p[2]!;
-            cy = p[3]!;
+            path.cubicTo(
+              cx,
+              cy,
+              readRequired(p, 0, "path command parameter"),
+              readRequired(p, 1, "path command parameter"),
+              readRequired(p, 2, "path command parameter"),
+              readRequired(p, 3, "path command parameter"),
+            );
+            cx = readRequired(p, 2, "path command parameter");
+            cy = readRequired(p, 3, "path command parameter");
           }
           break;
         }
-        case 's': {
+        case "s": {
           const p = nums(4);
           if (p.length === 4) {
-            path.cubicTo(cx, cy, cx + p[0]!, cy + p[1]!, cx + p[2]!, cy + p[3]!);
-            cx += p[2]!;
-            cy += p[3]!;
+            path.cubicTo(
+              cx,
+              cy,
+              cx + readRequired(p, 0, "path command parameter"),
+              cy + readRequired(p, 1, "path command parameter"),
+              cx + readRequired(p, 2, "path command parameter"),
+              cy + readRequired(p, 3, "path command parameter"),
+            );
+            cx += readRequired(p, 2, "path command parameter");
+            cy += readRequired(p, 3, "path command parameter");
           }
           break;
         }
-        case 'Z':
-        case 'z':
+        case "Z":
+        case "z":
           path.close();
           break;
-        case 'A':
-        case 'a': {
+        case "A":
+        case "a": {
           // Arc: rx, ry, rotation, largeArc, sweep, x, y
           const p = nums(7);
           if (p.length === 7) {
-            const rx = p[0]!, ry = p[1]!, largeArc = p[3]!, sweep = p[4]!, ex = p[5]!, ey = p[6]!;
-            const endX = cmd === 'a' ? cx + ex : ex;
-            const endY = cmd === 'a' ? cy + ey : ey;
+            const rx = readRequired(p, 0, "path command parameter");
+            const ry = readRequired(p, 1, "path command parameter");
+            const largeArc = readRequired(p, 3, "path command parameter");
+            const sweep = readRequired(p, 4, "path command parameter");
+            const ex = readRequired(p, 5, "path command parameter");
+            const ey = readRequired(p, 6, "path command parameter");
+            const endX = cmd === "a" ? cx + ex : ex;
+            const endY = cmd === "a" ? cy + ey : ey;
             if (rx > 0 && ry > 0) {
-              arcToCubics(path, cx, cy, rx, ry, largeArc !== 0, sweep !== 0, endX, endY);
+              arcToCubics(
+                path,
+                cx,
+                cy,
+                rx,
+                ry,
+                largeArc !== 0,
+                sweep !== 0,
+                endX,
+                endY,
+              );
             } else {
               path.lineTo(endX, endY);
             }
@@ -334,7 +421,14 @@ export function tryManualPathParse(ck: CanvasKit, d: string): Path | null {
 
     // Check if path has any geometry
     const bounds = path.getBounds();
-    if (bounds[2]! - bounds[0]! < 0.001 && bounds[3]! - bounds[1]! < 0.001) {
+    if (
+      readRequired(bounds, 2, "path bounds") -
+        readRequired(bounds, 0, "path bounds") <
+        0.001 &&
+      readRequired(bounds, 3, "path bounds") -
+        readRequired(bounds, 1, "path bounds") <
+        0.001
+    ) {
       path.delete();
       return null;
     }

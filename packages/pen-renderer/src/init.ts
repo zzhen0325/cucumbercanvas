@@ -1,7 +1,11 @@
-import type { CanvasKit } from 'canvaskit-wasm';
+import type { CanvasKit } from "canvaskit-wasm";
 
 let ckInstance: CanvasKit | null = null;
 let ckPromise: Promise<CanvasKit> | null = null;
+
+type CanvasKitInitFn = (opts?: {
+  locateFile?: (file: string) => string;
+}) => Promise<CanvasKit>;
 
 export interface LoadCanvasKitOptions {
   locateFile?: string | ((file: string) => string);
@@ -16,7 +20,10 @@ export interface LoadCanvasKitOptions {
  *   Defaults to '/canvaskit/'.
  */
 export async function loadCanvasKit(
-  locateFileOrOptions?: string | ((file: string) => string) | LoadCanvasKitOptions,
+  locateFileOrOptions?:
+    | string
+    | ((file: string) => string)
+    | LoadCanvasKitOptions,
 ): Promise<CanvasKit> {
   if (ckInstance) return ckInstance;
   if (ckPromise) return ckPromise;
@@ -25,32 +32,39 @@ export async function loadCanvasKit(
   let onProgress: ((loaded: number, total: number) => void) | undefined;
 
   if (
-    typeof locateFileOrOptions === 'object' &&
+    typeof locateFileOrOptions === "object" &&
     locateFileOrOptions !== null &&
-    !('call' in locateFileOrOptions)
+    !("call" in locateFileOrOptions)
   ) {
     const opts = locateFileOrOptions as LoadCanvasKitOptions;
     resolver =
-      typeof opts.locateFile === 'function'
+      typeof opts.locateFile === "function"
         ? opts.locateFile
-        : (file: string) => `${opts.locateFile ?? '/canvaskit/'}${file}`;
+        : (file: string) => `${opts.locateFile ?? "/canvaskit/"}${file}`;
     onProgress = opts.onProgress;
   } else {
-    const locateFile = locateFileOrOptions as string | ((file: string) => string) | undefined;
+    const locateFile = locateFileOrOptions as
+      | string
+      | ((file: string) => string)
+      | undefined;
     resolver =
-      typeof locateFile === 'function'
+      typeof locateFile === "function"
         ? locateFile
-        : (file: string) => `${locateFile ?? '/canvaskit/'}${file}`;
+        : (file: string) => `${locateFile ?? "/canvaskit/"}${file}`;
   }
 
   ckPromise = (async () => {
     // canvaskit-wasm is a CJS module (module.exports = CanvasKitInit).
     // Depending on bundler interop, the init function may be on .default or the module itself.
-    const mod = (await import('canvaskit-wasm')) as unknown as {
-      default?: (opts?: { locateFile?: (file: string) => string }) => Promise<CanvasKit>;
-    };
-    const CanvasKitInit: (opts?: { locateFile?: (file: string) => string }) => Promise<CanvasKit> =
-      typeof mod.default === 'function' ? mod.default : (mod as any);
+    const mod = (await import("canvaskit-wasm")) as unknown;
+    const candidate =
+      typeof mod === "object" && mod !== null && "default" in mod
+        ? (mod as { default?: unknown }).default
+        : mod;
+    if (typeof candidate !== "function") {
+      throw new Error("canvaskit-wasm did not export an init function");
+    }
+    const CanvasKitInit = candidate as CanvasKitInitFn;
     const ck = await CanvasKitInit({
       locateFile: resolver,
     });

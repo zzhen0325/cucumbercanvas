@@ -8,11 +8,11 @@
  * - Type compatibility validation (incompatible → red edge)
  */
 
-import type { CanvasKit, Canvas, Paint, Path } from "canvaskit-wasm";
 import type { DataFlowEdge } from "@cucumber/canvas-core";
-import type { PenDocument, PenNode, IOPort } from "@cucumber/pen-types";
 import type { RenderNode } from "@cucumber/pen-renderer";
-import { getPortPositions, type PortVisual } from "./skia-container-overlay";
+import type { IOPort, PenDocument, PenNode } from "@cucumber/pen-types";
+import type { Canvas, CanvasKit, Paint, Path } from "canvaskit-wasm";
+import { type PortVisual, getPortPositions } from "./skia-container-overlay";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -62,9 +62,9 @@ const CONTROL_POINT_OFFSET = 80;
 // ---------------------------------------------------------------------------
 
 function parseHex(ck: CanvasKit, hex: string): Float32Array {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const r = Number.parseInt(hex.slice(1, 3), 16) / 255;
+  const g = Number.parseInt(hex.slice(3, 5), 16) / 255;
+  const b = Number.parseInt(hex.slice(5, 7), 16) / 255;
   return ck.Color4f(r, g, b, 1);
 }
 
@@ -87,11 +87,17 @@ function findNodeInDoc(doc: PenDocument, nodeId: string): PenNode | undefined {
   return walk(pageChildren);
 }
 
-function getNodeAbsBounds(node: PenNode): { x: number; y: number; w: number; h: number } {
-  let x = node.x ?? 0;
-  let y = node.y ?? 0;
-  const w = (node as any).width ?? 100;
-  const h = (node as any).height ?? 100;
+function getNodeAbsBounds(node: PenNode): {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+} {
+  const sizedNode = node as PenNode & { height?: number; width?: number };
+  const x = node.x ?? 0;
+  const y = node.y ?? 0;
+  const w = sizedNode.width ?? 100;
+  const h = sizedNode.height ?? 100;
 
   // Walk up parent chain for absolute position
   // For now assume root-level nodes (absolute positions already resolved)
@@ -110,7 +116,8 @@ function getPortScreenPosition(
   const portIndex = ports.findIndex((p: IOPort) => p.id === portId);
   if (portIndex < 0) return null;
 
-  const port = ports[portIndex]!;
+  const port = ports[portIndex];
+  if (!port) return null;
   const b = getNodeAbsBounds(node);
   const portR = 5;
   const spacing = Math.min(b.h / (ports.length + 1), 30);
@@ -133,8 +140,16 @@ export function computeEdgeVisuals(
   const result: DataFlowEdgeVisual[] = [];
 
   for (const edge of edges) {
-    const sourcePos = getPortScreenPosition(doc, edge.source.nodeId, edge.source.portId);
-    const targetPos = getPortScreenPosition(doc, edge.target.nodeId, edge.target.portId);
+    const sourcePos = getPortScreenPosition(
+      doc,
+      edge.source.nodeId,
+      edge.source.portId,
+    );
+    const targetPos = getPortScreenPosition(
+      doc,
+      edge.target.nodeId,
+      edge.target.portId,
+    );
     if (!sourcePos || !targetPos) continue;
 
     const dx = Math.abs(targetPos.x - sourcePos.x);
@@ -190,9 +205,12 @@ function drawEdgeBezier(
   const path = new ck.Path();
   path.moveTo(vis.sourceX, vis.sourceY);
   path.cubicTo(
-    vis.cp1.x, vis.cp1.y,
-    vis.cp2.x, vis.cp2.y,
-    vis.targetX, vis.targetY,
+    vis.cp1.x,
+    vis.cp1.y,
+    vis.cp2.x,
+    vis.cp2.y,
+    vis.targetX,
+    vis.targetY,
   );
 
   const paint = new ck.Paint();
@@ -205,7 +223,9 @@ function drawEdgeBezier(
     flowing: EDGE_COLOR_FLOWING,
     error: EDGE_COLOR_ERROR,
   };
-  paint.setColor(parseHex(ck, colorMap[vis.status ?? "idle"] ?? EDGE_COLOR_IDLE));
+  paint.setColor(
+    parseHex(ck, colorMap[vis.status ?? "idle"] ?? EDGE_COLOR_IDLE),
+  );
 
   canvas.drawPath(path, paint);
   path.delete();
@@ -250,7 +270,9 @@ function drawArrowHead(
     flowing: EDGE_COLOR_FLOWING,
     error: EDGE_COLOR_ERROR,
   };
-  paint.setColor(parseHex(ck, colorMap[vis.status ?? "idle"] ?? EDGE_COLOR_IDLE));
+  paint.setColor(
+    parseHex(ck, colorMap[vis.status ?? "idle"] ?? EDGE_COLOR_IDLE),
+  );
 
   canvas.drawPath(path, paint);
   path.delete();
@@ -279,19 +301,19 @@ function drawParticles(
     const t = ((time % period) / period + i / PARTICLE_COUNT) % 1;
 
     // Evaluate cubic bezier at t
-    const x = bezierAt(
-      vis.sourceX, vis.cp1.x, vis.cp2.x, vis.targetX, t,
-    );
-    const y = bezierAt(
-      vis.sourceY, vis.cp1.y, vis.cp2.y, vis.targetY, t,
-    );
+    const x = bezierAt(vis.sourceX, vis.cp1.x, vis.cp2.x, vis.targetX, t);
+    const y = bezierAt(vis.sourceY, vis.cp1.y, vis.cp2.y, vis.targetY, t);
 
     // Fade particles near the ends
     const alpha = Math.min(t, 1 - t, 0.5) * 2;
-    paint.setColor(ck.Color4f(
-      0.0, 0.72, 0.58,
-      vis.status === "flowing" ? alpha : alpha * 0.3,
-    ));
+    paint.setColor(
+      ck.Color4f(
+        0.0,
+        0.72,
+        0.58,
+        vis.status === "flowing" ? alpha : alpha * 0.3,
+      ),
+    );
 
     canvas.drawCircle(x, y, PARTICLE_RADIUS, paint);
   }
@@ -299,9 +321,20 @@ function drawParticles(
   paint.delete();
 }
 
-function bezierAt(p0: number, p1: number, p2: number, p3: number, t: number): number {
+function bezierAt(
+  p0: number,
+  p1: number,
+  p2: number,
+  p3: number,
+  t: number,
+): number {
   const mt = 1 - t;
-  return mt * mt * mt * p0 + 3 * mt * mt * t * p1 + 3 * mt * t * t * p2 + t * t * t * p3;
+  return (
+    mt * mt * mt * p0 +
+    3 * mt * mt * t * p1 +
+    3 * mt * t * t * p2 +
+    t * t * t * p3
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -321,11 +354,7 @@ function drawDragLine(
 
   const path = new ck.Path();
   path.moveTo(from.x, from.y);
-  path.cubicTo(
-    from.x + cpOffset, from.y,
-    to.x - cpOffset, to.y,
-    to.x, to.y,
-  );
+  path.cubicTo(from.x + cpOffset, from.y, to.x - cpOffset, to.y, to.x, to.y);
 
   const paint = new ck.Paint();
   paint.setStyle(ck.PaintStyle.Stroke);
@@ -349,15 +378,16 @@ function drawDragLine(
 // Type compatibility
 // ---------------------------------------------------------------------------
 
-export function isPortCompatible(sourceType: string, targetType: string): boolean {
+export function isPortCompatible(
+  sourceType: string,
+  targetType: string,
+): boolean {
   if (sourceType === "any" || targetType === "any") return true;
   return sourceType === targetType;
 }
 
 /** Check if an in-progress connection is compatible */
-export function checkDragCompatibility(
-  state: DataFlowLayerState,
-): boolean {
+export function checkDragCompatibility(state: DataFlowLayerState): boolean {
   if (!state.draggingFrom || !state.dragCursor) return true;
   // Compatibility check happens when dropping on a target port
   return true;

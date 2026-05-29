@@ -386,7 +386,10 @@ function rebuildDocument(
       return ai.localeCompare(bi);
     });
     return sorted.map((decision) => {
-      const node = decision.mergedNode!;
+      const node = decision.mergedNode;
+      if (!node) {
+        throw new Error("merge decision is missing merged node");
+      }
       const children = buildChildren(pageId, node.id);
       // Only attach a children array if the original node type supports it
       // (containers). Following the existing PenDocument convention, attach

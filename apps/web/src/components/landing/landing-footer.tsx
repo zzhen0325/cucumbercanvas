@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { cn } from "@/lib/utils";
+import Link from "next/link";
 
 // ---------------------------------------------------------------------------
 // Logo mark -- reused from nav
@@ -116,7 +116,7 @@ export function LandingFooter() {
   const currentYear = new Date().getFullYear();
 
   return (
-    <footer className="border-t border-border" role="contentinfo">
+    <footer className="border-t border-border">
       <div className="max-w-6xl mx-auto px-6 py-12 md:py-16">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
           {/* Brand column */}

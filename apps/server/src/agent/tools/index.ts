@@ -4,18 +4,19 @@ import type { BackendFactory, BackendProtocol } from "deepagents";
 import type { LiveCanvasService } from "../../features/canvas/live-canvas-service.js";
 import { bridgeMcpServerToolsToDeepAgent } from "../../mcp/deepagents-bridge.js";
 import { createCucumberMcpServer } from "../../mcp/server.js";
+import type { UserSupabaseClient } from "../../supabase/user.js";
 import type { ConnectionManager } from "../../ws/connection-manager.js";
 import { createBrandKitTool } from "./brand-kit.js";
 import {
-  createImageGenerateTool,
   type PersistImageFn,
   type SubmitImageJobFn,
+  createImageGenerateTool,
 } from "./image-generate.js";
 import { createProjectSearchTool } from "./project-search.js";
 import { createScreenshotCanvasTool } from "./screenshot-canvas.js";
 import {
-  createVideoGenerateTool,
   type SubmitVideoJobFn,
+  createVideoGenerateTool,
 } from "./video-generate.js";
 
 export { createImageGenerateTool } from "./image-generate.js";
@@ -54,7 +55,7 @@ export { createManipulateCanvasTool } from "./manipulate-canvas.js";
 export function createMainAgentTools(
   backend: BackendProtocol | BackendFactory,
   deps: {
-    createUserClient: (accessToken: string) => any;
+    createUserClient: (accessToken: string) => UserSupabaseClient;
     brandKitId?: string | null;
     connectionManager?: ConnectionManager;
     liveCanvasService?: LiveCanvasService;
@@ -75,10 +76,12 @@ export function createMainAgentTools(
     tools.push(createBrandKitTool(deps, deps.brandKitId));
   }
   if (deps.connectionManager) {
-    tools.push(createScreenshotCanvasTool({
-      connectionManager: deps.connectionManager,
-      ...(deps.persistImage ? { persistImage: deps.persistImage } : {}),
-    }));
+    tools.push(
+      createScreenshotCanvasTool({
+        connectionManager: deps.connectionManager,
+        ...(deps.persistImage ? { persistImage: deps.persistImage } : {}),
+      }),
+    );
   }
   return tools;
 }

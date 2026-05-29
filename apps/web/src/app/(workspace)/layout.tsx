@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import type { ReactNode } from "react";
 
-import { useAuth } from "@/lib/auth-context";
 import { AppSidebar } from "@/components/app-sidebar";
 import { LoadingScreen } from "@/components/loading-screen";
 import { PageTransition } from "@/components/page-transition";
+import { useAuth } from "@/lib/auth-context";
 
 export default function WorkspaceLayout({
   children,

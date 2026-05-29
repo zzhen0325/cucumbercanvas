@@ -5,6 +5,17 @@ import { tool } from "@langchain/core/tools";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
+type ToolRuntimeConfig = {
+  configurable?: {
+    access_token?: unknown;
+    canvas_id?: unknown;
+  };
+};
+
+type CanvasProjectJoin = {
+  project?: { workspace_id?: string | null } | null;
+};
+
 const MIME_MAP: Record<string, string> = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -37,14 +48,11 @@ export type PersistSandboxFileDeps = {
 export function createPersistSandboxFileTool(deps: PersistSandboxFileDeps) {
   return tool(
     async (input, config) => {
-      const accessToken = (config as any)?.configurable?.access_token as
-        | string
-        | undefined;
-      const canvasId = (config as any)?.configurable?.canvas_id as
-        | string
-        | undefined;
+      const runtimeConfig = config as ToolRuntimeConfig | undefined;
+      const accessToken = runtimeConfig?.configurable?.access_token;
+      const canvasId = runtimeConfig?.configurable?.canvas_id;
 
-      if (!accessToken) {
+      if (typeof accessToken !== "string" || accessToken.length === 0) {
         return "Error: No access token available. Cannot upload file.";
       }
 
@@ -71,7 +79,9 @@ export function createPersistSandboxFileTool(deps: PersistSandboxFileDeps) {
         const ext = extname(input.filePath).toLowerCase();
         const mimeType = MIME_MAP[ext] ?? "application/octet-stream";
         const safeTitle = input.title
-          ? input.title.replace(/[^a-zA-Z0-9_\u4e00-\u9fff-]/g, "_").slice(0, 100)
+          ? input.title
+              .replace(/[^a-zA-Z0-9_\u4e00-\u9fff-]/g, "_")
+              .slice(0, 100)
           : null;
         const fileName = safeTitle
           ? `${safeTitle}${ext}`
@@ -82,13 +92,14 @@ export function createPersistSandboxFileTool(deps: PersistSandboxFileDeps) {
         // Resolve workspace ID from canvas for Storage RLS compliance.
         // RLS requires: storage.foldername(name)[1] = workspace_id
         let workspaceId: string | null = null;
-        if (canvasId) {
+        if (typeof canvasId === "string" && canvasId.length > 0) {
           const { data: canvas } = await client
             .from("canvases")
             .select("project:projects(workspace_id)")
             .eq("id", canvasId)
             .single();
-          workspaceId = (canvas?.project as any)?.workspace_id ?? null;
+          workspaceId =
+            (canvas as CanvasProjectJoin | null)?.project?.workspace_id ?? null;
         }
 
         const storagePath = workspaceId
@@ -120,8 +131,9 @@ export function createPersistSandboxFileTool(deps: PersistSandboxFileDeps) {
           mimeType,
           size: fileBuffer.length,
         });
-      } catch (err: any) {
-        return `Error reading or uploading file: ${err.message}`;
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return `Error reading or uploading file: ${message}`;
       }
     },
     {

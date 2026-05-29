@@ -4,9 +4,9 @@ import type { ProjectSummary } from "@cucumber/shared";
 import { Trash2 } from "lucide-react";
 import Link from "next/link";
 
-import { DeleteProjectDialog } from "./delete-project-dialog";
 import { useDeleteProject } from "@/hooks/use-delete-project";
 import { formatDate } from "@/lib/utils";
+import { DeleteProjectDialog } from "./delete-project-dialog";
 
 interface ProjectListProps {
   projects: ProjectSummary[];
@@ -36,20 +36,14 @@ export function ProjectList({
       {/* Card grid -- consistent responsive breakpoints */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {/* "+ 新建项目" card */}
-        <div
-          role="button"
-          tabIndex={0}
+        <button
+          type="button"
           onClick={onCreateClick}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              onCreateClick();
-            }
-          }}
           className="aspect-[286/208] cursor-pointer rounded-xl bg-card p-2 transition-all duration-300 hover:shadow-md sm:rounded-2xl sm:p-3"
         >
           <div className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-xl bg-muted sm:gap-3">
             <svg
+              aria-hidden="true"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
               viewBox="0 0 14 14"
@@ -66,7 +60,7 @@ export function ProjectList({
               新建项目
             </span>
           </div>
-        </div>
+        </button>
 
         {/* Project cards */}
         {projects.map((project) => (
@@ -100,7 +94,8 @@ export function ProjectList({
                   className="h-full w-full object-cover"
                   loading="lazy"
                   onError={(e) => {
-                    (e.currentTarget as HTMLImageElement).style.display = "none";
+                    (e.currentTarget as HTMLImageElement).style.display =
+                      "none";
                   }}
                 />
               )}

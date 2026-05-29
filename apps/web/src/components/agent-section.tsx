@@ -42,7 +42,7 @@ export function AgentSection({
       })
       .catch(() => setModels([]))
       .finally(() => setModelsLoading(false));
-  }, [fetchModels]);
+  }, [fetchModels, selectedModel]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

@@ -102,7 +102,8 @@ export function mapServerMessages(
     const seenToolIds = new Set<string>();
     const deduped: ContentBlock[] = [];
     for (let i = blocks.length - 1; i >= 0; i--) {
-      const block = blocks[i]!;
+      const block = blocks[i];
+      if (!block) continue;
       if (block.type === "tool") {
         if (seenToolIds.has(block.toolCallId)) continue;
         seenToolIds.add(block.toolCallId);
@@ -145,6 +146,8 @@ export function useChatSessions({
   sessionsRef.current = sessions;
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
+  const initialSessionIdRef = useRef(initialSessionId);
+  initialSessionIdRef.current = initialSessionId;
   const onSessionChangeRef = useRef(onSessionChange);
   onSessionChangeRef.current = onSessionChange;
 
@@ -178,10 +181,16 @@ export function useChatSessions({
 
         if (res.sessions.length > 0) {
           setSessions(res.sessions);
-          const target = initialSessionId
-            ? (res.sessions.find((s: ChatSessionSummary) => s.id === initialSessionId) ??
-              res.sessions[0]!)
-            : res.sessions[0]!;
+          const requestedSessionId = initialSessionIdRef.current;
+          const fallbackSession = res.sessions[0];
+          if (!fallbackSession) {
+            return;
+          }
+          const target = requestedSessionId
+            ? (res.sessions.find(
+                (s: ChatSessionSummary) => s.id === requestedSessionId,
+              ) ?? fallbackSession)
+            : fallbackSession;
           setActiveSessionId(target.id);
           onSessionChangeRef.current?.(target.id);
           const msgRes = await fetchMessages(token, target.id);
@@ -277,7 +286,8 @@ export function useChatSessions({
       } else {
         setSessions(remaining);
         if (sessionId === activeSessionIdRef.current) {
-          const next = remaining[0]!;
+          const next = remaining[0];
+          if (!next) return;
           setActiveSessionId(next.id);
           onSessionChangeRef.current?.(next.id);
           setMessagesLoading(true);
@@ -322,7 +332,9 @@ export function useChatSessions({
   // ── Reload messages (for reconnection) ──
   const reloadMessages = useCallback(async (sessionId: string) => {
     if (!sessionId) {
-      console.warn("[chat] reloadMessages called with empty sessionId, skipping");
+      console.warn(
+        "[chat] reloadMessages called with empty sessionId, skipping",
+      );
       return;
     }
     try {

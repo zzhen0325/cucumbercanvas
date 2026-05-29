@@ -1,4 +1,4 @@
-import type { CucumberCanvasDocument } from "@cucumber/canvas-core";
+import type { CucumberCanvasDocument, PenNode } from "@cucumber/canvas-core";
 import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -10,15 +10,67 @@ import type {
 import { SkiaCanvas } from "@/components/canvas/skia-canvas";
 
 const penRendererMockState = vi.hoisted(() => ({
+  currentDocument: null as {
+    activePageId?: string | null;
+    children?: TestPenNode[];
+    pages?: Array<{ id: string; children: TestPenNode[] }>;
+  } | null,
+  currentPageId: null as string | null,
   getNodeBounds: vi.fn<
     () => { x: number; y: number; w: number; h: number } | null
   >(() => null),
-  hitTest: vi.fn<() => unknown | null>(() => null),
+  hitTest: vi.fn<(screenX: number, screenY: number) => unknown | undefined>(
+    () => undefined,
+  ),
   screenToScene: vi.fn((clientX: number, clientY: number) => ({
     x: clientX,
     y: clientY,
   })),
 }));
+
+type TestPenNode = {
+  children?: TestPenNode[];
+  height?: number;
+  id: string;
+  locked?: boolean;
+  visible?: boolean;
+  width?: number;
+  x?: number;
+  y?: number;
+};
+
+function getMockActiveChildren(): TestPenNode[] {
+  const doc = penRendererMockState.currentDocument;
+  if (!doc) return [];
+  const pageId = penRendererMockState.currentPageId ?? doc.activePageId;
+  const page =
+    doc.pages?.find((candidate) => candidate.id === pageId) ?? doc.pages?.[0];
+  return page?.children ?? doc.children ?? [];
+}
+
+function findTopMockHit(
+  nodes: TestPenNode[],
+  sceneX: number,
+  sceneY: number,
+  offsetX = 0,
+  offsetY = 0,
+): TestPenNode | null {
+  for (const node of nodes) {
+    if (node.visible === false || node.locked === true) continue;
+    const x = offsetX + (node.x ?? 0);
+    const y = offsetY + (node.y ?? 0);
+    const width = node.width ?? 0;
+    const height = node.height ?? 0;
+    const contains =
+      sceneX >= x && sceneX <= x + width && sceneY >= y && sceneY <= y + height;
+    if (!contains) continue;
+    const childHit = node.children?.length
+      ? findTopMockHit(node.children, sceneX, sceneY, x, y)
+      : null;
+    return childHit ?? node;
+  }
+  return null;
+}
 
 vi.mock("paper", () => ({
   default: {},
@@ -30,13 +82,22 @@ vi.mock("@cucumber/pen-renderer", () => ({
     resize = vi.fn();
     dispose = vi.fn();
     zoomToFit = vi.fn();
-    setDocument = vi.fn();
-    setPage = vi.fn();
+    setDocument = vi.fn((doc) => {
+      penRendererMockState.currentDocument = doc;
+      penRendererMockState.currentPageId = doc.activePageId ?? null;
+    });
+    setPage = vi.fn((pageId: string) => {
+      penRendererMockState.currentPageId = pageId;
+    });
     setEditorOverlays = vi.fn();
     getViewport = vi.fn(() => ({ zoom: 1, panX: 0, panY: 0 }));
     getNodeBounds = penRendererMockState.getNodeBounds;
     setViewport = vi.fn();
-    hitTest = penRendererMockState.hitTest;
+    hitTest = vi.fn((screenX: number, screenY: number) => {
+      const override = penRendererMockState.hitTest(screenX, screenY);
+      if (override !== undefined) return override;
+      return findTopMockHit(getMockActiveChildren(), screenX, screenY);
+    });
     hitTestSelectionControl = vi.fn(() => null);
   },
   loadCanvasKit: vi.fn(async () => ({})),
@@ -63,8 +124,10 @@ const initialDocument: CucumberCanvasDocument = {
 
 describe("SkiaCanvas selection snapshots", () => {
   beforeEach(() => {
+    penRendererMockState.currentDocument = null;
+    penRendererMockState.currentPageId = null;
     penRendererMockState.hitTest.mockReset();
-    penRendererMockState.hitTest.mockReturnValue(null);
+    penRendererMockState.hitTest.mockReturnValue(undefined);
     penRendererMockState.getNodeBounds.mockReset();
     penRendererMockState.getNodeBounds.mockReturnValue(null);
     penRendererMockState.screenToScene.mockReset();
@@ -191,16 +254,79 @@ describe("SkiaCanvas selection snapshots", () => {
     }
   });
 
-  it("reorders root-level nodes through the CanvasApi", async () => {
+  it("keeps root and nested CanvasApi reorder aligned with renderer hit-testing", async () => {
     const originalResizeObserver = globalThis.ResizeObserver;
+    const originalSetPointerCapture = HTMLElement.prototype.setPointerCapture;
+    const originalReleasePointerCapture =
+      HTMLElement.prototype.releasePointerCapture;
+    const originalHasPointerCapture = HTMLElement.prototype.hasPointerCapture;
     globalThis.ResizeObserver =
       MockResizeObserver as unknown as typeof ResizeObserver;
+    HTMLElement.prototype.setPointerCapture = vi.fn();
+    HTMLElement.prototype.releasePointerCapture = vi.fn();
+    HTMLElement.prototype.hasPointerCapture = vi.fn(() => true);
     const apiRef: { current: CanvasApi | null } = { current: null };
+    const initialLayerDocument: CucumberCanvasDocument = {
+      version: "cucumber-canvas-v1",
+      activePageId: "page-a",
+      pages: [
+        {
+          id: "page-a",
+          name: "Page A",
+          children: [
+            {
+              id: "root-top",
+              type: "rectangle",
+              x: 10,
+              y: 10,
+              width: 100,
+              height: 100,
+            } as PenNode,
+            {
+              id: "root-bottom",
+              type: "rectangle",
+              x: 10,
+              y: 10,
+              width: 100,
+              height: 100,
+            } as PenNode,
+            {
+              children: [
+                {
+                  id: "child-top",
+                  type: "rectangle",
+                  x: 0,
+                  y: 0,
+                  width: 100,
+                  height: 100,
+                } as PenNode,
+                {
+                  id: "child-bottom",
+                  type: "rectangle",
+                  x: 0,
+                  y: 0,
+                  width: 100,
+                  height: 100,
+                } as PenNode,
+              ],
+              id: "parent-frame",
+              type: "frame",
+              x: 200,
+              y: 10,
+              width: 120,
+              height: 120,
+            } as PenNode,
+          ],
+        },
+      ],
+      children: [],
+      viewport: { x: 0, y: 0, zoom: 1, backgroundColor: "#ffffff" },
+    };
 
     try {
       const { container } = render(
         <SkiaCanvas
-          initialContent={initialDocument}
+          initialContent={initialLayerDocument}
           onApiReady={(readyApi) => {
             apiRef.current = readyApi;
           }}
@@ -213,53 +339,85 @@ describe("SkiaCanvas selection snapshots", () => {
       );
       const readyApi = apiRef.current;
       if (!readyApi) throw new Error("Canvas API was not initialized.");
+      const canvasElement = container.querySelector("canvas") as HTMLElement;
+      const stage = canvasElement.parentElement?.parentElement;
+      if (!stage) throw new Error("Canvas stage was not initialized.");
+      const clickScenePoint = async (
+        point: { x: number; y: number },
+        pointerId: number,
+      ) => {
+        const firePointerEvent = (
+          type: "pointerdown" | "pointerup",
+          options: { clientX: number; clientY: number; pointerId: number },
+        ) => {
+          const event = new MouseEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            button: 0,
+            clientX: options.clientX,
+            clientY: options.clientY,
+          });
+          Object.defineProperty(event, "pointerId", {
+            configurable: true,
+            value: options.pointerId,
+          });
+          fireEvent(stage, event);
+        };
+        await act(async () => {
+          firePointerEvent("pointerdown", {
+            clientX: point.x,
+            clientY: point.y,
+            pointerId,
+          });
+          firePointerEvent("pointerup", {
+            clientX: point.x,
+            clientY: point.y,
+            pointerId,
+          });
+        });
+      };
+
+      await clickScenePoint({ x: 24, y: 24 }, 21);
+      expect(readyApi.getDocument().selection).toEqual(["root-top"]);
 
       await act(async () => {
-        readyApi.setDocument({
-          version: "cucumber-canvas-v1",
-          activePageId: "page-a",
-          pages: [
-            {
-              id: "page-a",
-              name: "Page A",
-              children: [
-                {
-                  id: "a",
-                  type: "rectangle",
-                  x: 0,
-                  y: 0,
-                  width: 10,
-                  height: 10,
-                },
-                {
-                  id: "b",
-                  type: "rectangle",
-                  x: 20,
-                  y: 0,
-                  width: 10,
-                  height: 10,
-                },
-              ],
-            },
-          ],
-          children: [],
-        } as CucumberCanvasDocument);
-        readyApi.reorderNode("a", "front");
+        readyApi.reorderNode("root-bottom", "front");
       });
-
       expect(
         readyApi.getDocument().pages?.[0]?.children.map((node) => node.id),
-      ).toEqual(["b", "a"]);
+      ).toEqual(["root-bottom", "root-top", "parent-frame"]);
+      await clickScenePoint({ x: 24, y: 24 }, 22);
+      expect(readyApi.getDocument().selection).toEqual(["root-bottom"]);
+
+      await clickScenePoint({ x: 224, y: 24 }, 23);
+      expect(readyApi.getDocument().selection).toEqual(["child-top"]);
 
       await act(async () => {
-        readyApi.moveNodeToIndex("a", null, 0);
+        readyApi.reorderNode("child-bottom", "front");
       });
+      const parentFrame = readyApi
+        .getDocument()
+        .pages?.[0]?.children.find((node) => node.id === "parent-frame") as
+        | (PenNode & { children?: PenNode[] })
+        | undefined;
+      expect(parentFrame?.children?.map((node) => node.id)).toEqual([
+        "child-bottom",
+        "child-top",
+      ]);
+      await clickScenePoint({ x: 224, y: 24 }, 24);
+      expect(readyApi.getDocument().selection).toEqual(["child-bottom"]);
 
-      expect(
-        readyApi.getDocument().pages?.[0]?.children.map((node) => node.id),
-      ).toEqual(["a", "b"]);
+      await act(async () => {
+        readyApi.moveNodeToIndex("child-bottom", "parent-frame", 1);
+      });
+      await clickScenePoint({ x: 224, y: 24 }, 25);
+      expect(readyApi.getDocument().selection).toEqual(["child-top"]);
     } finally {
       globalThis.ResizeObserver = originalResizeObserver;
+      HTMLElement.prototype.setPointerCapture = originalSetPointerCapture;
+      HTMLElement.prototype.releasePointerCapture =
+        originalReleasePointerCapture;
+      HTMLElement.prototype.hasPointerCapture = originalHasPointerCapture;
     }
   });
 

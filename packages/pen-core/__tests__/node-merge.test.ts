@@ -5,7 +5,7 @@ import type {
 } from "@cucumber/pen-types";
 // packages/pen-core/src/__tests__/node-merge.test.ts
 import { describe, expect, it } from "vitest";
-import { mergeDocuments } from "../merge/node-merge";
+import { mergeDocuments } from "../merge/node-merge.js";
 
 const rect = (id: string, props: Partial<PenNode> = {}): PenNode =>
   ({

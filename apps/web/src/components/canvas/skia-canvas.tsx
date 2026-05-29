@@ -17,7 +17,6 @@ import {
   duplicateCanvasNodes,
   duplicateCanvasPage,
   findNode,
-  flattenNodes,
   getActiveChildren,
   getCanvasImportBounds,
   getCanvasPages,
@@ -96,10 +95,18 @@ import { useCanvasKeyboardShortcuts } from "./use-canvas-keyboard-shortcuts";
 // Helpers to bridge the public CanvasApi summaries with PenDocument nodes.
 // ---------------------------------------------------------------------------
 
-function toSceneElement(node: PenNode): CanvasSceneElement {
+function toSceneElement(
+  node: PenNode,
+  depth = 0,
+  parentId: string | null = null,
+): CanvasSceneElement {
   const b = getNodeBounds(node);
   const nodeRecord = node as unknown as Record<string, unknown>;
   const meta = nodeRecord.meta as Record<string, unknown> | undefined;
+  const customData = {
+    ...(meta ?? {}),
+    ...(parentId ? { containerId: parentId } : {}),
+  };
   return {
     id: node.id,
     type: node.type,
@@ -121,8 +128,8 @@ function toSceneElement(node: PenNode): CanvasSceneElement {
           : undefined,
     visible: node.visible,
     locked: node.locked,
-    depth: 0,
-    customData: meta,
+    depth,
+    customData,
   };
 }
 
@@ -177,9 +184,19 @@ function toSceneElements(
   doc: PenDocument,
   activePageId?: string | null,
 ): CanvasSceneElement[] {
-  return flattenNodes(doc, activePageId)
-    .filter((n) => n.visible !== false)
-    .map(toSceneElement);
+  const elements: CanvasSceneElement[] = [];
+  const walk = (nodes: PenNode[], depth: number, parentId: string | null) => {
+    for (const node of nodes) {
+      if (node.visible !== false) {
+        elements.push(toSceneElement(node, depth, parentId));
+      }
+      if ("children" in node && Array.isArray(node.children)) {
+        walk(node.children as PenNode[], depth + 1, node.id);
+      }
+    }
+  };
+  walk(getActiveChildren(doc, activePageId), 0, null);
+  return elements;
 }
 
 function toAppState(doc: PenDocument, selection?: string[]): CanvasAppState {
@@ -3020,10 +3037,17 @@ export const SkiaCanvas = memo(
                 <CanvasPropertyPanel
                   node={selectedNode}
                   variables={doc.variables}
+                  styleDefinitions={doc.styleDefinitions}
                   onVariablesChange={(variables) => {
                     commitDocument({
                       ...docRef.current,
                       variables,
+                    });
+                  }}
+                  onStyleDefinitionsChange={(styleDefinitions) => {
+                    commitDocument({
+                      ...docRef.current,
+                      styleDefinitions,
                     });
                   }}
                   onUpdate={(updates) => {

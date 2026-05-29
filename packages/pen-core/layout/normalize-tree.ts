@@ -1,6 +1,6 @@
-import type { PenNode, ContainerProps } from '@cucumber/pen-types';
-import { isOverlayNode } from '../node-helpers.js';
-import { inferLayout } from './engine.js';
+import type { ContainerProps, PenNode } from "@cucumber/pen-types";
+import { isOverlayNode } from "../node-helpers.js";
+import { inferLayout } from "./engine.js";
 
 /**
  * Normalize layout state across a node tree (mutates in place).
@@ -37,7 +37,11 @@ import { inferLayout } from './engine.js';
  * safety net, not the first opinion.
  */
 export function normalizeTreeLayout(node: PenNode): void {
-  if (node.type === 'frame' && 'children' in node && Array.isArray(node.children)) {
+  if (
+    node.type === "frame" &&
+    "children" in node &&
+    Array.isArray(node.children)
+  ) {
     const c = node as PenNode & ContainerProps;
     const children = node.children;
 
@@ -48,26 +52,29 @@ export function normalizeTreeLayout(node: PenNode): void {
       const inferred = inferLayout(node);
       if (inferred) {
         c.layout = inferred;
-      } else if (children.length >= 2 && !hasAbsolutePositionedChild(children)) {
+      } else if (
+        children.length >= 2 &&
+        !hasAbsolutePositionedChild(children)
+      ) {
         // Safe to treat as a "model forgot layout" case: nobody carries x/y,
         // so there's no absolute-positioning intent to destroy.
-        c.layout = 'vertical';
+        c.layout = "vertical";
       }
     }
 
     // (2) Strip x/y from non-overlay children of active-layout frames.
-    if (c.layout === 'vertical' || c.layout === 'horizontal') {
+    if (c.layout === "vertical" || c.layout === "horizontal") {
       for (const child of children) {
         if (!isOverlayNode(child)) {
-          if ('x' in child) delete (child as { x?: number }).x;
-          if ('y' in child) delete (child as { y?: number }).y;
+          if ("x" in child) (child as { x?: number }).x = undefined;
+          if ("y" in child) (child as { y?: number }).y = undefined;
         }
       }
     }
   }
 
   // Recurse into children regardless of node type (groups/pages may nest frames).
-  if ('children' in node && Array.isArray(node.children)) {
+  if ("children" in node && Array.isArray(node.children)) {
     for (const child of node.children) {
       normalizeTreeLayout(child);
     }
@@ -115,14 +122,14 @@ export function normalizeTreeLayout(node: PenNode): void {
  * catastrophic false-positive of silently verticalizing an overlay
  * composition.
  */
-const COMPOSITION_PRIMITIVE_TYPES = new Set(['frame', 'ellipse', 'path']);
+const COMPOSITION_PRIMITIVE_TYPES = new Set(["frame", "ellipse", "path"]);
 
 function hasAbsolutePositionedChild(children: PenNode[]): boolean {
   // Signal 1: explicit numeric x/y on any non-overlay child.
   for (const child of children) {
     if (isOverlayNode(child)) continue;
     const c = child as PenNode & { x?: number; y?: number };
-    if (typeof c.x === 'number' || typeof c.y === 'number') return true;
+    if (typeof c.x === "number" || typeof c.y === "number") return true;
   }
 
   // Signal 2: every non-overlay child is a composition primitive

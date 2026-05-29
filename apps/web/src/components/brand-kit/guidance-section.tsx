@@ -29,7 +29,7 @@ export function GuidanceSection({ value, onSave }: GuidanceSectionProps) {
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
-  }, [draft]);
+  });
 
   const flush = useCallback(
     (text: string) => {

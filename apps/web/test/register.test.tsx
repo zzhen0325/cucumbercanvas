@@ -17,7 +17,9 @@ const {
   mockGetSession: vi.fn(),
   mockOnAuthStateChange: vi.fn(),
   mockReplace: vi.fn(),
-  mockSignUp: vi.fn().mockResolvedValue({ data: { session: null }, error: null }),
+  mockSignUp: vi
+    .fn()
+    .mockResolvedValue({ data: { session: null }, error: null }),
 }));
 
 vi.mock("../src/lib/server-api", () => ({
@@ -51,7 +53,6 @@ describe("Register page", () => {
     });
   });
 
-
   it("creates an account and shows the confirmation state", async () => {
     render(
       <AuthProvider>
@@ -80,8 +81,12 @@ describe("Register page", () => {
       });
     });
 
-    expect((await screen.findByText(/check your email/i)).textContent).toContain("Check your email");
-    expect(screen.getByRole("link", { name: /sign in/i }).getAttribute("href")).toBe("/login");
+    expect(
+      (await screen.findByText(/check your email/i)).textContent,
+    ).toContain("Check your email");
+    expect(
+      screen.getByRole("link", { name: /sign in/i }).getAttribute("href"),
+    ).toBe("/login");
   });
 
   it("bootstraps the viewer when sign-up returns an active session", async () => {

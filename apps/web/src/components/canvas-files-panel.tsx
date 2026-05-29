@@ -2,10 +2,7 @@
 
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
-import type {
-  CanvasApi,
-  CanvasFileRecord,
-} from "./canvas/canvas-api";
+import type { CanvasApi, CanvasFileRecord } from "./canvas/canvas-api";
 
 export type CanvasFilesPanelProps = {
   canvasApi: CanvasApi | null;
@@ -40,7 +37,7 @@ function throttle(
 }
 
 const CloseIcon = ({ className }: { className?: string }) => (
-  <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden>
+  <svg aria-hidden="true" viewBox="0 0 16 16" fill="none" className={className}>
     <path
       d="M4.5 4.5l7 7M11.5 4.5l-7 7"
       stroke="currentColor"
@@ -52,11 +49,11 @@ const CloseIcon = ({ className }: { className?: string }) => (
 
 const DownloadIcon = ({ className }: { className?: string }) => (
   <svg
+    aria-hidden="true"
     viewBox="0 0 24 24"
     fill="currentColor"
     fillOpacity={0.9}
     className={className}
-    aria-hidden
   >
     <path d="M3 17.25v-2.5a.75.75 0 0 1 1.5 0v2.5a2.25 2.25 0 0 0 2.25 2.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-2.5a.75.75 0 0 1 1.5 0v2.5A3.75 3.75 0 0 1 17.25 21H6.75A3.75 3.75 0 0 1 3 17.25m8.25-13.5a.75.75 0 0 1 1.5 0v9.44l2.22-2.22a.75.75 0 1 1 1.06 1.06l-3.5 3.5a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 1 1 1.06-1.06l2.22 2.22z" />
   </svg>

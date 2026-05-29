@@ -155,7 +155,9 @@ export function useSseStream(accessToken: string) {
           });
 
           if (!response.ok || !response.body) {
-            throw new Error(`SSE connection failed with status ${response.status}`);
+            throw new Error(
+              `SSE connection failed with status ${response.status}`,
+            );
           }
 
           if (attempt === 0) {
@@ -194,7 +196,10 @@ export function useSseStream(accessToken: string) {
                 }
                 const event = JSON.parse(parsed.data) as StreamEvent;
                 receivedEventCount += 1;
-                if (receivedEventCount <= 3 || TERMINAL_EVENT_TYPES.has(event.type)) {
+                if (
+                  receivedEventCount <= 3 ||
+                  TERMINAL_EVENT_TYPES.has(event.type)
+                ) {
                   // #region debug-point A:sse-event
                   postSseDebugEvent("A", "SSE stream event received", {
                     seq: parsed.id ?? null,

@@ -9,16 +9,18 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Database, StreamEvent } from "@cucumber/shared";
 import type { ToolRuntime } from "@langchain/core/tools";
 
-import { createAgentBackend } from "./backends/index.js";
-import type { CucumberAgent, CucumberAgentFactory } from "./deep-agent.js";
 import { buildApp } from "../app.js";
 import { loadServerEnv } from "../config/env.js";
 import { bridgeMcpToolToDeepAgent } from "../mcp/deepagents-bridge.js";
 import { createCucumberMcpServer } from "../mcp/server.js";
 import { createAdminSupabaseClient } from "../supabase/admin.js";
+import { createAgentBackend } from "./backends/index.js";
+import type { CucumberAgent, CucumberAgentFactory } from "./deep-agent.js";
 
 const SERVER_ROOT_URL = new URL("../../", import.meta.url);
-const ENV_FILE_PATH = fileURLToPath(new URL("../../../.env.local", SERVER_ROOT_URL));
+const ENV_FILE_PATH = fileURLToPath(
+  new URL("../../../.env.local", SERVER_ROOT_URL),
+);
 const TEST_TIMEOUT_MS = 5 * 60 * 1000;
 const REQUIRED_ENV_KEYS = [
   "CUCUMBER_SUPABASE_URL",
@@ -61,16 +63,20 @@ describeRealChain("real image generation chain", () => {
       port: 0,
     });
 
-    const spawnedWorker = spawn(process.execPath, ["--import", "tsx", "./src/worker.ts"], {
-      cwd: fileURLToPath(SERVER_ROOT_URL),
-      env: {
-        ...process.env,
-        CUCUMBER_WORKER_ID: `vitest-${randomUUID().slice(0, 8)}`,
-        CUCUMBER_WORKER_IMAGE_CONCURRENCY: "1",
-        CUCUMBER_WORKER_MAX_BATCH_SIZE: "1",
+    const spawnedWorker = spawn(
+      process.execPath,
+      ["--import", "tsx", "./src/worker.ts"],
+      {
+        cwd: fileURLToPath(SERVER_ROOT_URL),
+        env: {
+          ...process.env,
+          CUCUMBER_WORKER_ID: `vitest-${randomUUID().slice(0, 8)}`,
+          CUCUMBER_WORKER_IMAGE_CONCURRENCY: "1",
+          CUCUMBER_WORKER_MAX_BATCH_SIZE: "1",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
       },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    );
     worker = spawnedWorker;
 
     spawnedWorker.stdout?.setEncoding("utf8");
@@ -113,11 +119,11 @@ describeRealChain("real image generation chain", () => {
 
         expect(createUserError).toBeNull();
         expect(createdUser.user?.id).toBeTruthy();
-        userId = createdUser.user?.id;
+        userId = requirePresent(createdUser.user?.id, "created test user id");
 
         const anon = createClient<Database>(
-          env.supabaseUrl!,
-          env.supabaseAnonKey!,
+          requirePresent(env.supabaseUrl, "Supabase URL"),
+          requirePresent(env.supabaseAnonKey, "Supabase anon key"),
           {
             auth: {
               autoRefreshToken: false,
@@ -177,12 +183,18 @@ describeRealChain("real image generation chain", () => {
         const sessionId = sessionBody.session.id;
         expect(sessionId).toBeTruthy();
 
-        const sseResponse = await fetch(`${origin}/api/canvases/${canvasId}/stream`, {
-          headers: authHeaders,
-          signal: sseAbort.signal,
-        });
+        const sseResponse = await fetch(
+          `${origin}/api/canvases/${canvasId}/stream`,
+          {
+            headers: authHeaders,
+            signal: sseAbort.signal,
+          },
+        );
         expect(sseResponse.status).toBe(200);
-        const reader = sseResponse.body?.getReader();
+        const reader = requirePresent(
+          sseResponse.body?.getReader(),
+          "SSE response reader",
+        );
         expect(reader).toBeDefined();
 
         const runResponse = await fetch(`${origin}/api/agent/runs`, {
@@ -206,7 +218,7 @@ describeRealChain("real image generation chain", () => {
         const runBody = (await runResponse.json()) as { runId: string };
         expect(runBody.runId).toBeTruthy();
 
-        const events = await readSseEventsUntil(reader!, (event) => {
+        const events = await readSseEventsUntil(reader, (event) => {
           return (
             (event.type === "run.completed" || event.type === "run.failed") &&
             event.runId === runBody.runId
@@ -214,7 +226,8 @@ describeRealChain("real image generation chain", () => {
         });
 
         const runFailed = events.find(
-          (event) => event.type === "run.failed" && event.runId === runBody.runId,
+          (event) =>
+            event.type === "run.failed" && event.runId === runBody.runId,
         );
         expect(runFailed).toBeUndefined();
 
@@ -235,39 +248,47 @@ describeRealChain("real image generation chain", () => {
         expect(toolCompleted).toBeDefined();
 
         const imageArtifacts =
-          toolCompleted?.type === "tool.completed" ? toolCompleted.artifacts ?? [] : [];
+          toolCompleted?.type === "tool.completed"
+            ? (toolCompleted.artifacts ?? [])
+            : [];
         expect(imageArtifacts.length).toBeGreaterThan(0);
         expect(imageArtifacts[0]?.type).toBe("image");
         expect(imageArtifacts[0]?.url).toMatch(/^https?:\/\//);
 
         const canvasSyncCount = events.filter(
-          (event) => event.type === "canvas.sync" && event.runId === runBody.runId,
+          (event) =>
+            event.type === "canvas.sync" && event.runId === runBody.runId,
         ).length;
         expect(canvasSyncCount).toBeGreaterThanOrEqual(2);
 
         const runCompleted = events.find(
-          (event) => event.type === "run.completed" && event.runId === runBody.runId,
+          (event) =>
+            event.type === "run.completed" && event.runId === runBody.runId,
         );
         expect(runCompleted).toBeDefined();
 
-        const jobRow = await pollUntil(async () => {
-          const { data, error } = await admin
-            .from("background_jobs")
-            .select("id, status, result, created_by, canvas_id, session_id")
-            .eq("created_by", userId!)
-            .eq("canvas_id", canvasId)
-            .eq("session_id", sessionId)
-            .eq("job_type", "image_generation")
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
+        const createdBy = requirePresent(userId, "created test user id");
+        const jobRow = await pollUntil(
+          async () => {
+            const { data, error } = await admin
+              .from("background_jobs")
+              .select("id, status, result, created_by, canvas_id, session_id")
+              .eq("created_by", createdBy)
+              .eq("canvas_id", canvasId)
+              .eq("session_id", sessionId)
+              .eq("job_type", "image_generation")
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
 
-          if (error) {
-            throw new Error(`background_jobs query failed: ${error.message}`);
-          }
+            if (error) {
+              throw new Error(`background_jobs query failed: ${error.message}`);
+            }
 
-          return data?.status === "succeeded" ? data : null;
-        }, { label: "background_jobs.succeeded" });
+            return data?.status === "succeeded" ? data : null;
+          },
+          { label: "background_jobs.succeeded" },
+        );
 
         const jobId = jobRow.id;
         expect(jobId).toBeTruthy();
@@ -286,21 +307,27 @@ describeRealChain("real image generation chain", () => {
         expect(jobResult.width).toBeGreaterThan(0);
         expect(jobResult.height).toBeGreaterThan(0);
         expect(jobResult.mime_type).toMatch(/^image\//);
-        objectPath = jobResult.object_path;
+        objectPath = requirePresent(
+          jobResult.object_path,
+          "image generation object path",
+        );
 
-        const taskRow = await pollUntil(async () => {
-          const { data, error } = await admin
-            .from("tasks")
-            .select("job_id, status, completed_at, queue_name")
-            .eq("job_id", jobId!)
-            .single();
+        const taskRow = await pollUntil(
+          async () => {
+            const { data, error } = await admin
+              .from("tasks")
+              .select("job_id, status, completed_at, queue_name")
+              .eq("job_id", jobId)
+              .single();
 
-          if (error) {
-            throw new Error(`tasks query failed: ${error.message}`);
-          }
+            if (error) {
+              throw new Error(`tasks query failed: ${error.message}`);
+            }
 
-          return data?.status === "succeeded" ? data : null;
-        }, { label: "tasks.succeeded" });
+            return data?.status === "succeeded" ? data : null;
+          },
+          { label: "tasks.succeeded" },
+        );
 
         expect(taskRow.queue_name).toBe("image_generation_jobs");
         expect(taskRow.status).toBe("succeeded");
@@ -309,16 +336,20 @@ describeRealChain("real image generation chain", () => {
         const { data: assetRow, error: assetError } = await admin
           .from("asset_objects")
           .select("id, bucket, object_path, mime_type")
-          .eq("object_path", jobResult.object_path!)
+          .eq("object_path", objectPath)
           .single();
 
         expect(assetError).toBeNull();
         expect(assetRow?.bucket).toBe("project-assets");
         expect(assetRow?.mime_type).toMatch(/^image\//);
 
-        const imageResponse = await fetch(jobResult.signed_url!);
+        const imageResponse = await fetch(
+          requirePresent(jobResult.signed_url, "image generation signed URL"),
+        );
         expect(imageResponse.ok).toBe(true);
-        expect(imageResponse.headers.get("content-type") ?? "").toMatch(/^image\//);
+        expect(imageResponse.headers.get("content-type") ?? "").toMatch(
+          /^image\//,
+        );
       } finally {
         sseAbort.abort();
 
@@ -344,22 +375,31 @@ function createDeterministicGenerateImageAgentFactory(): CucumberAgentFactory {
       createUserClient:
         options.createUserClient ??
         (() => {
-          throw new Error("createUserClient is required for generate_image test agent");
+          throw new Error(
+            "createUserClient is required for generate_image test agent",
+          );
         }),
       ...(options.connectionManager
         ? { connectionManager: options.connectionManager }
         : {}),
       ...(options.persistImage ? { persistImage: options.persistImage } : {}),
-      ...(options.submitImageJob ? { submitImageJob: options.submitImageJob } : {}),
-      ...(options.submitVideoJob ? { submitVideoJob: options.submitVideoJob } : {}),
+      ...(options.submitImageJob
+        ? { submitImageJob: options.submitImageJob }
+        : {}),
+      ...(options.submitVideoJob
+        ? { submitVideoJob: options.submitVideoJob }
+        : {}),
     });
 
-    const generateImageTool = bridgeMcpToolToDeepAgent(
-      server.getTool("generate_image")!,
+    const generateImageMcpTool = requirePresent(
+      server.getTool("generate_image"),
+      "generate_image MCP tool",
     );
+    const generateImageTool = bridgeMcpToolToDeepAgent(generateImageMcpTool);
 
     return {
       async *stream() {
+        yield* [];
         throw new Error("deterministic test agent does not implement stream()");
       },
       async *streamEvents(input: unknown, runtime: unknown) {
@@ -395,10 +435,16 @@ function createDeterministicGenerateImageAgentFactory(): CucumberAgentFactory {
   };
 }
 
+function requirePresent<T>(value: T | null | undefined, label: string): T {
+  if (value === null || value === undefined) {
+    throw new Error(`${label} is required`);
+  }
+  return value;
+}
+
 function extractPromptFromStreamInput(input: unknown) {
-  const message = (input as { messages?: unknown[] } | undefined)?.messages?.[0] as
-    | { content?: unknown }
-    | undefined;
+  const message = (input as { messages?: unknown[] } | undefined)
+    ?.messages?.[0] as { content?: unknown } | undefined;
   const content = message?.content;
 
   if (typeof content === "string" && content.trim().length > 0) {
@@ -465,7 +511,9 @@ async function waitForWorkerReady(
     await delay(250);
   }
 
-  throw new Error(`worker did not become ready within 30s. Logs:\n${getLogs()}`);
+  throw new Error(
+    `worker did not become ready within 30s. Logs:\n${getLogs()}`,
+  );
 }
 
 async function stopWorker(worker: WorkerProcess | null) {
@@ -564,7 +612,9 @@ async function pollUntil<T>(
     await delay(intervalMs);
   }
 
-  throw new Error(`Timed out waiting for ${options.label} after ${timeoutMs}ms`);
+  throw new Error(
+    `Timed out waiting for ${options.label} after ${timeoutMs}ms`,
+  );
 }
 
 function delay(ms: number) {

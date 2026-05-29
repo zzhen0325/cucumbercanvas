@@ -33,10 +33,12 @@ async function testDeepSeek() {
       const usage = data.usage;
       console.log(`  OK (${Date.now() - t1}ms)`);
       console.log(`  Response: "${reply}"`);
-      console.log(`  Usage: prompt=${usage?.prompt_tokens}, completion=${usage?.completion_tokens}, total=${usage?.total_tokens}`);
+      console.log(
+        `  Usage: prompt=${usage?.prompt_tokens}, completion=${usage?.completion_tokens}, total=${usage?.total_tokens}`,
+      );
     } else {
       console.log(`  FAILED (${res.status})`);
-      console.log(`  Error:`, JSON.stringify(data, null, 2));
+      console.log("  Error:", JSON.stringify(data, null, 2));
     }
   } catch (err) {
     console.log(`  ERROR: ${err.message}`);
@@ -54,7 +56,9 @@ async function testDeepSeek() {
       },
       body: JSON.stringify({
         model: MODEL,
-        messages: [{ role: "user", content: "Count from 1 to 5, one per line." }],
+        messages: [
+          { role: "user", content: "Count from 1 to 5, one per line." },
+        ],
         max_tokens: 100,
         stream: true,
       }),
@@ -63,7 +67,7 @@ async function testDeepSeek() {
     if (!res.ok) {
       const err = await res.json();
       console.log(`  FAILED (${res.status})`);
-      console.log(`  Error:`, JSON.stringify(err, null, 2));
+      console.log("  Error:", JSON.stringify(err, null, 2));
     } else {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -90,8 +94,13 @@ async function testDeepSeek() {
       }
 
       console.log(`  OK (${Date.now() - t2}ms, ${chunks} chunks)`);
-      console.log(`  Full response:`);
-      console.log(fullText.split("\n").map((l) => `    ${l}`).join("\n"));
+      console.log("  Full response:");
+      console.log(
+        fullText
+          .split("\n")
+          .map((l) => `    ${l}`)
+          .join("\n"),
+      );
     }
   } catch (err) {
     console.log(`  ERROR: ${err.message}`);

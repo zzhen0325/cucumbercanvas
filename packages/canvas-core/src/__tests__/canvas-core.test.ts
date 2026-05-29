@@ -37,6 +37,30 @@ import {
 
 const parserCapableIt = typeof DOMParser === "undefined" ? it.skip : it;
 
+type TestPenNode = PenNode & {
+  height?: number;
+  meta?: Record<string, unknown>;
+  viewport?: { zoom?: number };
+  width?: number;
+  x?: number;
+  y?: number;
+};
+
+function asTestNode(node: unknown, label = "node"): TestPenNode {
+  if (node == null || typeof node !== "object") {
+    throw new Error(`Expected ${label} to exist`);
+  }
+  return node as TestPenNode;
+}
+
+function readRequired<T>(items: ArrayLike<T>, index: number, label: string): T {
+  const value = items[index];
+  if (value === undefined) {
+    throw new Error(`Expected ${label} at index ${index}`);
+  }
+  return value;
+}
+
 function importedNodeTitle(
   node: CanvasImportResult["nodes"][number],
 ): string | undefined {
@@ -72,7 +96,7 @@ describe("cucumber canvas core", () => {
     expect(doc.activePageId).toBe("page-default");
     expect(doc.pages?.[0]?.id).toBe("page-default");
     expect(doc.children).toEqual([]);
-    expect((doc as any).viewport.zoom).toBe(1);
+    expect(asTestNode(doc, "document").viewport?.zoom).toBe(1);
   });
 
   it("creates page-aware canvas documents with the default active page", () => {
@@ -237,7 +261,7 @@ describe("cucumber canvas core", () => {
     doc = applyCanvasOperation(doc, { type: "insertNode", node: b });
     doc = applyCanvasOperation(doc, {
       type: "reorderNode",
-      nodeId: "a",
+      nodeId: "b",
       direction: "front",
     });
 
@@ -358,12 +382,14 @@ describe("cucumber canvas core", () => {
     });
 
     expect(getActiveChildren(doc).map((node) => node.id)).toEqual(["group-1"]);
-    expect(getNodeBounds(findNode(doc, "group-1")!)).toEqual({
-      x: 20,
-      y: 30,
-      width: 220,
-      height: 160,
-    });
+    expect(getNodeBounds(asTestNode(findNode(doc, "group-1"), "node"))).toEqual(
+      {
+        x: 20,
+        y: 30,
+        width: 220,
+        height: 160,
+      },
+    );
     expect(findParent(doc, "a")?.id).toBe("group-1");
 
     doc = applyCanvasOperation(doc, {
@@ -372,7 +398,9 @@ describe("cucumber canvas core", () => {
     });
 
     expect(getActiveChildren(doc).map((node) => node.id)).toEqual(["a", "b"]);
-    expect(getNodeBounds(findNode(doc, "a")!)).toEqual(getNodeBounds(a));
+    expect(getNodeBounds(asTestNode(findNode(doc, "a"), "node"))).toEqual(
+      getNodeBounds(a),
+    );
     expect(findParent(doc, "b")).toBeUndefined();
   });
 
@@ -674,7 +702,9 @@ describe("cucumber canvas core", () => {
     expect(childNode1?.x).toBe(10);
     expect(childNode1?.y).toBe(10);
     expect(inserted.insertedIds).toEqual(["group-1"]);
-    expect((findNode(inserted.doc, "group-1") as any)?.meta).toMatchObject({
+    expect(
+      asTestNode(findNode(inserted.doc, "group-1"), "node").meta,
+    ).toMatchObject({
       source: "svg-import",
       importSessionId: result.importSessionId,
       importSourceLabel: "SVG",
@@ -711,8 +741,11 @@ describe("cucumber canvas core", () => {
     };
 
     const inserted = insertCanvasImportResult(createEmptyDocument(), result);
-    const root = findNode(inserted.doc, result.rootNodeIds[0]!);
-    expect((root as any)?.meta).toMatchObject({
+    const root = findNode(
+      inserted.doc,
+      readRequired(result.rootNodeIds, 0, "root node id"),
+    );
+    expect(asTestNode(root, "root")?.meta).toMatchObject({
       source: "svg-import",
       importSessionId: result.importSessionId,
       importSourceLabel: "SVG",
@@ -964,7 +997,7 @@ describe("cucumber canvas core", () => {
         ? result?.nodes.find((node) => node.id === rootId)
         : null;
       expect(root?.type).toBe("group");
-      expect((root as any)?.meta).toMatchObject({
+      expect(asTestNode(root, "root")?.meta).toMatchObject({
         source: "figma-paste",
         importSourceLabel: "Figma",
         originNodeType: "div",
@@ -1884,11 +1917,11 @@ describe("cucumber canvas core", () => {
   it("applies imported auto-layout to container children and nested layout containers", () => {
     let doc = createEmptyDocument();
     const root = makeContainer("root");
-    (root as any).x = 10;
-    (root as any).y = 20;
-    (root as any).width = 300;
-    (root as any).height = 200;
-    (root as any).meta = {
+    asTestNode(root, "root").x = 10;
+    asTestNode(root, "root").y = 20;
+    asTestNode(root, "root").width = 300;
+    asTestNode(root, "root").height = 200;
+    asTestNode(root, "root").meta = {
       source: "figma-paste",
       autoLayout: {
         layout: "vertical",
@@ -1913,13 +1946,13 @@ describe("cucumber canvas core", () => {
           widthMode: "fill_container",
         },
       },
-    } as any as PenNode;
+    } as unknown as PenNode;
     const nested = makeContainer("nested", "root");
-    (nested as any).x = 0;
-    (nested as any).y = 0;
-    (nested as any).width = 100;
-    (nested as any).height = 40;
-    (nested as any).meta = {
+    asTestNode(nested, "nested").x = 0;
+    asTestNode(nested, "nested").y = 0;
+    asTestNode(nested, "nested").width = 100;
+    asTestNode(nested, "nested").height = 40;
+    asTestNode(nested, "nested").meta = {
       source: "figma-paste",
       autoLayout: {
         layout: "horizontal",
@@ -1956,7 +1989,7 @@ describe("cucumber canvas core", () => {
           heightMode: "fill_container",
         },
       },
-    } as any;
+    } as unknown as PenNode;
 
     doc = applyCanvasOperation(doc, { type: "insertNode", node: root });
     doc = applyCanvasOperation(doc, {
@@ -1982,25 +2015,33 @@ describe("cucumber canvas core", () => {
 
     const next = applyImportedAutoLayout(doc, "root");
 
-    expect(getNodeBounds(findNode(next, "title")!)).toMatchObject({
+    expect(
+      getNodeBounds(asTestNode(findNode(next, "title"), "node")),
+    ).toMatchObject({
       x: 26,
       y: 85,
       width: 268,
       height: 20,
     });
-    expect(getNodeBounds(findNode(next, "nested")!)).toMatchObject({
+    expect(
+      getNodeBounds(asTestNode(findNode(next, "nested"), "node")),
+    ).toMatchObject({
       x: 26,
       y: 115,
       width: 268,
       height: 40,
     });
-    expect(getNodeBounds(findNode(next, "nested-label")!)).toMatchObject({
+    expect(
+      getNodeBounds(asTestNode(findNode(next, "nested-label"), "node")),
+    ).toMatchObject({
       x: 34,
       y: 125,
       width: 60,
       height: 20,
     });
-    expect(getNodeBounds(findNode(next, "nested-value")!)).toMatchObject({
+    expect(
+      getNodeBounds(asTestNode(findNode(next, "nested-value"), "node")),
+    ).toMatchObject({
       x: 102,
       y: 123,
       width: 184,
@@ -2011,11 +2052,11 @@ describe("cucumber canvas core", () => {
   it("keeps imported absolute-positioned children fixed during auto-layout reflow", () => {
     let doc = createEmptyDocument();
     const root = makeContainer("absolute-root");
-    (root as any).x = 0;
-    (root as any).y = 0;
-    (root as any).width = 200;
-    (root as any).height = 120;
-    (root as any).meta = {
+    asTestNode(root, "root").x = 0;
+    asTestNode(root, "root").y = 0;
+    asTestNode(root, "root").width = 200;
+    asTestNode(root, "root").height = 120;
+    asTestNode(root, "root").meta = {
       source: "figma-paste",
       autoLayout: {
         layout: "horizontal",
@@ -2047,7 +2088,7 @@ describe("cucumber canvas core", () => {
           positioning: "absolute",
         },
       },
-    } as any;
+    } as unknown as PenNode;
 
     doc = applyCanvasOperation(doc, { type: "insertNode", node: root });
     doc = applyCanvasOperation(doc, {
@@ -2063,13 +2104,17 @@ describe("cucumber canvas core", () => {
 
     const next = applyImportedAutoLayout(doc, "absolute-root");
 
-    expect(getNodeBounds(findNode(next, "flow")!)).toMatchObject({
+    expect(
+      getNodeBounds(asTestNode(findNode(next, "flow"), "node")),
+    ).toMatchObject({
       x: 10,
       y: 10,
       width: 40,
       height: 20,
     });
-    expect(getNodeBounds(findNode(next, "absolute")!)).toMatchObject({
+    expect(
+      getNodeBounds(asTestNode(findNode(next, "absolute"), "node")),
+    ).toMatchObject({
       x: 77,
       y: 33,
       width: 30,

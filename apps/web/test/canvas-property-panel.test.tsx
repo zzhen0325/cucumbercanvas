@@ -84,9 +84,24 @@ const styledTextNode: PenNode = {
 
 const pathNode: PenNode = {
   d: "M0 0 C 20 10 40 10 60 0",
+  fillRule: "nonzero",
   fill: [{ type: "solid", color: "#22c55e", opacity: 0.5 }],
   height: 24,
   id: "path-1",
+  meta: {
+    source: "figma-paste",
+    vectorFallback: {
+      booleanOperation: "UNION",
+      fallbackReason: "path_not_decodable",
+      fillGeometryCount: 2,
+      fillWindingRules: ["NONZERO", "ODD"],
+      normalizedSize: { x: 80, y: 24 },
+      source: "figma",
+      strokeGeometryCount: 1,
+      strokeWindingRules: ["NONZERO"],
+      vectorNetworkBlob: 3,
+    },
+  },
   name: "Bezier path",
   stroke: {
     align: "center",
@@ -377,6 +392,7 @@ describe("CanvasPropertyPanel", () => {
       visible: true,
       blendMode: "screen" as const,
       originalSize: { width: 640, height: 480 },
+      transform: { m00: 0.8, m01: 0.1, m02: 0.2, m10: 0, m11: 0.9, m12: 0.3 },
     };
     const { onUpdate } = renderPropertyPanel({
       ...rectangleNode,
@@ -403,6 +419,10 @@ describe("CanvasPropertyPanel", () => {
     fireEvent.change(
       screen.getByRole("spinbutton", { name: "填充 2 原始宽度" }),
       { target: { value: "800" } },
+    );
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "填充 2 图片矩阵 m00" }),
+      { target: { value: "0.75" } },
     );
     await user.click(screen.getByRole("button", { name: "上移填充 2" }));
 
@@ -437,7 +457,143 @@ describe("CanvasPropertyPanel", () => {
       ],
     });
     expect(onUpdate).toHaveBeenCalledWith({
+      fill: [
+        firstFill,
+        {
+          ...secondFill,
+          transform: {
+            m00: 0.75,
+            m01: 0.1,
+            m02: 0.2,
+            m10: 0,
+            m11: 0.9,
+            m12: 0.3,
+          },
+        },
+      ],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
       fill: [secondFill, firstFill],
+    });
+  });
+
+  it("edits fill and stroke gradient stops without changing gradient types", async () => {
+    const user = userEvent.setup();
+    const fillGradient = {
+      type: "linear_gradient" as const,
+      angle: 15,
+      transform: { m00: 1, m01: 0, m02: 0, m10: 0, m11: 1, m12: 0 },
+      stops: [
+        { offset: 0, color: "#111111", opacity: 1 },
+        { offset: 1, color: "#eeeeee", opacity: 0.5 },
+      ],
+    };
+    const strokeGradient = {
+      type: "radial_gradient" as const,
+      cx: 0.5,
+      cy: 0.5,
+      radius: 0.6,
+      stops: [
+        { offset: 0, color: "#ff0000" },
+        { offset: 1, color: "#0000ff" },
+      ],
+    };
+    const { onUpdate } = renderPropertyPanel({
+      ...rectangleNode,
+      fill: [fillGradient],
+      stroke: {
+        align: "inside",
+        thickness: 2,
+        fill: [strokeGradient],
+      },
+    });
+
+    fireEvent.change(screen.getByLabelText("填充 1 色标 2 颜色"), {
+      target: { value: "#00ff00" },
+    });
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "填充 1 色标 2 位置" }),
+      { target: { value: "0.35" } },
+    );
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "填充 1 色标 2 透明" }),
+      { target: { value: "80" } },
+    );
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "填充 1 矩阵 m02" }),
+      {
+        target: { value: "0.25" },
+      },
+    );
+    await user.click(screen.getByRole("button", { name: "添加填充 1 色标" }));
+    fireEvent.change(
+      screen.getByRole("spinbutton", {
+        name: "描边填充 1 色标 1 位置",
+      }),
+      { target: { value: "0.2" } },
+    );
+
+    expect(onUpdate).toHaveBeenCalledWith({
+      fill: [
+        {
+          ...fillGradient,
+          stops: [
+            fillGradient.stops[0],
+            { offset: 1, color: "#00ff00", opacity: 0.5 },
+          ],
+        },
+      ],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      fill: [
+        {
+          ...fillGradient,
+          stops: [
+            fillGradient.stops[0],
+            { offset: 0.35, color: "#eeeeee", opacity: 0.5 },
+          ],
+        },
+      ],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      fill: [
+        {
+          ...fillGradient,
+          stops: [
+            fillGradient.stops[0],
+            { offset: 1, color: "#eeeeee", opacity: 0.8 },
+          ],
+        },
+      ],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      fill: [
+        {
+          ...fillGradient,
+          transform: { m00: 1, m01: 0, m02: 0.25, m10: 0, m11: 1, m12: 0 },
+        },
+      ],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      fill: [
+        {
+          ...fillGradient,
+          stops: [
+            ...fillGradient.stops,
+            { offset: 1, color: "#eeeeee", opacity: 0.5 },
+          ],
+        },
+      ],
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      stroke: expect.objectContaining({
+        fill: [
+          {
+            ...strokeGradient,
+            stops: [{ offset: 0.2, color: "#ff0000" }, strokeGradient.stops[1]],
+          },
+        ],
+      }),
     });
   });
 
@@ -486,6 +642,94 @@ describe("CanvasPropertyPanel", () => {
     });
     expect(onUpdate).toHaveBeenCalledWith({
       stroke: expect.objectContaining({ miterLimit: 9 }),
+    });
+  });
+
+  it("edits layered stroke paints without overwriting independent border geometry", async () => {
+    const user = userEvent.setup();
+    const firstStrokePaint = {
+      type: "solid" as const,
+      color: "#111827",
+      opacity: 0.5,
+      visible: false,
+      blendMode: "multiply" as const,
+    };
+    const secondStrokePaint = {
+      type: "image" as const,
+      url: "__hash:stroke-image",
+      mode: "crop" as const,
+      opacity: 0.75,
+      blendMode: "screen" as const,
+      originalSize: { width: 320, height: 240 },
+      transform: { m00: 0.7, m01: 0, m02: 0.1, m10: 0, m11: 0.8, m12: 0.2 },
+    };
+    const stroke = {
+      align: "outside" as const,
+      cap: "round" as const,
+      dashOffset: 1,
+      dashPattern: [4, 2],
+      fill: [firstStrokePaint, secondStrokePaint],
+      join: "bevel" as const,
+      miterLimit: 6,
+      thickness: [1, 2, 3, 4] as [number, number, number, number],
+    };
+    const { onUpdate } = renderPropertyPanel({
+      ...rectangleNode,
+      stroke,
+    });
+
+    await user.click(screen.getByRole("button", { name: "显示描边填充 1" }));
+    fireEvent.change(screen.getByLabelText("描边填充 2 混合模式"), {
+      target: { value: "overlay" },
+    });
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "描边填充 2 图片矩阵 m12" }),
+      { target: { value: "0.45" } },
+    );
+    await user.click(screen.getByRole("button", { name: "上移描边填充 2" }));
+    fireEvent.change(screen.getByRole("spinbutton", { name: "右" }), {
+      target: { value: "7" },
+    });
+
+    expect(onUpdate).toHaveBeenCalledWith({
+      stroke: {
+        ...stroke,
+        fill: [{ ...firstStrokePaint, visible: true }, secondStrokePaint],
+      },
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      stroke: {
+        ...stroke,
+        fill: [
+          firstStrokePaint,
+          { ...secondStrokePaint, blendMode: "overlay" },
+        ],
+      },
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      stroke: {
+        ...stroke,
+        fill: [
+          firstStrokePaint,
+          {
+            ...secondStrokePaint,
+            transform: {
+              m00: 0.7,
+              m01: 0,
+              m02: 0.1,
+              m10: 0,
+              m11: 0.8,
+              m12: 0.45,
+            },
+          },
+        ],
+      },
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      stroke: { ...stroke, fill: [secondStrokePaint, firstStrokePaint] },
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      stroke: { ...stroke, thickness: [1, 7, 3, 4] },
     });
   });
 
@@ -697,6 +941,32 @@ describe("CanvasPropertyPanel", () => {
     fireEvent.change(screen.getByLabelText("组件引用 Key"), {
       target: { value: "component-key-2" },
     });
+    fireEvent.change(screen.getByLabelText("组件变体 1 值"), {
+      target: { value: "Compact" },
+    });
+    fireEvent.change(screen.getByLabelText("组件赋值 1 名称"), {
+      target: { value: "ctaLabel" },
+    });
+    fireEvent.change(screen.getByLabelText("组件赋值 1 值"), {
+      target: { value: "Continue" },
+    });
+    fireEvent.change(screen.getByLabelText("组件覆写 1 路径"), {
+      target: { value: "root/button/icon" },
+    });
+    fireEvent.change(screen.getByLabelText("组件覆写 1 路径 IDs"), {
+      target: { value: "root, button, icon" },
+    });
+    fireEvent.change(screen.getByLabelText("组件覆写 1 目标"), {
+      target: { value: "icon" },
+    });
+    fireEvent.change(screen.getByLabelText("组件覆写 1 属性"), {
+      target: { value: "fill, visible" },
+    });
+    const structuredOverrideValues = screen.getByLabelText("组件覆写 1 值");
+    fireEvent.change(structuredOverrideValues, {
+      target: { value: '{"fill":"#00ff00","visible":false}' },
+    });
+    fireEvent.blur(structuredOverrideValues);
     const variantInput = screen.getByLabelText("组件变体 JSON");
     fireEvent.change(variantInput, {
       target: { value: '{"State":"Active"}' },
@@ -754,6 +1024,94 @@ describe("CanvasPropertyPanel", () => {
     expect(onUpdate).toHaveBeenCalledWith({
       componentRef: expect.objectContaining({
         source: "figma",
+        variantProperties: { Size: "Compact" },
+      }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      componentRef: expect.objectContaining({
+        propertyAssignments: { ctaLabel: "Start" },
+        source: "figma",
+      }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      componentRef: expect.objectContaining({
+        propertyAssignments: { label: "Continue" },
+        source: "figma",
+      }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      componentRef: expect.objectContaining({
+        overrides: [
+          expect.objectContaining({
+            path: "root/button/icon",
+            pathIds: ["root", "button"],
+            properties: ["fill"],
+            targetId: "button",
+            values: { fill: "#ff0000" },
+          }),
+        ],
+        source: "figma",
+      }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      componentRef: expect.objectContaining({
+        overrides: [
+          expect.objectContaining({
+            path: "root/button",
+            pathIds: ["root", "button", "icon"],
+            properties: ["fill"],
+            targetId: "button",
+            values: { fill: "#ff0000" },
+          }),
+        ],
+        source: "figma",
+      }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      componentRef: expect.objectContaining({
+        overrides: [
+          expect.objectContaining({
+            path: "root/button",
+            pathIds: ["root", "button"],
+            properties: ["fill"],
+            targetId: "icon",
+            values: { fill: "#ff0000" },
+          }),
+        ],
+        source: "figma",
+      }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      componentRef: expect.objectContaining({
+        overrides: [
+          expect.objectContaining({
+            path: "root/button",
+            pathIds: ["root", "button"],
+            properties: ["fill", "visible"],
+            targetId: "button",
+            values: { fill: "#ff0000" },
+          }),
+        ],
+        source: "figma",
+      }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      componentRef: expect.objectContaining({
+        overrides: [
+          expect.objectContaining({
+            path: "root/button",
+            pathIds: ["root", "button"],
+            properties: ["fill"],
+            targetId: "button",
+            values: { fill: "#00ff00", visible: false },
+          }),
+        ],
+        source: "figma",
+      }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      componentRef: expect.objectContaining({
+        source: "figma",
         variantProperties: { State: "Active" },
       }),
     });
@@ -775,6 +1133,252 @@ describe("CanvasPropertyPanel", () => {
         source: "figma",
       }),
     });
+  });
+
+  it("shows and updates resolved style and variable tokens without overwriting node refs", () => {
+    const onVariablesChange = vi.fn();
+    const onStyleDefinitionsChange = vi.fn();
+    const { onUpdate } = renderPropertyPanel(figmaReferenceNode, {
+      variables: {
+        "figma.VariableID-1": {
+          id: "VariableID:1",
+          name: "Brand Primary",
+          source: "figma",
+          type: "color",
+          value: "#3366ff",
+        },
+      },
+      styleDefinitions: {
+        "fill-style": {
+          fill: [{ type: "solid", color: "#123456" }],
+          id: "fill-style",
+          name: "Brand Fill",
+          source: "figma",
+          type: "fill",
+        },
+      },
+      onStyleDefinitionsChange,
+      onVariablesChange,
+    });
+
+    expect(screen.getByText(/Brand Primary/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/figma · VariableID:1 · 已解析/),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(/Brand Fill/).length).toBeGreaterThan(0);
+
+    fireEvent.change(screen.getByLabelText("变量 1 值"), {
+      target: { value: "#445566" },
+    });
+    fireEvent.change(screen.getByLabelText("填充样式 token 值"), {
+      target: { value: "#abcdef" },
+    });
+
+    expect(onVariablesChange).toHaveBeenCalledWith({
+      "figma.VariableID-1": {
+        id: "VariableID:1",
+        name: "Brand Primary",
+        source: "figma",
+        type: "color",
+        unresolved: false,
+        value: "#445566",
+      },
+    });
+    expect(onStyleDefinitionsChange).toHaveBeenCalledWith({
+      "fill-style": {
+        fill: [{ type: "solid", color: "#abcdef" }],
+        id: "fill-style",
+        name: "Brand Fill",
+        source: "figma",
+        type: "fill",
+      },
+    });
+    expect(onUpdate).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        fill: expect.anything(),
+      }),
+    );
+    expect(onUpdate).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        styleRefs: expect.anything(),
+      }),
+    );
+  });
+
+  it("exposes a constructed Figma fidelity fixture across advanced inspector sections", () => {
+    const complexFigmaFrame: PenNode = {
+      ...frameNode,
+      blendMode: "screen",
+      clipContent: true,
+      componentRef: figmaReferenceNode.componentRef,
+      effects: [
+        { ...existingShadow, blendMode: "multiply", opacity: 0.5 },
+        { type: "background_blur", radius: 12, opacity: 0.4 },
+      ],
+      fill: [
+        {
+          type: "linear_gradient",
+          angle: 45,
+          stops: [
+            { offset: 0, color: "#111827", opacity: 1 },
+            { offset: 1, color: "#ffffff", opacity: 0.75 },
+          ],
+          transform: { m00: 1, m01: 0, m02: 0.1, m10: 0, m11: 1, m12: 0.2 },
+        },
+        {
+          type: "image",
+          url: "__hash:hero-image",
+          mode: "crop",
+          opacity: 0.8,
+          originalSize: { width: 1200, height: 800 },
+          transform: {
+            m00: 0.75,
+            m01: 0.05,
+            m02: 0.1,
+            m10: 0,
+            m11: 0.8,
+            m12: 0.25,
+          },
+        },
+      ],
+      layoutRef: {
+        alignSelf: "stretch",
+        clipContent: true,
+        grow: 1,
+        heightMode: "fit_content",
+        positioning: "auto",
+        source: "figma",
+        widthMode: "fill_container",
+      },
+      mask: {
+        enabled: true,
+        sourceNodeId: "mask-source",
+        type: "alpha",
+      },
+      stroke: {
+        align: "outside",
+        dashOffset: 2,
+        dashPattern: [6, 3],
+        fill: [
+          { type: "solid", color: "#111827", opacity: 0.5 },
+          {
+            type: "image",
+            url: "__hash:stroke-image",
+            mode: "crop",
+            originalSize: { width: 512, height: 256 },
+            transform: {
+              m00: 0.5,
+              m01: 0,
+              m02: 0.2,
+              m10: 0,
+              m11: 0.6,
+              m12: 0.3,
+            },
+          },
+        ],
+        join: "miter",
+        miterLimit: 5,
+        thickness: [1, 2, 3, 4],
+      },
+      styleRefs: figmaReferenceNode.styleRefs,
+      variableRefs: figmaReferenceNode.variableRefs,
+    };
+    const { container, rerender } = renderPropertyPanel(complexFigmaFrame, {
+      onStyleDefinitionsChange: vi.fn(),
+      onVariablesChange: vi.fn(),
+      styleDefinitions: {
+        "fill-style": {
+          fill: [{ type: "solid", color: "#123456" }],
+          id: "fill-style",
+          name: "Brand Fill",
+          source: "figma",
+          type: "fill",
+        },
+      },
+      variables: {
+        "figma.VariableID-1": {
+          id: "VariableID:1",
+          name: "Brand Primary",
+          source: "figma",
+          type: "color",
+          value: "#3366ff",
+        },
+      },
+    });
+
+    expect(screen.getByLabelText("填充 2 图片模式")).toBeInTheDocument();
+    expect(
+      screen.getByRole("spinbutton", { name: "填充 2 图片矩阵 m00" }),
+    ).toHaveValue(0.75);
+    expect(
+      screen.getByRole("spinbutton", { name: "描边填充 2 图片矩阵 m12" }),
+    ).toHaveValue(0.3);
+    expect(screen.getByLabelText("效果 2 类型")).toHaveValue("background_blur");
+    expect(screen.getByLabelText("遮罩类型")).toHaveValue("alpha");
+    expect(screen.getByRole("spinbutton", { name: "布局 Grow" })).toHaveValue(
+      1,
+    );
+    expect(screen.getByLabelText("组件覆写 1 路径")).toHaveValue("root/button");
+    expect(screen.getByLabelText("变量 1 值")).toHaveValue("#3366ff");
+    expect(screen.getByLabelText("填充样式 token 值")).toHaveValue("#123456");
+    expect(container).not.toHaveTextContent(/\bnull\b|\bundefined\b/);
+
+    rerender(
+      <CanvasPropertyPanel
+        node={styledTextNode}
+        onBindAgent={vi.fn()}
+        onUpdate={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("文本段 2 大小写")).toHaveValue("upper");
+    expect(screen.getByLabelText("文本段 2")).toHaveValue("World");
+
+    rerender(
+      <CanvasPropertyPanel
+        node={pathNode}
+        onBindAgent={vi.fn()}
+        onUpdate={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("布尔操作")).toBeInTheDocument();
+    expect(screen.getByText("UNION")).toBeInTheDocument();
+    expect(screen.getByLabelText("路径 d 数据")).toHaveValue(pathNode.d);
+  });
+
+  it("keeps advanced JSON values unchanged and shows concrete Chinese errors", () => {
+    const { onUpdate } = renderPropertyPanel(figmaReferenceNode);
+
+    const variableRefsInput = screen.getByLabelText("变量引用 JSON");
+    fireEvent.change(variableRefsInput, {
+      target: { value: '{"fills/0/color":' },
+    });
+    fireEvent.blur(variableRefsInput);
+
+    expect(screen.getByText(/变量引用 JSON 格式无效/)).toBeInTheDocument();
+    expect(variableRefsInput).toHaveValue(
+      JSON.stringify(figmaReferenceNode.variableRefs),
+    );
+    expect(onUpdate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ variableRefs: expect.anything() }),
+    );
+
+    const componentVariantInput = screen.getByLabelText("组件变体 JSON");
+    fireEvent.change(componentVariantInput, {
+      target: { value: '["State"]' },
+    });
+    fireEvent.blur(componentVariantInput);
+
+    expect(screen.getByText("组件变体 必须是 JSON 对象。")).toBeInTheDocument();
+    expect(componentVariantInput).toHaveValue(
+      JSON.stringify(figmaReferenceNode.componentRef?.variantProperties),
+    );
+    expect(onUpdate).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        componentRef: expect.objectContaining({
+          variantProperties: ["State"],
+        }),
+      }),
+    );
   });
 
   it("updates ellipse arc, polygon star, line endpoint, and path winding controls", () => {
@@ -836,8 +1440,44 @@ describe("CanvasPropertyPanel", () => {
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "闭合路径" }));
 
+    expect(screen.getByText("布尔操作")).toBeInTheDocument();
+    expect(screen.getByText("UNION")).toBeInTheDocument();
+    expect(screen.getByText("Figma 填充")).toBeInTheDocument();
+    expect(screen.getByText("NONZERO, ODD")).toBeInTheDocument();
+    expect(
+      screen.getByText("路径数据无法解码，已保留诊断信息"),
+    ).toBeInTheDocument();
     expect(onUpdate).toHaveBeenCalledWith({ fillRule: "evenodd" });
     expect(onUpdate).toHaveBeenCalledWith({ closed: true });
+
+    fireEvent.change(screen.getByLabelText("路径 d 数据"), {
+      target: { value: "M0 0 L 40 0 L 40 20 Z" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存路径 d" }));
+    expect(onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        anchors: expect.any(Array),
+        closed: true,
+        d: "M0 0 L 40 0 L 40 20 Z",
+      }),
+    );
+
+    onUpdate.mockClear();
+    fireEvent.change(screen.getByLabelText("路径 d 数据"), {
+      target: { value: "" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存路径 d" }));
+    expect(screen.getByText(/路径 d 不能为空/)).toBeInTheDocument();
+    expect(screen.getByLabelText("路径 d 数据")).toHaveValue(pathNode.d);
+    expect(onUpdate).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("路径 d 数据"), {
+      target: { value: "M0 0 L" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存路径 d" }));
+    expect(screen.getByText(/路径命令 L 参数不足/)).toBeInTheDocument();
+    expect(screen.getByLabelText("路径 d 数据")).toHaveValue(pathNode.d);
+    expect(onUpdate).not.toHaveBeenCalled();
 
     onUpdate.mockClear();
     rerender(

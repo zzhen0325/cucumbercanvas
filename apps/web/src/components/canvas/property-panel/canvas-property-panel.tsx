@@ -12,8 +12,10 @@ import {
   getCanvasImportedNodeMeta,
   getNodeBounds,
 } from "@cucumber/canvas-core";
+import { pathDataToAnchors } from "@cucumber/pen-core";
 import type {
   BlendMode,
+  PenStyleDefinition,
   StyledTextSegment,
   VariableDefinition,
 } from "@cucumber/pen-types";
@@ -120,6 +122,7 @@ type ClearLayoutUpdate = Partial<PenNode> & {
 };
 
 type CanvasVariableMap = Record<string, VariableDefinition>;
+type CanvasStyleDefinitionMap = Record<string, PenStyleDefinition>;
 
 type CanvasTransformMatrix = {
   m00: number;
@@ -129,6 +132,10 @@ type CanvasTransformMatrix = {
   m11: number;
   m12: number;
 };
+
+type GradientPaint = Extract<CanvasFill, { stops: Array<unknown> }>;
+type PaintTransformOwner = Extract<CanvasFill, { transform?: unknown }>;
+type PathEditableNode = Extract<PenNode, { type: "path" }>;
 
 type LayoutRefEditableNode = PenNode & {
   layoutRef?: NonNullable<PenNode["layoutRef"]>;
@@ -260,6 +267,23 @@ const EFFECT_TYPE_OPTIONS: Array<{
   { value: "background_blur", label: "背景模糊" },
 ];
 
+const PATH_COMMAND_PARAM_COUNTS: Record<string, number> = {
+  A: 7,
+  C: 6,
+  H: 1,
+  L: 2,
+  M: 2,
+  Q: 4,
+  S: 4,
+  T: 2,
+  V: 1,
+  Z: 0,
+};
+
+const PATH_COMMAND_RE = /^[AaCcHhLlMmQqSsTtVvZz]$/;
+const PATH_TOKEN_RE =
+  /[AaCcHhLlMmQqSsTtVvZz]|[+-]?(?:(?:\d+\.?\d*)|(?:\.\d+))(?:[eE][+-]?\d+)?/g;
+
 function paintLayerMeta(fill?: CanvasFill): {
   visible?: boolean;
   opacity?: number;
@@ -278,6 +302,32 @@ function fillPrimaryColor(fill?: CanvasFill): string {
   if (fill.type === "solid") return fill.color;
   if ("stops" in fill && fill.stops[0]?.color) return fill.stops[0].color;
   return "#d3f256";
+}
+
+function isGradientPaint(fill: CanvasFill): fill is GradientPaint {
+  return "stops" in fill;
+}
+
+function hasPaintTransform(fill: CanvasFill): fill is PaintTransformOwner {
+  return fill.type !== "solid";
+}
+
+function paintTransformMatrix(
+  fill: PaintTransformOwner,
+): CanvasTransformMatrix {
+  return {
+    m00: fill.transform?.m00 ?? 1,
+    m01: fill.transform?.m01 ?? 0,
+    m02: fill.transform?.m02 ?? 0,
+    m10: fill.transform?.m10 ?? 0,
+    m11: fill.transform?.m11 ?? 1,
+    m12: fill.transform?.m12 ?? 0,
+  };
+}
+
+function gradientStopOpacity(stop: GradientPaint["stops"][number]): number {
+  if (!isRecord(stop) || typeof stop.opacity !== "number") return 100;
+  return Math.round(stop.opacity * 100);
 }
 
 function createFillOfType(
@@ -615,6 +665,323 @@ function parseReferenceArrayInput<T>(
   return undefined;
 }
 
+function getJsonParseMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "未知解析错误";
+}
+
+function formatStructuredValue(value: unknown): string {
+  if (value === undefined) return "";
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return String(value);
+  }
+  return JSON.stringify(value);
+}
+
+function parseStructuredValueInput(value: string): unknown {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (trimmed === "true") return true;
+  if (trimmed === "false") return false;
+  const numeric = Number(trimmed);
+  if (Number.isFinite(numeric) && trimmed === String(numeric)) return numeric;
+  if (
+    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+    (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+    (trimmed.startsWith('"') && trimmed.endsWith('"'))
+  ) {
+    try {
+      return JSON.parse(trimmed);
+    } catch (error) {
+      console.warn("[canvas-property-panel] ignored invalid structured value", {
+        value,
+        error,
+      });
+    }
+  }
+  return value;
+}
+
+function parsePrimitiveComponentValue(
+  value: string,
+): string | number | boolean {
+  const parsed = parseStructuredValueInput(value);
+  if (
+    typeof parsed === "string" ||
+    typeof parsed === "number" ||
+    typeof parsed === "boolean"
+  ) {
+    return parsed;
+  }
+  return value;
+}
+
+function isPathCommandToken(token: string | undefined): token is string {
+  return Boolean(token && PATH_COMMAND_RE.test(token));
+}
+
+function isPathNumberToken(token: string | undefined): token is string {
+  return Boolean(token && !PATH_COMMAND_RE.test(token));
+}
+
+function validatePathDataInput(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "路径 d 不能为空，请输入以 M 或 m 开头的 SVG path。";
+  }
+
+  const invalidChars = trimmed.replace(
+    /[AaCcHhLlMmQqSsTtVvZz]|[+-]?(?:(?:\d+\.?\d*)|(?:\.\d+))(?:[eE][+-]?\d+)?|[\s,]/g,
+    "",
+  );
+  if (invalidChars) {
+    return `路径包含无法识别的字符“${invalidChars[0]}”，请检查 SVG path 命令或数字。`;
+  }
+
+  const tokens = trimmed.match(PATH_TOKEN_RE);
+  if (!tokens?.length) {
+    return "路径 d 没有可解析的命令，请输入有效的 SVG path。";
+  }
+  if (!/^m$/i.test(tokens[0] ?? "")) {
+    return "路径必须以 M 或 m 移动命令开始。";
+  }
+
+  let index = 0;
+  let command = "";
+  let hasDrawCommand = false;
+
+  const readParams = (count: number, commandName: string): string | null => {
+    for (let offset = 0; offset < count; offset += 1) {
+      const token = tokens[index + offset];
+      if (!isPathNumberToken(token)) {
+        return `路径命令 ${commandName.toUpperCase()} 参数不足，需要 ${count} 个数字。`;
+      }
+      const numeric = Number(token);
+      if (!Number.isFinite(numeric)) {
+        return `路径命令 ${commandName.toUpperCase()} 包含非法数字“${token}”。`;
+      }
+      if (
+        commandName.toUpperCase() === "A" &&
+        (offset === 3 || offset === 4) &&
+        token !== "0" &&
+        token !== "1"
+      ) {
+        return "路径 A 弧线命令的 large-arc 和 sweep 标记只能是 0 或 1。";
+      }
+    }
+    index += count;
+    return null;
+  };
+
+  while (index < tokens.length) {
+    const token = tokens[index];
+    if (isPathCommandToken(token)) {
+      command = token;
+      index += 1;
+    } else if (!command || command.toUpperCase() === "Z") {
+      return "路径数字前缺少对应命令，请补充 M/L/C/Q/A 等 SVG path 命令。";
+    }
+
+    const commandKey = command.toUpperCase();
+    const count = PATH_COMMAND_PARAM_COUNTS[commandKey];
+    if (count === undefined) {
+      return `路径包含暂不支持的命令 ${command}。`;
+    }
+    if (count === 0) {
+      hasDrawCommand = true;
+      command = "";
+      continue;
+    }
+
+    const firstError = readParams(count, command);
+    if (firstError) return firstError;
+    if (commandKey !== "M") hasDrawCommand = true;
+
+    while (index < tokens.length && isPathNumberToken(tokens[index])) {
+      const repeatedError = readParams(count, command);
+      if (repeatedError) return repeatedError;
+      hasDrawCommand = true;
+    }
+
+    if (commandKey === "M") {
+      command = command === "m" ? "l" : "L";
+    }
+  }
+
+  if (!hasDrawCommand) {
+    return "路径至少需要一个绘制命令，例如 L、C、Q、A、H、V、S、T 或 Z。";
+  }
+
+  return null;
+}
+
+function formatDiagnosticValue(value: unknown): string {
+  if (value === undefined || value === null) return "未记录";
+  if (typeof value === "boolean") return value ? "是" : "否";
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? String(value) : "未记录";
+  }
+  if (typeof value === "string") return value.trim() || "未记录";
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) => formatDiagnosticValue(item))
+      .filter((item) => item !== "未记录");
+    return parts.length > 0 ? parts.join(", ") : "未记录";
+  }
+  if (isRecord(value)) {
+    const parts = Object.entries(value)
+      .filter(
+        ([, entryValue]) => entryValue !== undefined && entryValue !== null,
+      )
+      .map(
+        ([key, entryValue]) => `${key}: ${formatDiagnosticValue(entryValue)}`,
+      );
+    return parts.length > 0 ? parts.join(" · ") : "未记录";
+  }
+  return String(value);
+}
+
+function formatVectorFallbackReason(value: unknown): string {
+  if (value === "path_not_decodable") {
+    return "路径数据无法解码，已保留诊断信息";
+  }
+  return formatDiagnosticValue(value);
+}
+
+function formatDegradationHints(value: unknown): string {
+  if (!Array.isArray(value)) return formatDiagnosticValue(value);
+  const labels = value.map((hint) =>
+    hint === "partial_fidelity" ? "部分保真" : formatDiagnosticValue(hint),
+  );
+  return labels.filter((label) => label !== "未记录").join(", ") || "未记录";
+}
+
+function formatFillRuleLabel(value: PathEditableNode["fillRule"]): string {
+  return value === "evenodd" ? "Evenodd" : "Nonzero";
+}
+
+function vectorDiagnosticSource(
+  node: PathEditableNode,
+): Record<string, unknown> {
+  const meta = isRecord(node.meta) ? node.meta : {};
+  const vectorFallback = isRecord(meta.vectorFallback)
+    ? meta.vectorFallback
+    : undefined;
+  return vectorFallback ?? meta;
+}
+
+function getVectorDiagnosticRows(
+  node: PathEditableNode,
+): Array<[string, string]> {
+  const meta = isRecord(node.meta) ? node.meta : {};
+  const source = vectorDiagnosticSource(node);
+  const rows: Array<[string, string]> = [];
+
+  const addRow = (
+    label: string,
+    value: unknown,
+    formatter: (value: unknown) => string = formatDiagnosticValue,
+  ) => {
+    if (value === undefined || value === null) return;
+    const formatted = formatter(value);
+    if (formatted !== "未记录") rows.push([label, formatted]);
+  };
+
+  addRow(
+    "布尔操作",
+    source.booleanOperation ?? source.booleanOperationType ?? source.operation,
+  );
+  addRow("节点类型", source.nodeType ?? meta.figmaNodeType);
+  addRow("降级原因", source.fallbackReason, formatVectorFallbackReason);
+  addRow("保真状态", meta.degradationHints, formatDegradationHints);
+  addRow("填充几何", source.fillGeometryCount);
+  addRow("描边几何", source.strokeGeometryCount);
+  addRow("规格化尺寸", source.normalizedSize);
+  addRow("Vector Blob", source.vectorNetworkBlob);
+  addRow("来源", source.source ?? meta.source);
+
+  return rows;
+}
+
+function getVectorWindingRows(node: PathEditableNode): Array<[string, string]> {
+  const source = vectorDiagnosticSource(node);
+  return [
+    ["当前规则", formatFillRuleLabel(node.fillRule)],
+    ["Figma 填充", formatDiagnosticValue(source.fillWindingRules)],
+    ["Figma 描边", formatDiagnosticValue(source.strokeWindingRules)],
+  ];
+}
+
+function formatVariableValue(value: VariableDefinition["value"]): string {
+  if (Array.isArray(value)) {
+    return value.map((entry) => formatStructuredValue(entry.value)).join(", ");
+  }
+  return formatStructuredValue(value);
+}
+
+function parseVariableValueInput(
+  type: VariableDefinition["type"],
+  value: string,
+): VariableDefinition["value"] {
+  const trimmed = value.trim();
+  if (type === "number") {
+    const next = Number(trimmed);
+    if (!Number.isFinite(next)) {
+      throw new Error("数字变量需要输入有效数字。");
+    }
+    return next;
+  }
+  if (type === "boolean") {
+    if (trimmed === "true") return true;
+    if (trimmed === "false") return false;
+    throw new Error("布尔变量只能输入 true 或 false。");
+  }
+  return value;
+}
+
+function variableRefLabel(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (isRecord(value)) {
+    const id = value.id ?? value.name ?? value.key;
+    if (typeof id === "string") return id;
+  }
+  return formatReferenceValue(value);
+}
+
+function findVariableDefinition(
+  variables: CanvasVariableMap | undefined,
+  refValue: unknown,
+): [string, VariableDefinition] | undefined {
+  const label = variableRefLabel(refValue);
+  return Object.entries(variables ?? {}).find(
+    ([name, variable]) =>
+      name === label ||
+      variable.id === label ||
+      variable.name === label ||
+      (typeof variable.rawRef === "string" && variable.rawRef === label),
+  );
+}
+
+function styleDefinitionSummary(
+  definition: PenStyleDefinition | undefined,
+): string {
+  if (!definition) return "未解析的样式定义";
+  const name = definition.name ? `${definition.name} · ` : "";
+  if (definition.fill?.[0]?.type === "solid") {
+    return `${name}${definition.source} · ${definition.fill[0].color}`;
+  }
+  if (definition.strokeFill?.[0]?.type === "solid") {
+    return `${name}${definition.source} · ${definition.strokeFill[0].color}`;
+  }
+  if (definition.text?.fontFamily || definition.text?.fontSize) {
+    return `${name}${definition.source} · ${definition.text.fontFamily ?? "文本"} ${definition.text.fontSize ?? ""}`;
+  }
+  return `${name}${definition.source} · ${definition.type}`;
+}
+
 // ─── NumberField ─────────────────────────────────────────────────────────────
 
 function NumberField({
@@ -884,60 +1251,13 @@ function ColorPickerPopover({
   );
 }
 
-function PaintRow({
-  color,
-  opacity,
-  onColorChange,
-  onOpacityChange,
-  onRemove,
-}: {
-  color: string;
-  opacity: number;
-  onColorChange: (color: string) => void;
-  onOpacityChange: (opacity: number) => void;
-  onRemove: () => void;
-}) {
-  return (
-    <div className="grid grid-cols-[1fr_3rem_auto] items-center overflow-visible rounded-lg border border-border/60 bg-muted/70 shadow-subtle">
-      <div className="flex min-w-0 items-center gap-2 px-3">
-        <ColorPickerPopover color={color} onChange={onColorChange} />
-        <span className="truncate text-sm font-medium text-foreground">
-          {color.replace(/^#/, "").toUpperCase()}
-        </span>
-      </div>
-      <label className="flex h-9 items-center border-l border-border/70 px-2 text-sm">
-        <input
-          className="w-full bg-transparent text-right font-medium text-foreground outline-none"
-          type="number"
-          min={0}
-          max={100}
-          step={1}
-          value={opacity}
-          onChange={(event) => {
-            const next = Number(event.currentTarget.value);
-            if (!Number.isFinite(next)) {
-              console.warn(
-                "[canvas-property-panel] ignored invalid paint opacity",
-                { value: event.currentTarget.value },
-              );
-              return;
-            }
-            onOpacityChange(clamp(next, 0, 100));
-          }}
-        />
-        <span className="ml-1 text-muted-foreground">%</span>
-      </label>
-      <InspectorIconButton icon={Minus} label="移除此样式" onClick={onRemove} />
-    </div>
-  );
-}
-
 // ─── FillSection ─────────────────────────────────────────────────────────────
 
 function FillLayerRow({
   fill,
   index,
   count,
+  label = "填充",
   onUpdate,
   onRemove,
   onMove,
@@ -945,6 +1265,7 @@ function FillLayerRow({
   fill: CanvasFill;
   index: number;
   count: number;
+  label?: string;
   onUpdate: (fill: CanvasFill) => void;
   onRemove: () => void;
   onMove: (direction: "up" | "down") => void;
@@ -953,6 +1274,7 @@ function FillLayerRow({
   const layerNumber = index + 1;
   const opacity = paintLayerOpacity(fill);
   const color = fillPrimaryColor(fill);
+  const layerLabel = `${label} ${layerNumber}`;
 
   const updatePrimaryColor = (nextColor: string) => {
     if (fill.type === "solid") {
@@ -978,14 +1300,12 @@ function FillLayerRow({
       <div className="grid grid-cols-[auto_1fr_auto] items-center gap-2">
         <InspectorIconButton
           icon={visible ? Eye : EyeOff}
-          label={
-            visible ? `隐藏填充 ${layerNumber}` : `显示填充 ${layerNumber}`
-          }
+          label={visible ? `隐藏${layerLabel}` : `显示${layerLabel}`}
           active={visible}
           onClick={() => onUpdate({ ...fill, visible: !visible } as CanvasFill)}
         />
         <select
-          aria-label={`填充 ${layerNumber} 类型`}
+          aria-label={`${layerLabel} 类型`}
           className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
           value={fill.type}
           onChange={(event) =>
@@ -1006,19 +1326,19 @@ function FillLayerRow({
         <div className="flex items-center gap-1">
           <InspectorIconButton
             icon={ArrowUp}
-            label={`上移填充 ${layerNumber}`}
+            label={`上移${layerLabel}`}
             disabled={index === 0}
             onClick={() => onMove("up")}
           />
           <InspectorIconButton
             icon={ArrowDown}
-            label={`下移填充 ${layerNumber}`}
+            label={`下移${layerLabel}`}
             disabled={index === count - 1}
             onClick={() => onMove("down")}
           />
           <InspectorIconButton
             icon={Minus}
-            label={`移除填充 ${layerNumber}`}
+            label={`移除${layerLabel}`}
             onClick={onRemove}
           />
         </div>
@@ -1040,7 +1360,7 @@ function FillLayerRow({
         </div>
         <NumberField
           label="透明"
-          ariaLabel={`填充 ${layerNumber} 透明`}
+          ariaLabel={`${layerLabel} 透明`}
           suffix="%"
           value={opacity}
           min={0}
@@ -1052,7 +1372,7 @@ function FillLayerRow({
       </div>
       <div className="grid grid-cols-2 gap-2">
         <select
-          aria-label={`填充 ${layerNumber} 混合模式`}
+          aria-label={`${layerLabel} 混合模式`}
           className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
           value={fill.blendMode ?? "normal"}
           onChange={(event) =>
@@ -1071,7 +1391,7 @@ function FillLayerRow({
         {"angle" in fill ? (
           <NumberField
             label="角度"
-            ariaLabel={`填充 ${layerNumber} 角度`}
+            ariaLabel={`${layerLabel} 角度`}
             value={fill.angle ?? 0}
             step={1}
             onChange={(angle) => onUpdate({ ...fill, angle } as CanvasFill)}
@@ -1079,7 +1399,7 @@ function FillLayerRow({
         ) : "radius" in fill ? (
           <NumberField
             label="半径"
-            ariaLabel={`填充 ${layerNumber} 半径`}
+            ariaLabel={`${layerLabel} 半径`}
             value={fill.radius ?? 0}
             min={0}
             step={0.01}
@@ -1092,7 +1412,7 @@ function FillLayerRow({
       {fill.type === "image" ? (
         <div className="space-y-2">
           <input
-            aria-label={`填充 ${layerNumber} 图片地址`}
+            aria-label={`${layerLabel} 图片地址`}
             className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
             placeholder="Image URL / hash / blob"
             value={fill.url}
@@ -1102,7 +1422,7 @@ function FillLayerRow({
           />
           <div className="grid grid-cols-3 gap-2">
             <select
-              aria-label={`填充 ${layerNumber} 图片模式`}
+              aria-label={`${layerLabel} 图片模式`}
               className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
               value={fill.mode ?? "fill"}
               onChange={(event) =>
@@ -1122,7 +1442,7 @@ function FillLayerRow({
             </select>
             <NumberField
               label="原宽"
-              ariaLabel={`填充 ${layerNumber} 原始宽度`}
+              ariaLabel={`${layerLabel} 原始宽度`}
               value={fill.originalSize?.width ?? 0}
               min={0}
               onChange={(width) =>
@@ -1137,7 +1457,7 @@ function FillLayerRow({
             />
             <NumberField
               label="原高"
-              ariaLabel={`填充 ${layerNumber} 原始高度`}
+              ariaLabel={`${layerLabel} 原始高度`}
               value={fill.originalSize?.height ?? 0}
               min={0}
               onChange={(height) =>
@@ -1150,6 +1470,190 @@ function FillLayerRow({
                 })
               }
             />
+          </div>
+          <div className="rounded-lg border border-border/60 bg-background/70 p-2">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-muted-foreground">
+                {fill.mode === "crop" ? "Crop Matrix" : "Transform Matrix"}
+              </span>
+              <span className="text-[10px] font-medium text-muted-foreground">
+                m00-m12
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {(["m00", "m01", "m02", "m10", "m11", "m12"] as const).map(
+                (key) => {
+                  const matrix = paintTransformMatrix(fill);
+                  return (
+                    <NumberField
+                      key={key}
+                      label={key}
+                      ariaLabel={`${layerLabel} 图片矩阵 ${key}`}
+                      value={matrix[key]}
+                      step={0.01}
+                      onChange={(value) =>
+                        onUpdate({
+                          ...fill,
+                          transform: { ...matrix, [key]: value },
+                        })
+                      }
+                    />
+                  );
+                },
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {isGradientPaint(fill) ? (
+        <div className="space-y-2 rounded-lg border border-border/60 bg-background/70 p-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-muted-foreground">
+              Gradient Stops
+            </span>
+            <InspectorIconButton
+              icon={Plus}
+              label={`添加${layerLabel} 色标`}
+              onClick={() => {
+                const lastStop = fill.stops.at(-1);
+                const nextOffset =
+                  lastStop && typeof lastStop.offset === "number"
+                    ? clamp(lastStop.offset + 0.1, 0, 1)
+                    : 0.5;
+                onUpdate({
+                  ...fill,
+                  stops: [
+                    ...fill.stops,
+                    {
+                      offset: nextOffset,
+                      color: lastStop?.color ?? color,
+                      opacity: lastStop?.opacity ?? 1,
+                    },
+                  ],
+                } as CanvasFill);
+              }}
+            />
+          </div>
+          <div className="space-y-2">
+            {fill.stops.map((stop, stopIndex) => {
+              const stopNumber = stopIndex + 1;
+              return (
+                <div
+                  key={`${stop.offset}-${stopIndex}`}
+                  className="grid grid-cols-[1fr_4.5rem_4.5rem_auto] items-center gap-2"
+                >
+                  <label className="flex h-9 min-w-0 items-center gap-2 rounded-lg border border-transparent bg-muted/70 px-2 text-xs text-muted-foreground shadow-subtle focus-within:border-border focus-within:bg-background focus-within:ring-2 focus-within:ring-ring/20">
+                    <ColorPickerPopover
+                      color={stop.color}
+                      onChange={(nextColor) =>
+                        onUpdate({
+                          ...fill,
+                          stops: fill.stops.map((item, itemIndex) =>
+                            itemIndex === stopIndex
+                              ? { ...item, color: nextColor }
+                              : item,
+                          ),
+                        } as CanvasFill)
+                      }
+                    />
+                    <input
+                      aria-label={`${layerLabel} 色标 ${stopNumber} 颜色`}
+                      className="min-w-0 flex-1 bg-transparent font-mono text-xs font-medium text-foreground outline-none"
+                      value={stop.color}
+                      onChange={(event) =>
+                        onUpdate({
+                          ...fill,
+                          stops: fill.stops.map((item, itemIndex) =>
+                            itemIndex === stopIndex
+                              ? { ...item, color: event.currentTarget.value }
+                              : item,
+                          ),
+                        } as CanvasFill)
+                      }
+                    />
+                  </label>
+                  <NumberField
+                    label="位置"
+                    ariaLabel={`${layerLabel} 色标 ${stopNumber} 位置`}
+                    value={stop.offset}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    onChange={(offset) =>
+                      onUpdate({
+                        ...fill,
+                        stops: fill.stops.map((item, itemIndex) =>
+                          itemIndex === stopIndex ? { ...item, offset } : item,
+                        ),
+                      } as CanvasFill)
+                    }
+                  />
+                  <NumberField
+                    label="透明"
+                    ariaLabel={`${layerLabel} 色标 ${stopNumber} 透明`}
+                    value={gradientStopOpacity(stop)}
+                    min={0}
+                    max={100}
+                    onChange={(nextOpacity) =>
+                      onUpdate({
+                        ...fill,
+                        stops: fill.stops.map((item, itemIndex) =>
+                          itemIndex === stopIndex
+                            ? { ...item, opacity: nextOpacity / 100 }
+                            : item,
+                        ),
+                      } as CanvasFill)
+                    }
+                  />
+                  <InspectorIconButton
+                    icon={Minus}
+                    label={`移除${layerLabel} 色标 ${stopNumber}`}
+                    onClick={() =>
+                      onUpdate({
+                        ...fill,
+                        stops: fill.stops.filter(
+                          (_item, itemIndex) => itemIndex !== stopIndex,
+                        ),
+                      } as CanvasFill)
+                    }
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+      {hasPaintTransform(fill) && fill.type !== "image" ? (
+        <div className="rounded-lg border border-border/60 bg-background/70 p-2">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-muted-foreground">
+              Paint Matrix
+            </span>
+            <span className="text-[10px] font-medium text-muted-foreground">
+              handle fallback
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {(["m00", "m01", "m02", "m10", "m11", "m12"] as const).map(
+              (key) => {
+                const matrix = paintTransformMatrix(fill);
+                return (
+                  <NumberField
+                    key={key}
+                    label={key}
+                    ariaLabel={`${layerLabel} 矩阵 ${key}`}
+                    value={matrix[key]}
+                    step={0.01}
+                    onChange={(value) =>
+                      onUpdate({
+                        ...fill,
+                        transform: { ...matrix, [key]: value },
+                      } as CanvasFill)
+                    }
+                  />
+                );
+              },
+            )}
           </div>
         </div>
       ) : null}
@@ -1246,6 +1750,7 @@ function StrokeSection({
   const edgeWidths = strokeThicknessTuple(stroke?.thickness);
   const strokeFill = stroke?.fill?.[0];
   const opacity = solidFillOpacity(strokeFill);
+  const strokeLayers = stroke?.fill ?? [];
   const [dashInput, setDashInput] = useState(
     formatDashPattern(stroke?.dashPattern),
   );
@@ -1267,28 +1772,6 @@ function StrokeSection({
     [color, opacity, stroke],
   );
 
-  const handleColorChange = useCallback(
-    (newColor: string) => {
-      const newStroke: CanvasStroke = {
-        ...(stroke ?? { thickness: 1 }),
-        fill: [{ type: "solid", color: newColor, opacity: opacity / 100 }],
-      };
-      onUpdate({ stroke: newStroke } as Partial<PenNode>);
-    },
-    [onUpdate, opacity, stroke],
-  );
-
-  const handleOpacityChange = useCallback(
-    (nextOpacity: number) => {
-      const newStroke: CanvasStroke = {
-        ...(stroke ?? { thickness: width }),
-        fill: [{ type: "solid", color, opacity: nextOpacity / 100 }],
-      };
-      onUpdate({ stroke: newStroke } as Partial<PenNode>);
-    },
-    [color, onUpdate, stroke, width],
-  );
-
   const handleWidthChange = useCallback(
     (newWidth: number) => {
       const newStroke: CanvasStroke = {
@@ -1303,6 +1786,32 @@ function StrokeSection({
     [onUpdate, opacity, stroke, color],
   );
 
+  const updateStrokeFillAt = (index: number, nextFill: CanvasFill) => {
+    const baseStroke = buildStroke();
+    const layers = baseStroke.fill ?? [];
+    onUpdate({
+      stroke: {
+        ...baseStroke,
+        fill: layers.map((fill, fillIndex) =>
+          fillIndex === index ? nextFill : fill,
+        ),
+      },
+    } as Partial<PenNode>);
+  };
+
+  const moveStrokeFill = (index: number, direction: "up" | "down") => {
+    const baseStroke = buildStroke();
+    const layers = [...(baseStroke.fill ?? [])];
+    const nextIndex = direction === "up" ? index - 1 : index + 1;
+    if (nextIndex < 0 || nextIndex >= layers.length) return;
+    const current = layers[index];
+    const target = layers[nextIndex];
+    if (!current || !target) return;
+    layers[index] = target;
+    layers[nextIndex] = current;
+    onUpdate({ stroke: { ...baseStroke, fill: layers } } as Partial<PenNode>);
+  };
+
   return (
     <InspectorSection
       title="描边"
@@ -1311,35 +1820,49 @@ function StrokeSection({
           <InspectorIconButton icon={Grid2X2} label="样式变量" disabled />
           <InspectorIconButton
             icon={Plus}
-            label="添加描边"
-            onClick={() =>
+            label="添加描边填充"
+            onClick={() => {
+              const baseStroke = buildStroke();
               onUpdate({
                 stroke: {
-                  thickness: width,
-                  align: stroke?.align ?? "inside",
-                  fill: [{ type: "solid", color, opacity: opacity / 100 }],
+                  ...baseStroke,
+                  fill: [...strokeLayers, createFillOfType("solid")],
                 },
-              } as Partial<PenNode>)
-            }
+              } as Partial<PenNode>);
+            }}
           />
         </>
       }
     >
       <div className="space-y-2">
-        <PaintRow
-          color={color}
-          opacity={opacity}
-          onColorChange={handleColorChange}
-          onOpacityChange={handleOpacityChange}
-          onRemove={() =>
-            onUpdate({
-              stroke: {
-                ...(stroke ?? { fill: [{ type: "solid", color }] }),
-                thickness: 0,
-              },
-            } as Partial<PenNode>)
-          }
-        />
+        {strokeLayers.length > 0 ? (
+          strokeLayers.map((fill, index) => (
+            <FillLayerRow
+              key={`${fill.type}-${index}`}
+              fill={fill}
+              index={index}
+              count={strokeLayers.length}
+              label="描边填充"
+              onUpdate={(nextFill) => updateStrokeFillAt(index, nextFill)}
+              onRemove={() => {
+                const baseStroke = buildStroke();
+                onUpdate({
+                  stroke: {
+                    ...baseStroke,
+                    fill: strokeLayers.filter(
+                      (_fill, fillIndex) => fillIndex !== index,
+                    ),
+                  },
+                } as Partial<PenNode>);
+              }}
+              onMove={(direction) => moveStrokeFill(index, direction)}
+            />
+          ))
+        ) : (
+          <p className="rounded-lg border border-border/60 bg-muted/50 p-2 text-xs text-muted-foreground">
+            当前没有描边填充。点击加号添加一层可编辑描边 paint。
+          </p>
+        )}
         <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
           <select
             aria-label="描边对齐"
@@ -2210,6 +2733,7 @@ function VariableBindingSection({
   const colorVariables = Object.entries(variables ?? {}).filter(
     ([, variable]) => variable.type === "color",
   );
+  const variableRefEntries = Object.entries(node.variableRefs ?? {});
   const currentFill = extractSolidFillColor(getNodeFill(node));
   const selectedName = currentFill?.startsWith("$") ? currentFill.slice(1) : "";
   const canBindColor =
@@ -2246,33 +2770,119 @@ function VariableBindingSection({
         </select>
       </label>
       {onVariablesChange ? (
-        <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
-          <input
-            className="h-9 min-w-0 rounded-lg border border-border bg-background px-2 text-xs outline-none transition-colors focus:ring-2 focus:ring-ring/20"
-            placeholder="newColorToken"
-            value={newName}
-            onChange={(event) => setNewName(event.currentTarget.value)}
-          />
-          <ColorPickerPopover color={newColor} onChange={setNewColor} />
-          <button
-            type="button"
-            className="col-span-2 h-9 rounded-lg bg-foreground/[0.08] text-xs font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
-            onClick={() => {
-              const name = newName.trim();
-              if (!name) return;
-              onVariablesChange({
-                ...(variables ?? {}),
-                [name]: { type: "color", value: newColor },
-              });
-              onUpdate({
-                fill: [{ type: "solid", color: `$${name}` }],
-              } as Partial<PenNode>);
-              setNewName("");
-            }}
-          >
-            新建并绑定颜色变量
-          </button>
-        </div>
+        <>
+          <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
+            <input
+              className="h-9 min-w-0 rounded-lg border border-border bg-background px-2 text-xs outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+              placeholder="newColorToken"
+              value={newName}
+              onChange={(event) => setNewName(event.currentTarget.value)}
+            />
+            <ColorPickerPopover color={newColor} onChange={setNewColor} />
+            <button
+              type="button"
+              className="col-span-2 h-9 rounded-lg bg-foreground/[0.08] text-xs font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
+              onClick={() => {
+                const name = newName.trim();
+                if (!name) return;
+                onVariablesChange({
+                  ...(variables ?? {}),
+                  [name]: { type: "color", value: newColor },
+                });
+                onUpdate({
+                  fill: [{ type: "solid", color: `$${name}` }],
+                } as Partial<PenNode>);
+                setNewName("");
+              }}
+            >
+              新建并绑定颜色变量
+            </button>
+          </div>
+          {variableRefEntries.length > 0 ? (
+            <div className="mt-2 space-y-2 rounded-lg border border-border/60 bg-background/70 p-2">
+              <div className="text-[11px] font-semibold text-muted-foreground">
+                引用的变量
+              </div>
+              {variableRefEntries.map(([property, refValue], index) => {
+                const resolved = findVariableDefinition(variables, refValue);
+                const variableName = resolved?.[0];
+                const variable = resolved?.[1];
+                return (
+                  <div
+                    key={property}
+                    className="space-y-1 rounded-lg border border-border/60 bg-muted/40 p-2"
+                  >
+                    <div className="grid grid-cols-[1fr_1fr] gap-2 text-[11px] font-medium text-muted-foreground">
+                      <span className="truncate" title={property}>
+                        {property}
+                      </span>
+                      <span
+                        className="truncate text-right"
+                        title={variableRefLabel(refValue)}
+                      >
+                        {variable?.name ??
+                          variableName ??
+                          variableRefLabel(refValue)}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {variable
+                        ? `${variable.source ?? "local"} · ${variable.id ?? variable.name ?? variableName} · ${
+                            variable.unresolved ? "未解析" : "已解析"
+                          }`
+                        : "未找到对应变量定义"}
+                    </div>
+                    {variable && variableName ? (
+                      <div className="grid grid-cols-[1fr_auto] gap-2">
+                        <input
+                          aria-label={`变量 ${index + 1} 值`}
+                          className="h-9 min-w-0 rounded-lg border border-transparent bg-background px-3 text-sm font-medium shadow-subtle outline-none focus:border-border focus:ring-2 focus:ring-ring/20"
+                          value={formatVariableValue(variable.value)}
+                          onChange={(event) => {
+                            try {
+                              onVariablesChange({
+                                ...(variables ?? {}),
+                                [variableName]: {
+                                  ...variable,
+                                  value: parseVariableValueInput(
+                                    variable.type,
+                                    event.currentTarget.value,
+                                  ),
+                                  unresolved: false,
+                                },
+                              });
+                            } catch (error) {
+                              console.warn(
+                                "[canvas-property-panel] ignored invalid variable value",
+                                { property, variableName, error },
+                              );
+                            }
+                          }}
+                        />
+                        {variable.type === "color" &&
+                        typeof variable.value === "string" ? (
+                          <ColorPickerPopover
+                            color={variable.value}
+                            onChange={(color) =>
+                              onVariablesChange({
+                                ...(variables ?? {}),
+                                [variableName]: {
+                                  ...variable,
+                                  value: color,
+                                  unresolved: false,
+                                },
+                              })
+                            }
+                          />
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+        </>
       ) : null}
     </InspectorSection>
   );
@@ -2630,13 +3240,22 @@ function MaskSection({
 
 function DesignReferencesSection({
   node,
+  styleDefinitions,
+  onStyleDefinitionsChange,
   onUpdate,
 }: {
   node: PenNode;
+  styleDefinitions?: CanvasStyleDefinitionMap;
+  onStyleDefinitionsChange?: (
+    styleDefinitions: CanvasStyleDefinitionMap,
+  ) => void;
   onUpdate: (updates: Partial<PenNode>) => void;
 }) {
   const [variableRefsInput, setVariableRefsInput] = useState(
     formatReferenceValue(node.variableRefs),
+  );
+  const [variableRefsError, setVariableRefsError] = useState<string | null>(
+    null,
   );
 
   useEffect(() => {
@@ -2644,6 +3263,17 @@ function DesignReferencesSection({
   }, [node.variableRefs]);
 
   const styleRefs = node.styleRefs ?? {};
+  const updateStyleDefinition = (
+    id: string,
+    updates: Partial<PenStyleDefinition>,
+  ) => {
+    const current = styleDefinitions?.[id];
+    if (!current || !onStyleDefinitionsChange) return;
+    onStyleDefinitionsChange({
+      ...(styleDefinitions ?? {}),
+      [id]: { ...current, ...updates },
+    });
+  };
   const updateStyleRef = (kind: StyleRefKind, id: string) => {
     const next = { ...styleRefs };
     const trimmedId = id.trim();
@@ -2685,6 +3315,109 @@ function DesignReferencesSection({
             />
           ))}
         </div>
+        <div className="space-y-2 rounded-lg border border-border/60 bg-background/70 p-2">
+          <div className="text-[11px] font-semibold text-muted-foreground">
+            节点引用的样式
+          </div>
+          {(
+            [
+              ["fill", "填充样式"],
+              ["stroke", "描边样式"],
+              ["text", "文本样式"],
+              ["effect", "效果样式"],
+            ] as const
+          ).some(([kind]) => Boolean(styleRefs[kind])) ? (
+            (
+              [
+                ["fill", "填充样式"],
+                ["stroke", "描边样式"],
+                ["text", "文本样式"],
+                ["effect", "效果样式"],
+              ] as const
+            ).map(([kind, label]) => {
+              const ref = styleRefs[kind];
+              if (!ref) return null;
+              const definition = styleDefinitions?.[ref.id];
+              const firstFill =
+                definition?.fill?.[0]?.type === "solid"
+                  ? definition.fill[0]
+                  : definition?.strokeFill?.[0]?.type === "solid"
+                    ? definition.strokeFill[0]
+                    : undefined;
+              return (
+                <div
+                  key={kind}
+                  className="space-y-2 rounded-lg border border-border/60 bg-muted/40 p-2"
+                >
+                  <div className="grid grid-cols-[auto_1fr] gap-2 text-[11px] font-medium text-muted-foreground">
+                    <span>{label}</span>
+                    <span className="truncate text-right" title={ref.id}>
+                      {definition?.name ?? ref.id}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {styleDefinitionSummary(definition)}
+                  </div>
+                  {firstFill && definition ? (
+                    <div className="flex items-center gap-2">
+                      <ColorPickerPopover
+                        color={firstFill.color}
+                        onChange={(color) => {
+                          if (definition.fill?.[0]?.type === "solid") {
+                            updateStyleDefinition(ref.id, {
+                              fill: [
+                                { ...definition.fill[0], color },
+                                ...definition.fill.slice(1),
+                              ],
+                            });
+                          } else if (
+                            definition.strokeFill?.[0]?.type === "solid"
+                          ) {
+                            updateStyleDefinition(ref.id, {
+                              strokeFill: [
+                                { ...definition.strokeFill[0], color },
+                                ...definition.strokeFill.slice(1),
+                              ],
+                            });
+                          }
+                        }}
+                      />
+                      <input
+                        aria-label={`${label} token 值`}
+                        className="h-9 min-w-0 flex-1 rounded-lg border border-transparent bg-background px-3 text-sm font-medium shadow-subtle outline-none focus:border-border focus:ring-2 focus:ring-ring/20"
+                        value={firstFill.color}
+                        onChange={(event) => {
+                          const color = event.currentTarget.value;
+                          if (definition.fill?.[0]?.type === "solid") {
+                            updateStyleDefinition(ref.id, {
+                              fill: [
+                                { ...definition.fill[0], color },
+                                ...definition.fill.slice(1),
+                              ],
+                            });
+                          } else if (
+                            definition.strokeFill?.[0]?.type === "solid"
+                          ) {
+                            updateStyleDefinition(ref.id, {
+                              strokeFill: [
+                                { ...definition.strokeFill[0], color },
+                                ...definition.strokeFill.slice(1),
+                              ],
+                            });
+                          }
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              当前节点没有外部样式引用。
+            </p>
+          )}
+        </div>
         <textarea
           aria-label="变量引用 JSON"
           className="h-20 w-full resize-none rounded-lg border border-transparent bg-muted/70 px-3 py-2 font-mono text-xs shadow-subtle outline-none focus:border-border focus:bg-background focus:ring-2 focus:ring-ring/20"
@@ -2692,19 +3425,313 @@ function DesignReferencesSection({
           value={variableRefsInput}
           onChange={(event) => setVariableRefsInput(event.currentTarget.value)}
           onBlur={() => {
-            const parsed = parseReferenceObjectInput(
-              variableRefsInput,
-              "variableRefs",
-            );
-            if (!parsed) {
+            const trimmed = variableRefsInput.trim();
+            if (!trimmed) {
+              setVariableRefsError(null);
+              onUpdate({ variableRefs: {} } as Partial<PenNode>);
+              return;
+            }
+            try {
+              const parsed = JSON.parse(trimmed);
+              if (!isRecord(parsed)) {
+                setVariableRefsError("变量引用必须是 JSON 对象。");
+                console.warn(
+                  "[canvas-property-panel] ignored non-object reference JSON",
+                  { label: "variableRefs" },
+                );
+                setVariableRefsInput(formatReferenceValue(node.variableRefs));
+                return;
+              }
+              setVariableRefsError(null);
+              onUpdate({ variableRefs: parsed } as Partial<PenNode>);
+            } catch (error) {
+              setVariableRefsError(
+                `变量引用 JSON 格式无效：${getJsonParseMessage(error)}`,
+              );
+              console.warn(
+                "[canvas-property-panel] ignored invalid reference JSON",
+                { label: "variableRefs", error },
+              );
               setVariableRefsInput(formatReferenceValue(node.variableRefs));
               return;
             }
-            onUpdate({ variableRefs: parsed } as Partial<PenNode>);
           }}
         />
+        {variableRefsError ? (
+          <p className="text-xs font-medium text-destructive" role="alert">
+            {variableRefsError}
+          </p>
+        ) : null}
       </div>
     </InspectorSection>
+  );
+}
+
+function ComponentRecordEditor({
+  title,
+  ariaPrefix,
+  record,
+  primitiveOnly,
+  onChange,
+}: {
+  title: string;
+  ariaPrefix: string;
+  record?: Record<string, unknown>;
+  primitiveOnly?: boolean;
+  onChange: (record: Record<string, unknown>) => void;
+}) {
+  const entries = Object.entries(record ?? {});
+  const updateKey = (oldKey: string, nextKey: string) => {
+    const trimmed = nextKey.trim();
+    if (!trimmed) return;
+    const next = { ...(record ?? {}) };
+    const value = next[oldKey];
+    delete next[oldKey];
+    next[trimmed] = value ?? "";
+    onChange(next);
+  };
+  const updateValue = (key: string, value: string) => {
+    onChange({
+      ...(record ?? {}),
+      [key]: primitiveOnly
+        ? parsePrimitiveComponentValue(value)
+        : parseStructuredValueInput(value),
+    });
+  };
+  const removeKey = (key: string) => {
+    const next = { ...(record ?? {}) };
+    delete next[key];
+    onChange(next);
+  };
+  const addKey = () => {
+    let index = entries.length + 1;
+    let key = `${ariaPrefix}${index}`;
+    while (Object.prototype.hasOwnProperty.call(record ?? {}, key)) {
+      index += 1;
+      key = `${ariaPrefix}${index}`;
+    }
+    onChange({ ...(record ?? {}), [key]: "" });
+  };
+
+  return (
+    <div className="space-y-2 rounded-lg border border-border/60 bg-background/70 p-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-semibold text-muted-foreground">
+          {title}
+        </span>
+        <InspectorIconButton
+          icon={Plus}
+          label={`添加${title}`}
+          onClick={addKey}
+        />
+      </div>
+      {entries.length > 0 ? (
+        <div className="space-y-2">
+          {entries.map(([key, value], index) => {
+            const rowNumber = index + 1;
+            return (
+              <div key={key} className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                <input
+                  aria-label={`${title} ${rowNumber} 名称`}
+                  className="h-9 min-w-0 rounded-lg border border-transparent bg-muted/70 px-3 text-sm font-medium shadow-subtle outline-none focus:border-border focus:bg-background focus:ring-2 focus:ring-ring/20"
+                  value={key}
+                  onChange={(event) =>
+                    updateKey(key, event.currentTarget.value)
+                  }
+                />
+                <input
+                  aria-label={`${title} ${rowNumber} 值`}
+                  className="h-9 min-w-0 rounded-lg border border-transparent bg-muted/70 px-3 text-sm font-medium shadow-subtle outline-none focus:border-border focus:bg-background focus:ring-2 focus:ring-ring/20"
+                  value={formatStructuredValue(value)}
+                  onChange={(event) =>
+                    updateValue(key, event.currentTarget.value)
+                  }
+                />
+                <InspectorIconButton
+                  icon={Minus}
+                  label={`移除${title} ${rowNumber}`}
+                  onClick={() => removeKey(key)}
+                />
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          当前没有{title}。点击加号添加一项。
+        </p>
+      )}
+    </div>
+  );
+}
+
+type ComponentOverrideRef = NonNullable<
+  NonNullable<PenNode["componentRef"]>["overrides"]
+>[number];
+
+function ComponentOverrideEditor({
+  overrides,
+  onChange,
+}: {
+  overrides?: ComponentOverrideRef[];
+  onChange: (overrides: ComponentOverrideRef[]) => void;
+}) {
+  const list = overrides ?? [];
+  const updateOverride = (
+    index: number,
+    updates: Partial<ComponentOverrideRef>,
+  ) => {
+    onChange(
+      list.map((override, overrideIndex) =>
+        overrideIndex === index
+          ? {
+              ...override,
+              ...updates,
+              source: updates.source ?? override.source,
+            }
+          : override,
+      ),
+    );
+  };
+
+  return (
+    <div className="space-y-2 rounded-lg border border-border/60 bg-background/70 p-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-semibold text-muted-foreground">
+          覆写列表
+        </span>
+        <InspectorIconButton
+          icon={Plus}
+          label="添加组件覆写"
+          onClick={() =>
+            onChange([
+              ...list,
+              { source: "figma", path: "", properties: [], values: {} },
+            ])
+          }
+        />
+      </div>
+      {list.length > 0 ? (
+        <div className="space-y-2">
+          {list.map((override, index) => (
+            <ComponentOverrideRow
+              key={`${override.path ?? ""}-${override.targetId ?? ""}-${index}`}
+              override={override}
+              index={index}
+              onUpdate={(updates) => updateOverride(index, updates)}
+              onRemove={() =>
+                onChange(
+                  list.filter(
+                    (_override, overrideIndex) => overrideIndex !== index,
+                  ),
+                )
+              }
+            />
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          当前没有结构化覆写。点击加号添加一条 path / target / values。
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ComponentOverrideRow({
+  override,
+  index,
+  onUpdate,
+  onRemove,
+}: {
+  override: ComponentOverrideRef;
+  index: number;
+  onUpdate: (updates: Partial<ComponentOverrideRef>) => void;
+  onRemove: () => void;
+}) {
+  const rowNumber = index + 1;
+  const [valuesInput, setValuesInput] = useState(
+    formatReferenceValue(override.values),
+  );
+
+  useEffect(() => {
+    setValuesInput(formatReferenceValue(override.values));
+  }, [override.values]);
+
+  return (
+    <div className="space-y-2 rounded-lg border border-border/60 bg-muted/40 p-2">
+      <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+        <input
+          aria-label={`组件覆写 ${rowNumber} 路径`}
+          className="h-9 min-w-0 rounded-lg border border-transparent bg-background px-3 text-sm font-medium shadow-subtle outline-none focus:border-border focus:ring-2 focus:ring-ring/20"
+          placeholder="path"
+          value={override.path ?? ""}
+          onChange={(event) => onUpdate({ path: event.currentTarget.value })}
+        />
+        <input
+          aria-label={`组件覆写 ${rowNumber} 目标`}
+          className="h-9 min-w-0 rounded-lg border border-transparent bg-background px-3 text-sm font-medium shadow-subtle outline-none focus:border-border focus:ring-2 focus:ring-ring/20"
+          placeholder="targetId"
+          value={override.targetId ?? ""}
+          onChange={(event) =>
+            onUpdate({ targetId: event.currentTarget.value })
+          }
+        />
+        <InspectorIconButton
+          icon={Minus}
+          label={`移除组件覆写 ${rowNumber}`}
+          onClick={onRemove}
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <input
+          aria-label={`组件覆写 ${rowNumber} 路径 IDs`}
+          className="h-9 min-w-0 rounded-lg border border-transparent bg-background px-3 text-sm font-medium shadow-subtle outline-none focus:border-border focus:ring-2 focus:ring-ring/20"
+          placeholder="root, button"
+          value={override.pathIds?.join(", ") ?? ""}
+          onChange={(event) =>
+            onUpdate({
+              pathIds: event.currentTarget.value
+                .split(",")
+                .map((item) => item.trim())
+                .filter(Boolean),
+            })
+          }
+        />
+        <input
+          aria-label={`组件覆写 ${rowNumber} 属性`}
+          className="h-9 min-w-0 rounded-lg border border-transparent bg-background px-3 text-sm font-medium shadow-subtle outline-none focus:border-border focus:ring-2 focus:ring-ring/20"
+          placeholder="fill, visible"
+          value={override.properties.join(", ")}
+          onChange={(event) =>
+            onUpdate({
+              properties: event.currentTarget.value
+                .split(",")
+                .map((item) => item.trim())
+                .filter(Boolean),
+            })
+          }
+        />
+      </div>
+      <textarea
+        aria-label={`组件覆写 ${rowNumber} 值`}
+        className="h-16 w-full resize-none rounded-lg border border-transparent bg-background px-3 py-2 font-mono text-xs shadow-subtle outline-none focus:border-border focus:ring-2 focus:ring-ring/20"
+        placeholder='{"fill":"#ff0000"}'
+        value={valuesInput}
+        onChange={(event) => setValuesInput(event.currentTarget.value)}
+        onBlur={() => {
+          const parsed = parseReferenceObjectInput(
+            valuesInput,
+            `override ${rowNumber} values`,
+          );
+          if (!parsed) {
+            setValuesInput(formatReferenceValue(override.values));
+            return;
+          }
+          onUpdate({ values: parsed });
+        }}
+      />
+    </div>
   );
 }
 
@@ -2733,6 +3760,9 @@ function ComponentRefSection({
   );
   const [overridesInput, setOverridesInput] = useState(
     formatReferenceValue(componentRef.overrides),
+  );
+  const [componentJsonError, setComponentJsonError] = useState<string | null>(
+    null,
   );
 
   useEffect(() => {
@@ -2763,6 +3793,71 @@ function ComponentRefSection({
         source: updates.source ?? componentRef.source ?? "figma",
       },
     } as Partial<PenNode>);
+  };
+  const parseComponentObjectInput = (
+    value: string,
+    label: string,
+  ): Record<string, unknown> | undefined => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      setComponentJsonError(null);
+      return {};
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (isRecord(parsed)) {
+        setComponentJsonError(null);
+        return parsed;
+      }
+      setComponentJsonError(`${label} 必须是 JSON 对象。`);
+      console.warn(
+        "[canvas-property-panel] ignored non-object reference JSON",
+        {
+          label,
+        },
+      );
+      return undefined;
+    } catch (error) {
+      setComponentJsonError(
+        `${label} JSON 格式无效：${getJsonParseMessage(error)}`,
+      );
+      console.warn("[canvas-property-panel] ignored invalid reference JSON", {
+        label,
+        error,
+      });
+      return undefined;
+    }
+  };
+  const parseComponentArrayInput = <T,>(
+    value: string,
+    label: string,
+  ): T[] | undefined => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      setComponentJsonError(null);
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        setComponentJsonError(null);
+        return parsed as T[];
+      }
+      setComponentJsonError(`${label} 必须是 JSON 数组。`);
+      console.warn("[canvas-property-panel] ignored non-array reference JSON", {
+        label,
+      });
+      return undefined;
+    } catch (error) {
+      setComponentJsonError(
+        `${label} JSON 格式无效：${getJsonParseMessage(error)}`,
+      );
+      console.warn("[canvas-property-panel] ignored invalid reference JSON", {
+        label,
+        error,
+      });
+      return undefined;
+    }
   };
 
   if (!shouldShow) return null;
@@ -2858,6 +3953,40 @@ function ComponentRefSection({
             onChange={(overrideCount) => updateComponentRef({ overrideCount })}
           />
         </div>
+        <ComponentRecordEditor
+          title="组件变体"
+          ariaPrefix="Variant"
+          record={componentRef.variantProperties}
+          primitiveOnly
+          onChange={(variantProperties) =>
+            updateComponentRef({
+              variantProperties: variantProperties as Record<
+                string,
+                string | number | boolean
+              >,
+            })
+          }
+        />
+        <ComponentRecordEditor
+          title="组件属性"
+          ariaPrefix="Property"
+          record={componentRef.componentProperties}
+          onChange={(componentProperties) =>
+            updateComponentRef({ componentProperties })
+          }
+        />
+        <ComponentRecordEditor
+          title="组件赋值"
+          ariaPrefix="Assignment"
+          record={componentRef.propertyAssignments}
+          onChange={(propertyAssignments) =>
+            updateComponentRef({ propertyAssignments })
+          }
+        />
+        <ComponentOverrideEditor
+          overrides={componentRef.overrides}
+          onChange={(overrides) => updateComponentRef({ overrides })}
+        />
         <textarea
           aria-label="组件变体 JSON"
           className="h-16 w-full resize-none rounded-lg border border-transparent bg-muted/70 px-3 py-2 font-mono text-xs shadow-subtle outline-none focus:border-border focus:bg-background focus:ring-2 focus:ring-ring/20"
@@ -2865,10 +3994,7 @@ function ComponentRefSection({
           value={variantInput}
           onChange={(event) => setVariantInput(event.currentTarget.value)}
           onBlur={() => {
-            const parsed = parseReferenceObjectInput(
-              variantInput,
-              "variantProperties",
-            );
+            const parsed = parseComponentObjectInput(variantInput, "组件变体");
             if (!parsed) {
               setVariantInput(
                 formatReferenceValue(componentRef.variantProperties),
@@ -2892,9 +4018,9 @@ function ComponentRefSection({
             setComponentPropertiesInput(event.currentTarget.value)
           }
           onBlur={() => {
-            const parsed = parseReferenceObjectInput(
+            const parsed = parseComponentObjectInput(
               componentPropertiesInput,
-              "componentProperties",
+              "组件属性",
             );
             if (!parsed) {
               setComponentPropertiesInput(
@@ -2912,9 +4038,9 @@ function ComponentRefSection({
           value={assignmentsInput}
           onChange={(event) => setAssignmentsInput(event.currentTarget.value)}
           onBlur={() => {
-            const parsed = parseReferenceObjectInput(
+            const parsed = parseComponentObjectInput(
               assignmentsInput,
-              "propertyAssignments",
+              "组件属性赋值",
             );
             if (!parsed) {
               setAssignmentsInput(
@@ -2932,11 +4058,11 @@ function ComponentRefSection({
           value={overridesInput}
           onChange={(event) => setOverridesInput(event.currentTarget.value)}
           onBlur={() => {
-            const parsed = parseReferenceArrayInput<
+            const parsed = parseComponentArrayInput<
               NonNullable<
                 NonNullable<PenNode["componentRef"]>["overrides"]
               >[number]
-            >(overridesInput, "overrides");
+            >(overridesInput, "组件覆写");
             if (!parsed) {
               setOverridesInput(formatReferenceValue(componentRef.overrides));
               return;
@@ -2944,6 +4070,11 @@ function ComponentRefSection({
             updateComponentRef({ overrides: parsed });
           }}
         />
+        {componentJsonError ? (
+          <p className="text-xs font-medium text-destructive" role="alert">
+            {componentJsonError}
+          </p>
+        ) : null}
       </div>
     </InspectorSection>
   );
@@ -3420,6 +4551,170 @@ function AppearanceSection({
   );
 }
 
+function PathShapeSection({
+  node,
+  onUpdate,
+}: {
+  node: PathEditableNode;
+  onUpdate: (updates: Partial<PenNode>) => void;
+}) {
+  const [pathDataInput, setPathDataInput] = useState(node.d);
+  const [pathError, setPathError] = useState("");
+  const diagnosticRows = getVectorDiagnosticRows(node);
+  const windingRows = getVectorWindingRows(node);
+
+  useEffect(() => {
+    setPathDataInput(node.d);
+    setPathError("");
+  }, [node.d]);
+
+  const handleSavePathData = () => {
+    const nextPathData = pathDataInput.trim();
+    const validationError = validatePathDataInput(nextPathData);
+    if (validationError) {
+      console.warn("[canvas-property-panel] path.d.save.rejected", {
+        nodeId: node.id,
+        reason: validationError,
+      });
+      setPathDataInput(node.d);
+      setPathError(validationError);
+      return;
+    }
+
+    const parsedAnchors = pathDataToAnchors(nextPathData);
+    const updates: Partial<PathEditableNode> = {
+      d: nextPathData,
+      anchors: parsedAnchors?.anchors,
+      ...(parsedAnchors ? { closed: parsedAnchors.closed } : {}),
+    };
+    console.info("[canvas-property-panel] path.d.save.applied", {
+      nodeId: node.id,
+      anchorCount: parsedAnchors?.anchors.length ?? 0,
+      parsedAnchors: Boolean(parsedAnchors),
+    });
+    setPathError("");
+    onUpdate(updates as Partial<PenNode>);
+  };
+
+  return (
+    <InspectorSection title="路径 / 矢量">
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-2">
+          <select
+            aria-label="路径填充规则"
+            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+            value={node.fillRule ?? "nonzero"}
+            onChange={(event) =>
+              onUpdate({
+                fillRule: event.currentTarget.value as "nonzero" | "evenodd",
+              } as Partial<PenNode>)
+            }
+          >
+            <option value="nonzero">Nonzero</option>
+            <option value="evenodd">Evenodd</option>
+          </select>
+          <label className="flex h-9 items-center gap-2 rounded-lg border border-border/60 bg-muted/70 px-3 text-sm text-muted-foreground shadow-subtle">
+            <input
+              type="checkbox"
+              checked={node.closed === true}
+              onChange={(event) =>
+                onUpdate({
+                  closed: event.currentTarget.checked,
+                } as Partial<PenNode>)
+              }
+            />
+            <span className="font-medium">闭合路径</span>
+          </label>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          {windingRows.map(([label, value]) => (
+            <div
+              key={label}
+              className="min-w-0 rounded-lg border border-border/60 bg-muted/50 px-2 py-1.5"
+            >
+              <div className="truncate text-[10px] font-medium text-muted-foreground">
+                {label}
+              </div>
+              <div
+                className="truncate text-xs font-semibold text-foreground"
+                title={value}
+              >
+                {value}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-2 rounded-lg border border-border/60 bg-background/70 p-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-muted-foreground">
+              Vector Diagnostics
+            </span>
+            <span className="text-[10px] font-medium text-muted-foreground">
+              {diagnosticRows.length > 0
+                ? `${diagnosticRows.length} 项`
+                : "未记录"}
+            </span>
+          </div>
+          {diagnosticRows.length > 0 ? (
+            <div className="grid grid-cols-2 gap-1.5">
+              {diagnosticRows.map(([label, value]) => (
+                <div
+                  key={label}
+                  className="min-w-0 rounded-md bg-muted/60 px-2 py-1.5"
+                >
+                  <div className="truncate text-[10px] font-medium text-muted-foreground">
+                    {label}
+                  </div>
+                  <div
+                    className="truncate text-[11px] font-semibold text-foreground"
+                    title={value}
+                  >
+                    {value}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              这个路径没有导入矢量诊断元数据。
+            </p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <textarea
+            aria-label="路径 d 数据"
+            className={cn(
+              "h-24 w-full resize-none rounded-lg border border-transparent bg-muted/70 px-3 py-2 font-mono text-xs shadow-subtle outline-none focus:border-border focus:bg-background focus:ring-2 focus:ring-ring/20",
+              pathError && "border-destructive/40 bg-destructive/5",
+            )}
+            spellCheck={false}
+            value={pathDataInput}
+            onChange={(event) => {
+              setPathDataInput(event.currentTarget.value);
+              if (pathError) setPathError("");
+            }}
+          />
+          {pathError ? (
+            <p className="rounded-lg border border-destructive/20 bg-destructive/10 px-2 py-1.5 text-xs font-medium text-destructive">
+              {pathError}
+            </p>
+          ) : null}
+          <button
+            type="button"
+            className="h-9 w-full rounded-lg bg-foreground/[0.08] text-xs font-medium text-foreground transition-colors hover:bg-foreground/[0.1]"
+            onClick={handleSavePathData}
+          >
+            保存路径 d
+          </button>
+        </div>
+      </div>
+    </InspectorSection>
+  );
+}
+
 function ShapeSection({
   node,
   onUpdate,
@@ -3530,37 +4825,7 @@ function ShapeSection({
   }
 
   if (node.type === "path") {
-    return (
-      <InspectorSection title="路径">
-        <div className="grid grid-cols-2 gap-2">
-          <select
-            aria-label="路径填充规则"
-            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
-            value={node.fillRule ?? "nonzero"}
-            onChange={(event) =>
-              onUpdate({
-                fillRule: event.currentTarget.value as "nonzero" | "evenodd",
-              } as Partial<PenNode>)
-            }
-          >
-            <option value="nonzero">Nonzero</option>
-            <option value="evenodd">Evenodd</option>
-          </select>
-          <label className="flex h-9 items-center gap-2 rounded-lg border border-border/60 bg-muted/70 px-3 text-sm text-muted-foreground shadow-subtle">
-            <input
-              type="checkbox"
-              checked={node.closed === true}
-              onChange={(event) =>
-                onUpdate({
-                  closed: event.currentTarget.checked,
-                } as Partial<PenNode>)
-              }
-            />
-            <span className="font-medium">闭合路径</span>
-          </label>
-        </div>
-      </InspectorSection>
-    );
+    return <PathShapeSection node={node} onUpdate={onUpdate} />;
   }
 
   if (node.type === "line") {
@@ -3621,14 +4886,20 @@ function SelectedColorsSection({ node }: { node: PenNode }) {
 export function CanvasPropertyPanel({
   node,
   variables,
+  styleDefinitions,
   onVariablesChange,
+  onStyleDefinitionsChange,
   onUpdate,
   onApplyImportedAutoLayout,
   onBindAgent,
 }: {
   node: PenNode;
   variables?: CanvasVariableMap;
+  styleDefinitions?: CanvasStyleDefinitionMap;
   onVariablesChange?: (variables: CanvasVariableMap) => void;
+  onStyleDefinitionsChange?: (
+    styleDefinitions: CanvasStyleDefinitionMap,
+  ) => void;
   onUpdate: (updates: Partial<PenNode>) => void;
   onApplyImportedAutoLayout?: () => void;
   onBindAgent: (binding: AgentBinding) => void;
@@ -3743,7 +5014,12 @@ export function CanvasPropertyPanel({
           onVariablesChange={onVariablesChange}
           onUpdate={onUpdate}
         />
-        <DesignReferencesSection node={node} onUpdate={onUpdate} />
+        <DesignReferencesSection
+          node={node}
+          styleDefinitions={styleDefinitions}
+          onStyleDefinitionsChange={onStyleDefinitionsChange}
+          onUpdate={onUpdate}
+        />
         <ComponentRefSection node={node} onUpdate={onUpdate} />
         {node.type === "frame" ? (
           <AgentBindingSection node={node} onBindAgent={onBindAgent} />

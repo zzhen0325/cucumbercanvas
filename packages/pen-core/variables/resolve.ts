@@ -5,9 +5,9 @@
  * optionally matching themed values to an active theme context.
  */
 
-import type { PenNode } from '@cucumber/pen-types';
-import type { PenFill, PenStroke, PenEffect } from '@cucumber/pen-types';
-import type { VariableDefinition, ThemedValue } from '@cucumber/pen-types';
+import type { PenNode } from "@cucumber/pen-types";
+import type { PenEffect, PenFill, PenStroke } from "@cucumber/pen-types";
+import type { ThemedValue, VariableDefinition } from "@cucumber/pen-types";
 
 type Vars = Record<string, VariableDefinition>;
 type Theme = Record<string, string>;
@@ -18,15 +18,18 @@ type Theme = Record<string, string>;
 
 /** Check whether a value is a `$variable` reference string. */
 export function isVariableRef(value: unknown): value is string {
-  return typeof value === 'string' && value.startsWith('$');
+  return typeof value === "string" && value.startsWith("$");
 }
 
 /** Build the default theme map (first value per axis) from PenDocument.themes. */
-export function getDefaultTheme(themes: Record<string, string[]> | undefined): Theme {
+export function getDefaultTheme(
+  themes: Record<string, string[]> | undefined,
+): Theme {
   const result: Theme = {};
   if (!themes) return result;
   for (const [key, values] of Object.entries(themes)) {
-    if (values.length > 0) result[key] = values[0]!;
+    const firstValue = values[0];
+    if (firstValue !== undefined) result[key] = firstValue;
   }
   return result;
 }
@@ -43,7 +46,9 @@ function resolveThemedValue(
   if (activeTheme && Object.keys(activeTheme).length > 0) {
     const match = values.find((v) => {
       if (!v.theme) return false;
-      return Object.entries(activeTheme).every(([key, expected]) => v.theme?.[key] === expected);
+      return Object.entries(activeTheme).every(
+        ([key, expected]) => v.theme?.[key] === expected,
+      );
     });
     if (match) return match.value;
   }
@@ -59,7 +64,7 @@ export function resolveVariableRef(
   variables: Vars,
   activeTheme?: Theme,
 ): string | number | boolean | undefined {
-  if (!ref.startsWith('$')) return undefined;
+  if (!ref.startsWith("$")) return undefined;
   const name = ref.slice(1);
   const def = variables[name];
   if (!def) return undefined;
@@ -68,11 +73,12 @@ export function resolveVariableRef(
   if (Array.isArray(val)) {
     const resolved = resolveThemedValue(val, activeTheme);
     // Circular guard: if resolved value is also a $ref, stop
-    if (typeof resolved === 'string' && resolved.startsWith('$')) return undefined;
+    if (typeof resolved === "string" && resolved.startsWith("$"))
+      return undefined;
     return resolved;
   }
   // Circular guard
-  if (typeof val === 'string' && val.startsWith('$')) return undefined;
+  if (typeof val === "string" && val.startsWith("$")) return undefined;
   return val;
 }
 
@@ -88,7 +94,7 @@ export function resolveColorRef(
   if (color === undefined) return undefined;
   if (!isVariableRef(color)) return color;
   const resolved = resolveVariableRef(color, variables, activeTheme);
-  return typeof resolved === 'string' ? resolved : undefined;
+  return typeof resolved === "string" ? resolved : undefined;
 }
 
 /**
@@ -100,14 +106,14 @@ export function resolveNumericRef(
   variables: Vars,
   activeTheme?: Theme,
 ): number | undefined {
-  if (typeof value === 'number') return value;
-  if (typeof value === 'string') {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
     if (isVariableRef(value)) {
       const resolved = resolveVariableRef(value, variables, activeTheme);
-      return typeof resolved === 'number' ? resolved : undefined;
+      return typeof resolved === "number" ? resolved : undefined;
     }
-    const num = parseFloat(value);
-    return isNaN(num) ? undefined : num;
+    const num = Number.parseFloat(value);
+    return Number.isNaN(num) ? undefined : num;
   }
   return undefined;
 }
@@ -122,16 +128,20 @@ function resolveFillsForCanvas(
   theme?: Theme,
 ): PenFill[] | string | undefined {
   if (!fills) return fills;
-  if (typeof fills === 'string') return fills;
+  if (typeof fills === "string") return fills;
   return fills.map((fill) => {
-    if (fill.type === 'solid') {
+    if (fill.type === "solid") {
       const color = resolveColorRef(fill.color, vars, theme);
-      return color !== fill.color ? { ...fill, color: color ?? '#000000' } : fill;
+      return color !== fill.color
+        ? { ...fill, color: color ?? "#000000" }
+        : fill;
     }
-    if (fill.type === 'linear_gradient' || fill.type === 'radial_gradient') {
+    if (fill.type === "linear_gradient" || fill.type === "radial_gradient") {
       const newStops = fill.stops.map((stop) => {
         const color = resolveColorRef(stop.color, vars, theme);
-        return color !== stop.color ? { ...stop, color: color ?? '#000000' } : stop;
+        return color !== stop.color
+          ? { ...stop, color: color ?? "#000000" }
+          : stop;
       });
       return newStops !== fill.stops ? { ...fill, stops: newStops } : fill;
     }
@@ -149,7 +159,7 @@ function resolveStrokeForCanvas(
   const out: Record<string, unknown> = { ...stroke };
 
   // Resolve thickness
-  if (typeof stroke.thickness === 'string' && isVariableRef(stroke.thickness)) {
+  if (typeof stroke.thickness === "string" && isVariableRef(stroke.thickness)) {
     out.thickness = resolveNumericRef(stroke.thickness, vars, theme) ?? 1;
     changed = true;
   }
@@ -173,17 +183,17 @@ function resolveEffectsForCanvas(
 ): PenEffect[] | undefined {
   if (!effects) return effects;
   return effects.map((effect) => {
-    if (effect.type !== 'shadow') return effect;
+    if (effect.type !== "shadow") return effect;
     let changed = false;
     const out: Record<string, unknown> = { ...effect };
 
-    if (typeof effect.color === 'string' && isVariableRef(effect.color)) {
-      out.color = resolveColorRef(effect.color, vars, theme) ?? '#000000';
+    if (typeof effect.color === "string" && isVariableRef(effect.color)) {
+      out.color = resolveColorRef(effect.color, vars, theme) ?? "#000000";
       changed = true;
     }
-    for (const key of ['blur', 'offsetX', 'offsetY', 'spread'] as const) {
+    for (const key of ["blur", "offsetX", "offsetY", "spread"] as const) {
       const val = effect[key];
-      if (typeof val === 'string' && isVariableRef(val)) {
+      if (typeof val === "string" && isVariableRef(val)) {
         out[key] = resolveNumericRef(val, vars, theme) ?? 0;
         changed = true;
       }
@@ -203,20 +213,27 @@ function resolveEffectsForCanvas(
  *
  * Returns the same object reference when no variables are present.
  */
-export function resolveNodeForCanvas(node: PenNode, variables: Vars, activeTheme?: Theme): PenNode {
+export function resolveNodeForCanvas(
+  node: PenNode,
+  variables: Vars,
+  activeTheme?: Theme,
+): PenNode {
   if (!variables || Object.keys(variables).length === 0) return node;
 
   let changed = false;
   const out: Record<string, unknown> = { ...node };
 
   // Opacity
-  if (typeof node.opacity === 'string' && isVariableRef(node.opacity)) {
+  if (typeof node.opacity === "string" && isVariableRef(node.opacity)) {
     out.opacity = resolveNumericRef(node.opacity, variables, activeTheme) ?? 1;
     changed = true;
   }
 
   // Gap
-  if ('gap' in node && typeof (node as unknown as Record<string, unknown>).gap === 'string') {
+  if (
+    "gap" in node &&
+    typeof (node as unknown as Record<string, unknown>).gap === "string"
+  ) {
     const gap = (node as unknown as Record<string, unknown>).gap as string;
     if (isVariableRef(gap)) {
       out.gap = resolveNumericRef(gap, variables, activeTheme) ?? 0;
@@ -225,17 +242,19 @@ export function resolveNodeForCanvas(node: PenNode, variables: Vars, activeTheme
   }
 
   // Padding
-  if ('padding' in node) {
+  if ("padding" in node) {
     const padding = (node as unknown as Record<string, unknown>).padding;
-    if (typeof padding === 'string' && isVariableRef(padding)) {
+    if (typeof padding === "string" && isVariableRef(padding)) {
       out.padding = resolveNumericRef(padding, variables, activeTheme) ?? 0;
       changed = true;
     }
   }
 
   // Fill
-  if ('fill' in node && (node as unknown as Record<string, unknown>).fill) {
-    const fills = (node as unknown as Record<string, unknown>).fill as PenFill[] | string;
+  if ("fill" in node && (node as unknown as Record<string, unknown>).fill) {
+    const fills = (node as unknown as Record<string, unknown>).fill as
+      | PenFill[]
+      | string;
     const resolved = resolveFillsForCanvas(fills, variables, activeTheme);
     if (resolved !== fills) {
       out.fill = resolved;
@@ -244,8 +263,9 @@ export function resolveNodeForCanvas(node: PenNode, variables: Vars, activeTheme
   }
 
   // Stroke
-  if ('stroke' in node && (node as unknown as Record<string, unknown>).stroke) {
-    const stroke = (node as unknown as Record<string, unknown>).stroke as PenStroke;
+  if ("stroke" in node && (node as unknown as Record<string, unknown>).stroke) {
+    const stroke = (node as unknown as Record<string, unknown>)
+      .stroke as PenStroke;
     const resolved = resolveStrokeForCanvas(stroke, variables, activeTheme);
     if (resolved !== stroke) {
       out.stroke = resolved;
@@ -254,8 +274,12 @@ export function resolveNodeForCanvas(node: PenNode, variables: Vars, activeTheme
   }
 
   // Effects
-  if ('effects' in node && (node as unknown as Record<string, unknown>).effects) {
-    const effects = (node as unknown as Record<string, unknown>).effects as PenEffect[];
+  if (
+    "effects" in node &&
+    (node as unknown as Record<string, unknown>).effects
+  ) {
+    const effects = (node as unknown as Record<string, unknown>)
+      .effects as PenEffect[];
     const resolved = resolveEffectsForCanvas(effects, variables, activeTheme);
     if (resolved !== effects) {
       out.effects = resolved;
@@ -264,16 +288,20 @@ export function resolveNodeForCanvas(node: PenNode, variables: Vars, activeTheme
   }
 
   // Text content
-  if (node.type === 'text' && typeof node.content === 'string' && isVariableRef(node.content)) {
+  if (
+    node.type === "text" &&
+    typeof node.content === "string" &&
+    isVariableRef(node.content)
+  ) {
     const resolved = resolveVariableRef(node.content, variables, activeTheme);
-    if (typeof resolved === 'string') {
+    if (typeof resolved === "string") {
       out.content = resolved;
       changed = true;
     }
   }
 
   // Recurse into children
-  if ('children' in node && node.children) {
+  if ("children" in node && node.children) {
     const children = node.children;
     const resolvedChildren = children.map((child) =>
       resolveNodeForCanvas(child, variables, activeTheme),

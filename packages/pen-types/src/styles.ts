@@ -36,6 +36,7 @@ export interface SolidFill extends PaintLayerBase {}
 export interface GradientStop {
   offset: number;
   color: string;
+  opacity?: number;
 }
 
 export interface PaintTransform {

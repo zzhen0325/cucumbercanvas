@@ -1,4 +1,4 @@
-import type { PenNode, PenFill, SolidFill } from '@cucumber/pen-types';
+import type { PenFill, PenNode, SolidFill } from "@cucumber/pen-types";
 
 /**
  * Strip redundant "section-level" fills from the direct children of a
@@ -25,20 +25,21 @@ import type { PenNode, PenFill, SolidFill } from '@cucumber/pen-types';
  * store update.
  */
 export function stripRedundantSectionFills(rootFrame: PenNode): boolean {
-  if (!('children' in rootFrame) || !Array.isArray(rootFrame.children)) return false;
+  if (!("children" in rootFrame) || !Array.isArray(rootFrame.children))
+    return false;
 
   const rootFill = getFirstSolidColor(rootFrame);
   let changed = false;
 
   for (const child of rootFrame.children) {
-    if (child.type !== 'frame') continue;
+    if (child.type !== "frame") continue;
     if (!isSectionLevelFrame(child)) continue;
 
     const childFill = getFirstSolidColor(child);
     if (!childFill) continue;
 
     if (shouldStripFill(childFill, rootFill)) {
-      delete (child as PenNode & { fill?: unknown }).fill;
+      (child as PenNode & { fill?: unknown }).fill = undefined;
       changed = true;
     }
   }
@@ -51,26 +52,26 @@ export function stripRedundantSectionFills(rootFrame: PenNode): boolean {
  * their fill stripped.
  */
 const PROTECTED_ROLES = new Set([
-  'card',
-  'stat-card',
-  'pricing-card',
-  'feature-card',
-  'image-card',
-  'testimonial',
-  'button',
-  'icon-button',
-  'badge',
-  'chip',
-  'tag',
-  'pill',
-  'input',
-  'form-input',
-  'search-bar',
-  'phone-mockup',
-  'banner',
-  'metric-card',
-  'gallery-item',
-  'status-bar',
+  "card",
+  "stat-card",
+  "pricing-card",
+  "feature-card",
+  "image-card",
+  "testimonial",
+  "button",
+  "icon-button",
+  "badge",
+  "chip",
+  "tag",
+  "pill",
+  "input",
+  "form-input",
+  "search-bar",
+  "phone-mockup",
+  "banner",
+  "metric-card",
+  "gallery-item",
+  "status-bar",
 ]);
 
 /**
@@ -79,19 +80,19 @@ const PROTECTED_ROLES = new Set([
  * background or hedge with a safe-dark fill.
  */
 const STRUCTURAL_ROLES = new Set([
-  'section',
-  'row',
-  'column',
-  'stack',
-  'container',
-  'content-area',
-  'section-header',
-  'wrapper',
-  'group',
-  'hero',
-  'footer',
-  'cta-section',
-  'stats-section',
+  "section",
+  "row",
+  "column",
+  "stack",
+  "container",
+  "content-area",
+  "section-header",
+  "wrapper",
+  "group",
+  "hero",
+  "footer",
+  "cta-section",
+  "stats-section",
 ]);
 
 function isSectionLevelFrame(node: PenNode): boolean {
@@ -111,19 +112,19 @@ function isSectionLevelFrame(node: PenNode): boolean {
  * intentional visual choice.
  */
 const SAFE_DARK_HEXES = new Set([
-  '#000000',
-  '#000',
-  '#0a0a0a',
-  '#0f0f0f',
-  '#111',
-  '#111111',
-  '#121212',
-  '#141414',
-  '#1a1a1a',
-  '#181818',
-  '#1c1c1c',
-  '#1e1e1e',
-  '#202020',
+  "#000000",
+  "#000",
+  "#0a0a0a",
+  "#0f0f0f",
+  "#111",
+  "#111111",
+  "#121212",
+  "#141414",
+  "#1a1a1a",
+  "#181818",
+  "#1c1c1c",
+  "#1e1e1e",
+  "#202020",
 ]);
 
 /**
@@ -140,18 +141,18 @@ const SAFE_DARK_HEXES = new Set([
  * Treat these the same as safe-dark hedges: strip on any section root.
  */
 const SAFE_LIGHT_HEXES = new Set([
-  '#ffffff',
-  '#fff',
-  '#fefefe',
-  '#fdfdfd',
-  '#fcfcfc',
-  '#fafafa',
-  '#f9fafb',
-  '#f8f8f8',
-  '#f8fafc',
-  '#f5f5f5',
-  '#f4f4f5',
-  '#f3f4f6',
+  "#ffffff",
+  "#fff",
+  "#fefefe",
+  "#fdfdfd",
+  "#fcfcfc",
+  "#fafafa",
+  "#f9fafb",
+  "#f8f8f8",
+  "#f8fafc",
+  "#f5f5f5",
+  "#f4f4f5",
+  "#f3f4f6",
 ]);
 
 function shouldStripFill(childFill: string, rootFill: string | null): boolean {
@@ -166,17 +167,17 @@ function shouldStripFill(childFill: string, rootFill: string | null): boolean {
 function normalizeHex(color: string): string {
   let c = color.trim().toLowerCase();
   // Strip alpha if present (#rrggbbaa → #rrggbb)
-  if (c.length === 9 && c.startsWith('#')) c = c.slice(0, 7);
+  if (c.length === 9 && c.startsWith("#")) c = c.slice(0, 7);
   return c;
 }
 
 function getFirstSolidColor(node: PenNode): string | null {
   const fill = (node as PenNode & { fill?: PenFill[] | string }).fill;
   if (!fill) return null;
-  if (typeof fill === 'string') return fill;
+  if (typeof fill === "string") return fill;
   if (!Array.isArray(fill) || fill.length === 0) return null;
   const first = fill[0];
-  if (first && first.type === 'solid') {
+  if (first && first.type === "solid") {
     return (first as SolidFill).color;
   }
   return null;

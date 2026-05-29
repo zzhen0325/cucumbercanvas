@@ -12,6 +12,7 @@ export function LoadingScreen() {
       <div className="flex flex-col items-center gap-5">
         <div className="animate-logo-float">
           <svg
+            aria-hidden="true"
             viewBox="0 0 100 100"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
@@ -23,7 +24,10 @@ export function LoadingScreen() {
               fill="currentColor"
             />
             {/* Star eye — rotates around its center */}
-            <g className="animate-star-sparkle origin-center" style={{ transformOrigin: "35.5px 50.5px" }}>
+            <g
+              className="animate-star-sparkle origin-center"
+              style={{ transformOrigin: "35.5px 50.5px" }}
+            >
               <path
                 d="M31 46 L35.5 34 L40 46 L51 50.5 L40 55 L35.5 67 L31 55 L20 50.5 Z"
                 className="fill-white dark:fill-black"

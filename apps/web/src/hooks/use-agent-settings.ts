@@ -3,9 +3,9 @@
 import {
   type AgentSettings,
   type BuiltinProviderConfig,
+  DEFAULT_AGENT_SETTINGS,
   type ImageGenProfile,
   type MCPCliIntegration,
-  DEFAULT_AGENT_SETTINGS,
 } from "@cucumber/shared";
 import { useCallback, useSyncExternalStore } from "react";
 
@@ -72,16 +72,13 @@ export function useAgentSettings() {
 
   // -- builtin providers --
 
-  const addBuiltinProvider = useCallback(
-    (provider: BuiltinProviderConfig) => {
-      const current = readSnapshot();
-      writeSnapshot({
-        ...current,
-        builtinProviders: [...current.builtinProviders, provider],
-      });
-    },
-    [],
-  );
+  const addBuiltinProvider = useCallback((provider: BuiltinProviderConfig) => {
+    const current = readSnapshot();
+    writeSnapshot({
+      ...current,
+      builtinProviders: [...current.builtinProviders, provider],
+    });
+  }, []);
 
   const updateBuiltinProvider = useCallback(
     (id: string, patch: Partial<BuiltinProviderConfig>) => {

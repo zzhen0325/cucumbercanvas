@@ -7,7 +7,8 @@ import {
 
 describe("persistInlineInputImages", () => {
   it("uploads data URIs and preserves existing URLs", async () => {
-    const uploads: Array<{ contentType: string; path: string; size: number }> = [];
+    const uploads: Array<{ contentType: string; path: string; size: number }> =
+      [];
     const admin = {
       storage: {
         from: () => ({
@@ -57,8 +58,6 @@ describe("persistInlineInputImages", () => {
 
 describe("decodeDataUri", () => {
   it("throws on malformed input", () => {
-    expect(() => decodeDataUri("not-a-data-uri")).toThrow(
-      "Invalid data URI",
-    );
+    expect(() => decodeDataUri("not-a-data-uri")).toThrow("Invalid data URI");
   });
 });

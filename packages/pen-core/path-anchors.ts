@@ -1,4 +1,8 @@
-import type { PenPathAnchor, PenPathHandle, PenPathPointType } from '@cucumber/pen-types';
+import type {
+  PenPathAnchor,
+  PenPathHandle,
+  PenPathPointType,
+} from "@cucumber/pen-types";
 
 export interface PathAnchorParseResult {
   anchors: PenPathAnchor[];
@@ -17,6 +21,18 @@ const UNSUPPORTED_COMMAND_RE = /[QqTtAa]/;
 const TOKEN_RE = /[MmLlHhVvCcSsZz]|[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/g;
 const EPSILON = 1e-6;
 
+function readRequired<T>(
+  items: ArrayLike<T>,
+  index: number,
+  context: string,
+): T {
+  const value = items[index];
+  if (value === undefined) {
+    throw new Error(`${context} is missing at index ${index}`);
+  }
+  return value;
+}
+
 export function pathDataToAnchors(d: string): PathAnchorParseResult | null {
   if (!d.trim()) return null;
   if (UNSUPPORTED_COMMAND_RE.test(d)) return null;
@@ -29,7 +45,7 @@ export function pathDataToAnchors(d: string): PathAnchorParseResult | null {
   let index = 0;
   let currentX = 0;
   let currentY = 0;
-  let lastCommand = '';
+  let lastCommand = "";
   let lastCubicControlX: number | null = null;
   let lastCubicControlY: number | null = null;
 
@@ -46,7 +62,11 @@ export function pathDataToAnchors(d: string): PathAnchorParseResult | null {
     return values;
   };
 
-  const pushAnchor = (x: number, y: number, handleIn: PenPathAnchor['handleIn']) => {
+  const pushAnchor = (
+    x: number,
+    y: number,
+    handleIn: PenPathAnchor["handleIn"],
+  ) => {
     anchors.push({
       x,
       y,
@@ -58,7 +78,7 @@ export function pathDataToAnchors(d: string): PathAnchorParseResult | null {
   };
 
   while (index < tokens.length) {
-    let command: string = tokens[index]!;
+    let command: string = readRequired(tokens, index, "path token");
     if (COMMAND_RE.test(command)) {
       lastCommand = command;
       index += 1;
@@ -69,65 +89,101 @@ export function pathDataToAnchors(d: string): PathAnchorParseResult | null {
     }
 
     switch (command) {
-      case 'M':
-      case 'm': {
+      case "M":
+      case "m": {
         const pair = readNumbers(2);
         if (!pair) return null;
-        const x = command === 'm' ? currentX + pair[0]! : pair[0]!;
-        const y = command === 'm' ? currentY + pair[1]! : pair[1]!;
+        const x =
+          command === "m"
+            ? currentX + readRequired(pair, 0, "path command parameter")
+            : readRequired(pair, 0, "path command parameter");
+        const y =
+          command === "m"
+            ? currentY + readRequired(pair, 1, "path command parameter")
+            : readRequired(pair, 1, "path command parameter");
         if (anchors.length > 0) return null;
         pushAnchor(x, y, null);
-        lastCommand = command === 'm' ? 'l' : 'L';
+        lastCommand = command === "m" ? "l" : "L";
         lastCubicControlX = null;
         lastCubicControlY = null;
         break;
       }
 
-      case 'L':
-      case 'l': {
+      case "L":
+      case "l": {
         const pair = readNumbers(2);
         if (!pair || anchors.length === 0) return null;
-        const x = command === 'l' ? currentX + pair[0]! : pair[0]!;
-        const y = command === 'l' ? currentY + pair[1]! : pair[1]!;
+        const x =
+          command === "l"
+            ? currentX + readRequired(pair, 0, "path command parameter")
+            : readRequired(pair, 0, "path command parameter");
+        const y =
+          command === "l"
+            ? currentY + readRequired(pair, 1, "path command parameter")
+            : readRequired(pair, 1, "path command parameter");
         pushAnchor(x, y, null);
         lastCubicControlX = null;
         lastCubicControlY = null;
         break;
       }
 
-      case 'H':
-      case 'h': {
+      case "H":
+      case "h": {
         const pair = readNumbers(1);
         if (!pair || anchors.length === 0) return null;
-        const x = command === 'h' ? currentX + pair[0]! : pair[0]!;
+        const x =
+          command === "h"
+            ? currentX + readRequired(pair, 0, "path command parameter")
+            : readRequired(pair, 0, "path command parameter");
         pushAnchor(x, currentY, null);
         lastCubicControlX = null;
         lastCubicControlY = null;
         break;
       }
 
-      case 'V':
-      case 'v': {
+      case "V":
+      case "v": {
         const pair = readNumbers(1);
         if (!pair || anchors.length === 0) return null;
-        const y = command === 'v' ? currentY + pair[0]! : pair[0]!;
+        const y =
+          command === "v"
+            ? currentY + readRequired(pair, 0, "path command parameter")
+            : readRequired(pair, 0, "path command parameter");
         pushAnchor(currentX, y, null);
         lastCubicControlX = null;
         lastCubicControlY = null;
         break;
       }
 
-      case 'C':
-      case 'c': {
+      case "C":
+      case "c": {
         const values = readNumbers(6);
         if (!values || anchors.length === 0) return null;
-        const prev = anchors[anchors.length - 1]!;
-        const cx1 = command === 'c' ? currentX + values[0]! : values[0]!;
-        const cy1 = command === 'c' ? currentY + values[1]! : values[1]!;
-        const cx2 = command === 'c' ? currentX + values[2]! : values[2]!;
-        const cy2 = command === 'c' ? currentY + values[3]! : values[3]!;
-        const x = command === 'c' ? currentX + values[4]! : values[4]!;
-        const y = command === 'c' ? currentY + values[5]! : values[5]!;
+        const prev = readRequired(anchors, anchors.length - 1, "path anchor");
+        const cx1 =
+          command === "c"
+            ? currentX + readRequired(values, 0, "path command parameter")
+            : readRequired(values, 0, "path command parameter");
+        const cy1 =
+          command === "c"
+            ? currentY + readRequired(values, 1, "path command parameter")
+            : readRequired(values, 1, "path command parameter");
+        const cx2 =
+          command === "c"
+            ? currentX + readRequired(values, 2, "path command parameter")
+            : readRequired(values, 2, "path command parameter");
+        const cy2 =
+          command === "c"
+            ? currentY + readRequired(values, 3, "path command parameter")
+            : readRequired(values, 3, "path command parameter");
+        const x =
+          command === "c"
+            ? currentX + readRequired(values, 4, "path command parameter")
+            : readRequired(values, 4, "path command parameter");
+        const y =
+          command === "c"
+            ? currentY + readRequired(values, 5, "path command parameter")
+            : readRequired(values, 5, "path command parameter");
         prev.handleOut = { x: cx1 - prev.x, y: cy1 - prev.y };
         pushAnchor(x, y, { x: cx2 - x, y: cy2 - y });
         lastCubicControlX = cx2;
@@ -135,23 +191,35 @@ export function pathDataToAnchors(d: string): PathAnchorParseResult | null {
         break;
       }
 
-      case 'S':
-      case 's': {
+      case "S":
+      case "s": {
         const values = readNumbers(4);
         if (!values || anchors.length === 0) return null;
-        const prev = anchors[anchors.length - 1]!;
+        const prev = readRequired(anchors, anchors.length - 1, "path anchor");
         const cx1 =
-          lastCommand.toLowerCase() === 'c' || lastCommand.toLowerCase() === 's'
+          lastCommand.toLowerCase() === "c" || lastCommand.toLowerCase() === "s"
             ? 2 * currentX - (lastCubicControlX ?? currentX)
             : currentX;
         const cy1 =
-          lastCommand.toLowerCase() === 'c' || lastCommand.toLowerCase() === 's'
+          lastCommand.toLowerCase() === "c" || lastCommand.toLowerCase() === "s"
             ? 2 * currentY - (lastCubicControlY ?? currentY)
             : currentY;
-        const cx2 = command === 's' ? currentX + values[0]! : values[0]!;
-        const cy2 = command === 's' ? currentY + values[1]! : values[1]!;
-        const x = command === 's' ? currentX + values[2]! : values[2]!;
-        const y = command === 's' ? currentY + values[3]! : values[3]!;
+        const cx2 =
+          command === "s"
+            ? currentX + readRequired(values, 0, "path command parameter")
+            : readRequired(values, 0, "path command parameter");
+        const cy2 =
+          command === "s"
+            ? currentY + readRequired(values, 1, "path command parameter")
+            : readRequired(values, 1, "path command parameter");
+        const x =
+          command === "s"
+            ? currentX + readRequired(values, 2, "path command parameter")
+            : readRequired(values, 2, "path command parameter");
+        const y =
+          command === "s"
+            ? currentY + readRequired(values, 3, "path command parameter")
+            : readRequired(values, 3, "path command parameter");
         prev.handleOut = { x: cx1 - prev.x, y: cy1 - prev.y };
         pushAnchor(x, y, { x: cx2 - x, y: cy2 - y });
         lastCubicControlX = cx2;
@@ -159,8 +227,8 @@ export function pathDataToAnchors(d: string): PathAnchorParseResult | null {
         break;
       }
 
-      case 'Z':
-      case 'z':
+      case "Z":
+      case "z":
         if (anchors.length < 2) return null;
         closed = true;
         lastCubicControlX = null;
@@ -176,23 +244,40 @@ export function pathDataToAnchors(d: string): PathAnchorParseResult | null {
   return { anchors, closed };
 }
 
-export function anchorsToPathData(anchors: PenPathAnchor[], closed: boolean): string {
-  if (anchors.length === 0) return '';
+export function anchorsToPathData(
+  anchors: PenPathAnchor[],
+  closed: boolean,
+): string {
+  if (anchors.length === 0) return "";
 
-  const parts: string[] = [`M ${anchors[0]!.x} ${anchors[0]!.y}`];
+  const parts: string[] = [
+    `M ${readRequired(anchors, 0, "path anchor").x} ${readRequired(anchors, 0, "path anchor").y}`,
+  ];
   for (let i = 1; i < anchors.length; i++) {
-    appendSegment(parts, anchors[i - 1]!, anchors[i]!);
+    appendSegment(
+      parts,
+      readRequired(anchors, i - 1, "path anchor"),
+      readRequired(anchors, i, "path anchor"),
+    );
   }
 
   if (closed && anchors.length > 1) {
-    appendSegment(parts, anchors[anchors.length - 1]!, anchors[0]!);
-    parts.push('Z');
+    appendSegment(
+      parts,
+      readRequired(anchors, anchors.length - 1, "path anchor"),
+      readRequired(anchors, 0, "path anchor"),
+    );
+    parts.push("Z");
   }
 
-  return parts.join(' ');
+  return parts.join(" ");
 }
 
-function appendSegment(parts: string[], from: PenPathAnchor, to: PenPathAnchor) {
+function appendSegment(
+  parts: string[],
+  from: PenPathAnchor,
+  to: PenPathAnchor,
+) {
   if (!from.handleOut && !to.handleIn) {
     parts.push(`L ${to.x} ${to.y}`);
     return;
@@ -205,26 +290,37 @@ function appendSegment(parts: string[], from: PenPathAnchor, to: PenPathAnchor) 
   parts.push(`C ${cx1} ${cy1} ${cx2} ${cy2} ${to.x} ${to.y}`);
 }
 
-export function inferPathAnchorPointType(anchor: PenPathAnchor): PenPathPointType {
+export function inferPathAnchorPointType(
+  anchor: PenPathAnchor,
+): PenPathPointType {
   const hasIn = hasMeaningfulHandle(anchor.handleIn);
   const hasOut = hasMeaningfulHandle(anchor.handleOut);
 
-  if (!hasIn && !hasOut) return 'corner';
-  if (hasIn && hasOut && areMirroredHandles(anchor.handleIn!, anchor.handleOut!)) {
-    return 'mirrored';
+  if (!hasIn && !hasOut) return "corner";
+  if (
+    hasIn &&
+    hasOut &&
+    anchor.handleIn &&
+    anchor.handleOut &&
+    areMirroredHandles(anchor.handleIn, anchor.handleOut)
+  ) {
+    return "mirrored";
   }
-  return 'independent';
+  return "independent";
 }
 
-export function getPathBoundsFromAnchors(anchors: PenPathAnchor[], closed: boolean): PathBounds {
+export function getPathBoundsFromAnchors(
+  anchors: PenPathAnchor[],
+  closed: boolean,
+): PathBounds {
   if (anchors.length === 0) {
     return { x: 0, y: 0, width: 0, height: 0 };
   }
 
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
 
   const includePoint = (x: number, y: number) => {
     minX = Math.min(minX, x);
@@ -262,13 +358,22 @@ export function getPathBoundsFromAnchors(anchors: PenPathAnchor[], closed: boole
   };
 
   for (let i = 1; i < anchors.length; i++) {
-    includeSegment(anchors[i - 1]!, anchors[i]!);
+    includeSegment(
+      readRequired(anchors, i - 1, "path anchor"),
+      readRequired(anchors, i, "path anchor"),
+    );
   }
 
   if (closed && anchors.length > 1) {
-    includeSegment(anchors[anchors.length - 1]!, anchors[0]!);
+    includeSegment(
+      readRequired(anchors, anchors.length - 1, "path anchor"),
+      readRequired(anchors, 0, "path anchor"),
+    );
   } else if (anchors.length === 1) {
-    includePoint(anchors[0]!.x, anchors[0]!.y);
+    includePoint(
+      readRequired(anchors, 0, "path anchor").x,
+      readRequired(anchors, 0, "path anchor").y,
+    );
   }
 
   if (!Number.isFinite(minX) || !Number.isFinite(minY)) {
@@ -297,7 +402,12 @@ function areMirroredHandles(a: PenPathHandle, b: PenPathHandle): boolean {
   return Math.abs(a.x + b.x) <= tol && Math.abs(a.y + b.y) <= tol;
 }
 
-function solveCubicDerivativeRoots(p0: number, p1: number, p2: number, p3: number): number[] {
+function solveCubicDerivativeRoots(
+  p0: number,
+  p1: number,
+  p2: number,
+  p3: number,
+): number[] {
   const a = -p0 + 3 * p1 - 3 * p2 + p3;
   const b = 2 * (p0 - 2 * p1 + p2);
   const c = -p0 + p1;
@@ -325,7 +435,18 @@ function isUnitIntervalInterior(t: number): boolean {
   return t > EPSILON && t < 1 - EPSILON;
 }
 
-function evaluateCubic(p0: number, p1: number, p2: number, p3: number, t: number): number {
+function evaluateCubic(
+  p0: number,
+  p1: number,
+  p2: number,
+  p3: number,
+  t: number,
+): number {
   const mt = 1 - t;
-  return mt * mt * mt * p0 + 3 * mt * mt * t * p1 + 3 * mt * t * t * p2 + t * t * t * p3;
+  return (
+    mt * mt * mt * p0 +
+    3 * mt * mt * t * p1 +
+    3 * mt * t * t * p2 +
+    t * t * t * p3
+  );
 }

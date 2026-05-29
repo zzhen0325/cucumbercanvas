@@ -2,8 +2,8 @@
 //
 // Public surface for the merge module.
 
-export type { NodePatch } from './node-diff.js';
-export { diffDocuments } from './node-diff.js';
+export type { NodePatch } from "./node-diff.js";
+export { diffDocuments } from "./node-diff.js";
 
 export type {
   MergeInput,
@@ -12,5 +12,5 @@ export type {
   NodeConflictReason,
   DocFieldConflict,
   DocFieldName,
-} from './node-merge.js';
-export { mergeDocuments } from './node-merge.js';
+} from "./node-merge.js";
+export { mergeDocuments } from "./node-merge.js";

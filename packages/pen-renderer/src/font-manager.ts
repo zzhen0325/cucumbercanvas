@@ -1,4 +1,4 @@
-import type { CanvasKit, TypefaceFontProvider } from 'canvaskit-wasm';
+import type { CanvasKit, TypefaceFontProvider } from "canvaskit-wasm";
 
 export interface FontManagerOptions {
   /** Base URL for bundled font files. Default: '/fonts/' */
@@ -8,7 +8,11 @@ export interface FontManagerOptions {
 }
 
 /** Permission state for the native font access (Local Font Access API) */
-export type NativeFontPermission = 'prompt' | 'granted' | 'denied' | 'unavailable';
+export type NativeFontPermission =
+  | "prompt"
+  | "granted"
+  | "denied"
+  | "unavailable";
 
 /** Native font entry from the Local Font Access API with blob accessor */
 interface NativeFontEntry {
@@ -25,61 +29,78 @@ interface NativeFontEntry {
  */
 const BUNDLED_FONTS: Record<string, string[]> = {
   inter: [
-    'inter-400.woff2',
-    'inter-500.woff2',
-    'inter-600.woff2',
-    'inter-700.woff2',
-    'inter-ext-400.woff2',
-    'inter-ext-500.woff2',
-    'inter-ext-600.woff2',
-    'inter-ext-700.woff2',
+    "inter-400.woff2",
+    "inter-500.woff2",
+    "inter-600.woff2",
+    "inter-700.woff2",
+    "inter-ext-400.woff2",
+    "inter-ext-500.woff2",
+    "inter-ext-600.woff2",
+    "inter-ext-700.woff2",
   ],
-  poppins: ['poppins-400.woff2', 'poppins-500.woff2', 'poppins-600.woff2', 'poppins-700.woff2'],
-  roboto: ['roboto-400.woff2', 'roboto-500.woff2', 'roboto-700.woff2'],
+  poppins: [
+    "poppins-400.woff2",
+    "poppins-500.woff2",
+    "poppins-600.woff2",
+    "poppins-700.woff2",
+  ],
+  roboto: ["roboto-400.woff2", "roboto-500.woff2", "roboto-700.woff2"],
   montserrat: [
-    'montserrat-400.woff2',
-    'montserrat-500.woff2',
-    'montserrat-600.woff2',
-    'montserrat-700.woff2',
+    "montserrat-400.woff2",
+    "montserrat-500.woff2",
+    "montserrat-600.woff2",
+    "montserrat-700.woff2",
   ],
-  'open sans': ['open-sans-400.woff2', 'open-sans-600.woff2', 'open-sans-700.woff2'],
-  lato: ['lato-400.woff2', 'lato-700.woff2'],
-  raleway: ['raleway-400.woff2', 'raleway-500.woff2', 'raleway-600.woff2', 'raleway-700.woff2'],
-  'dm sans': ['dm-sans-400.woff2', 'dm-sans-500.woff2', 'dm-sans-700.woff2'],
-  'playfair display': ['playfair-display-400.woff2', 'playfair-display-700.woff2'],
-  nunito: ['nunito-400.woff2', 'nunito-600.woff2', 'nunito-700.woff2'],
-  'source sans 3': [
-    'source-sans-3-400.woff2',
-    'source-sans-3-600.woff2',
-    'source-sans-3-700.woff2',
+  "open sans": [
+    "open-sans-400.woff2",
+    "open-sans-600.woff2",
+    "open-sans-700.woff2",
   ],
-  'source sans pro': [
-    'source-sans-3-400.woff2',
-    'source-sans-3-600.woff2',
-    'source-sans-3-700.woff2',
+  lato: ["lato-400.woff2", "lato-700.woff2"],
+  raleway: [
+    "raleway-400.woff2",
+    "raleway-500.woff2",
+    "raleway-600.woff2",
+    "raleway-700.woff2",
   ],
-  'noto sans sc': [
-    'noto-sans-sc-400.woff2',
-    'noto-sans-sc-700.woff2',
-    'noto-sans-sc-latin-400.woff2',
-    'noto-sans-sc-latin-700.woff2',
+  "dm sans": ["dm-sans-400.woff2", "dm-sans-500.woff2", "dm-sans-700.woff2"],
+  "playfair display": [
+    "playfair-display-400.woff2",
+    "playfair-display-700.woff2",
+  ],
+  nunito: ["nunito-400.woff2", "nunito-600.woff2", "nunito-700.woff2"],
+  "source sans 3": [
+    "source-sans-3-400.woff2",
+    "source-sans-3-600.woff2",
+    "source-sans-3-700.woff2",
+  ],
+  "source sans pro": [
+    "source-sans-3-400.woff2",
+    "source-sans-3-600.woff2",
+    "source-sans-3-700.woff2",
+  ],
+  "noto sans sc": [
+    "noto-sans-sc-400.woff2",
+    "noto-sans-sc-700.woff2",
+    "noto-sans-sc-latin-400.woff2",
+    "noto-sans-sc-latin-700.woff2",
   ],
 };
 
 /** List of all bundled font family names (for UI font picker) */
 export const BUNDLED_FONT_FAMILIES = [
-  'Inter',
-  'Noto Sans SC',
-  'Poppins',
-  'Roboto',
-  'Montserrat',
-  'Open Sans',
-  'Lato',
-  'Raleway',
-  'DM Sans',
-  'Playfair Display',
-  'Nunito',
-  'Source Sans 3',
+  "Inter",
+  "Noto Sans SC",
+  "Poppins",
+  "Roboto",
+  "Montserrat",
+  "Open Sans",
+  "Lato",
+  "Raleway",
+  "DM Sans",
+  "Playfair Display",
+  "Nunito",
+  "Source Sans 3",
 ];
 
 /**
@@ -107,14 +128,15 @@ export class SkiaFontManager {
   /** Full native font entries keyed by lowercase PostScript name for Figma-precise font matching */
   private nativeFontPostScriptMap = new Map<string, NativeFontEntry>();
   /** Current permission state for native font access (Local Font Access API) */
-  nativeFontPermission: NativeFontPermission = 'prompt';
+  nativeFontPermission: NativeFontPermission = "prompt";
 
   constructor(ck: CanvasKit, options?: FontManagerOptions) {
     this.provider = ck.TypefaceFontProvider.Make();
-    this.fontBasePath = options?.fontBasePath ?? '/fonts/';
+    this.fontBasePath = options?.fontBasePath ?? "/fonts/";
     // Ensure trailing slash
-    if (!this.fontBasePath.endsWith('/')) this.fontBasePath += '/';
-    this.googleFontsCssUrl = options?.googleFontsCssUrl ?? 'https://fonts.googleapis.com/css2';
+    if (!this.fontBasePath.endsWith("/")) this.fontBasePath += "/";
+    this.googleFontsCssUrl =
+      options?.googleFontsCssUrl ?? "https://fonts.googleapis.com/css2";
 
     // Check initial permission state (non-blocking)
     this._checkPermissionState();
@@ -156,7 +178,9 @@ export class SkiaFontManager {
 
   /** Check if a font is a system font that should use bitmap rendering */
   isSystemFont(family: string): boolean {
-    return this.systemFontFamilies.has(family.toLowerCase()) || isSystemFont(family);
+    return (
+      this.systemFontFamilies.has(family.toLowerCase()) || isSystemFont(family)
+    );
   }
 
   /**
@@ -166,7 +190,11 @@ export class SkiaFontManager {
   getFallbackChain(primaryFamily: string, postScriptName?: string): string[] {
     const chain: string[] = [];
     const postScriptKey = normalizeFontKey(postScriptName);
-    if (postScriptName && postScriptKey && this.loadedFamilies.has(postScriptKey)) {
+    if (
+      postScriptName &&
+      postScriptKey &&
+      this.loadedFamilies.has(postScriptKey)
+    ) {
       pushUniqueFontFamily(chain, postScriptName.trim());
     }
 
@@ -177,14 +205,16 @@ export class SkiaFontManager {
     if (this.loadedFamilies.has(`${lower} ext`)) {
       pushUniqueFontFamily(chain, `${primaryFamily} Ext`);
     }
-    if (lower !== 'noto sans sc' && this.loadedFamilies.has('noto sans sc')) {
-      pushUniqueFontFamily(chain, 'Noto Sans SC');
+    if (lower !== "noto sans sc" && this.loadedFamilies.has("noto sans sc")) {
+      pushUniqueFontFamily(chain, "Noto Sans SC");
     }
-    if (lower !== 'inter') {
-      if (this.loadedFamilies.has('inter')) pushUniqueFontFamily(chain, 'Inter');
-      if (this.loadedFamilies.has('inter ext')) pushUniqueFontFamily(chain, 'Inter Ext');
+    if (lower !== "inter") {
+      if (this.loadedFamilies.has("inter"))
+        pushUniqueFontFamily(chain, "Inter");
+      if (this.loadedFamilies.has("inter ext"))
+        pushUniqueFontFamily(chain, "Inter Ext");
     }
-    if (chain.length === 0) pushUniqueFontFamily(chain, 'Inter');
+    if (chain.length === 0) pushUniqueFontFamily(chain, "Inter");
     return chain;
   }
 
@@ -193,8 +223,11 @@ export class SkiaFontManager {
    */
   hasAnyFallback(primaryFamily: string): boolean {
     const key = primaryFamily.toLowerCase();
-    if (key === 'inter' || key === 'noto sans sc') return false;
-    return this.loadedFamilies.has('inter') || this.loadedFamilies.has('noto sans sc');
+    if (key === "inter" || key === "noto sans sc") return false;
+    return (
+      this.loadedFamilies.has("inter") ||
+      this.loadedFamilies.has("noto sans sc")
+    );
   }
 
   /** Register a font from raw ArrayBuffer data */
@@ -213,7 +246,10 @@ export class SkiaFontManager {
    * Ensure a font family is loaded. Tries bundled fonts first, then native
    * fonts (Local Font Access API + canvas heuristic), then Google Fonts CDN.
    */
-  async ensureFont(family: string, weights: number[] = [400, 500, 600, 700]): Promise<boolean> {
+  async ensureFont(
+    family: string,
+    weights: number[] = [400, 500, 600, 700],
+  ): Promise<boolean> {
     const key = family.toLowerCase();
     if (this.loadedFamilies.has(key)) return true;
     if (this.failedFamilies.has(key)) return false;
@@ -228,7 +264,9 @@ export class SkiaFontManager {
     this.pendingFetches.delete(key);
     if (!result) {
       if (isSystemFont(family)) {
-        console.warn(`[FontManager] "${family}" is now a system font fallback after failed load.`);
+        console.warn(
+          `[FontManager] "${family}" is now a system font fallback after failed load.`,
+        );
         this.systemFontFamilies.add(key);
       } else {
         this.failedFamilies.add(key);
@@ -257,7 +295,11 @@ export class SkiaFontManager {
     const existing = this.pendingFetches.get(pendingKey);
     if (existing) return existing;
 
-    const promise = this._loadPostScriptFontData(postScriptName, family, weights);
+    const promise = this._loadPostScriptFontData(
+      postScriptName,
+      family,
+      weights,
+    );
     this.pendingFetches.set(pendingKey, promise);
     const result = await promise;
     this.pendingFetches.delete(pendingKey);
@@ -269,11 +311,13 @@ export class SkiaFontManager {
    */
   async ensureFonts(families: string[]): Promise<Set<string>> {
     const unique = [...new Set(families.map((f) => f.trim()).filter(Boolean))];
-    const results = await Promise.allSettled(unique.map((f) => this.ensureFont(f)));
+    const results = await Promise.allSettled(
+      unique.map((f) => this.ensureFont(f)),
+    );
     const loaded = new Set<string>();
     results.forEach((r, i) => {
       const family = unique[i];
-      if (r.status === 'fulfilled' && r.value && family) loaded.add(family);
+      if (r.status === "fulfilled" && r.value && family) loaded.add(family);
     });
     return loaded;
   }
@@ -286,14 +330,16 @@ export class SkiaFontManager {
    * Returns true if access was granted and fonts were enumerated.
    */
   async requestNativeFontAccess(): Promise<boolean> {
-    if (typeof window === 'undefined') {
-      this.nativeFontPermission = 'unavailable';
+    if (typeof window === "undefined") {
+      this.nativeFontPermission = "unavailable";
       return false;
     }
 
-    if (!('queryLocalFonts' in window)) {
-      console.warn('[FontManager] Local Font Access API not available in this browser.');
-      this.nativeFontPermission = 'unavailable';
+    if (!("queryLocalFonts" in window)) {
+      console.warn(
+        "[FontManager] Local Font Access API not available in this browser.",
+      );
+      this.nativeFontPermission = "unavailable";
       return false;
     }
 
@@ -333,39 +379,42 @@ export class SkiaFontManager {
         this.nativeFontMap.set(key, existing);
 
         const postScriptKey = normalizeFontKey(f.postscriptName);
-        if (postScriptKey) this.nativeFontPostScriptMap.set(postScriptKey, entry);
+        if (postScriptKey)
+          this.nativeFontPostScriptMap.set(postScriptKey, entry);
       }
 
       this.nativeFontSet = families;
-      this.nativeFontPermission = 'granted';
-      console.log(`[FontManager] Native font access granted — ${families.size} families found.`);
+      this.nativeFontPermission = "granted";
+      console.log(
+        `[FontManager] Native font access granted — ${families.size} families found.`,
+      );
       return true;
     } catch (e: unknown) {
       const errMsg = e instanceof Error ? e.message : String(e);
-      if (e instanceof DOMException && e.name === 'NotAllowedError') {
+      if (e instanceof DOMException && e.name === "NotAllowedError") {
         // Distinguish: never prompted (no user gesture) vs. user actually denied
         try {
           const status = await navigator.permissions.query({
-            name: 'local-fonts' as PermissionName,
+            name: "local-fonts" as PermissionName,
           });
-          if (status.state === 'prompt') {
+          if (status.state === "prompt") {
             // Not yet prompted — likely called without user gesture. Keep prompt
             // state so getNativeFontSet() will retry on the next ensureFont() call.
             console.warn(
-              '[FontManager] Native font access not yet prompted — will retry on next user gesture.',
+              "[FontManager] Native font access not yet prompted — will retry on next user gesture.",
             );
-            this.nativeFontPermission = 'prompt';
+            this.nativeFontPermission = "prompt";
             this.nativeFontSet = null;
             return false;
           }
         } catch {
           // permissions.query() not supported — assume denied
         }
-        console.warn('[FontManager] Native font access denied by user.');
-        this.nativeFontPermission = 'denied';
+        console.warn("[FontManager] Native font access denied by user.");
+        this.nativeFontPermission = "denied";
       } else {
-        console.warn('[FontManager] Native font access failed:', errMsg);
-        this.nativeFontPermission = 'denied';
+        console.warn("[FontManager] Native font access failed:", errMsg);
+        this.nativeFontPermission = "denied";
       }
       this.nativeFontSet = new Set();
       return false;
@@ -376,16 +425,16 @@ export class SkiaFontManager {
    * Check the current permission state without triggering a prompt.
    */
   private async _checkPermissionState(): Promise<void> {
-    if (typeof navigator === 'undefined' || !navigator.permissions) {
+    if (typeof navigator === "undefined" || !navigator.permissions) {
       return;
     }
     try {
       const result = await navigator.permissions.query({
-        name: 'local-fonts' as PermissionName,
+        name: "local-fonts" as PermissionName,
       });
       this.nativeFontPermission = result.state as NativeFontPermission;
       // If already granted, eagerly enumerate fonts
-      if (result.state === 'granted') {
+      if (result.state === "granted") {
         this.requestNativeFontAccess().catch(() => {});
       }
     } catch {
@@ -526,7 +575,7 @@ export class SkiaFontManager {
         if (!buf) continue;
         const relPath = relPaths[i];
         if (!relPath) continue;
-        const regName = relPath.includes('-ext-') ? `${family} Ext` : family;
+        const regName = relPath.includes("-ext-") ? `${family} Ext` : family;
         if (this.registerFont(buf, regName)) registered++;
       }
       return registered > 0;
@@ -538,8 +587,11 @@ export class SkiaFontManager {
   /**
    * Fetch a font from Google Fonts CDN with China mirror fallback.
    */
-  private async _fetchGoogleFont(family: string, weights: number[]): Promise<boolean> {
-    const weightStr = weights.join(';');
+  private async _fetchGoogleFont(
+    family: string,
+    weights: number[],
+  ): Promise<boolean> {
+    const weightStr = weights.join(";");
     const encodedFamily = encodeURIComponent(family);
     const query = `family=${encodedFamily}:wght@${weightStr}&display=swap`;
 
@@ -549,7 +601,7 @@ export class SkiaFontManager {
         fontUrlPattern: /url\((https?:\/\/[^)]+\.woff2)\)/g,
       },
       {
-        cssBase: 'https://fonts.font.im/css2',
+        cssBase: "https://fonts.font.im/css2",
         fontUrlPattern: /url\((https?:\/\/[^)]+\.woff2)\)/g,
       },
     ];
@@ -603,7 +655,10 @@ export class SkiaFontManager {
     if (this.nativeFontSet) return this.nativeFontSet;
 
     // Try to enumerate native fonts if we haven't already
-    if (this.nativeFontPermission !== 'denied' && this.nativeFontPermission !== 'unavailable') {
+    if (
+      this.nativeFontPermission !== "denied" &&
+      this.nativeFontPermission !== "unavailable"
+    ) {
       await this.requestNativeFontAccess();
     }
 
@@ -645,22 +700,23 @@ function isFontLocallyAvailable(family: string): boolean {
   const cached = localFontCache.get(key);
   if (cached !== undefined) return cached;
 
-  if (typeof document === 'undefined') return false;
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
+  if (typeof document === "undefined") return false;
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
   if (!ctx) return false;
 
-  const testStr = 'mmmmmmmmmmlli1|';
-  ctx.font = '72px monospace';
+  const testStr = "mmmmmmmmmmlli1|";
+  ctx.font = "72px monospace";
   const monoWidth = ctx.measureText(testStr).width;
-  ctx.font = '72px serif';
+  ctx.font = "72px serif";
   const serifWidth = ctx.measureText(testStr).width;
   ctx.font = `72px "${family}", monospace`;
   const testMonoWidth = ctx.measureText(testStr).width;
   ctx.font = `72px "${family}", serif`;
   const testSerifWidth = ctx.measureText(testStr).width;
 
-  const available = testMonoWidth !== monoWidth && testSerifWidth !== serifWidth;
+  const available =
+    testMonoWidth !== monoWidth && testSerifWidth !== serifWidth;
   localFontCache.set(key, available);
   return available;
 }
@@ -739,5 +795,7 @@ function isSystemFont(family: string): boolean {
 function fetchWithTimeout(url: string, ms: number): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
-  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
+  return fetch(url, { signal: controller.signal }).finally(() =>
+    clearTimeout(timer),
+  );
 }

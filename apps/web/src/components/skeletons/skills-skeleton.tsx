@@ -20,9 +20,16 @@ export function SkillsSkeleton() {
 
       {/* Card grid */}
       <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2">
-        {Array.from({ length: 6 }).map((_, i) => (
+        {[
+          "skill-skeleton-1",
+          "skill-skeleton-2",
+          "skill-skeleton-3",
+          "skill-skeleton-4",
+          "skill-skeleton-5",
+          "skill-skeleton-6",
+        ].map((key) => (
           <div
-            key={i}
+            key={key}
             className="space-y-3 rounded-xl border border-border p-4"
           >
             <div className="flex items-center justify-between">

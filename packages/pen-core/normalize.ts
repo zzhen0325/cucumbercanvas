@@ -207,7 +207,7 @@ function normalizeGradientStops(raw: unknown[] | undefined): GradientStop[] {
     color: s.color,
     offset:
       s.offset !== null
-        ? Math.max(0, Math.min(1, s.offset!))
+        ? Math.max(0, Math.min(1, s.offset))
         : i / Math.max(n - 1, 1),
   }));
 }
@@ -260,7 +260,8 @@ function normalizeSizing(value: unknown): number | string {
   // fit_content with a hint value: use the hint (more accurate than our estimation)
   if (value.startsWith("fit_content")) {
     const match = value.match(/\((\d+(?:\.\d+)?)\)/);
-    if (match) return Number.parseFloat(match[1]!);
+    const hint = match?.[1];
+    if (hint) return Number.parseFloat(hint);
     return "fit_content";
   }
 

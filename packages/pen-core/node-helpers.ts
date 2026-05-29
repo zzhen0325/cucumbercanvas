@@ -1,4 +1,4 @@
-import type { PenNode } from '@cucumber/pen-types';
+import type { PenNode } from "@cucumber/pen-types";
 
 /**
  * Check if a node is an overlay that uses absolute positioning and should
@@ -13,9 +13,9 @@ import type { PenNode } from '@cucumber/pen-types';
  * notification dots and true floating decorations.
  */
 export function isOverlayNode(node: PenNode): boolean {
-  if ('role' in node) {
+  if ("role" in node) {
     const role = (node as { role?: string }).role;
-    if (role === 'overlay') return true;
+    if (role === "overlay") return true;
   }
   return false;
 }
@@ -35,9 +35,9 @@ export const isBadgeOverlayNode = isOverlayNode;
  */
 export function sanitizeName(name: string): string {
   return name
-    .replace(/[^a-zA-Z0-9\s-_]/g, '')
+    .replace(/[^a-zA-Z0-9\s-_]/g, "")
     .split(/[\s\-_]+/)
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join('');
+    .join("");
 }

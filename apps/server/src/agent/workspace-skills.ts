@@ -1,5 +1,22 @@
 import type { UserSupabaseClient } from "../supabase/user.js";
 
+type UntypedSupabaseClient = {
+  from(table: string): ReturnType<UserSupabaseClient["from"]>;
+};
+
+type WorkspaceSkillRow = {
+  skill: {
+    description?: unknown;
+    id?: unknown;
+    skill_content?: unknown;
+    slug?: unknown;
+  } | null;
+};
+
+function untypedFrom(client: UserSupabaseClient, table: string) {
+  return (client as unknown as UntypedSupabaseClient).from(table);
+}
+
 /**
  * A file bundled with a skill (scripts/, references/, assets/).
  */
@@ -44,9 +61,11 @@ export async function loadWorkspaceSkills(
 
   // Step 2: Query enabled workspace skills with full skill data
   // NOTE: workspace_skills / skills tables may not yet be in the generated
-  // Supabase types — use `as any` to bypass PostgREST type checking.
-  const { data: rows, error } = await (userClient as any)
-    .from("workspace_skills")
+  // Supabase types, so this helper keeps the boundary explicit and local.
+  const { data: rows, error } = await untypedFrom(
+    userClient,
+    "workspace_skills",
+  )
     .select(
       "skill:skills(id, slug, name, description, skill_content, metadata)",
     )
@@ -56,19 +75,23 @@ export async function loadWorkspaceSkills(
   if (error || !rows?.length) return [];
 
   // Step 3: Batch-load associated files for all enabled skills
-  const skillIds = (rows as any[])
-    .map((r: any) => r.skill?.id)
+  const skillRows = rows as WorkspaceSkillRow[];
+  const skillIds = skillRows
+    .map((row) => row.skill?.id)
     .filter((id: unknown): id is string => typeof id === "string");
 
   const filesBySkillId = new Map<string, SkillFileEntry[]>();
   if (skillIds.length > 0) {
-    const { data: fileRows } = await (userClient as any)
-      .from("skill_files")
+    const { data: fileRows } = await untypedFrom(userClient, "skill_files")
       .select("skill_id, file_path, content")
       .in("skill_id", skillIds);
 
     if (fileRows?.length) {
-      for (const fr of fileRows as Array<{ skill_id: string; file_path: string; content: string }>) {
+      for (const fr of fileRows as Array<{
+        skill_id: string;
+        file_path: string;
+        content: string;
+      }>) {
         const existing = filesBySkillId.get(fr.skill_id) ?? [];
         existing.push({ path: fr.file_path, content: fr.content });
         filesBySkillId.set(fr.skill_id, existing);
@@ -77,24 +100,28 @@ export async function loadWorkspaceSkills(
   }
 
   // Step 4: Map to WorkspaceSkillEntry, filtering out skills without DB content
-  return (rows as Array<{ skill: Record<string, unknown> | null }>)
-    .map((row: { skill: Record<string, unknown> | null }) => {
+  return skillRows
+    .map((row) => {
       const skill = row.skill;
-      if (!skill?.skill_content) {
-        if (skill?.slug) {
+      if (typeof skill?.skill_content !== "string") {
+        if (typeof skill?.slug === "string") {
           console.warn(
             `[workspace-skills] Skill "${skill.slug}" is enabled but has empty content — skipping`,
           );
         }
         return null;
       }
-      const slug = skill.slug as string;
+      if (typeof skill.slug !== "string" || typeof skill.id !== "string") {
+        console.warn("[workspace-skills] Enabled skill row is missing slug/id");
+        return null;
+      }
       return {
-        name: slug,
-        description: skill.description as string,
-        path: `/workspace-skills/${slug}/SKILL.md`,
+        name: skill.slug,
+        description:
+          typeof skill.description === "string" ? skill.description : "",
+        path: `/workspace-skills/${skill.slug}/SKILL.md`,
         content: skill.skill_content as string,
-        files: filesBySkillId.get(skill.id as string) ?? [],
+        files: filesBySkillId.get(skill.id) ?? [],
       };
     })
     .filter((entry): entry is WorkspaceSkillEntry => entry !== null);

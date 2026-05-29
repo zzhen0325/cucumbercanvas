@@ -1,6 +1,6 @@
-import type { PenDocument, PenNode } from '@cucumber/pen-types';
-import type { CanvasBounds } from './types.js';
-import { findNode, getActiveChildren, getNodeBounds } from './document.js';
+import type { PenDocument, PenNode } from "@cucumber/pen-types";
+import { findNode, getActiveChildren, getNodeBounds } from "./document.js";
+import type { CanvasBounds } from "./types.js";
 
 export interface OrderedCanvasNode {
   node: PenNode;
@@ -10,7 +10,13 @@ export interface OrderedCanvasNode {
 export function normalizeBounds(bounds: CanvasBounds): CanvasBounds {
   const x = Math.min(bounds.x, bounds.x + bounds.width);
   const y = Math.min(bounds.y, bounds.y + bounds.height);
-  return { ...bounds, x, y, width: Math.abs(bounds.width), height: Math.abs(bounds.height) };
+  return {
+    ...bounds,
+    x,
+    y,
+    width: Math.abs(bounds.width),
+    height: Math.abs(bounds.height),
+  };
 }
 
 export function boundsIntersect(a: CanvasBounds, b: CanvasBounds): boolean {
@@ -41,8 +47,8 @@ export function getSelectionBounds(
 ): CanvasBounds | null {
   const boundsList = nodeIds
     .map((id) => findNode(doc, id, activePageId))
-    .filter(Boolean)
-    .map((n) => getNodeBounds(n!));
+    .filter((node): node is NonNullable<typeof node> => Boolean(node))
+    .map((node) => getNodeBounds(node));
   if (boundsList.length === 0) return null;
   return getBoundsUnion(boundsList);
 }
@@ -55,7 +61,7 @@ export function getOrderedCanvasNodes(
   const walk = (nodes: PenNode[], depth: number) => {
     for (const node of nodes) {
       result.push({ node, depth });
-      if ('children' in node && Array.isArray(node.children)) {
+      if ("children" in node && Array.isArray(node.children)) {
         walk(node.children as PenNode[], depth + 1);
       }
     }
@@ -71,5 +77,8 @@ export function getVisibleCanvasNodesInBounds(
 ): PenNode[] {
   return getOrderedCanvasNodes(doc, activePageId)
     .map((e) => e.node)
-    .filter((node) => node.visible !== false && boundsIntersect(getNodeBounds(node), bounds));
+    .filter(
+      (node) =>
+        node.visible !== false && boundsIntersect(getNodeBounds(node), bounds),
+    );
 }

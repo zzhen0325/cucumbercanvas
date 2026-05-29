@@ -1,4 +1,4 @@
-import type { CanvasKit, Image as SkImage } from 'canvaskit-wasm';
+import type { CanvasKit, Image as SkImage } from "canvaskit-wasm";
 
 const MAX_IMAGE_DIMENSION = 4096;
 const MAX_IMAGE_PIXELS = MAX_IMAGE_DIMENSION * MAX_IMAGE_DIMENSION;
@@ -9,7 +9,7 @@ export interface ResolvedImageSource {
 }
 
 export interface ImageLoadStatus {
-  state: 'loading' | 'loaded' | 'missing' | 'error';
+  state: "loading" | "loaded" | "missing" | "error";
 }
 
 /**
@@ -57,17 +57,21 @@ export class SkiaImageLoader {
   /** Start loading an image if not already cached or in progress. */
   request(src: string) {
     const resolved = this.sourceResolver(src);
-    if (this.cache.has(resolved.cacheKey) || this.loading.has(resolved.cacheKey)) return;
+    if (
+      this.cache.has(resolved.cacheKey) ||
+      this.loading.has(resolved.cacheKey)
+    )
+      return;
 
     if (!resolved.loadUrl) {
       this.cache.set(resolved.cacheKey, null);
-      this.status.set(resolved.cacheKey, { state: 'missing' });
+      this.status.set(resolved.cacheKey, { state: "missing" });
       this.onLoaded?.();
       return;
     }
 
     this.loading.add(resolved.cacheKey);
-    this.status.set(resolved.cacheKey, { state: 'loading' });
+    this.status.set(resolved.cacheKey, { state: "loading" });
     const pending = this.loadAsync(resolved);
     this.pendingPromises.add(pending);
     pending.finally(() => this.pendingPromises.delete(pending));
@@ -99,18 +103,21 @@ export class SkiaImageLoader {
 
   private async loadAsync(source: ResolvedImageSource) {
     try {
+      if (!source.loadUrl) {
+        throw new Error(`Image source ${source.cacheKey} has no load URL`);
+      }
       // Use browser Image element — supports all browser-supported formats
-      const htmlImg = await this.loadHtmlImage(source.loadUrl!);
+      const htmlImg = await this.loadHtmlImage(source.loadUrl);
       const skImg = this.htmlImageToSkia(htmlImg);
       this.cache.set(source.cacheKey, skImg);
       this.loading.delete(source.cacheKey);
-      this.status.set(source.cacheKey, { state: skImg ? 'loaded' : 'error' });
+      this.status.set(source.cacheKey, { state: skImg ? "loaded" : "error" });
       this.onLoaded?.();
     } catch (e) {
-      console.warn('Failed to load image:', source.loadUrl?.slice(0, 80), e);
+      console.warn("Failed to load image:", source.loadUrl?.slice(0, 80), e);
       this.cache.set(source.cacheKey, null);
       this.loading.delete(source.cacheKey);
-      this.status.set(source.cacheKey, { state: 'error' });
+      this.status.set(source.cacheKey, { state: "error" });
       this.onLoaded?.();
     }
   }
@@ -119,7 +126,7 @@ export class SkiaImageLoader {
     return new Promise((resolve, reject) => {
       const img = new Image();
       if (/^https?:\/\//i.test(src)) {
-        img.crossOrigin = 'anonymous';
+        img.crossOrigin = "anonymous";
       }
       img.onload = () => resolve(img);
       img.onerror = (e) => reject(new Error(`Image load failed: ${e}`));
@@ -135,10 +142,10 @@ export class SkiaImageLoader {
 
     const { width, height } = this.getSafeRasterSize(sourceW, sourceH);
 
-    const canvas = document.createElement('canvas');
+    const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return null;
 
     ctx.imageSmoothingEnabled = width !== sourceW || height !== sourceH;
@@ -160,7 +167,10 @@ export class SkiaImageLoader {
     );
   }
 
-  private getSafeRasterSize(sourceW: number, sourceH: number): { width: number; height: number } {
+  private getSafeRasterSize(
+    sourceW: number,
+    sourceH: number,
+  ): { width: number; height: number } {
     let scale = 1;
     const maxDimension = Math.max(sourceW, sourceH);
     if (maxDimension > MAX_IMAGE_DIMENSION) {

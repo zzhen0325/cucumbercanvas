@@ -20,9 +20,11 @@ import {
 } from "@cucumber/canvas-core";
 import { type BooleanOpType, executeBooleanOp } from "@cucumber/pen-core";
 import { anchorsToPathData } from "@cucumber/pen-core";
+import type { PenEffect, PenStroke } from "@cucumber/pen-types";
 import { tool } from "langchain";
 import { z } from "zod";
 import type { LiveCanvasService } from "../../features/canvas/live-canvas-service.js";
+import type { UserSupabaseClient } from "../../supabase/user.js";
 import { coerceColor, measureTextWidth } from "./canvas-element-helpers.js";
 
 // Re-export for consumers that import measureTextWidth from this module
@@ -244,6 +246,7 @@ const manipulateCanvasSchema = z.object({
 });
 
 type Operation = z.infer<typeof operationSchema>;
+type OperationAnchors = NonNullable<Operation["anchors"]>;
 
 type ToolRuntimeConfig = {
   configurable?: {
@@ -253,6 +256,56 @@ type ToolRuntimeConfig = {
     user_id?: unknown;
   };
 };
+
+type StrokeReadableNode = PenNode & {
+  fontSize?: number;
+  stroke?: Pick<PenStroke, "fill" | "thickness">;
+};
+
+type AgentBindingWritableNode = PenNode & {
+  agentBinding?: undefined;
+};
+
+type PathClosedNode = PenNode & {
+  closed?: boolean;
+};
+
+type ContainerLayoutUpdates = Partial<PenNode> & {
+  alignItems?: Operation["alignItems"];
+  gap?: Operation["gap"];
+  justifyContent?: Operation["justifyContent"];
+  layout?: Operation["layout_direction"];
+  padding?: Operation["padding"];
+  sizingHeight?: Operation["sizing_height"];
+  sizingWidth?: Operation["sizing_width"];
+};
+
+function readRequired<T>(
+  items: ArrayLike<T>,
+  index: number,
+  context: string,
+): T {
+  const value = items[index];
+  if (value === undefined) {
+    throw new Error(`${context} is missing at index ${index}`);
+  }
+  return value;
+}
+
+function readSolidFillColor(fill: PenFill[] | undefined): string | undefined {
+  const firstFill = fill?.[0];
+  return firstFill?.type === "solid" ? firstFill.color : undefined;
+}
+
+function toPathAnchors(anchors: OperationAnchors): PenPathAnchor[] {
+  return anchors.map((anchor) => ({
+    x: anchor.x,
+    y: anchor.y,
+    handleIn: anchor.handleIn ?? null,
+    handleOut: anchor.handleOut ?? null,
+    ...(anchor.pointType ? { pointType: anchor.pointType } : {}),
+  }));
+}
 
 function getConfiguredAgentId(
   config: ToolRuntimeConfig | undefined,
@@ -335,7 +388,7 @@ function ensureContainer(
       `Container ${containerId} does not exist.`,
     );
   }
-  return container!;
+  return container;
 }
 
 function defaultNodeBounds(
@@ -556,7 +609,10 @@ function manipulateCucumberCanvas(args: {
   const createdIds: Record<string, string> = {};
 
   for (let i = 0; i < args.operations.length; i++) {
-    const op = resolveOperationRefs(args.operations[i]!, createdIds);
+    const op = resolveOperationRefs(
+      readRequired(args.operations, i, "canvas operation"),
+      createdIds,
+    );
     try {
       const inferredContainerId = inferWritableContainerId(nextDoc, op);
 
@@ -718,16 +774,13 @@ function manipulateCucumberCanvas(args: {
             nodeType === "ellipse" ||
             nodeType === "polygon"
           ) {
-            const existingStroke = (node as any).stroke as
-              | {
-                  thickness?: number;
-                  fill?: Array<{ type: string; color: string }>;
-                }
-              | undefined;
+            const existingStroke = (node as StrokeReadableNode).stroke;
             const newThickness =
               op.strokeWidth ?? existingStroke?.thickness ?? 1;
             const newStrokeColor =
-              op.strokeColor ?? existingStroke?.fill?.[0]?.color ?? "#111827";
+              op.strokeColor ??
+              readSolidFillColor(existingStroke?.fill) ??
+              "#111827";
             updates = {
               ...(op.backgroundColor !== undefined
                 ? {
@@ -755,12 +808,7 @@ function manipulateCucumberCanvas(args: {
                 : {}),
             } as Partial<PenNode>;
           } else if (isContainerNode(node)) {
-            const existingStroke = (node as any).stroke as
-              | {
-                  thickness?: number;
-                  fill?: Array<{ type: string; color: string }>;
-                }
-              | undefined;
+            const existingStroke = (node as StrokeReadableNode).stroke;
             const hasStrokeUpdate =
               op.strokeColor !== undefined || op.strokeWidth !== undefined;
             updates = {
@@ -785,7 +833,7 @@ function manipulateCucumberCanvas(args: {
                           type: "solid" as const,
                           color: coerceColor(
                             op.strokeColor ??
-                              existingStroke?.fill?.[0]?.color ??
+                              readSolidFillColor(existingStroke?.fill) ??
                               "#6c5ce7",
                             "#6c5ce7",
                           ),
@@ -978,9 +1026,7 @@ function manipulateCucumberCanvas(args: {
           }
           if (node.type === "text") {
             const fontSize =
-              op.fontSize ??
-              ((node as any).fontSize as number | undefined) ??
-              28;
+              op.fontSize ?? (node as StrokeReadableNode).fontSize ?? 28;
             const lines = op.text.split("\n");
             const measuredWidth = Math.max(
               ...lines.map((line) => measureTextWidth(line, fontSize)),
@@ -1140,8 +1186,12 @@ function manipulateCucumberCanvas(args: {
             const sorted = [...targets].sort(
               (a, b) => getNodeBounds(a).x - getNodeBounds(b).x,
             );
-            const first = sorted[0]!;
-            const last = sorted[sorted.length - 1]!;
+            const first = readRequired(sorted, 0, "first horizontal target");
+            const last = readRequired(
+              sorted,
+              sorted.length - 1,
+              "last horizontal target",
+            );
             const firstBounds = getNodeBounds(first);
             const lastBounds = getNodeBounds(last);
             const totalSpan = lastBounds.x + lastBounds.width - firstBounds.x;
@@ -1165,8 +1215,12 @@ function manipulateCucumberCanvas(args: {
             const sorted = [...targets].sort(
               (a, b) => getNodeBounds(a).y - getNodeBounds(b).y,
             );
-            const first = sorted[0]!;
-            const last = sorted[sorted.length - 1]!;
+            const first = readRequired(sorted, 0, "first vertical target");
+            const last = readRequired(
+              sorted,
+              sorted.length - 1,
+              "last vertical target",
+            );
             const firstBounds = getNodeBounds(first);
             const lastBounds = getNodeBounds(last);
             const totalSpan = lastBounds.y + lastBounds.height - firstBounds.y;
@@ -1335,7 +1389,7 @@ function manipulateCucumberCanvas(args: {
             cloned.y = (cloned.y ?? 0) + dy;
             // Clear agent binding on clone
             if ("agentBinding" in cloned)
-              (cloned as any).agentBinding = undefined;
+              (cloned as AgentBindingWritableNode).agentBinding = undefined;
             const parentId = findParent(nextDoc, srcId)?.id ?? null;
             nextDoc = applyCanvasOperation(nextDoc, {
               type: "insertNode",
@@ -1383,7 +1437,7 @@ function manipulateCucumberCanvas(args: {
           const d =
             op.path_d ??
             (op.anchors
-              ? anchorsToPathData(op.anchors as any, op.closed ?? true)
+              ? anchorsToPathData(toPathAnchors(op.anchors), op.closed ?? true)
               : "");
           if (!d) {
             throw new CanvasOperationError(
@@ -1448,8 +1502,8 @@ function manipulateCucumberCanvas(args: {
           let updates: Partial<PenNode> = {};
           if (op.anchors) {
             const newD = anchorsToPathData(
-              op.anchors as any,
-              (node as any).closed ?? op.closed ?? true,
+              toPathAnchors(op.anchors),
+              (node as PathClosedNode).closed ?? op.closed ?? true,
             );
             updates = { ...updates, d: newD } as Partial<PenNode>;
           }
@@ -1564,7 +1618,7 @@ function manipulateCucumberCanvas(args: {
             errors.push(`[skip] node ${op.element_id} not found`);
             continue;
           }
-          const effects: any[] = [];
+          const effects: PenEffect[] = [];
           if (op.shadow !== undefined && op.shadow !== null) {
             effects.push({ type: "shadow", ...op.shadow });
           }
@@ -1595,19 +1649,17 @@ function manipulateCucumberCanvas(args: {
             );
             continue;
           }
-          const layoutUpdates: Partial<PenNode> = {};
-          if (op.layout_direction)
-            (layoutUpdates as any).layout = op.layout_direction;
-          if (op.gap !== undefined) (layoutUpdates as any).gap = op.gap;
-          if (op.padding !== undefined)
-            (layoutUpdates as any).padding = op.padding;
+          const layoutUpdates: ContainerLayoutUpdates = {};
+          if (op.layout_direction) layoutUpdates.layout = op.layout_direction;
+          if (op.gap !== undefined) layoutUpdates.gap = op.gap;
+          if (op.padding !== undefined) layoutUpdates.padding = op.padding;
           if (op.justifyContent)
-            (layoutUpdates as any).justifyContent = op.justifyContent;
-          if (op.alignItems) (layoutUpdates as any).alignItems = op.alignItems;
+            layoutUpdates.justifyContent = op.justifyContent;
+          if (op.alignItems) layoutUpdates.alignItems = op.alignItems;
           if (op.sizing_width !== undefined)
-            (layoutUpdates as any).sizingWidth = op.sizing_width;
+            layoutUpdates.sizingWidth = op.sizing_width;
           if (op.sizing_height !== undefined)
-            (layoutUpdates as any).sizingHeight = op.sizing_height;
+            layoutUpdates.sizingHeight = op.sizing_height;
           nextDoc = applyCucumberUpdate(
             nextDoc,
             node.id,
@@ -1712,7 +1764,7 @@ function manipulateCucumberCanvas(args: {
 // ---------------------------------------------------------------------------
 
 export function createManipulateCanvasTool(deps: {
-  createUserClient: (accessToken: string) => any;
+  createUserClient: (accessToken: string) => UserSupabaseClient;
   liveCanvasService?: LiveCanvasService;
 }) {
   return tool(

@@ -6,14 +6,17 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@cucumber/shared";
 
-import type { RequestAuthenticator } from "../supabase/user.js";
+import type {
+  RequestAuthenticator,
+  UserSupabaseClient,
+} from "../supabase/user.js";
 import type { CanvasEventBuffer } from "../ws/event-buffer.js";
 
 export async function registerSseRoutes(
   app: FastifyInstance,
   options: {
     auth: RequestAuthenticator;
-    createUserClient: (accessToken: string) => any;
+    createUserClient: (accessToken: string) => UserSupabaseClient;
     eventBuffer: CanvasEventBuffer;
     webOrigin: string;
   },
@@ -47,7 +50,9 @@ export async function registerSseRoutes(
     const queryLastEventId = parsedQuery.success
       ? parsedQuery.data.lastEventId
       : undefined;
-    const headerLastEventId = parseLastEventId(request.headers["last-event-id"]);
+    const headerLastEventId = parseLastEventId(
+      request.headers["last-event-id"],
+    );
     const lastEventId = headerLastEventId ?? queryLastEventId ?? 0;
 
     reply.hijack();

@@ -13,9 +13,14 @@ export function HomeProjectsSkeleton() {
       </div>
 
       {/* Project card skeletons */}
-      {Array.from({ length: 4 }, (_, i) => (
+      {[
+        "home-skeleton-1",
+        "home-skeleton-2",
+        "home-skeleton-3",
+        "home-skeleton-4",
+      ].map((key) => (
         <div
-          key={i}
+          key={key}
           className="aspect-[286/208] rounded-lg bg-card p-2 sm:p-3"
         >
           <Skeleton className="aspect-[395/227] w-full rounded-lg" />

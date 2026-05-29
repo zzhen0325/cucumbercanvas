@@ -1,4 +1,4 @@
-import type { PenDocument } from '@cucumber/pen-types';
+import type { PenDocument } from "@cucumber/pen-types";
 
 export interface CanvasHistoryManagerOptions {
   maxStates?: number;
@@ -9,7 +9,10 @@ export class CanvasHistoryManager {
   private undoStack: PenDocument[] = [];
   private redoStack: PenDocument[] = [];
   private readonly maxStates: number;
-  private readonly onChange?: (state: { canUndo: boolean; canRedo: boolean }) => void;
+  private readonly onChange?: (state: {
+    canUndo: boolean;
+    canRedo: boolean;
+  }) => void;
 
   constructor(options?: CanvasHistoryManagerOptions) {
     this.maxStates = options?.maxStates ?? 200;

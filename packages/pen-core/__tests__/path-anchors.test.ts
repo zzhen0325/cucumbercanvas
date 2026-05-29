@@ -1,15 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from "vitest";
 
 import {
   anchorsToPathData,
   getPathBoundsFromAnchors,
   inferPathAnchorPointType,
   pathDataToAnchors,
-} from '../path-anchors';
+} from "../path-anchors.js";
 
-describe('path anchor utilities', () => {
-  it('parses cubic and line path commands into editable anchors', () => {
-    const result = pathDataToAnchors('M 10 20 C 30 40 50 60 70 80 L 90 100 Z');
+describe("path anchor utilities", () => {
+  it("parses cubic and line path commands into editable anchors", () => {
+    const result = pathDataToAnchors("M 10 20 C 30 40 50 60 70 80 L 90 100 Z");
 
     expect(result).not.toBeNull();
     expect(result?.closed).toBe(true);
@@ -35,7 +35,7 @@ describe('path anchor utilities', () => {
     ]);
   });
 
-  it('rebuilds path data from editable anchors', () => {
+  it("rebuilds path data from editable anchors", () => {
     const d = anchorsToPathData(
       [
         { x: 0, y: 0, handleIn: null, handleOut: { x: 10, y: 0 } },
@@ -45,14 +45,14 @@ describe('path anchor utilities', () => {
       false,
     );
 
-    expect(d).toBe('M 0 0 C 10 0 25 10 30 20 L 60 20');
+    expect(d).toBe("M 0 0 C 10 0 25 10 30 20 L 60 20");
   });
 
-  it('returns null for unsupported quadratic commands', () => {
-    expect(pathDataToAnchors('M 0 0 Q 10 10 20 0')).toBeNull();
+  it("returns null for unsupported quadratic commands", () => {
+    expect(pathDataToAnchors("M 0 0 Q 10 10 20 0")).toBeNull();
   });
 
-  it('measures cubic bounds from the actual bezier curve instead of the control box', () => {
+  it("measures cubic bounds from the actual bezier curve instead of the control box", () => {
     const bounds = getPathBoundsFromAnchors(
       [
         { x: 0, y: 0, handleIn: null, handleOut: { x: 100, y: 100 } },
@@ -67,7 +67,7 @@ describe('path anchor utilities', () => {
     expect(bounds.height).toBeCloseTo(75, 5);
   });
 
-  it('infers path point types from handle geometry', () => {
+  it("infers path point types from handle geometry", () => {
     expect(
       inferPathAnchorPointType({
         x: 0,
@@ -75,7 +75,7 @@ describe('path anchor utilities', () => {
         handleIn: null,
         handleOut: null,
       }),
-    ).toBe('corner');
+    ).toBe("corner");
 
     expect(
       inferPathAnchorPointType({
@@ -84,7 +84,7 @@ describe('path anchor utilities', () => {
         handleIn: { x: -20, y: 0 },
         handleOut: { x: 20, y: 0 },
       }),
-    ).toBe('mirrored');
+    ).toBe("mirrored");
 
     expect(
       inferPathAnchorPointType({
@@ -93,6 +93,6 @@ describe('path anchor utilities', () => {
         handleIn: { x: -20, y: 0 },
         handleOut: { x: 10, y: 5 },
       }),
-    ).toBe('independent');
+    ).toBe("independent");
   });
 });

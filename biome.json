@@ -8,7 +8,10 @@
       "**/.next/**",
       "**/dist/**",
       "**/out/**",
-      "packages/pen-figma/src/**"
+      "**/reports/**",
+      "apps/web/public/canvaskit/**",
+      "packages/pen-figma/src/**",
+      "vercel.json"
     ],
     "include": [
       "**/*.js",

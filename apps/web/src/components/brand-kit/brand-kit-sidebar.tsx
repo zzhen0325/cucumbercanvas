@@ -47,6 +47,7 @@ export function BrandKitSidebar({
         {kits.map((kit) => {
           const isSelected = kit.id === selectedKitId;
           return (
+            // biome-ignore lint/a11y/useSemanticElements: row contains its own delete button, so the selectable container cannot be a nested button.
             <div
               role="button"
               tabIndex={0}

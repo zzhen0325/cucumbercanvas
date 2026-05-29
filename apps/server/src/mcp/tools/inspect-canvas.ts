@@ -1,9 +1,10 @@
 import { createInspectCanvasTool } from "../../agent/tools/inspect-canvas.js";
+import type { UserSupabaseClient } from "../../supabase/user.js";
 import type { CucumberMcpTool } from "../types.js";
 import { wrapLegacyStructuredToolAsMcpTool } from "./legacy-tool-wrapper.js";
 
 export function createInspectCanvasMcpTool(deps: {
-  createUserClient: (accessToken: string) => any;
+  createUserClient: (accessToken: string) => UserSupabaseClient;
 }): CucumberMcpTool {
   return wrapLegacyStructuredToolAsMcpTool(createInspectCanvasTool(deps));
 }

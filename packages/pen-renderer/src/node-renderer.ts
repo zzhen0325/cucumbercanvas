@@ -695,7 +695,7 @@ export class SkiaNodeRenderer {
         });
         const colors = stops.map((s: GradientStop) => {
           const c = parseColor(ck, s.color);
-          c[3] = (c[3] ?? 1) * fillOpacity;
+          c[3] = (c[3] ?? 1) * (s.opacity ?? 1) * fillOpacity;
           return c;
         });
         const positions = stops.map((s: GradientStop) =>
@@ -710,9 +710,10 @@ export class SkiaNodeRenderer {
         );
         if (shader) paint.setShader(shader);
       } else {
-        const stopColor = stops[0]?.color;
+        const firstStop = stops[0];
+        const stopColor = firstStop?.color;
         const c = parseColor(ck, stopColor ?? DEFAULT_FILL);
-        c[3] = (c[3] ?? 1) * fillOpacity;
+        c[3] = (c[3] ?? 1) * (firstStop?.opacity ?? 1) * fillOpacity;
         paint.setColor(c);
       }
     } else if (first.type === "angular_gradient") {
@@ -723,7 +724,7 @@ export class SkiaNodeRenderer {
         const cy = absY + (first.cy ?? 0.5) * h;
         const colors = stops.map((s: GradientStop) => {
           const c = parseColor(ck, s.color);
-          c[3] = (c[3] ?? 1) * fillOpacity;
+          c[3] = (c[3] ?? 1) * (s.opacity ?? 1) * fillOpacity;
           return c;
         });
         const positions = stops.map((s: GradientStop) =>
@@ -745,9 +746,10 @@ export class SkiaNodeRenderer {
         );
         if (shader) paint.setShader(shader);
       } else {
-        const stopColor = stops[0]?.color;
+        const firstStop = stops[0];
+        const stopColor = firstStop?.color;
         const c = parseColor(ck, stopColor ?? DEFAULT_FILL);
-        c[3] = (c[3] ?? 1) * fillOpacity;
+        c[3] = (c[3] ?? 1) * (firstStop?.opacity ?? 1) * fillOpacity;
         paint.setColor(c);
       }
     } else if (first.type === "diamond_gradient") {
@@ -758,7 +760,7 @@ export class SkiaNodeRenderer {
           .slice(0, DIAMOND_GRADIENT_MAX_STOPS)
           .map((s: GradientStop) => {
             const c = parseColor(ck, s.color);
-            c[3] = (c[3] ?? 1) * fillOpacity;
+            c[3] = (c[3] ?? 1) * (s.opacity ?? 1) * fillOpacity;
             return c;
           });
         const shader = this.makeDiamondGradientShader(
@@ -781,9 +783,10 @@ export class SkiaNodeRenderer {
           );
         }
       } else {
-        const stopColor = stops[0]?.color;
+        const firstStop = stops[0];
+        const stopColor = firstStop?.color;
         const c = parseColor(ck, stopColor ?? DEFAULT_FILL);
-        c[3] = (c[3] ?? 1) * fillOpacity;
+        c[3] = (c[3] ?? 1) * (firstStop?.opacity ?? 1) * fillOpacity;
         paint.setColor(c);
       }
     } else if (first.type === "radial_gradient") {
@@ -797,7 +800,7 @@ export class SkiaNodeRenderer {
         const r = gradientRadius * Math.max(w, h);
         const colors = stops.map((s: GradientStop) => {
           const c = parseColor(ck, s.color);
-          c[3] = (c[3] ?? 1) * fillOpacity;
+          c[3] = (c[3] ?? 1) * (s.opacity ?? 1) * fillOpacity;
           return c;
         });
         const positions = stops.map((s: GradientStop) =>
@@ -812,9 +815,10 @@ export class SkiaNodeRenderer {
         );
         if (shader) paint.setShader(shader);
       } else {
-        const stopColor = stops[0]?.color;
+        const firstStop = stops[0];
+        const stopColor = firstStop?.color;
         const c = parseColor(ck, stopColor ?? DEFAULT_FILL);
-        c[3] = (c[3] ?? 1) * fillOpacity;
+        c[3] = (c[3] ?? 1) * (firstStop?.opacity ?? 1) * fillOpacity;
         paint.setColor(c);
       }
     } else if (first.type === "image") {
@@ -910,7 +914,7 @@ export class SkiaNodeRenderer {
         ? colors
         : stops.map((s: GradientStop) => {
             const c = parseColor(this.ck, s.color);
-            c[3] = (c[3] ?? 1) * fillOpacity;
+            c[3] = (c[3] ?? 1) * (s.opacity ?? 1) * fillOpacity;
             return c;
           });
     const positions = stops

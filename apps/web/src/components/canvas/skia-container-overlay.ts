@@ -8,9 +8,9 @@
  * - IOPort handles
  */
 
-import type { CanvasKit, Canvas, Paint, Surface } from "canvaskit-wasm";
-import type { PenNode, PenDocument, IOPort } from "@cucumber/pen-types";
 import type { RenderNode } from "@cucumber/pen-renderer";
+import type { IOPort, PenDocument, PenNode } from "@cucumber/pen-types";
+import type { Canvas, CanvasKit, Paint, Surface } from "canvaskit-wasm";
 
 // ---------------------------------------------------------------------------
 // Role → color mapping
@@ -35,7 +35,7 @@ const STATUS_COLORS: Record<string, string> = {
 /** Get border color for a container node based on its primary role */
 export function getContainerBorderColor(node: PenNode): string {
   const role = node.containerRole?.[0];
-  return role ? ROLE_COLORS[role] ?? "#6c5ce7" : "#6c5ce7";
+  return role ? (ROLE_COLORS[role] ?? "#6c5ce7") : "#6c5ce7";
 }
 
 /** Get status indicator color */
@@ -83,7 +83,10 @@ export function drawContainerOverlay(
   paint.setStrokeWidth(hasRole ? 2.5 / ctx.zoom : 1.5 / ctx.zoom);
   paint.setAntiAlias(true);
 
-  const rx = (node as any).cornerRadius ?? 8;
+  const rx =
+    "cornerRadius" in node && typeof node.cornerRadius === "number"
+      ? node.cornerRadius
+      : 8;
   const rect = ck.LTRBRect(absX, absY, absX + absW, absY + absH);
   const rrect = ck.RRectXY(rect, rx, rx);
   canvas.drawRRect(rrect, paint);
@@ -104,7 +107,10 @@ export function drawContainerOverlay(
     // Pulse ring for running state
     if (binding.status === "running") {
       const pulsePhase = (ctx.time % 2000) / 2000;
-      const pulseR = dotR + 4 / ctx.zoom + Math.sin(pulsePhase * Math.PI * 2) * 2 / ctx.zoom;
+      const pulseR =
+        dotR +
+        4 / ctx.zoom +
+        (Math.sin(pulsePhase * Math.PI * 2) * 2) / ctx.zoom;
       const pulseAlpha = 1 - pulsePhase;
 
       const ringPaint = new ck.Paint();
@@ -168,7 +174,13 @@ export function getPortPositions(
     const x = isInput ? absX : absX + absW;
     const offsetY = spacing * (i + 1);
     const y = absY + offsetY;
-    return { x, y, r: portR, direction: port.direction, dataType: port.dataType };
+    return {
+      x,
+      y,
+      r: portR,
+      direction: port.direction,
+      dataType: port.dataType,
+    };
   });
 }
 
@@ -181,7 +193,10 @@ export function drawIOPorts(
 ): void {
   const portVisuals = getPortPositions(renderNode, zoom);
   for (const pv of portVisuals) {
-    const color = PORT_TYPE_COLORS[pv.dataType] ?? PORT_TYPE_COLORS.any!;
+    const color = PORT_TYPE_COLORS[pv.dataType] ?? PORT_TYPE_COLORS.any;
+    if (!color) {
+      throw new Error(`Missing IO port color for data type: ${pv.dataType}`);
+    }
     const parsed = parseHexColor(ck, color);
 
     const fill = new ck.Paint();
@@ -204,8 +219,8 @@ export function drawIOPorts(
 // ---------------------------------------------------------------------------
 
 function parseHexColor(ck: CanvasKit, hex: string): Float32Array {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const r = Number.parseInt(hex.slice(1, 3), 16) / 255;
+  const g = Number.parseInt(hex.slice(3, 5), 16) / 255;
+  const b = Number.parseInt(hex.slice(5, 7), 16) / 255;
   return ck.Color4f(r, g, b, 1);
 }

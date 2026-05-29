@@ -1,4 +1,7 @@
-import type { CanvasBounds, CucumberCanvasDocument } from "@cucumber/canvas-core";
+import type {
+  CanvasBounds,
+  CucumberCanvasDocument,
+} from "@cucumber/canvas-core";
 import { flattenNodes, getNodeBounds } from "@cucumber/canvas-core";
 
 export const ALIGN_GUIDE_COLOR = "#FF6B35";
@@ -62,8 +65,8 @@ export function snapToAlignmentGuides(
     height: originBounds.height,
   };
 
-  let bestXDx = Infinity;
-  let bestYDy = Infinity;
+  let bestXDx = Number.POSITIVE_INFINITY;
+  let bestYDy = Number.POSITIVE_INFINITY;
   let bestXGuide: AlignGuide | null = null;
   let bestYGuide: AlignGuide | null = null;
 
@@ -71,14 +74,22 @@ export function snapToAlignmentGuides(
 
   for (const ref of references) {
     // X-axis alignment (vertical guides)
-    const xCandidates: Array<{ movingEdge: number; refEdge: number; label: string }> = [
+    const xCandidates: Array<{
+      movingEdge: number;
+      refEdge: number;
+      label: string;
+    }> = [
       { movingEdge: moving.left, refEdge: ref.left, label: "left" },
       { movingEdge: moving.centerX, refEdge: ref.centerX, label: "centerX" },
       { movingEdge: moving.right, refEdge: ref.right, label: "right" },
       { movingEdge: moving.left, refEdge: ref.right, label: "left-right" },
       { movingEdge: moving.right, refEdge: ref.left, label: "right-left" },
       { movingEdge: moving.centerX, refEdge: ref.left, label: "centerX-left" },
-      { movingEdge: moving.centerX, refEdge: ref.right, label: "centerX-right" },
+      {
+        movingEdge: moving.centerX,
+        refEdge: ref.right,
+        label: "centerX-right",
+      },
     ];
 
     for (const { movingEdge, refEdge } of xCandidates) {
@@ -97,14 +108,22 @@ export function snapToAlignmentGuides(
     }
 
     // Y-axis alignment (horizontal guides)
-    const yCandidates: Array<{ movingEdge: number; refEdge: number; label: string }> = [
+    const yCandidates: Array<{
+      movingEdge: number;
+      refEdge: number;
+      label: string;
+    }> = [
       { movingEdge: moving.top, refEdge: ref.top, label: "top" },
       { movingEdge: moving.centerY, refEdge: ref.centerY, label: "centerY" },
       { movingEdge: moving.bottom, refEdge: ref.bottom, label: "bottom" },
       { movingEdge: moving.top, refEdge: ref.bottom, label: "top-bottom" },
       { movingEdge: moving.bottom, refEdge: ref.top, label: "bottom-top" },
       { movingEdge: moving.centerY, refEdge: ref.top, label: "centerY-top" },
-      { movingEdge: moving.centerY, refEdge: ref.bottom, label: "centerY-bottom" },
+      {
+        movingEdge: moving.centerY,
+        refEdge: ref.bottom,
+        label: "centerY-bottom",
+      },
     ];
 
     for (const { movingEdge, refEdge } of yCandidates) {
@@ -152,7 +171,7 @@ export function snapResizeToGuides(
 
   const threshold = ALIGN_SNAP_THRESHOLD;
   let bestGuide: AlignGuide | null = null;
-  let bestDist = Infinity;
+  let bestDist = Number.POSITIVE_INFINITY;
 
   // Snap right edge
   const right = proposedBounds.x + proposedBounds.width;

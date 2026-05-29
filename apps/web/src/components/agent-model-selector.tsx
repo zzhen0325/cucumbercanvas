@@ -18,6 +18,7 @@ function ProviderLogo({ provider }: { provider: string }) {
   if (provider === "openai") {
     return (
       <svg
+        aria-hidden="true"
         className="h-3.5 w-3.5 shrink-0"
         viewBox="0 0 24 24"
         fill="currentColor"
@@ -29,6 +30,7 @@ function ProviderLogo({ provider }: { provider: string }) {
   if (provider === "google") {
     return (
       <svg
+        aria-hidden="true"
         className="h-3.5 w-3.5 shrink-0"
         viewBox="0 0 24 24"
         fill="currentColor"
@@ -62,7 +64,7 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
       })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [model, setModel]);
 
   // Close on outside click
   useEffect(() => {
@@ -139,6 +141,7 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
         } bg-transparent`}
       >
         <svg
+          aria-hidden="true"
           xmlns="http://www.w3.org/2000/svg"
           width="14"
           height="14"
@@ -179,6 +182,7 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
               <span className="flex-1 text-left">Auto (workspace default)</span>
               {!isActive && (
                 <svg
+                  aria-hidden="true"
                   className="h-3 w-3 text-accent-foreground"
                   viewBox="0 0 16 16"
                   fill="currentColor"
@@ -220,6 +224,7 @@ export function AgentModelSelector({ compact }: { compact?: boolean } = {}) {
                       <span className="flex-1 text-left">{m.name}</span>
                       {model === m.id && (
                         <svg
+                          aria-hidden="true"
                           className="h-3 w-3 text-accent-foreground"
                           viewBox="0 0 16 16"
                           fill="currentColor"

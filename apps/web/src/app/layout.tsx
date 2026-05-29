@@ -1,7 +1,7 @@
-import type { Metadata } from "next";
-import type { ReactNode } from "react";
-import { Poppins } from "next/font/google";
 import { cn } from "@/lib/utils";
+import type { Metadata } from "next";
+import { Poppins } from "next/font/google";
+import type { ReactNode } from "react";
 
 import { Providers } from "../components/providers";
 
@@ -35,7 +35,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={cn(poppins.variable, "scroll-smooth")} suppressHydrationWarning>
+    <html
+      lang="en"
+      className={cn(poppins.variable, "scroll-smooth")}
+      suppressHydrationWarning
+    >
       <body className="min-h-screen bg-background font-sans antialiased">
         <Providers>{children}</Providers>
       </body>

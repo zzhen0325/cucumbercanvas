@@ -9,6 +9,7 @@ import {
 } from "@cucumber/canvas-core";
 import { describe, expect, it } from "vitest";
 
+import type { UserSupabaseClient } from "../../supabase/user.js";
 import { createManipulateCanvasTool } from "./manipulate-canvas.js";
 
 function createContainer(id: string): PenNode {
@@ -62,7 +63,7 @@ describe("createManipulateCanvasTool", () => {
 
     const client = createClient(doc);
     const tool = createManipulateCanvasTool({
-      createUserClient: () => ({}),
+      createUserClient: () => ({}) as UserSupabaseClient,
       liveCanvasService: client.liveCanvasService as never,
     });
 
@@ -103,7 +104,7 @@ describe("createManipulateCanvasTool", () => {
   it("creates a container and lets later operations reference it by op id", async () => {
     const client = createClient(createEmptyDocument());
     const tool = createManipulateCanvasTool({
-      createUserClient: () => ({}),
+      createUserClient: () => ({}) as UserSupabaseClient,
       liveCanvasService: client.liveCanvasService as never,
     });
 

@@ -38,11 +38,7 @@ type ChatMessageProps = {
  * each independently memoized for fine-grained update control.
  */
 export const ChatMessage = React.memo(
-  function ChatMessage({
-    role,
-    contentBlocks,
-    isStreaming,
-  }: ChatMessageProps) {
+  function ChatMessage({ role, contentBlocks, isStreaming }: ChatMessageProps) {
     const isUser = role === "user";
 
     if (isUser) {
@@ -115,7 +111,7 @@ const UserMessage = React.memo(function UserMessage({
             <span className="inline">
               {mentionBlocks.map((block, idx) => (
                 <MentionPill
-                  key={idx}
+                  key={`${(block as { mentionType: string }).mentionType}-${(block as { label: string }).label}`}
                   label={(block as { label: string }).label}
                   kind={
                     (
@@ -132,12 +128,9 @@ const UserMessage = React.memo(function UserMessage({
             <span className="inline">
               {imageBlocks.map((block, idx) => (
                 <ImagePill
-                  key={idx}
+                  key={`${(block as { url: string }).url}-${(block as { name?: string }).name ?? "image"}`}
                   src={(block as { url: string }).url}
-                  name={
-                    (block as { name?: string }).name ??
-                    `image-${idx + 1}`
-                  }
+                  name={(block as { name?: string }).name ?? `image-${idx + 1}`}
                 />
               ))}
             </span>
@@ -148,7 +141,7 @@ const UserMessage = React.memo(function UserMessage({
         <div className="inline-block rounded-xl bg-muted px-3 py-2.5">
           {mentionBlocks.map((block, idx) => (
             <MentionPill
-              key={`mention-${idx}`}
+              key={`${(block as { mentionType: string }).mentionType}-${(block as { label: string }).label}`}
               label={(block as { label: string }).label}
               kind={
                 (
@@ -161,11 +154,9 @@ const UserMessage = React.memo(function UserMessage({
           ))}
           {imageBlocks.map((block, idx) => (
             <ImagePill
-              key={idx}
+              key={`${(block as { url: string }).url}-${(block as { name?: string }).name ?? "image"}`}
               src={(block as { url: string }).url}
-              name={
-                (block as { name?: string }).name ?? `image-${idx + 1}`
-              }
+              name={(block as { name?: string }).name ?? `image-${idx + 1}`}
             />
           ))}
         </div>
@@ -188,7 +179,7 @@ const AssistantMessage = React.memo(function AssistantMessage({
   // Find the last text block index for streaming cursor placement
   const lastTextIdx = useMemo(() => {
     for (let i = contentBlocks.length - 1; i >= 0; i--) {
-      if (contentBlocks[i]!.type === "text") return i;
+      if (contentBlocks[i]?.type === "text") return i;
     }
     return -1;
   }, [contentBlocks]);
@@ -235,11 +226,9 @@ const AssistantMessage = React.memo(function AssistantMessage({
         if (block.type === "thinking") {
           return (
             <ThinkingBlockView
-              key={`thinking-${idx}`}
+              key={`thinking-${block.thinking.slice(0, 64)}`}
               thinking={block.thinking}
-              isStreaming={
-                isStreaming && idx === contentBlocks.length - 1
-              }
+              isStreaming={isStreaming && idx === contentBlocks.length - 1}
             />
           );
         }
@@ -248,7 +237,7 @@ const AssistantMessage = React.memo(function AssistantMessage({
           const showCursor = isStreaming && idx === lastTextIdx;
           return (
             <MarkdownRenderer
-              key={idx}
+              key={`text-${block.text.slice(0, 64)}`}
               text={block.text}
               showCursor={showCursor}
             />
@@ -256,9 +245,7 @@ const AssistantMessage = React.memo(function AssistantMessage({
         }
 
         if (block.type === "tool") {
-          return (
-            <ToolBlockView key={block.toolCallId} block={block} />
-          );
+          return <ToolBlockView key={block.toolCallId} block={block} />;
         }
 
         // ImageBlock -- skip in assistant messages (user-side only)

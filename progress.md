@@ -1,6 +1,21 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-28 CST
+Last updated: 2026-05-29 CST
+
+## 2026-05-29
+
+- Advanced the P2.2 Figma property-panel fidelity closeout: image fills and stroke image paints expose editable crop/transform matrices, stroke paint stacks now share fill-layer controls, gradient stops can be added/removed/reordered by offset/color/opacity without degrading paint type, and focused plus constructed-fixture panel tests cover preservation of image metadata, stroke geometry, gradient types, mask/layout refs, rich text, vector diagnostics, and style/variable/component refs.
+- Advanced the P2.2 component/token/vector editability closeout: component refs now expose structured variant/component/property assignment and override rows alongside JSON escape hatches; styleRefs/variableRefs resolve against document tokens with editable token values that do not overwrite inline node visuals; vector/path nodes expose boolean diagnostics, winding metadata, and validated path `d` editing with visible Chinese error reasons.
+- Advanced the P2.2 layer-ordering validation slice: layer panel reorder semantics now match top-first rendering order for root and nested parents, Skia selection snapshots carry nested container context for hit-test synchronization, and focused canvas/layer tests cover root and nested forward/back/front/back behavior.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-property-panel.test.tsx test/canvas-layers-panel.test.tsx test/skia-canvas-selection-snapshot.test.tsx`.
+- Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/canvas-core.test.ts`.
+- Passed: `pnpm --filter @cucumber/pen-renderer exec vitest run src/node-renderer.test.ts`.
+- Passed: `pnpm --filter @cucumber/web typecheck`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm --filter @cucumber/pen-renderer typecheck`.
+- Passed: `pnpm --filter @cucumber/pen-types typecheck`.
+- Passed: focused `pnpm exec biome check` for touched web/property-panel/layer/renderer/type/status files.
+- Note: `pnpm exec biome check packages/canvas-core/src/__tests__/canvas-core.test.ts` still reports pre-existing `any` / non-null assertion diagnostics in that large legacy test file outside this slice.
 
 ## 2026-05-28
 
@@ -55,13 +70,16 @@ Last updated: 2026-05-28 CST
 - Advanced the P2.2 component-override path slice: Figma component override refs now keep structured `pathIds` arrays in addition to string paths and target IDs through both `pen-figma` and the legacy native path, preserving nested instance override identity for later editable reconnect flows.
 - Advanced the P2.2 negative-shadow-spread slice: Skia drop-shadow geometry now honors negative Figma spread values by shrinking shadow bounds with axis-safe clamping, and inner-shadow stroke width plus rounded shadow corners now use signed spread instead of treating negative values as zero.
 - Advanced the P2.2 auto-layout stretch slice: imported container-level `alignItems: "stretch"` now survives HTML/Figma fallback parsing and participates in cross-axis sizing during auto-layout reflow, so children stretch to the content box instead of silently falling back to start alignment.
+- Advanced the P2.2 layer-ordering acceptance slice: root and nested `reorderNode` now keep the Canvas API, layers panel, renderer order, and hit-testing aligned around the renderer's top-first Pen child order, with focused Web coverage for UI controls and API-driven hit-test changes.
 - Advanced the P2.2 Figma line-cap slice: imported Figma line nodes with unspecified/`NONE` caps now keep butt-cap rendering instead of inheriting the renderer's legacy round-line fallback, while non-Figma canvas lines still keep the existing rounded fallback behavior.
 - Advanced the P2.2 inspector UI fidelity slice: frame/group clip regions now carry four-corner radius and corner smoothing into the renderer flattener, and the canvas property panel exposes editable controls for stroke cap/join/dash/dash offset/four-side thickness/miter limit, clip content, four-corner radius, corner smoothing, and auto-layout stretch so Figma fidelity fields are visible and editable from the interface.
 - Advanced the P2.2 fill/blend inspector slice: the canvas property panel now exposes node-level blend mode and editable multi-fill layers with per-layer visibility, opacity, blend mode, type switching across solid/linear/radial/angular/diamond/image fills, layer reordering, image fill mode, image URL/hash/blob placeholder editing, and original image size controls.
+- Advanced the P2.2 paint-stack inspector slice: image fill and stroke image-paint layers now expose editable crop/transform matrices, gradient fill/stroke layers expose stop color/offset/opacity plus retained paint matrices, stroke paints use the same visible/opacity/blend/type/reorder/remove stack editing as fills while preserving independent stroke geometry, and renderer gradient stop opacity is now honored.
 - Advanced the P2.2 effects inspector slice: the canvas property panel now edits ordered effect stacks with add/remove/reorder, per-effect visibility, opacity, blend mode, type switching across drop shadow, inner shadow, layer blur, and background blur, plus shadow color/offset/blur/spread and blur radius controls.
 - Advanced the P2.2 transform/shape inspector slice: the canvas property panel now exposes scale/skew and full affine transform matrix editing, plus shape-specific controls for ellipse arc start/sweep/inner radius, polygon vs star settings, polygon start angle/inner radius/corner radius, line endpoints, and path fill-rule/closed state.
 - Advanced the P2.2 text inspector slice: text nodes now expose editable PostScript font identity, vertical alignment, auto-resize mode, text case, paragraph spacing, list style, indent/hanging indent, baseline shift, font fallback, OpenType feature flags, strikethrough, and styled segment controls for text, font family, PostScript name, font size, letter spacing, baseline shift, text case, and per-segment fill.
 - Advanced the P2.2 layout/reference inspector slice: the canvas property panel now exposes sizing modes, child positioning, self alignment, grow, layout clipping, four-side auto-layout padding, group isolation, node masks, style refs, variable refs, and component identity/variant/property/override metadata so preserved Figma editability fields are visible in the UI.
+- Advanced the P2.2 component-override inspector slice: component refs now have structured editors for variant properties, component properties, property assignments, and override rows with path, pathIds, targetId, properties, and JSON values, while retaining the existing JSON advanced-edit escape hatch for bulk edits.
 
 ## 2026-05-27
 

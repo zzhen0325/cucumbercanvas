@@ -387,7 +387,10 @@ export function computeLayoutPositions(
   }
 
   const positioned = layoutChildren.map((child, i) => {
-    const size = sizes[i]!;
+    const size = sizes[i];
+    if (!size) {
+      throw new Error(`Missing computed layout size for child ${child.id}`);
+    }
     const crossAvail = isVertical ? availW : availH;
     const childCross = isVertical ? size.w : size.h;
     let crossPos = 0;

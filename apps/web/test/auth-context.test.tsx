@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 import { render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockOnAuthStateChange, mockGetSession, mockSignOut } = vi.hoisted(() => ({
-  mockOnAuthStateChange: vi.fn(),
-  mockGetSession: vi.fn(),
-  mockSignOut: vi.fn(),
-}));
+const { mockOnAuthStateChange, mockGetSession, mockSignOut } = vi.hoisted(
+  () => ({
+    mockOnAuthStateChange: vi.fn(),
+    mockGetSession: vi.fn(),
+    mockSignOut: vi.fn(),
+  }),
+);
 
 vi.mock("../src/lib/supabase-browser", () => ({
   getSupabaseBrowserClient: vi.fn(() => ({
@@ -31,7 +33,6 @@ function TestConsumer() {
 }
 
 describe("AuthProvider", () => {
-
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetSession.mockResolvedValue({

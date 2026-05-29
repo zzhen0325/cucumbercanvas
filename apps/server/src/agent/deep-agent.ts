@@ -15,6 +15,7 @@ import {
   type ServerEnv,
 } from "../config/env.js";
 import type { LiveCanvasService } from "../features/canvas/live-canvas-service.js";
+import type { UserSupabaseClient } from "../supabase/user.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import {
   type AgentBackendResult,
@@ -47,7 +48,7 @@ export type CucumberAgentFactory = (options: {
   canvasId?: string;
   checkpointer?: BaseCheckpointSaver;
   connectionManager?: ConnectionManager;
-  createUserClient?: (accessToken: string) => unknown;
+  createUserClient?: (accessToken: string) => UserSupabaseClient;
   env: ServerEnv;
   liveCanvasService?: LiveCanvasService;
   model?: BaseLanguageModel | string;
@@ -65,7 +66,7 @@ export function createCucumberDeepAgent(options: {
   canvasId?: string;
   checkpointer?: BaseCheckpointSaver;
   connectionManager?: ConnectionManager;
-  createUserClient?: (accessToken: string) => unknown;
+  createUserClient?: (accessToken: string) => UserSupabaseClient;
   env: ServerEnv;
   liveCanvasService?: LiveCanvasService;
   model?: BaseLanguageModel | string;
@@ -87,7 +88,7 @@ export function createCucumberDeepAgent(options: {
       ? createStreamingChatModel(modelSpec)
       : modelSpec;
 
-  const createUserClient =
+  const createUserClient: (accessToken: string) => UserSupabaseClient =
     options.createUserClient ??
     ((_accessToken: string): never => {
       throw new Error(

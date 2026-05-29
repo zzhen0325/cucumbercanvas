@@ -12,6 +12,7 @@ import type { SVGProps } from "react";
 export function CucumberLogo(props: SVGProps<SVGSVGElement>) {
   return (
     <svg
+      aria-hidden="true"
       viewBox="0 0 100 100"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
@@ -46,6 +47,7 @@ export function CucumberLogo(props: SVGProps<SVGSVGElement>) {
 export function CucumberLogoInverted(props: SVGProps<SVGSVGElement>) {
   return (
     <svg
+      aria-hidden="true"
       viewBox="0 0 100 100"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"

@@ -7,7 +7,7 @@ import {
   jsonEqual,
   nodeFieldsEqual,
   stripChildren,
-} from "../merge/merge-helpers";
+} from "../merge/merge-helpers.js";
 
 const rect = (id: string, props: Partial<PenNode> = {}): PenNode =>
   ({

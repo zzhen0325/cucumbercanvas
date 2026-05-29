@@ -48,7 +48,7 @@ export const MessageList = React.memo(function MessageList({
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, scrollToBottom]);
+  });
 
   return (
     <ErrorBoundary

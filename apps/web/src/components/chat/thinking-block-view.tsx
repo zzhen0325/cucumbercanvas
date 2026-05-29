@@ -45,11 +45,12 @@ export const ThinkingBlockView = React.memo(function ThinkingBlockView({
             animate={{ opacity: [0.5, 1, 0.5] }}
             transition={{
               duration: 1.5,
-              repeat: Infinity,
+              repeat: Number.POSITIVE_INFINITY,
               ease: "easeInOut",
             }}
           >
             <svg
+              aria-hidden="true"
               width="12"
               height="12"
               viewBox="0 0 14 14"
@@ -63,6 +64,7 @@ export const ThinkingBlockView = React.memo(function ThinkingBlockView({
         ) : (
           <>
             <motion.svg
+              aria-hidden="true"
               width="12"
               height="12"
               viewBox="0 0 12 12"

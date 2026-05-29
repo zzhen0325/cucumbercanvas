@@ -42,8 +42,8 @@ export function buildEllipseArcPath(
         `M${f(ox1)} ${f(oy1)}`,
         `A${f(rx)} ${f(ry)} 0 1 1 ${f(omx)} ${f(omy)}`,
         `A${f(rx)} ${f(ry)} 0 1 1 ${f(ox1)} ${f(oy1)}`,
-        'Z',
-      ].join(' ');
+        "Z",
+      ].join(" ");
     }
 
     const irx = rx * inner;
@@ -59,8 +59,8 @@ export function buildEllipseArcPath(
       `L${f(ix1)} ${f(iy1)}`,
       `A${f(irx)} ${f(iry)} 0 1 0 ${f(imx)} ${f(imy)}`,
       `A${f(irx)} ${f(iry)} 0 1 0 ${f(ix1)} ${f(iy1)}`,
-      'Z',
-    ].join(' ');
+      "Z",
+    ].join(" ");
   }
 
   if (inner <= 0.001) {
@@ -80,8 +80,8 @@ export function buildEllipseArcPath(
     `A${f(rx)} ${f(ry)} 0 ${large} 1 ${f(ox2)} ${f(oy2)}`,
     `L${f(ix2)} ${f(iy2)}`,
     `A${f(irx)} ${f(iry)} 0 ${large} 0 ${f(ix1)} ${f(iy1)}`,
-    'Z',
-  ].join(' ');
+    "Z",
+  ].join(" ");
 }
 
 /** True when the arc parameters describe something other than a plain full ellipse. */
@@ -96,5 +96,5 @@ export function isArcEllipse(
 }
 
 function f(n: number): string {
-  return Math.abs(n) < 0.005 ? '0' : parseFloat(n.toFixed(2)).toString();
+  return Math.abs(n) < 0.005 ? "0" : Number.parseFloat(n.toFixed(2)).toString();
 }

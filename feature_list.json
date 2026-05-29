@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-28T20:25:22+08:00",
+  "updatedAt": "2026-05-29T09:24:32+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -107,7 +107,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "product-engineering",
-      "summary": "Cucumber canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit behind a standalone CanvasApi contract, PenDocument.pages is the only supported durable shape, legacy flat-map/root-children data fails fast, and paste/batch drag-drop import, edit, and export flows produce editable PenNode trees with high-fidelity Figma layer/fill/stroke cap/effect spread/style/PostScript-aware text/layout stretch/transform/shape/mask/component override-path metadata plus matching property-panel controls for layered fills, blend modes, ordered effects, strokes, transforms, text fidelity, layout constraints, masks, style refs, variable refs, component refs, clipping, and shape details, with explicit degradation warnings.",
+      "summary": "Cucumber canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit behind a standalone CanvasApi contract, PenDocument.pages is the only supported durable shape, legacy flat-map/root-children data fails fast, and paste/batch drag-drop import, edit, and export flows produce editable PenNode trees with high-fidelity Figma layer ordering/fill/stroke cap/effect spread/style/PostScript-aware text/layout stretch/transform/shape/mask/component override-path metadata plus matching property-panel controls for layered fills and strokes, image crop matrices, gradient stops, blend modes, ordered effects, transforms, text fidelity, layout constraints, masks, editable style refs, editable variable refs, structured component refs/overrides, vector/path diagnostics, validated path editing, clipping, shape details, visible validation errors, and root/nested layer-ordering verification, with explicit degradation warnings.",
       "artifacts": [
         "packages/canvas-core",
         "packages/pen-figma",

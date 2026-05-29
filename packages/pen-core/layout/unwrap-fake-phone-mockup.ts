@@ -1,4 +1,4 @@
-import type { PenNode } from '@cucumber/pen-types';
+import type { PenNode } from "@cucumber/pen-types";
 
 /**
  * Detect and repair "fake phone mockup" frames — frames that look like a
@@ -42,7 +42,7 @@ export function unwrapFakePhoneMockups(node: PenNode): boolean {
     changed = true;
   }
 
-  if (!('children' in node) || !Array.isArray(node.children)) return changed;
+  if (!("children" in node) || !Array.isArray(node.children)) return changed;
 
   // Mode (1): drop fake wrappers among the children, promote their content.
   const newChildren: PenNode[] = [];
@@ -50,7 +50,9 @@ export function unwrapFakePhoneMockups(node: PenNode): boolean {
   for (const child of node.children) {
     if (isFakePhoneMockup(child)) {
       const grandchildren =
-        ('children' in child && Array.isArray(child.children) ? child.children : []) ?? [];
+        ("children" in child && Array.isArray(child.children)
+          ? child.children
+          : []) ?? [];
       for (const gc of grandchildren) newChildren.push(gc);
       unwrappedAnyChild = true;
     } else {
@@ -84,41 +86,45 @@ function sanitizeFakePhoneMockupRoot(node: PenNode): void {
     cornerRadius?: unknown;
     width?: unknown;
     height?: unknown;
-    layout?: 'none' | 'vertical' | 'horizontal';
+    layout?: "none" | "vertical" | "horizontal";
     fill?: unknown;
   };
   // Drop misleading visuals
-  delete rec.cornerRadius;
+  rec.cornerRadius = undefined;
   // Restore a sensible container width — fill_container lets the parent's
   // layout decide actual width instead of locking us at 260px.
-  rec.width = 'fill_container';
+  rec.width = "fill_container";
   // Drop the fixed bezel height; let content drive intrinsic height.
-  rec.height = 'fit_content';
+  rec.height = "fit_content";
   // Force vertical so children stack instead of getting compressed
   // horizontally inside a fake bezel.
-  rec.layout = 'vertical';
+  rec.layout = "vertical";
   // Clear the misleading "Phone Mockup" name so downstream role inference
   // doesn't act on it.
-  if (typeof rec.name === 'string' && /phone\s*mockup|app\s*mockup/i.test(rec.name)) {
-    rec.name = 'Section';
+  if (
+    typeof rec.name === "string" &&
+    /phone\s*mockup|app\s*mockup/i.test(rec.name)
+  ) {
+    rec.name = "Section";
   }
 }
 
 function isFakePhoneMockup(node: PenNode): boolean {
-  if (node.type !== 'frame') return false;
-  if (!('children' in node) || !Array.isArray(node.children)) return false;
+  if (node.type !== "frame") return false;
+  if (!("children" in node) || !Array.isArray(node.children)) return false;
 
   // Detection signal #1: literal name match. Models often copy the prompt's
   // wording verbatim into the node name.
-  const name = (node.name ?? '').toLowerCase();
-  const hasPhoneName = /phone\s*mockup|app\s*mockup|手机\s*样机|手机\s*模型|device\s*frame/.test(
-    name,
-  );
+  const name = (node.name ?? "").toLowerCase();
+  const hasPhoneName =
+    /phone\s*mockup|app\s*mockup|手机\s*样机|手机\s*模型|device\s*frame/.test(
+      name,
+    );
 
   // Detection signal #2: visual signature. The combination of large radius
   // (>= 28) and narrow width (240-320) is the classic phone bezel.
   const cornerR = readCornerRadius(node);
-  const widthNum = typeof node.width === 'number' ? node.width : null;
+  const widthNum = typeof node.width === "number" ? node.width : null;
   const hasPhoneShape =
     cornerR != null &&
     cornerR >= 28 &&
@@ -135,13 +141,15 @@ function isFakePhoneMockup(node: PenNode): boolean {
   const childCount = node.children.length;
   const layout = (node as PenNode & { layout?: string }).layout;
   const tooManyChildren = childCount > 1;
-  const wrongLayout = layout === 'horizontal' || layout === 'vertical';
+  const wrongLayout = layout === "horizontal" || layout === "vertical";
   return tooManyChildren || wrongLayout;
 }
 
 function readCornerRadius(node: PenNode): number | null {
-  const cr = (node as PenNode & { cornerRadius?: number | number[] }).cornerRadius;
-  if (typeof cr === 'number') return cr;
-  if (Array.isArray(cr) && cr.length > 0 && typeof cr[0] === 'number') return cr[0];
+  const cr = (node as PenNode & { cornerRadius?: number | number[] })
+    .cornerRadius;
+  if (typeof cr === "number") return cr;
+  if (Array.isArray(cr) && cr.length > 0 && typeof cr[0] === "number")
+    return cr[0];
   return null;
 }

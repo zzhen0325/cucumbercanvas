@@ -1,8 +1,13 @@
-import type { PenDocument, PenNode } from '@cucumber/pen-types';
-import type { CanvasAsset } from './types.js';
-import { CanvasOperationError } from './context.js';
-import { cloneDocument, createNodeId, findNode, findParent } from './document.js';
-import { applyCanvasOperation } from './operations.js';
+import type { PenDocument, PenNode } from "@cucumber/pen-types";
+import { CanvasOperationError } from "./context.js";
+import {
+  cloneDocument,
+  createNodeId,
+  findNode,
+  findParent,
+} from "./document.js";
+import { applyCanvasOperation } from "./operations.js";
+import type { CanvasAsset } from "./types.js";
 
 export interface CanvasClipboardData {
   nodes: PenNode[];
@@ -16,7 +21,10 @@ export interface PasteCanvasClipboardResult {
   pastedIds: string[];
 }
 
-export function copyCanvasSelection(doc: PenDocument, nodeIds: string[]): CanvasClipboardData {
+export function copyCanvasSelection(
+  doc: PenDocument,
+  nodeIds: string[],
+): CanvasClipboardData {
   const nodes: PenNode[] = [];
   const assets: CanvasAsset[] = [];
   const visited = new Set<string>();
@@ -26,10 +34,13 @@ export function copyCanvasSelection(doc: PenDocument, nodeIds: string[]): Canvas
     visited.add(nodeId);
     const node = findNode(doc, nodeId);
     if (!node) {
-      throw new CanvasOperationError('node_not_found', `Node ${nodeId} does not exist.`);
+      throw new CanvasOperationError(
+        "node_not_found",
+        `Node ${nodeId} does not exist.`,
+      );
     }
     nodes.push(structuredClone(node));
-    if ('children' in node && Array.isArray(node.children)) {
+    if ("children" in node && Array.isArray(node.children)) {
       for (const child of node.children as PenNode[]) {
         collect(child.id);
       }
@@ -45,7 +56,9 @@ export function duplicateCanvasNodes(
   nodeIds: string[],
   offset = 16,
 ): PasteCanvasClipboardResult {
-  return pasteCanvasClipboard(doc, copyCanvasSelection(doc, nodeIds), { offset });
+  return pasteCanvasClipboard(doc, copyCanvasSelection(doc, nodeIds), {
+    offset,
+  });
 }
 
 /**
@@ -77,7 +90,7 @@ export function pasteCanvasClipboard(
     const clone = remapNodeTree(original, offset, 0);
     pastedIds.push(clone.id);
     next = applyCanvasOperation(next, {
-      type: 'insertNode',
+      type: "insertNode",
       node: clone,
       parentId: targetParentId,
     });
@@ -96,7 +109,7 @@ function remapNodeTree(node: PenNode, offset: number, depth: number): PenNode {
   }
   clone.name = node.name ? `${node.name} copy` : node.name;
 
-  if ('children' in clone && Array.isArray(clone.children)) {
+  if ("children" in clone && Array.isArray(clone.children)) {
     clone.children = (clone.children as PenNode[]).map((child) =>
       remapNodeTree(child, offset, depth + 1),
     );

@@ -14,6 +14,7 @@ type SessionSelectorProps = {
 function HistoryIcon({ className }: { className?: string }) {
   return (
     <svg
+      aria-hidden="true"
       className={className}
       viewBox="0 0 24 24"
       fill="none"
@@ -31,7 +32,12 @@ function HistoryIcon({ className }: { className?: string }) {
 
 function NewChatIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <svg
+      aria-hidden="true"
+      className={className}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+    >
       <path
         fillOpacity={0.9}
         d="M18.25 3A3.75 3.75 0 0 1 22 6.75v9a3.75 3.75 0 0 1-3.75 3.75h-2.874a.25.25 0 0 0-.16.058l-2.098 1.738a1.75 1.75 0 0 1-2.24-.007l-2.065-1.73a.25.25 0 0 0-.162-.059H5.75A3.75 3.75 0 0 1 2 15.75v-9A3.75 3.75 0 0 1 5.75 3zM5.75 4.5A2.25 2.25 0 0 0 3.5 6.75v9A2.25 2.25 0 0 0 5.75 18h2.901c.412 0 .81.145 1.125.41l2.065 1.73a.25.25 0 0 0 .32 0l2.099-1.738A1.75 1.75 0 0 1 15.376 18h2.874a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25zm6.25 3a.75.75 0 0 1 .75.75v2.25H15a.75.75 0 0 1 0 1.5h-2.25v2.25a.75.75 0 0 1-1.5 0V12H9a.75.75 0 0 1 0-1.5h2.25V8.25A.75.75 0 0 1 12 7.5"
@@ -42,7 +48,12 @@ function NewChatIcon({ className }: { className?: string }) {
 
 function TrashIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 16 16" fill="currentColor">
+    <svg
+      aria-hidden="true"
+      className={className}
+      viewBox="0 0 16 16"
+      fill="currentColor"
+    >
       <path d="M5.75 2.5a.75.75 0 0 0-.75.75V4H2.5a.5.5 0 0 0 0 1h.614l.573 7.454A1.75 1.75 0 0 0 5.435 14h5.13a1.75 1.75 0 0 0 1.748-1.546L12.886 5h.614a.5.5 0 0 0 0-1H11v-.75a.75.75 0 0 0-.75-.75h-4.5ZM10 4H6v-.75a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25V4Z" />
     </svg>
   );
@@ -50,7 +61,14 @@ function TrashIcon({ className }: { className?: string }) {
 
 function SearchIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5}>
+    <svg
+      aria-hidden="true"
+      className={className}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+    >
       <circle cx="7" cy="7" r="4.5" />
       <path d="m10.5 10.5 3 3" strokeLinecap="round" />
     </svg>
@@ -71,7 +89,9 @@ export function SessionSelector({
   const panelRef = useRef<HTMLDivElement>(null);
 
   const filtered = search.trim()
-    ? sessions.filter((s) => s.title.toLowerCase().includes(search.toLowerCase()))
+    ? sessions.filter((s) =>
+        s.title.toLowerCase().includes(search.toLowerCase()),
+      )
     : sessions;
 
   // Close panel on outside click
@@ -124,6 +144,7 @@ export function SessionSelector({
             {activeSession?.title ?? "History"}
           </span>
           <svg
+            aria-hidden="true"
             className={`h-3 w-3 opacity-50 transition-transform ${open ? "rotate-180" : ""}`}
             viewBox="0 0 16 16"
             fill="currentColor"
@@ -136,7 +157,9 @@ export function SessionSelector({
           <div className="absolute left-0 top-full mt-1.5 z-50 w-[260px] rounded-lg border border-border bg-popover shadow-lg overflow-hidden">
             {/* Header */}
             <div className="px-3 pt-3 pb-2">
-              <p className="text-xs font-medium text-foreground mb-2">历史对话</p>
+              <p className="text-xs font-medium text-foreground mb-2">
+                历史对话
+              </p>
               {/* Search */}
               <div className="relative">
                 <SearchIcon className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70" />
@@ -160,8 +183,6 @@ export function SessionSelector({
               {filtered.map((s) => (
                 <div
                   key={s.id}
-                  role="button"
-                  tabIndex={0}
                   className={`group flex items-center justify-between gap-1 rounded-md px-2 py-1.5 text-xs cursor-pointer transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
                     s.id === activeSessionId
                       ? "bg-muted text-foreground font-medium"
@@ -171,7 +192,10 @@ export function SessionSelector({
                     if (confirmingId !== s.id) handleSelect(s.id);
                   }}
                   onKeyDown={(e) => {
-                    if ((e.key === "Enter" || e.key === " ") && confirmingId !== s.id) {
+                    if (
+                      (e.key === "Enter" || e.key === " ") &&
+                      confirmingId !== s.id
+                    ) {
                       e.preventDefault();
                       handleSelect(s.id);
                     }

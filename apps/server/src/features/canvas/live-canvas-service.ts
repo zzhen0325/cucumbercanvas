@@ -1,7 +1,7 @@
 import {
   type CucumberCanvasDocument,
-  isCucumberCanvasDocument,
   flattenNodes,
+  isCucumberCanvasDocument,
 } from "@cucumber/canvas-core";
 
 import type {

@@ -1,18 +1,24 @@
-import type { PenDocument, PenNode, ContextSlots } from '@cucumber/pen-types';
-import type { AgentContext, NodeSummary } from './types.js';
-import { findNode, findParent, flattenNodes, getNodeBounds, isBoundsInside } from './document.js';
+import type { ContextSlots, PenDocument, PenNode } from "@cucumber/pen-types";
+import {
+  findNode,
+  findParent,
+  flattenNodes,
+  getNodeBounds,
+  isBoundsInside,
+} from "./document.js";
+import type { AgentContext, NodeSummary } from "./types.js";
 
 export class CanvasOperationError extends Error {
   readonly code:
-    | 'container_not_found'
-    | 'node_not_found'
-    | 'permission_denied'
-    | 'bounds_violation'
-    | 'invalid_operation';
+    | "container_not_found"
+    | "node_not_found"
+    | "permission_denied"
+    | "bounds_violation"
+    | "invalid_operation";
 
-  constructor(code: CanvasOperationError['code'], message: string) {
+  constructor(code: CanvasOperationError["code"], message: string) {
     super(message);
-    this.name = 'CanvasOperationError';
+    this.name = "CanvasOperationError";
     this.code = code;
   }
 }
@@ -20,7 +26,7 @@ export class CanvasOperationError extends Error {
 /** Check if a PenNode has container capabilities (Frame/Group with children) */
 export function isContainerNode(node: PenNode | undefined): node is PenNode {
   if (!node) return false;
-  return node.type === 'frame' || node.type === 'group';
+  return node.type === "frame" || node.type === "group";
 }
 
 /** Check if a PenNode acts as an agent container */
@@ -30,7 +36,10 @@ export function isAgentContainer(node: PenNode | undefined): node is PenNode {
 }
 
 /** Walk up the tree from containerId to root, returning the path */
-export function getContainerPath(doc: PenDocument, containerId: string): string[] {
+export function getContainerPath(
+  doc: PenDocument,
+  containerId: string,
+): string[] {
   const path: string[] = [];
   let current = findNode(doc, containerId);
   while (current) {
@@ -41,7 +50,10 @@ export function getContainerPath(doc: PenDocument, containerId: string): string[
 }
 
 /** Resolve effective context slots by walking ancestor chain with inherit policies */
-export function resolveContext(doc: PenDocument, containerId: string): ContextSlots {
+export function resolveContext(
+  doc: PenDocument,
+  containerId: string,
+): ContextSlots {
   const chain = getContainerPath(doc, containerId)
     .map((id) => findNode(doc, id))
     .filter(isAgentContainer);
@@ -50,10 +62,10 @@ export function resolveContext(doc: PenDocument, containerId: string): ContextSl
   for (const node of chain) {
     const slots = node.contextSlots ?? {};
     switch (node.inheritPolicy) {
-      case 'block':
+      case "block":
         acc = blockSlots(acc, slots);
         break;
-      case 'override':
+      case "override":
         acc = { ...acc, ...slots };
         break;
       default:
@@ -72,7 +84,7 @@ export function buildAgentContext(args: {
   const container = findNode(args.doc, args.containerId);
   if (!isAgentContainer(container)) {
     throw new CanvasOperationError(
-      'container_not_found',
+      "container_not_found",
       `Container ${args.containerId} does not exist or has no container role.`,
     );
   }
@@ -94,16 +106,14 @@ export function buildAgentContext(args: {
         title: n.name,
         bounds: getNodeBounds(n),
       })),
-    permissions: container.agentBinding?.permissions ?? ['read'],
+    permissions: container.agentBinding?.permissions ?? ["read"],
     siblings: allNodes
-      .filter(
-        (n): boolean => {
-          if (!isAgentContainer(n)) return false;
-          const p = findParent(args.doc, n.id);
-          const cp = findParent(args.doc, container.id);
-          return p?.id === cp?.id && n.id !== container.id;
-        },
-      )
+      .filter((n): boolean => {
+        if (!isAgentContainer(n)) return false;
+        const p = findParent(args.doc, n.id);
+        const cp = findParent(args.doc, container.id);
+        return p?.id === cp?.id && n.id !== container.id;
+      })
       .map((n) => ({
         containerId: n.id,
         agentId: n.agentBinding?.agentId,
@@ -117,7 +127,10 @@ function mergeSlots(base: ContextSlots, overlay: ContextSlots): ContextSlots {
     style: { ...(base.style ?? {}), ...(overlay.style ?? {}) },
     tokens: { ...(base.tokens ?? {}), ...(overlay.tokens ?? {}) },
     rules: [...(base.rules ?? []), ...(overlay.rules ?? [])],
-    constraints: { ...(base.constraints ?? {}), ...(overlay.constraints ?? {}) },
+    constraints: {
+      ...(base.constraints ?? {}),
+      ...(overlay.constraints ?? {}),
+    },
   };
 }
 

@@ -47,7 +47,15 @@ export async function fetchAsBase64(
         `Invalid data URI format: ${url.slice(0, 80)}`,
       );
     }
-    return { mimeType: match[1]!, data: match[2]! };
+    const [, mimeType, data] = match;
+    if (!mimeType || !data) {
+      throw new GenerationError(
+        providerName,
+        "input_fetch_error",
+        `Invalid data URI payload: ${url.slice(0, 80)}`,
+      );
+    }
+    return { mimeType, data };
   }
 
   // HTTP(S) URL — fetch and convert.
@@ -72,7 +80,8 @@ export async function fetchAsBase64(
 
   const buffer = await response.arrayBuffer();
   const data = Buffer.from(buffer).toString("base64");
-  const mimeType = response.headers.get("content-type") ?? "application/octet-stream";
+  const mimeType =
+    response.headers.get("content-type") ?? "application/octet-stream";
 
   return { data, mimeType };
 }
