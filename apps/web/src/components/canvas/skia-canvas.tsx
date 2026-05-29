@@ -576,6 +576,67 @@ function getFirstSolidFillColor(node: PenNode, fallback = "#111827"): string {
     : fallback;
 }
 
+function createCanvasApiFacade(getLiveApi: () => CanvasApi): CanvasApi {
+  return {
+    getDocument: () => getLiveApi().getDocument(),
+    setDocument: (doc) => getLiveApi().setDocument(doc),
+    getActivePageId: () => getLiveApi().getActivePageId(),
+    setActivePage: (pageId) => getLiveApi().setActivePage(pageId),
+    getPages: () => getLiveApi().getPages(),
+    addPage: (name) => getLiveApi().addPage(name),
+    renamePage: (pageId, name) => getLiveApi().renamePage(pageId, name),
+    duplicatePage: (pageId) => getLiveApi().duplicatePage(pageId),
+    deletePage: (pageId) => getLiveApi().deletePage(pageId),
+    reorderPage: (pageId, direction) =>
+      getLiveApi().reorderPage(pageId, direction),
+    applyBooleanOperation: (operation) =>
+      getLiveApi().applyBooleanOperation(operation),
+    getActiveTool: () => getLiveApi().getActiveTool(),
+    setActiveTool: (tool) => getLiveApi().setActiveTool(tool),
+    createContainer: (opts) => getLiveApi().createContainer(opts),
+    insertNode: (node, containerId) =>
+      getLiveApi().insertNode(node, containerId),
+    updateNode: (nodeId, updates) => getLiveApi().updateNode(nodeId, updates),
+    deleteNode: (nodeId) => getLiveApi().deleteNode(nodeId),
+    bindAgentToContainer: (containerId, binding) =>
+      getLiveApi().bindAgentToContainer(containerId, binding),
+    setSelection: (nodeIds) => getLiveApi().setSelection(nodeIds),
+    flushPendingSave: () => getLiveApi().flushPendingSave(),
+    exportImage: (opts) => getLiveApi().exportImage(opts),
+    getViewportBounds: () => getLiveApi().getViewportBounds(),
+    getSceneElements: () => getLiveApi().getSceneElements(),
+    getFiles: () => getLiveApi().getFiles(),
+    getAppState: () => getLiveApi().getAppState(),
+    updateScene: (scene) => getLiveApi().updateScene(scene),
+    addFiles: (files) => getLiveApi().addFiles(files),
+    onChange: (listener) => getLiveApi().onChange(listener),
+    scrollToContent: () => getLiveApi().scrollToContent(),
+    undo: () => getLiveApi().undo(),
+    redo: () => getLiveApi().redo(),
+    canUndo: () => getLiveApi().canUndo(),
+    canRedo: () => getLiveApi().canRedo(),
+    copySelection: () => getLiveApi().copySelection(),
+    pasteClipboard: () => getLiveApi().pasteClipboard(),
+    duplicateSelection: () => getLiveApi().duplicateSelection(),
+    deleteSelection: () => getLiveApi().deleteSelection(),
+    groupSelection: () => getLiveApi().groupSelection(),
+    ungroupSelection: () => getLiveApi().ungroupSelection(),
+    alignSelection: (alignment) => getLiveApi().alignSelection(alignment),
+    reorderNode: (nodeId, direction) =>
+      getLiveApi().reorderNode(nodeId, direction),
+    moveNodeToIndex: (nodeId, targetParentId, targetIndex) =>
+      getLiveApi().moveNodeToIndex(nodeId, targetParentId, targetIndex),
+    toggleNodeLocked: (nodeId) => getLiveApi().toggleNodeLocked(nodeId),
+    toggleNodeVisible: (nodeId) => getLiveApi().toggleNodeVisible(nodeId),
+    pasteFromSystemClipboard: () => getLiveApi().pasteFromSystemClipboard(),
+    importSvgMarkup: (svgMarkup) => getLiveApi().importSvgMarkup(svgMarkup),
+    insertImageArtifact: (artifact) =>
+      getLiveApi().insertImageArtifact(artifact),
+    insertVideoArtifact: (artifact) =>
+      getLiveApi().insertVideoArtifact(artifact),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // SkiaCanvas
 // ---------------------------------------------------------------------------
@@ -599,10 +660,13 @@ export const SkiaCanvas = memo(
     },
     ref,
   ) {
+    const canvasRootRef = useRef<HTMLDivElement>(null);
     const canvasContainerRef = useRef<HTMLDivElement>(null);
     const canvasElRef = useRef<HTMLCanvasElement | null>(null);
     const ckRef = useRef<CanvasKit | null>(null);
     const rendererRef = useRef<PenRenderer | null>(null);
+    const liveApiRef = useRef<CanvasApi | null>(null);
+    const apiReadyNotifiedRef = useRef(false);
     const [ckReady, setCkReady] = useState(false);
     const [ckError, setCkError] = useState<string | null>(null);
 
@@ -1065,9 +1129,9 @@ export const SkiaCanvas = memo(
     // -----------------------------------------------------------------------
 
     const handleWheel = useCallback(
-      (event: React.WheelEvent<HTMLDivElement>) => {
+      (event: WheelEvent) => {
         if (!event.ctrlKey && !event.metaKey) return;
-        event.preventDefault();
+        if (event.cancelable) event.preventDefault();
         const renderer = rendererRef.current;
         if (!renderer) return;
         const vp = renderer.getViewport();
@@ -1081,6 +1145,15 @@ export const SkiaCanvas = memo(
       },
       [scheduleRendererIdle],
     );
+
+    useEffect(() => {
+      const root = canvasRootRef.current;
+      if (!root) return;
+      root.addEventListener("wheel", handleWheel, { passive: false });
+      return () => {
+        root.removeEventListener("wheel", handleWheel);
+      };
+    }, [handleWheel]);
 
     const beginTextEdit = useCallback(
       (node: PenNode, opts?: { isNew?: boolean; bounds?: CanvasBounds }) => {
@@ -3294,11 +3367,26 @@ export const SkiaCanvas = memo(
       ],
     );
 
-    useImperativeHandle(ref, () => api, [api]);
+    liveApiRef.current = api;
+
+    const stableApi = useMemo<CanvasApi>(() => {
+      const getLiveApi = () => {
+        const liveApi = liveApiRef.current;
+        if (!liveApi) {
+          throw new Error("Canvas API is not ready yet.");
+        }
+        return liveApi;
+      };
+      return createCanvasApiFacade(getLiveApi);
+    }, []);
+
+    useImperativeHandle(ref, () => stableApi, [stableApi]);
 
     useEffect(() => {
-      onApiReady?.(api);
-    }, [api, onApiReady]);
+      if (!onApiReady || apiReadyNotifiedRef.current) return;
+      apiReadyNotifiedRef.current = true;
+      onApiReady(stableApi);
+    }, [onApiReady, stableApi]);
 
     useCanvasKeyboardShortcuts({
       undo: api.undo,
@@ -3498,10 +3586,10 @@ export const SkiaCanvas = memo(
 
     return (
       <div
+        ref={canvasRootRef}
         className={`relative h-full w-full overflow-hidden ${cursorClass}`}
         style={{ backgroundColor: "#ffffff" }}
         onClick={handleCanvasClick}
-        onWheel={handleWheel}
         onKeyDown={() => undefined}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}

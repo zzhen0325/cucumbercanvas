@@ -2,6 +2,8 @@ import type { CanvasKit, Image as SkImage } from "canvaskit-wasm";
 
 const MAX_IMAGE_DIMENSION = 2048;
 const IMAGE_LOD_SIZES = [512, 1024, 2048] as const;
+const DATA_URL_CACHE_KEY_PREFIX = "data-url:";
+const DATA_URL_HASH_SEED = 0x811c9dc5;
 
 export interface ResolvedImageSource {
   cacheKey: string;
@@ -35,7 +37,7 @@ export class SkiaImageLoader {
   private status = new Map<string, ImageLoadStatus>();
   private onLoaded: (() => void) | null = null;
   private sourceResolver: (src: string) => ResolvedImageSource = (src) => ({
-    cacheKey: src,
+    cacheKey: createImageCacheKey(src),
     loadUrl: src,
   });
 
@@ -271,6 +273,31 @@ export class SkiaImageLoader {
       scale,
     };
   }
+}
+
+export function createImageCacheKey(src: string): string {
+  if (!isBase64DataUrl(src)) return src;
+  const commaIndex = src.indexOf(",");
+  const metadata = src.slice(5, commaIndex);
+  const mimeType = metadata.split(";")[0] || "application/octet-stream";
+  const payload = src.slice(commaIndex + 1);
+  return `${DATA_URL_CACHE_KEY_PREFIX}${mimeType}:${payload.length}:${hashString(payload)}`;
+}
+
+function isBase64DataUrl(src: string): boolean {
+  if (!src.startsWith("data:")) return false;
+  const commaIndex = src.indexOf(",");
+  if (commaIndex < 0) return false;
+  return src.slice(5, commaIndex).toLowerCase().split(";").includes("base64");
+}
+
+function hashString(value: string): string {
+  let hash = DATA_URL_HASH_SEED;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
 }
 
 export function chooseImageLodSize(request: ImageDisplayRequest): number {

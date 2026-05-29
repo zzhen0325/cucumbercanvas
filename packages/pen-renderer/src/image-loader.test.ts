@@ -1,5 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { chooseImageLodSize } from "./image-loader.js";
+import { chooseImageLodSize, createImageCacheKey } from "./image-loader.js";
+
+describe("createImageCacheKey", () => {
+  it("keeps normal URLs unchanged", () => {
+    const url = "https://example.com/assets/photo.png";
+    expect(createImageCacheKey(url)).toBe(url);
+  });
+
+  it("shortens base64 data URLs without retaining the payload", () => {
+    const dataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB";
+    const cacheKey = createImageCacheKey(dataUrl);
+
+    expect(cacheKey).toMatch(/^data-url:image\/png:\d+:[a-z0-9]+$/);
+    expect(cacheKey).not.toContain("iVBORw0KGgoAAAANS");
+    expect(cacheKey.length).toBeLessThan(dataUrl.length);
+  });
+
+  it("generates different keys for different base64 payloads", () => {
+    expect(createImageCacheKey("data:image/png;base64,AAAA")).not.toBe(
+      createImageCacheKey("data:image/png;base64,AAAB"),
+    );
+  });
+});
 
 describe("chooseImageLodSize", () => {
   it("uses smaller variants during viewport and transform interactions", () => {

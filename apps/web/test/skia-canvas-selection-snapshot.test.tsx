@@ -203,6 +203,64 @@ describe("SkiaCanvas selection snapshots", () => {
     );
   });
 
+  it("notifies onApiReady once while the stable API reads latest state", async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    globalThis.ResizeObserver =
+      MockResizeObserver as unknown as typeof ResizeObserver;
+    const apiRef: { current: CanvasApi | null } = { current: null };
+    const onApiReady = vi.fn((readyApi: CanvasApi) => {
+      apiRef.current = readyApi;
+    });
+    const docWithRect: CucumberCanvasDocument = {
+      ...initialDocument,
+      pages: [
+        {
+          id: "page-default",
+          name: "Page 1",
+          children: [
+            {
+              id: "rect-1",
+              type: "rectangle",
+              x: 10,
+              y: 10,
+              width: 100,
+              height: 80,
+            } as PenNode,
+          ],
+        },
+      ],
+    };
+
+    try {
+      const { container } = render(
+        <SkiaCanvas initialContent={docWithRect} onApiReady={onApiReady} />,
+      );
+
+      await waitFor(() => expect(apiRef.current).not.toBeNull());
+      await waitFor(() =>
+        expect(container.querySelector("canvas")).not.toBeNull(),
+      );
+      const stableApi = apiRef.current;
+
+      act(() => {
+        stableApi?.setSelection(["rect-1"]);
+      });
+      await waitFor(() =>
+        expect(stableApi?.getDocument().selection).toEqual(["rect-1"]),
+      );
+
+      act(() => {
+        stableApi?.setActiveTool("text");
+      });
+      await waitFor(() => expect(stableApi?.getActiveTool()).toBe("text"));
+
+      expect(onApiReady).toHaveBeenCalledTimes(1);
+      expect(apiRef.current).toBe(stableApi);
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver;
+    }
+  });
+
   it("emits coherent onChange snapshots when a canvas action creates and selects a node", async () => {
     const originalResizeObserver = globalThis.ResizeObserver;
     const originalSetPointerCapture = HTMLElement.prototype.setPointerCapture;
