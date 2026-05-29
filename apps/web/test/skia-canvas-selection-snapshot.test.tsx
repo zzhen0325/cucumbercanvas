@@ -28,6 +28,10 @@ const penRendererMockState = vi.hoisted(() => ({
       | { type: "rotate"; nodeId: string }
       | null
   >(() => null),
+  hitTestRect: vi.fn<() => unknown[]>(() => []),
+  setInteractionMode: vi.fn(),
+  setTransformPreview: vi.fn(),
+  clearTransformPreview: vi.fn(),
   viewport: { zoom: 1, panX: 0, panY: 0 },
   screenToScene: vi.fn(
     (
@@ -115,6 +119,10 @@ vi.mock("@cucumber/pen-renderer", () => ({
       return findTopMockHit(getMockActiveChildren(), screenX, screenY);
     });
     hitTestSelectionControl = penRendererMockState.hitTestSelectionControl;
+    hitTestRect = penRendererMockState.hitTestRect;
+    setInteractionMode = penRendererMockState.setInteractionMode;
+    setTransformPreview = penRendererMockState.setTransformPreview;
+    clearTransformPreview = penRendererMockState.clearTransformPreview;
   },
   loadCanvasKit: vi.fn(async () => ({})),
   screenToScene: penRendererMockState.screenToScene,
@@ -173,6 +181,11 @@ describe("SkiaCanvas selection snapshots", () => {
     penRendererMockState.hitTest.mockReturnValue(undefined);
     penRendererMockState.hitTestSelectionControl.mockReset();
     penRendererMockState.hitTestSelectionControl.mockReturnValue(null);
+    penRendererMockState.hitTestRect.mockReset();
+    penRendererMockState.hitTestRect.mockReturnValue([]);
+    penRendererMockState.setInteractionMode.mockReset();
+    penRendererMockState.setTransformPreview.mockReset();
+    penRendererMockState.clearTransformPreview.mockReset();
     penRendererMockState.getNodeBounds.mockReset();
     penRendererMockState.getNodeBounds.mockReturnValue(null);
     penRendererMockState.viewport = { zoom: 1, panX: 0, panY: 0 };
@@ -1152,6 +1165,26 @@ describe("SkiaCanvas selection snapshots", () => {
           clientY: 35,
           pointerId: 11,
         });
+      });
+
+      expect(
+        apiRef.current?.getDocument().pages?.[0]?.children[0],
+      ).toMatchObject({
+        id: "rect-1",
+        x: 20,
+        y: 30,
+      });
+      expect(onDocumentChange).not.toHaveBeenCalled();
+      expect(penRendererMockState.setTransformPreview).toHaveBeenLastCalledWith(
+        {
+          kind: "move",
+          nodeIds: ["rect-1"],
+          dx: 40,
+          dy: 25,
+        },
+      );
+
+      await act(async () => {
         firePointerEvent("pointerup", {
           clientX: 50,
           clientY: 35,

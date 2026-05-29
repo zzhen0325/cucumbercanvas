@@ -107,7 +107,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "product-engineering",
-      "summary": "Cucumber canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit with unified scene-space viewport interaction behind a standalone CanvasApi contract, PenDocument.pages is the only supported durable shape, legacy flat-map/root-children data fails fast, and paste/batch drag-drop import, text-tool Auto Width/Auto Height editing, and export flows produce editable PenNode trees with high-fidelity Figma layer ordering/fill/stroke cap/effect spread/style/PostScript-aware text/layout stretch/transform/shape/mask/component override-path metadata plus matching property-panel controls for layered fills and strokes, image crop matrices, gradient stops, blend modes, ordered effects, transforms, text fidelity, layout constraints, masks, editable style refs, editable variable refs, structured component refs/overrides, vector/path diagnostics, validated path editing, clipping, shape details, visible validation errors, and root/nested layer-ordering verification, with explicit degradation warnings.",
+      "summary": "Cucumber canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit with unified scene-space viewport interaction, transient transform previews, viewport render culling, and image LOD sampling behind a standalone CanvasApi contract, PenDocument.pages is the only supported durable shape, legacy flat-map/root-children data fails fast, and paste/batch drag-drop import, text-tool Auto Width/Auto Height editing, and export flows produce editable PenNode trees with high-fidelity Figma layer ordering/fill/stroke cap/effect spread/style/PostScript-aware text/layout stretch/transform/shape/mask/component override-path metadata plus matching property-panel controls for layered fills and strokes, image crop matrices, gradient stops, blend modes, ordered effects, transforms, text fidelity, layout constraints, masks, editable style refs, editable variable refs, structured component refs/overrides, vector/path diagnostics, validated path editing, clipping, shape details, visible validation errors, and root/nested layer-ordering verification, with explicit degradation warnings.",
       "artifacts": [
         "packages/canvas-core",
         "packages/pen-figma",
@@ -133,6 +133,9 @@
         "packages/pen-renderer/src/renderer.ts",
         "packages/pen-renderer/src/node-renderer.ts",
         "packages/pen-renderer/src/node-renderer.test.ts",
+        "packages/pen-renderer/src/image-loader.ts",
+        "packages/pen-renderer/src/image-loader.test.ts",
+        "packages/pen-renderer/src/renderer-performance.test.ts",
         "packages/pen-renderer/src/text-renderer.ts",
         "packages/pen-renderer/src/text-renderer.test.ts",
         "packages/pen-renderer/src/document-flattener.ts",

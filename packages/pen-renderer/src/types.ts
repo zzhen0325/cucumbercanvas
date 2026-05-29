@@ -60,6 +60,26 @@ export interface PenRendererOptions {
   defaultFonts?: string[];
 }
 
+export type RendererInteractionMode = "idle" | "viewport" | "transform";
+
+export type TransformPreviewState =
+  | {
+      kind: "move";
+      nodeIds: string[];
+      dx: number;
+      dy: number;
+    }
+  | {
+      kind: "resize";
+      nodeId: string;
+      bounds: { x: number; y: number; width: number; height: number };
+    }
+  | {
+      kind: "rotate";
+      nodeId: string;
+      rotation: number;
+    };
+
 export type ResizeHandleDirection =
   | "n"
   | "ne"

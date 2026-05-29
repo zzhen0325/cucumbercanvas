@@ -27,8 +27,10 @@ export type {
   IconLookupFn,
   PenRendererOptions,
   RenderNode,
+  RendererInteractionMode,
   ResizeHandleDirection,
   SelectionControlHit,
+  TransformPreviewState,
   ViewportState,
 } from "./types.js";
 
@@ -40,7 +42,8 @@ export type {
   FontManagerOptions,
   NativeFontPermission as LocalFontPermission,
 } from "./font-manager.js";
-export { SkiaImageLoader } from "./image-loader.js";
+export { SkiaImageLoader, chooseImageLodSize } from "./image-loader.js";
+export type { ImageDisplayRequest } from "./image-loader.js";
 export { SpatialIndex } from "./spatial-index.js";
 export {
   flattenToRenderNodes,

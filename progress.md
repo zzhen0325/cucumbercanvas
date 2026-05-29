@@ -4,17 +4,22 @@ Last updated: 2026-05-29 CST
 
 ## 2026-05-29
 
+- Advanced the canvas image-performance slice: Skia transform interactions now render transient previews during move/resize/rotate and commit the PenDocument only once on pointerup, marquee selection is RAF-throttled through renderer hit-test rectangles, renderer frames cull offscreen nodes before drawing, and image rendering chooses 512/1024/2048 display LOD variants during viewport/transform interactions while preserving original asset URLs.
 - Advanced the canvas coordinate-system cleanup: renderer viewport conversion now has explicit client/local/scene helpers, nested canvas bounds resolve through exported scene helpers, Skia pointer gestures commit scene-space deltas at any zoom, and Canvas API viewport summaries read the live renderer pan/zoom while preserving legacy `scrollX` / `scrollY` aliases.
 - Advanced the canvas text-tool interaction slice: Text Tool clicks now create Auto Width text and enter editing immediately, drags create fixed-width Auto Height text boxes, textarea editing resizes text bounds by growth mode, empty new text is removed on exit, Enter opens editing from selection mode, and selected text layers expose resize-driven growth-mode conversion.
 - Advanced the P2.2 Figma property-panel fidelity closeout: image fills and stroke image paints expose editable crop/transform matrices, stroke paint stacks now share fill-layer controls, gradient stops can be added/removed/reordered by offset/color/opacity without degrading paint type, and focused plus constructed-fixture panel tests cover preservation of image metadata, stroke geometry, gradient types, mask/layout refs, rich text, vector diagnostics, and style/variable/component refs.
 - Advanced the P2.2 component/token/vector editability closeout: component refs now expose structured variant/component/property assignment and override rows alongside JSON escape hatches; styleRefs/variableRefs resolve against document tokens with editable token values that do not overwrite inline node visuals; vector/path nodes expose boolean diagnostics, winding metadata, and validated path `d` editing with visible Chinese error reasons.
 - Advanced the P2.2 layer-ordering validation slice: layer panel reorder semantics now match top-first rendering order for root and nested parents, Skia selection snapshots carry nested container context for hit-test synchronization, and focused canvas/layer tests cover root and nested forward/back/front/back behavior.
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-property-panel.test.tsx test/canvas-layers-panel.test.tsx test/skia-canvas-selection-snapshot.test.tsx`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/skia-canvas-selection-snapshot.test.tsx`.
+- Passed: `pnpm --filter @cucumber/pen-renderer test`.
 - Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/canvas-core.test.ts`.
 - Passed: `pnpm --filter @cucumber/pen-renderer exec vitest run src/node-renderer.test.ts`.
 - Passed: `pnpm --filter @cucumber/web typecheck`.
 - Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
 - Passed: `pnpm --filter @cucumber/pen-renderer typecheck`.
+- Passed: `pnpm lint`.
+- Passed: `pnpm --filter @cucumber/web build` with existing Paper.js optional dependency warnings for `acorn` / `canvas`.
 - Passed: `pnpm --filter @cucumber/pen-types typecheck`.
 - Passed: focused `pnpm exec biome check` for touched web/property-panel/layer/renderer/type/status files.
 - Note: `pnpm exec biome check packages/canvas-core/src/__tests__/canvas-core.test.ts` still reports pre-existing `any` / non-null assertion diagnostics in that large legacy test file outside this slice.

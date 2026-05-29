@@ -46,6 +46,7 @@ import {
   tryManualPathParse,
 } from "./path-utils.js";
 import { SkiaTextRenderer } from "./text-renderer.js";
+import type { RendererInteractionMode } from "./types.js";
 import type { IconLookupFn, RenderNode } from "./types.js";
 
 const FALLBACK_ICON_D = "M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0";
@@ -529,6 +530,7 @@ export class SkiaNodeRenderer {
 
   // Current viewport zoom (set by engine before each render frame)
   zoom = 1;
+  interactionMode: RendererInteractionMode = "idle";
 
   // Device pixel ratio
   devicePixelRatio: number | undefined;
@@ -954,7 +956,13 @@ export class SkiaNodeRenderer {
       return { needsDrawImageRect: false };
     }
 
-    const cached = this.imageLoader.get(url);
+    const cached = this.imageLoader.getForDisplay(url, {
+      targetWidth: w,
+      targetHeight: h,
+      zoom: this.zoom,
+      devicePixelRatio: this.devicePixelRatio,
+      interactionMode: this.interactionMode,
+    });
     if (cached === undefined) this.imageLoader.request(url);
     if (!cached) {
       const isMissing = this.imageLoader.getStatus(url)?.state === "missing";
@@ -1013,7 +1021,13 @@ export class SkiaNodeRenderer {
     const ck = this.ck;
     const url = fill.url;
     if (!url) return;
-    const cached = this.imageLoader.get(url);
+    const cached = this.imageLoader.getForDisplay(url, {
+      targetWidth: w,
+      targetHeight: h,
+      zoom: this.zoom,
+      devicePixelRatio: this.devicePixelRatio,
+      interactionMode: this.interactionMode,
+    });
     if (!cached) return;
     const imgW = cached.width();
     const imgH = cached.height();
@@ -1311,7 +1325,13 @@ export class SkiaNodeRenderer {
       return;
     }
 
-    const cached = this.imageLoader.get(url);
+    const cached = this.imageLoader.getForDisplay(url, {
+      targetWidth: bounds.w,
+      targetHeight: bounds.h,
+      zoom: this.zoom,
+      devicePixelRatio: this.devicePixelRatio,
+      interactionMode: this.interactionMode,
+    });
     if (cached === undefined) this.imageLoader.request(url);
     if (!cached) {
       const isMissing = this.imageLoader.getStatus(url)?.state === "missing";
@@ -2937,7 +2957,13 @@ export class SkiaNodeRenderer {
       return;
     }
 
-    const cached = this.imageLoader.get(src);
+    const cached = this.imageLoader.getForDisplay(src, {
+      targetWidth: w,
+      targetHeight: h,
+      zoom: this.zoom,
+      devicePixelRatio: this.devicePixelRatio,
+      interactionMode: this.interactionMode,
+    });
     if (cached === undefined) {
       this.imageLoader.request(src);
       this.drawImageFallback(canvas, x, y, w, h, cr, opacity, false);

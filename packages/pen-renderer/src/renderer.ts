@@ -30,11 +30,14 @@ import type {
   EditorShapeOverlay,
   PenRendererOptions,
   RenderNode,
+  RendererInteractionMode,
   ResizeHandleDirection,
   SelectionControlHit,
+  TransformPreviewState,
   ViewportState,
 } from "./types.js";
 import {
+  getViewportBounds,
   screenToScene,
   viewportMatrix,
   zoomToPoint as vpZoomToPoint,
@@ -46,6 +49,9 @@ const FRAME_LABEL_FONT_WEIGHT = 400;
 const FRAME_LABEL_SELECTED_FONT_WEIGHT = 600;
 const FRAME_LABEL_HIT_PADDING_X = 4;
 const FRAME_LABEL_HIT_PADDING_Y = 3;
+const RENDER_CULL_MARGIN_PX = 256;
+const SLOW_SYNC_THRESHOLD_MS = 18;
+const SLOW_FRAME_THRESHOLD_MS = 24;
 const RESIZE_HANDLES: ResizeHandleDirection[] = [
   "n",
   "ne",
@@ -80,6 +86,9 @@ export class PenRenderer {
   private spatialIndex = new SpatialIndex();
   private renderNodes: RenderNode[] = [];
   private options: PenRendererOptions;
+  private interactionMode: RendererInteractionMode = "idle";
+  private transformPreview: TransformPreviewState | null = null;
+  private transformPreviewIds = new Set<string>();
 
   // Component/instance IDs for colored frame labels
   private reusableIds = new Set<string>();
@@ -271,6 +280,22 @@ export class PenRenderer {
     this.setViewport(this._zoom, this._panX + dx, this._panY + dy);
   }
 
+  setInteractionMode(mode: RendererInteractionMode) {
+    this.interactionMode = mode;
+    this.nodeRenderer.interactionMode = mode;
+    this.markDirty();
+  }
+
+  setTransformPreview(preview: TransformPreviewState | null) {
+    this.transformPreview = preview;
+    this.transformPreviewIds = this.collectTransformPreviewIds(preview);
+    this.setInteractionMode(preview ? "transform" : "idle");
+  }
+
+  clearTransformPreview() {
+    this.setTransformPreview(null);
+  }
+
   // ---------------------------------------------------------------------------
   // Theme
   // ---------------------------------------------------------------------------
@@ -347,12 +372,30 @@ export class PenRenderer {
     return null;
   }
 
+  hitTestRect(bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }): PenNode[] {
+    return this.spatialIndex
+      .searchRect(
+        bounds.x,
+        bounds.y,
+        bounds.x + bounds.width,
+        bounds.y + bounds.height,
+      )
+      .map((rn) => rn.node);
+  }
+
   // ---------------------------------------------------------------------------
   // Internal: Document sync
   // ---------------------------------------------------------------------------
 
   private syncFromDocument() {
     if (!this.document) return;
+    const startedAt =
+      typeof performance !== "undefined" ? performance.now() : Date.now();
     const pageChildren = getActivePageChildren(
       this.document,
       this.activePageId,
@@ -381,6 +424,16 @@ export class PenRenderer {
 
     this.renderNodes = flattenToRenderNodes(measured);
     this.spatialIndex.rebuild(this.renderNodes);
+    const elapsed =
+      (typeof performance !== "undefined" ? performance.now() : Date.now()) -
+      startedAt;
+    if (elapsed > SLOW_SYNC_THRESHOLD_MS) {
+      console.info("[pen-renderer] renderer.sync.slow", {
+        durationMs: Math.round(elapsed),
+        renderNodeCount: this.renderNodes.length,
+        activePageId: this.activePageId,
+      });
+    }
     this.markDirty();
   }
 
@@ -404,6 +457,8 @@ export class PenRenderer {
 
   render() {
     if (!this.surface || !this.canvasEl) return;
+    const startedAt =
+      typeof performance !== "undefined" ? performance.now() : Date.now();
     const canvas = this.surface.getCanvas();
     const ck = this.ck;
     const dpr = this.options.devicePixelRatio ?? window.devicePixelRatio ?? 1;
@@ -421,14 +476,18 @@ export class PenRenderer {
 
     // Pass current zoom to renderer
     this.nodeRenderer.zoom = this._zoom;
+    this.nodeRenderer.devicePixelRatio = dpr;
 
-    // Draw all render nodes
-    this.nodeRenderer.drawRenderNodes(canvas, this.renderNodes);
+    const visibleRenderNodes = this.getVisibleRenderNodes();
+
+    // Draw visible render nodes only. Image-heavy canvases should not pay the
+    // cost of sampling offscreen rasters while users pan, zoom, or drag.
+    this.nodeRenderer.drawRenderNodes(canvas, visibleRenderNodes);
 
     this.drawEditorOverlays(canvas);
 
     // Draw frame labels for root frames + reusable + instances
-    for (const rn of this.renderNodes) {
+    for (const rn of visibleRenderNodes) {
       if (!rn.node.name) continue;
       if (!this.shouldDrawFrameLabel(rn)) continue;
       this.drawFrameLabel(
@@ -442,6 +501,23 @@ export class PenRenderer {
 
     canvas.restore();
     this.surface.flush();
+    const elapsed =
+      (typeof performance !== "undefined" ? performance.now() : Date.now()) -
+      startedAt;
+    if (elapsed > SLOW_FRAME_THRESHOLD_MS) {
+      console.info("[pen-renderer] renderer.frame.slow", {
+        durationMs: Math.round(elapsed),
+        total: this.renderNodes.length,
+        rendered: visibleRenderNodes.length,
+        culled: Math.max(
+          0,
+          this.renderNodes.length - visibleRenderNodes.length,
+        ),
+        imageCount: countImageRenderNodes(visibleRenderNodes),
+        zoom: Number(this._zoom.toFixed(3)),
+        interactionMode: this.interactionMode,
+      });
+    }
   }
 
   /** Simple frame label drawing for read-only renderer. */
@@ -540,9 +616,62 @@ export class PenRenderer {
     const nodes: RenderNode[] = [];
     for (const id of this.editorOverlays.selectedIds) {
       const rn = this.spatialIndex.get(id);
-      if (rn) nodes.push(rn);
+      if (rn) nodes.push(this.applyTransformPreviewToRenderNode(rn));
     }
     return nodes;
+  }
+
+  private getVisibleRenderNodes(): RenderNode[] {
+    const transformed = this.transformPreview
+      ? applyTransformPreviewToRenderNodes(
+          this.renderNodes,
+          this.transformPreview,
+          this.transformPreviewIds,
+        )
+      : this.renderNodes;
+    if (!this.canvasEl || transformed.length === 0) return transformed;
+
+    const margin = RENDER_CULL_MARGIN_PX / Math.max(this._zoom, MIN_ZOOM);
+    const bounds = getViewportBounds(
+      { zoom: this._zoom, panX: this._panX, panY: this._panY },
+      this.canvasEl.clientWidth,
+      this.canvasEl.clientHeight,
+      margin,
+    );
+    return filterRenderNodesToViewport(transformed, bounds);
+  }
+
+  private collectTransformPreviewIds(
+    preview: TransformPreviewState | null,
+  ): Set<string> {
+    const ids = new Set<string>();
+    if (!preview || !this.document) return ids;
+
+    const roots = preview.kind === "move" ? preview.nodeIds : [preview.nodeId];
+    const rootSet = new Set(roots);
+    const visit = (nodes: PenNode[], includeDescendants: boolean) => {
+      for (const node of nodes) {
+        const include = includeDescendants || rootSet.has(node.id);
+        if (include) ids.add(node.id);
+        if ("children" in node && Array.isArray(node.children)) {
+          visit(node.children as PenNode[], include);
+        }
+      }
+    };
+    visit(getActivePageChildren(this.document, this.activePageId), false);
+    for (const id of roots) ids.add(id);
+    return ids;
+  }
+
+  private applyTransformPreviewToRenderNode(rn: RenderNode): RenderNode {
+    const preview = this.transformPreview;
+    if (!preview || !this.transformPreviewIds.has(rn.node.id)) return rn;
+
+    return applyTransformPreviewToRenderNode(
+      rn,
+      preview,
+      this.transformPreviewIds,
+    );
   }
 
   private drawEditorOverlays(canvas: ReturnType<Surface["getCanvas"]>) {
@@ -1005,6 +1134,150 @@ export class PenRenderer {
       y: centerY + dx * Math.sin(rad) + dy * Math.cos(rad),
     };
   }
+}
+
+function translateRenderNode(
+  rn: RenderNode,
+  dx: number,
+  dy: number,
+): RenderNode {
+  const nextNode = {
+    ...rn.node,
+    x: (rn.node.x ?? 0) + dx,
+    y: (rn.node.y ?? 0) + dy,
+  } as PenNode & {
+    x2?: number;
+    y2?: number;
+  };
+  if (nextNode.type === "line") {
+    if (typeof nextNode.x2 === "number") nextNode.x2 += dx;
+    if (typeof nextNode.y2 === "number") nextNode.y2 += dy;
+  }
+  return {
+    ...rn,
+    node: nextNode,
+    absX: rn.absX + dx,
+    absY: rn.absY + dy,
+    clipRect: translateClipRect(rn.clipRect, dx, dy),
+  };
+}
+
+function resizeRenderNode(
+  rn: RenderNode,
+  bounds: { x: number; y: number; width: number; height: number },
+): RenderNode {
+  return {
+    ...rn,
+    node: {
+      ...rn.node,
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
+    } as PenNode,
+    absX: bounds.x,
+    absY: bounds.y,
+    absW: bounds.width,
+    absH: bounds.height,
+  };
+}
+
+function rotateRenderNode(rn: RenderNode, rotation: number): RenderNode {
+  return {
+    ...rn,
+    node: {
+      ...rn.node,
+      rotation,
+    } as PenNode,
+  };
+}
+
+function translateClipRect(
+  clipRect: RenderNode["clipRect"],
+  dx: number,
+  dy: number,
+): RenderNode["clipRect"] {
+  if (!clipRect) return undefined;
+  return {
+    ...clipRect,
+    x: clipRect.x + dx,
+    y: clipRect.y + dy,
+    maskShape: clipRect.maskShape
+      ? {
+          ...clipRect.maskShape,
+          absX: clipRect.maskShape.absX + dx,
+          absY: clipRect.maskShape.absY + dy,
+        }
+      : undefined,
+  };
+}
+
+export function applyTransformPreviewToRenderNodes(
+  renderNodes: RenderNode[],
+  preview: TransformPreviewState,
+  previewIds: ReadonlySet<string>,
+): RenderNode[] {
+  return renderNodes.map((rn) =>
+    applyTransformPreviewToRenderNode(rn, preview, previewIds),
+  );
+}
+
+function applyTransformPreviewToRenderNode(
+  rn: RenderNode,
+  preview: TransformPreviewState,
+  previewIds: ReadonlySet<string>,
+): RenderNode {
+  if (!previewIds.has(rn.node.id)) return rn;
+  if (preview.kind === "move") {
+    return translateRenderNode(rn, preview.dx, preview.dy);
+  }
+  if (preview.kind === "resize" && rn.node.id === preview.nodeId) {
+    return resizeRenderNode(rn, preview.bounds);
+  }
+  if (preview.kind === "rotate" && rn.node.id === preview.nodeId) {
+    return rotateRenderNode(rn, preview.rotation);
+  }
+  return rn;
+}
+
+export function filterRenderNodesToViewport(
+  renderNodes: RenderNode[],
+  bounds: { left: number; top: number; right: number; bottom: number },
+): RenderNode[] {
+  return renderNodes.filter((rn) => isRenderNodeInBounds(rn, bounds));
+}
+
+function isRenderNodeInBounds(
+  rn: RenderNode,
+  bounds: { left: number; top: number; right: number; bottom: number },
+): boolean {
+  const left = rn.clipRect ? Math.max(rn.absX, rn.clipRect.x) : rn.absX;
+  const top = rn.clipRect ? Math.max(rn.absY, rn.clipRect.y) : rn.absY;
+  const right = rn.clipRect
+    ? Math.min(rn.absX + rn.absW, rn.clipRect.x + rn.clipRect.w)
+    : rn.absX + rn.absW;
+  const bottom = rn.clipRect
+    ? Math.min(rn.absY + rn.absH, rn.clipRect.y + rn.clipRect.h)
+    : rn.absY + rn.absH;
+
+  return !(
+    right < bounds.left ||
+    left > bounds.right ||
+    bottom < bounds.top ||
+    top > bounds.bottom
+  );
+}
+
+function countImageRenderNodes(renderNodes: RenderNode[]): number {
+  let count = 0;
+  for (const rn of renderNodes) {
+    if (rn.node.type === "image") count += 1;
+    const fills = "fill" in rn.node ? rn.node.fill : undefined;
+    if (Array.isArray(fills) && fills.some((fill) => fill.type === "image")) {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 function getResizeHandlePoint(

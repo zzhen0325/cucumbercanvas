@@ -23,7 +23,6 @@ import {
   getNodeBounds,
   getNodeSceneBounds,
   getOrderedCanvasNodes,
-  getVisibleCanvasNodesInBounds,
   insertCanvasImportResult,
   isDescendantOf,
   normalizeCanvasPages,
@@ -392,6 +391,14 @@ function filterSelectionForActivePage(
   return selection.filter((id) => Boolean(findNode(doc, id, activePageId)));
 }
 
+function areStringArraysEqual(a: readonly string[], b: readonly string[]) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 function projectTextEditStateToViewport(
   editingText: TextEditState,
   viewport: { zoom: number; panX: number; panY: number },
@@ -618,6 +625,11 @@ export const SkiaCanvas = memo(
     const [editingText, setEditingText] = useState<TextEditState | null>(null);
     const [isFileDragActive, setIsFileDragActive] = useState(false);
     const fileDragDepthRef = useRef(0);
+    const rendererIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+      null,
+    );
+    const marqueeRafRef = useRef<number | null>(null);
+    const marqueeSelectionRef = useRef<string[]>([]);
     const editorOverlayRef = useRef<EditorOverlayState>({
       selectedIds: [],
       selectionColor: CANVAS_SELECTION_COLOR,
@@ -758,6 +770,16 @@ export const SkiaCanvas = memo(
       };
     }, []);
 
+    const scheduleRendererIdle = useCallback((delayMs = 120) => {
+      if (rendererIdleTimerRef.current) {
+        clearTimeout(rendererIdleTimerRef.current);
+      }
+      rendererIdleTimerRef.current = setTimeout(() => {
+        rendererIdleTimerRef.current = null;
+        rendererRef.current?.setInteractionMode("idle");
+      }, delayMs);
+    }, []);
+
     // -----------------------------------------------------------------------
     // CanvasKit init
     // -----------------------------------------------------------------------
@@ -823,6 +845,14 @@ export const SkiaCanvas = memo(
 
       return () => {
         ro.disconnect();
+        if (rendererIdleTimerRef.current) {
+          clearTimeout(rendererIdleTimerRef.current);
+          rendererIdleTimerRef.current = null;
+        }
+        if (marqueeRafRef.current !== null) {
+          cancelAnimationFrame(marqueeRafRef.current);
+          marqueeRafRef.current = null;
+        }
         renderer.dispose();
         if (canvas.parentElement) canvas.parentElement.removeChild(canvas);
         rendererRef.current = null;
@@ -1045,9 +1075,11 @@ export const SkiaCanvas = memo(
           3,
           Math.max(0.25, vp.zoom - event.deltaY * 0.001),
         );
+        renderer.setInteractionMode("viewport");
         renderer.zoomToPoint(event.clientX, event.clientY, newZoom);
+        scheduleRendererIdle();
       },
-      [],
+      [scheduleRendererIdle],
     );
 
     const beginTextEdit = useCallback(
@@ -1115,6 +1147,7 @@ export const SkiaCanvas = memo(
         if (pointerButton === 1) {
           event.preventDefault();
           const vp = renderer.getViewport();
+          renderer.setInteractionMode("viewport");
           dragRef.current = {
             kind: "pan",
             startX: event.clientX,
@@ -1131,6 +1164,7 @@ export const SkiaCanvas = memo(
         const tool = effectiveTool;
         if (tool === "hand") {
           const vp = renderer.getViewport();
+          renderer.setInteractionMode("viewport");
           dragRef.current = {
             kind: "pan",
             startX: event.clientX,
@@ -1337,15 +1371,24 @@ export const SkiaCanvas = memo(
             false,
           );
           setEditorOverlay({ marquee: bounds });
-          const hitIds = getVisibleCanvasNodesInBounds(
-            docRef.current as CucumberCanvasDocument,
-            bounds,
-            activePageIdRef.current,
-          ).map((node) => node.id);
-          setSelection(
-            Array.from(new Set([...drag.originSelection, ...hitIds])),
-            { notifySelection: true },
+          const hitIds = renderer.hitTestRect(bounds).map((node) => node.id);
+          const nextSelection = Array.from(
+            new Set([...drag.originSelection, ...hitIds]),
           );
+          if (
+            areStringArraysEqual(nextSelection, marqueeSelectionRef.current)
+          ) {
+            return;
+          }
+          marqueeSelectionRef.current = nextSelection;
+          if (marqueeRafRef.current === null) {
+            marqueeRafRef.current = requestAnimationFrame(() => {
+              marqueeRafRef.current = null;
+              setSelection(marqueeSelectionRef.current, {
+                notifySelection: true,
+              });
+            });
+          }
           return;
         }
 
@@ -1418,27 +1461,12 @@ export const SkiaCanvas = memo(
           }
           drag.hasMoved = true;
           drag.sceneDelta = { x: dx, y: dy };
-
-          let next = docRef.current;
-          for (const nodeId of drag.nodeIds) {
-            const origin = drag.origins[nodeId];
-            if (!origin) continue;
-            const activePageId = activePageIdRef.current;
-            const node = findNode(next, nodeId, activePageId);
-            if (!node || node.locked) continue;
-            next = applyCanvasOperation(next, {
-              type: "updateNode",
-              nodeId,
-              updates: {
-                x: origin.x + dx,
-                y: origin.y + dy,
-              } as Partial<PenNode>,
-              activePageId,
-            });
-          }
-          docRef.current = next;
-          setDoc(next);
-          syncRendererDocument(renderer, next, activePageIdRef.current);
+          renderer.setTransformPreview({
+            kind: "move",
+            nodeIds: drag.nodeIds,
+            dx,
+            dy,
+          });
         }
 
         if (drag.kind === "resize") {
@@ -1498,15 +1526,21 @@ export const SkiaCanvas = memo(
               textGrowth: nextTextGrowth,
             } as Partial<PenNode>;
           }
-          const next = applyCanvasOperation(docRef.current, {
-            type: "updateNode",
+          const previewUpdates = updates as Record<string, unknown>;
+          renderer.setTransformPreview({
+            kind: "resize",
             nodeId: drag.nodeId,
-            updates,
-            activePageId: activePageIdRef.current,
+            bounds: {
+              x: (previewUpdates.x as number | undefined) ?? drag.origin.x,
+              y: (previewUpdates.y as number | undefined) ?? drag.origin.y,
+              width:
+                (previewUpdates.width as number | undefined) ??
+                drag.origin.width,
+              height:
+                (previewUpdates.height as number | undefined) ??
+                drag.origin.height,
+            },
           });
-          docRef.current = next;
-          setDoc(next);
-          syncRendererDocument(renderer, next, activePageIdRef.current);
           return;
         }
 
@@ -1517,15 +1551,11 @@ export const SkiaCanvas = memo(
             drag.originRotation +
             pointToAngle(drag.center, point) -
             drag.startAngle;
-          const next = applyCanvasOperation(docRef.current, {
-            type: "updateNode",
+          renderer.setTransformPreview({
+            kind: "rotate",
             nodeId: drag.nodeId,
-            updates: { rotation: Math.round(rotation) } as Partial<PenNode>,
-            activePageId: activePageIdRef.current,
+            rotation: Math.round(rotation),
           });
-          docRef.current = next;
-          setDoc(next);
-          syncRendererDocument(renderer, next, activePageIdRef.current);
         }
       },
       [getPointerScenePoint, penTool, setEditorOverlay, setSelection],
@@ -1635,18 +1665,33 @@ export const SkiaCanvas = memo(
         }
         if (drag?.kind === "move" && drag.hasMoved) {
           const activePageId = activePageIdRef.current;
+          let next = docRef.current;
+          for (const nodeId of drag.nodeIds) {
+            const origin = drag.origins[nodeId];
+            if (!origin) continue;
+            const node = findNode(next, nodeId, activePageId);
+            if (!node || node.locked) continue;
+            next = applyCanvasOperation(next, {
+              type: "updateNode",
+              nodeId,
+              updates: {
+                x: origin.x + drag.sceneDelta.x,
+                y: origin.y + drag.sceneDelta.y,
+              } as Partial<PenNode>,
+              activePageId,
+            });
+          }
+          renderer?.clearTransformPreview();
           const dropPoint = getPointerScenePoint(event);
           if (renderer && dropPoint) {
             const reparented = reparentNodesByDropPoint(
-              docRef.current,
+              next,
               drag.nodeIds,
               dropPoint,
               activePageId,
             );
             if (reparented.movedIds.length > 0) {
-              docRef.current = reparented.doc;
-              setDoc(reparented.doc);
-              syncRendererDocument(renderer, reparented.doc, activePageId);
+              next = reparented.doc;
               console.info("[skia-canvas] selection.drag.reparented", {
                 nodeIds: reparented.movedIds,
                 count: reparented.movedIds.length,
@@ -1655,6 +1700,83 @@ export const SkiaCanvas = memo(
                 reason: "pointer_drop_point",
               });
             }
+          }
+          commitDocument(next, { selection: drag.nodeIds });
+        }
+        if (drag?.kind === "resize") {
+          const activePageId = activePageIdRef.current;
+          const bounds = calculateResizeBounds(
+            drag.origin,
+            drag.handle,
+            drag.sceneDelta.x,
+            drag.sceneDelta.y,
+            event.shiftKey || drag.preserveAspectRatio,
+          );
+          const node = findNode(docRef.current, drag.nodeId, activePageId);
+          let updates = boundsToNodeUpdates(bounds);
+          if (node?.type === "text") {
+            const textNode = node as PenNode & {
+              fontSize?: number;
+              fontFamily?: string;
+              fontWeight?: string | number;
+              lineHeight?: number | string;
+              textGrowth?: "auto" | "fixed-width" | "fixed-width-height";
+            };
+            let nextTextGrowth = textNode.textGrowth ?? "fixed-width-height";
+            const horizontalResize =
+              drag.handle.includes("e") || drag.handle.includes("w");
+            const verticalResize =
+              drag.handle.includes("n") || drag.handle.includes("s");
+            if (nextTextGrowth === "auto" && horizontalResize) {
+              nextTextGrowth = "fixed-width";
+            } else if (nextTextGrowth === "fixed-width" && verticalResize) {
+              nextTextGrowth = "fixed-width-height";
+            }
+            const measured = measureTextLayout({
+              content: getTextContent(node),
+              fontSize: textNode.fontSize ?? DEFAULT_TEXT_FONT_SIZE,
+              fontFamily: textNode.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY,
+              fontWeight: String(textNode.fontWeight ?? 400),
+              lineHeight: textNode.lineHeight ?? DEFAULT_TEXT_LINE_HEIGHT,
+              textGrowth: nextTextGrowth,
+              width:
+                nextTextGrowth === "auto"
+                  ? getNodeBounds(node).width
+                  : bounds.width,
+              height: bounds.height,
+            });
+            updates = {
+              ...updates,
+              width: measured.width,
+              height: measured.height,
+              textGrowth: nextTextGrowth,
+            } as Partial<PenNode>;
+          }
+          renderer?.clearTransformPreview();
+          const next = applyCanvasOperation(docRef.current, {
+            type: "updateNode",
+            nodeId: drag.nodeId,
+            updates,
+            activePageId,
+          });
+          commitDocument(next, { selection: [drag.nodeId] });
+        }
+        if (drag?.kind === "rotate") {
+          const activePageId = activePageIdRef.current;
+          const point = getPointerScenePoint(event);
+          if (point) {
+            const rotation =
+              drag.originRotation +
+              pointToAngle(drag.center, point) -
+              drag.startAngle;
+            renderer?.clearTransformPreview();
+            const next = applyCanvasOperation(docRef.current, {
+              type: "updateNode",
+              nodeId: drag.nodeId,
+              updates: { rotation: Math.round(rotation) } as Partial<PenNode>,
+              activePageId,
+            });
+            commitDocument(next, { selection: [drag.nodeId] });
           }
         }
         if (
@@ -1667,7 +1789,6 @@ export const SkiaCanvas = memo(
             drag.kind === "move" || drag.kind === "resize"
               ? drag.sceneDelta
               : { x: 0, y: 0 };
-          onDocumentChange?.(docRef.current as CucumberCanvasDocument);
           console.info("[skia-canvas] selection.transform.committed", {
             kind: drag.kind,
             zoom: viewport?.zoom ?? 1,
@@ -1679,12 +1800,29 @@ export const SkiaCanvas = memo(
           suppressNextClickRef.current = true;
         }
         if (drag?.kind === "marquee") {
+          if (marqueeRafRef.current !== null) {
+            cancelAnimationFrame(marqueeRafRef.current);
+            marqueeRafRef.current = null;
+          }
+          if (
+            !areStringArraysEqual(
+              marqueeSelectionRef.current,
+              getDocumentSelection(docRef.current, selectedIds),
+            )
+          ) {
+            setSelection(marqueeSelectionRef.current, {
+              notifySelection: true,
+            });
+          }
           setEditorOverlay({ marquee: null });
           suppressNextClickRef.current = true;
           console.info("[skia-canvas] selection.marquee.committed", {
             selectedCount: getCanvasApiRuntimeState(docRef.current).selection
               .length,
           });
+        }
+        if (drag?.kind === "pan") {
+          scheduleRendererIdle();
         }
         dragRef.current = null;
         if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -1695,10 +1833,11 @@ export const SkiaCanvas = memo(
         beginTextEdit,
         commitDocument,
         getPointerScenePoint,
-        onDocumentChange,
         penTool,
+        scheduleRendererIdle,
         setEditorOverlay,
         setSelection,
+        selectedIds,
       ],
     );
 

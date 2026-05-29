@@ -95,6 +95,7 @@ export class SpatialIndex {
       maxX: Math.max(left, right),
       maxY: Math.max(top, bottom),
     });
+    candidates.sort((a, b) => a.zIndex - b.zIndex);
     return candidates.map((c) => c.renderNode);
   }
 

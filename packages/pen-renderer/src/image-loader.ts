@@ -1,7 +1,7 @@
 import type { CanvasKit, Image as SkImage } from "canvaskit-wasm";
 
-const MAX_IMAGE_DIMENSION = 4096;
-const MAX_IMAGE_PIXELS = MAX_IMAGE_DIMENSION * MAX_IMAGE_DIMENSION;
+const MAX_IMAGE_DIMENSION = 2048;
+const IMAGE_LOD_SIZES = [512, 1024, 2048] as const;
 
 export interface ResolvedImageSource {
   cacheKey: string;
@@ -12,6 +12,14 @@ export interface ImageLoadStatus {
   state: "loading" | "loaded" | "missing" | "error";
 }
 
+export interface ImageDisplayRequest {
+  targetWidth: number;
+  targetHeight: number;
+  zoom: number;
+  devicePixelRatio?: number;
+  interactionMode?: "idle" | "viewport" | "transform";
+}
+
 /**
  * Async image loader for CanvasKit. Loads images via browser's native Image
  * element (supports all browser-supported formats), rasterizes to Canvas 2D,
@@ -20,6 +28,7 @@ export interface ImageLoadStatus {
 export class SkiaImageLoader {
   private ck: CanvasKit;
   private cache = new Map<string, SkImage | null>();
+  private lodCache = new Map<string, Map<number, SkImage>>();
   private loading = new Set<string>();
   /** In-flight load promises (separate from `loading` URL set, used for flushPending) */
   private pendingPromises = new Set<Promise<unknown>>();
@@ -47,6 +56,17 @@ export class SkiaImageLoader {
   get(src: string): SkImage | null | undefined {
     const resolved = this.sourceResolver(src);
     return this.cache.get(resolved.cacheKey);
+  }
+
+  getForDisplay(
+    src: string,
+    request: ImageDisplayRequest,
+  ): SkImage | null | undefined {
+    const resolved = this.sourceResolver(src);
+    const cached = this.cache.get(resolved.cacheKey);
+    if (cached === undefined || cached === null) return cached;
+    const lodSize = chooseImageLodSize(request);
+    return this.lodCache.get(resolved.cacheKey)?.get(lodSize) ?? cached;
   }
 
   getStatus(src: string): ImageLoadStatus | undefined {
@@ -92,10 +112,23 @@ export class SkiaImageLoader {
   }
 
   dispose() {
+    const deleted = new Set<SkImage>();
     for (const img of this.cache.values()) {
-      img?.delete();
+      if (img && !deleted.has(img)) {
+        img.delete();
+        deleted.add(img);
+      }
+    }
+    for (const variants of this.lodCache.values()) {
+      for (const img of variants.values()) {
+        if (!deleted.has(img)) {
+          img.delete();
+          deleted.add(img);
+        }
+      }
     }
     this.cache.clear();
+    this.lodCache.clear();
     this.loading.clear();
     this.pendingPromises.clear();
     this.status.clear();
@@ -108,8 +141,9 @@ export class SkiaImageLoader {
       }
       // Use browser Image element — supports all browser-supported formats
       const htmlImg = await this.loadHtmlImage(source.loadUrl);
-      const skImg = this.htmlImageToSkia(htmlImg);
+      const skImg = this.htmlImageToSkia(htmlImg, MAX_IMAGE_DIMENSION);
       this.cache.set(source.cacheKey, skImg);
+      if (skImg) this.createLodVariants(source.cacheKey, htmlImg, skImg);
       this.loading.delete(source.cacheKey);
       this.status.set(source.cacheKey, { state: skImg ? "loaded" : "error" });
       this.onLoaded?.();
@@ -135,12 +169,28 @@ export class SkiaImageLoader {
   }
 
   /** Rasterize an HTML Image to Canvas 2D, then convert to CanvasKit Image. */
-  private htmlImageToSkia(htmlImg: HTMLImageElement): SkImage | null {
+  private htmlImageToSkia(
+    htmlImg: HTMLImageElement,
+    maxDimension: number,
+  ): SkImage | null {
     const sourceW = htmlImg.naturalWidth || htmlImg.width;
     const sourceH = htmlImg.naturalHeight || htmlImg.height;
     if (sourceW <= 0 || sourceH <= 0) return null;
 
-    const { width, height } = this.getSafeRasterSize(sourceW, sourceH);
+    const { width, height, scale } = this.getSafeRasterSize(
+      sourceW,
+      sourceH,
+      maxDimension,
+    );
+    if (scale < 1 && maxDimension === MAX_IMAGE_DIMENSION) {
+      console.info("[pen-renderer] image-loader.downscaled", {
+        sourceWidth: sourceW,
+        sourceHeight: sourceH,
+        rasterWidth: width,
+        rasterHeight: height,
+        maxDimension,
+      });
+    }
 
     const canvas = document.createElement("canvas");
     canvas.width = width;
@@ -167,24 +217,76 @@ export class SkiaImageLoader {
     );
   }
 
+  private createLodVariants(
+    cacheKey: string,
+    htmlImg: HTMLImageElement,
+    baseImage: SkImage,
+  ) {
+    const sourceW = htmlImg.naturalWidth || htmlImg.width;
+    const sourceH = htmlImg.naturalHeight || htmlImg.height;
+    const variants = new Map<number, SkImage>();
+    const baseMax = Math.max(baseImage.width(), baseImage.height());
+
+    for (const lodSize of IMAGE_LOD_SIZES) {
+      if (lodSize >= baseMax) {
+        variants.set(lodSize, baseImage);
+        continue;
+      }
+      const variant = this.htmlImageToSkia(htmlImg, lodSize);
+      if (!variant) continue;
+      variants.set(lodSize, variant);
+      console.info("[pen-renderer] image-loader.variant.created", {
+        cacheKey,
+        sourceWidth: sourceW,
+        sourceHeight: sourceH,
+        lodSize,
+        rasterWidth: variant.width(),
+        rasterHeight: variant.height(),
+      });
+    }
+
+    this.lodCache.set(cacheKey, variants);
+  }
+
   private getSafeRasterSize(
     sourceW: number,
     sourceH: number,
-  ): { width: number; height: number } {
+    targetMaxDimension: number,
+  ): { width: number; height: number; scale: number } {
     let scale = 1;
-    const maxDimension = Math.max(sourceW, sourceH);
-    if (maxDimension > MAX_IMAGE_DIMENSION) {
-      scale = Math.min(scale, MAX_IMAGE_DIMENSION / maxDimension);
+    const sourceMaxDimension = Math.max(sourceW, sourceH);
+    if (sourceMaxDimension > targetMaxDimension) {
+      scale = Math.min(scale, targetMaxDimension / sourceMaxDimension);
     }
 
     const totalPixels = sourceW * sourceH;
-    if (totalPixels > MAX_IMAGE_PIXELS) {
-      scale = Math.min(scale, Math.sqrt(MAX_IMAGE_PIXELS / totalPixels));
+    const maxPixels = targetMaxDimension * targetMaxDimension;
+    if (totalPixels > maxPixels) {
+      scale = Math.min(scale, Math.sqrt(maxPixels / totalPixels));
     }
 
     return {
       width: Math.max(1, Math.round(sourceW * scale)),
       height: Math.max(1, Math.round(sourceH * scale)),
+      scale,
     };
   }
+}
+
+export function chooseImageLodSize(request: ImageDisplayRequest): number {
+  const dpr = Math.max(request.devicePixelRatio ?? 1, 1);
+  const targetPixels =
+    Math.max(request.targetWidth, request.targetHeight, 1) *
+    Math.max(request.zoom, 0.01) *
+    dpr;
+  const interactive = request.interactionMode !== "idle";
+
+  if (interactive) {
+    if (targetPixels <= 1024) return 512;
+    return 1024;
+  }
+
+  if (targetPixels <= 512) return 512;
+  if (targetPixels <= 1024) return 1024;
+  return 2048;
 }
