@@ -140,8 +140,7 @@ export class PenRenderer {
     canvas.width = canvas.clientWidth * dpr;
     canvas.height = canvas.clientHeight * dpr;
 
-    this.surface = this.ck.MakeWebGLCanvasSurface(canvas);
-    if (!this.surface) this.surface = this.ck.MakeSWCanvasSurface(canvas);
+    this.surface = this.createSurface(canvas, "init");
     if (!this.surface) {
       console.error("PenRenderer: Failed to create surface");
       return;
@@ -182,10 +181,61 @@ export class PenRenderer {
     this.canvasEl.width = width * dpr;
     this.canvasEl.height = height * dpr;
     this.surface?.delete();
-    this.surface = this.ck.MakeWebGLCanvasSurface(this.canvasEl);
-    if (!this.surface)
-      this.surface = this.ck.MakeSWCanvasSurface(this.canvasEl);
+    this.surface = this.createSurface(this.canvasEl, "resize");
+    if (!this.surface) {
+      console.error("PenRenderer: Failed to recreate surface", {
+        height: this.canvasEl.height,
+        width: this.canvasEl.width,
+      });
+      return;
+    }
     this.markDirty();
+  }
+
+  private createSurface(
+    canvas: HTMLCanvasElement,
+    reason: "init" | "resize",
+  ): Surface | null {
+    let surface: Surface | null = null;
+    let mode: "webgl" | "software" | null = null;
+    const dpr = this.options.devicePixelRatio ?? window.devicePixelRatio ?? 1;
+    const context = {
+      clientHeight: canvas.clientHeight,
+      clientWidth: canvas.clientWidth,
+      dpr,
+      height: canvas.height,
+      reason,
+      width: canvas.width,
+    };
+
+    try {
+      surface = this.ck.MakeWebGLCanvasSurface(canvas);
+      if (surface) mode = "webgl";
+    } catch (error) {
+      console.warn("[pen-renderer] WebGL surface creation failed", {
+        ...context,
+        error,
+      });
+    }
+
+    if (!surface) {
+      surface = this.ck.MakeSWCanvasSurface(canvas);
+      if (surface) mode = "software";
+    }
+
+    if (surface && mode === "webgl") {
+      console.info("[pen-renderer] Skia surface created", {
+        ...context,
+        mode,
+      });
+    } else if (surface && mode === "software") {
+      console.warn("[pen-renderer] Skia surface created with software fallback", {
+        ...context,
+        mode,
+      });
+    }
+
+    return surface;
   }
 
   // ---------------------------------------------------------------------------
