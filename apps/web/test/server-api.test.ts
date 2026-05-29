@@ -2,10 +2,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  ApiApplicationError,
   createProject,
   createRun,
   fetchProjects,
   fetchViewer,
+  saveCanvas,
+  serializeApiError,
 } from "../src/lib/server-api";
 
 const mockFetch = vi.fn();
@@ -173,6 +176,42 @@ describe("authenticated server API", () => {
       await createProject("token_abc", { name: "Dup" });
     } catch (err) {
       expect((err as { code?: unknown }).code).toBe("project_slug_taken");
+      expect((err as { status?: unknown }).status).toBe(409);
+    }
+  });
+
+  it("saveCanvas preserves response status and validation body for diagnostics", async () => {
+    const validationBody = {
+      issues: [
+        {
+          code: "invalid_type",
+          path: ["content", "pages"],
+          message: "Required",
+        },
+      ],
+      message: "Invalid request body",
+    };
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => validationBody,
+    });
+
+    await expect(saveCanvas("token_abc", "canvas-1", {})).rejects.toThrow(
+      "Invalid request body",
+    );
+
+    try {
+      await saveCanvas("token_abc", "canvas-1", {});
+    } catch (err) {
+      expect(err).toBeInstanceOf(ApiApplicationError);
+      expect(serializeApiError(err)).toEqual({
+        name: "ApiApplicationError",
+        code: "application_error",
+        message: "Invalid request body",
+        status: 400,
+        body: validationBody,
+      });
     }
   });
 

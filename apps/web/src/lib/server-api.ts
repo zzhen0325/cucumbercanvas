@@ -41,11 +41,36 @@ export class ApiAuthError extends Error {
 
 export class ApiApplicationError extends Error {
   code: string;
-  constructor(code: string, message: string) {
+  status: number;
+  body: unknown;
+
+  constructor(code: string, message: string, status = 0, body: unknown = null) {
     super(message);
     this.name = "ApiApplicationError";
     this.code = code;
+    this.status = status;
+    this.body = body;
   }
+}
+
+export function serializeApiError(error: unknown): Record<string, unknown> {
+  if (error instanceof ApiApplicationError) {
+    return {
+      name: error.name,
+      code: error.code,
+      message: error.message,
+      status: error.status,
+      body: error.body,
+    };
+  }
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+  return { message: String(error) };
 }
 
 // --- Existing ---
@@ -91,10 +116,34 @@ async function handleErrorResponse(response: Response): Promise<never> {
   if (response.status === 401) {
     throw new ApiAuthError();
   }
-  const body = await response.json().catch(() => null);
-  const code = body?.error?.code ?? "application_error";
-  const message = body?.error?.message ?? "Request failed";
-  throw new ApiApplicationError(code, message);
+  const body = await readErrorBody(response);
+  const bodyRecord = isRecord(body) ? body : null;
+  const errorRecord = isRecord(bodyRecord?.error) ? bodyRecord.error : null;
+  const code =
+    typeof errorRecord?.code === "string"
+      ? errorRecord.code
+      : "application_error";
+  const message =
+    (typeof errorRecord?.message === "string" ? errorRecord.message : null) ??
+    (typeof bodyRecord?.message === "string" ? bodyRecord.message : null) ??
+    `Request failed with status ${response.status}`;
+  throw new ApiApplicationError(code, message, response.status, body);
+}
+
+async function readErrorBody(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    try {
+      return await response.text();
+    } catch {
+      return null;
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 export async function fetchViewer(

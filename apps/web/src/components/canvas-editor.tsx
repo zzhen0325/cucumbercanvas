@@ -13,7 +13,11 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WebSocketHandle } from "../hooks/use-websocket";
 import { getServerBaseUrl } from "../lib/env";
-import { saveCanvas, uploadThumbnail } from "../lib/server-api";
+import {
+  saveCanvas,
+  serializeApiError,
+  uploadThumbnail,
+} from "../lib/server-api";
 import type { CanvasApi, CanvasSceneElement } from "./canvas/canvas-api";
 import {
   analyzeDocumentExportWarnings,
@@ -180,9 +184,9 @@ export function CanvasEditor({
             }
           })
           .catch((error) => {
-            console.error("[canvas-editor] save failed", {
+            console.warn("[canvas-editor] save failed", {
               canvasId: canvasIdRef.current,
-              error,
+              error: serializeApiError(error),
             });
           });
       }, SAVE_DEBOUNCE_MS);
@@ -202,7 +206,7 @@ export function CanvasEditor({
         } catch (error) {
           console.warn("[canvas-editor] thumbnail generation/upload failed", {
             canvasId: canvasIdRef.current,
-            error,
+            error: serializeApiError(error),
           });
         }
       }, THUMBNAIL_DEBOUNCE_MS);
@@ -299,7 +303,10 @@ export function CanvasEditor({
       if (payload) {
         saveCanvas(accessTokenRef.current, canvasIdRef.current, payload).catch(
           (error) => {
-            console.error("[canvas-editor] unmount save failed", error);
+            console.warn("[canvas-editor] unmount save failed", {
+              canvasId: canvasIdRef.current,
+              error: serializeApiError(error),
+            });
           },
         );
       }
