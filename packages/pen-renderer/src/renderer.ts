@@ -41,6 +41,11 @@ import {
 } from "./viewport.js";
 
 const DEFAULT_SELECTION_COLOR = "#37BFF9";
+const FRAME_LABEL_FONT_FAMILY = "system-ui, sans-serif";
+const FRAME_LABEL_FONT_WEIGHT = 400;
+const FRAME_LABEL_SELECTED_FONT_WEIGHT = 600;
+const FRAME_LABEL_HIT_PADDING_X = 4;
+const FRAME_LABEL_HIT_PADDING_Y = 3;
 const RESIZE_HANDLES: ResizeHandleDirection[] = [
   "n",
   "ne",
@@ -287,6 +292,14 @@ export class PenRenderer {
       panX: this._panX,
       panY: this._panY,
     });
+    const labelHit = this.hitTestFrameLabel(scene.x, scene.y);
+    if (labelHit) {
+      console.info("[pen-renderer] frame-label.hit", {
+        nodeId: labelHit.id,
+        nodeName: labelHit.name,
+      });
+      return labelHit;
+    }
     const hits = this.spatialIndex.hitTest(scene.x, scene.y);
     return hits[0]?.node ?? null;
   }
@@ -417,11 +430,14 @@ export class PenRenderer {
     // Draw frame labels for root frames + reusable + instances
     for (const rn of this.renderNodes) {
       if (!rn.node.name) continue;
-      const isRootFrame = rn.node.type === "frame" && !rn.clipRect;
-      const isReusable = this.reusableIds.has(rn.node.id);
-      const isInstance = this.instanceIds.has(rn.node.id);
-      if (!isRootFrame && !isReusable && !isInstance) continue;
-      this.drawFrameLabel(canvas, rn.node.name, rn.absX, rn.absY);
+      if (!this.shouldDrawFrameLabel(rn)) continue;
+      this.drawFrameLabel(
+        canvas,
+        rn.node.name,
+        rn.absX,
+        rn.absY,
+        this.editorOverlays.selectedIds.includes(rn.node.id),
+      );
     }
 
     canvas.restore();
@@ -434,56 +450,90 @@ export class PenRenderer {
     name: string,
     x: number,
     y: number,
+    selected: boolean,
   ) {
     const ck = this.ck;
-    const fontSize = FRAME_LABEL_FONT_SIZE / this._zoom;
-    const offsetY = FRAME_LABEL_OFFSET_Y / this._zoom;
+    const dpr = this.options.devicePixelRatio ?? window.devicePixelRatio ?? 1;
+    const bounds = getFrameLabelBounds(name, x, y, this._zoom, dpr);
+    const { fontSize, scale } = bounds;
 
     // Use Canvas 2D to rasterize the label text
-    const dpr = this.options.devicePixelRatio ?? window.devicePixelRatio ?? 1;
-    const scale = Math.min(this._zoom * dpr, 4);
     const tmp = document.createElement("canvas");
-    const textW = Math.ceil(name.length * fontSize * 0.7 * scale) + 4;
-    const textH = Math.ceil(fontSize * 1.4 * scale) + 4;
-    tmp.width = textW;
-    tmp.height = textH;
+    tmp.width = bounds.bitmapWidth;
+    tmp.height = bounds.bitmapHeight;
     const ctx = tmp.getContext("2d");
     if (!ctx) return;
     ctx.scale(scale, scale);
-    ctx.font = `500 ${fontSize}px Inter, system-ui, sans-serif`;
+    const fontWeight = selected
+      ? FRAME_LABEL_SELECTED_FONT_WEIGHT
+      : FRAME_LABEL_FONT_WEIGHT;
+    ctx.font = `${fontWeight} ${fontSize}px ${FRAME_LABEL_FONT_FAMILY}`;
     ctx.fillStyle = FRAME_LABEL_COLOR;
     ctx.textBaseline = "top";
     ctx.fillText(name, 0, 0);
 
-    const imageData = ctx.getImageData(0, 0, textW, textH);
+    const imageData = ctx.getImageData(
+      0,
+      0,
+      bounds.bitmapWidth,
+      bounds.bitmapHeight,
+    );
     const img = ck.MakeImage(
       {
-        width: textW,
-        height: textH,
+        width: bounds.bitmapWidth,
+        height: bounds.bitmapHeight,
         alphaType: ck.AlphaType.Unpremul,
         colorType: ck.ColorType.RGBA_8888,
         colorSpace: ck.ColorSpace.SRGB,
       },
       imageData.data,
-      textW * 4,
+      bounds.bitmapWidth * 4,
     );
     if (img) {
       const paint = new ck.Paint();
       paint.setAntiAlias(true);
       canvas.drawImageRect(
         img,
-        ck.LTRBRect(0, 0, textW, textH),
-        ck.LTRBRect(
-          x,
-          y - offsetY - fontSize * 1.2,
-          x + textW / scale,
-          y - offsetY,
-        ),
+        ck.LTRBRect(0, 0, bounds.bitmapWidth, bounds.bitmapHeight),
+        ck.LTRBRect(bounds.left, bounds.top, bounds.right, bounds.bottom),
         paint,
       );
       paint.delete();
       img.delete();
     }
+  }
+
+  private shouldDrawFrameLabel(rn: RenderNode): boolean {
+    if (!rn.node.name) return false;
+    const isRootFrame = rn.node.type === "frame" && !rn.clipRect;
+    const isReusable = this.reusableIds.has(rn.node.id);
+    const isInstance = this.instanceIds.has(rn.node.id);
+    return isRootFrame || isReusable || isInstance;
+  }
+
+  private hitTestFrameLabel(sceneX: number, sceneY: number): PenNode | null {
+    const dpr = this.options.devicePixelRatio ?? window.devicePixelRatio ?? 1;
+
+    for (let i = this.renderNodes.length - 1; i >= 0; i--) {
+      const rn = this.renderNodes[i];
+      if (!rn || !this.shouldDrawFrameLabel(rn)) continue;
+      if (("locked" in rn.node ? rn.node.locked : undefined) === true) continue;
+      if (("visible" in rn.node ? rn.node.visible : undefined) === false)
+        continue;
+
+      const bounds = getFrameLabelBounds(
+        rn.node.name ?? "",
+        rn.absX,
+        rn.absY,
+        this._zoom,
+        dpr,
+      );
+      if (isFrameLabelPointHit(sceneX, sceneY, bounds, this._zoom)) {
+        return rn.node;
+      }
+    }
+
+    return null;
   }
 
   private getSelectedOverlayRenderNodes(): RenderNode[] {
@@ -975,6 +1025,77 @@ function getResizeHandlePoint(
     nw: { x, y },
   };
   return points[handle];
+}
+
+export interface FrameLabelBounds {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  bitmapWidth: number;
+  bitmapHeight: number;
+  fontSize: number;
+  scale: number;
+}
+
+export function getFrameLabelBounds(
+  name: string,
+  x: number,
+  y: number,
+  zoom: number,
+  dpr = 1,
+): FrameLabelBounds {
+  const safeZoom = Math.max(zoom, MIN_ZOOM);
+  const safeDpr = Math.max(dpr, 1);
+  const fontSize = FRAME_LABEL_FONT_SIZE / safeZoom;
+  const offsetY = FRAME_LABEL_OFFSET_Y / safeZoom;
+  const scale = Math.max(Math.min(safeZoom * safeDpr, 4), 0.01);
+  const estimatedTextWidth = estimateFrameLabelTextWidth(name, fontSize);
+  const bitmapWidth = Math.ceil(estimatedTextWidth * scale) + 4;
+  const bitmapHeight = Math.ceil(fontSize * 1.4 * scale) + 4;
+  const renderWidth = bitmapWidth / scale;
+  const renderHeight = bitmapHeight / scale;
+  const bottom = y - offsetY;
+
+  return {
+    left: x,
+    top: bottom - renderHeight,
+    right: x + renderWidth,
+    bottom,
+    bitmapWidth,
+    bitmapHeight,
+    fontSize,
+    scale,
+  };
+}
+
+export function isFrameLabelPointHit(
+  sceneX: number,
+  sceneY: number,
+  bounds: FrameLabelBounds,
+  zoom: number,
+): boolean {
+  const safeZoom = Math.max(zoom, MIN_ZOOM);
+  const padX = FRAME_LABEL_HIT_PADDING_X / safeZoom;
+  const padY = FRAME_LABEL_HIT_PADDING_Y / safeZoom;
+
+  return (
+    sceneX >= bounds.left - padX &&
+    sceneX <= bounds.right + padX &&
+    sceneY >= bounds.top - padY &&
+    sceneY <= bounds.bottom + padY
+  );
+}
+
+function estimateFrameLabelTextWidth(name: string, fontSize: number): number {
+  if (!name) return fontSize;
+
+  const units = Array.from(name).reduce((sum, char) => {
+    const codePoint = char.codePointAt(0) ?? 0;
+    return sum + (codePoint > 0xff ? 1 : 0.62);
+  }, 0);
+
+  return Math.max(fontSize, units * fontSize);
 }
 
 function getRotateHandlePoint(x: number, y: number, w: number, zoom: number) {
