@@ -2,7 +2,10 @@
 import { describe, expect, it } from "vitest";
 import { collectImageBlobs, convertNode } from "../index.js";
 import type { ConversionContext } from "../index.js";
-import { collectFigmaStyleDefinitions } from "../../figma-node-mapper.js";
+import {
+  collectFigmaStyleDefinitions,
+  figmaNodeChangesToPenNodes,
+} from "../../figma-node-mapper.js";
 
 function makeCtx(): ConversionContext {
   let id = 0;
@@ -143,6 +146,100 @@ describe("convertNode", () => {
     expect(result!.name).toBe("Test Rect");
     expect(result!.x).toBe(10);
     expect(result!.y).toBe(20);
+  });
+
+  it("keeps preserve-mode descendants that are already parent-relative", () => {
+    const { nodes } = figmaNodeChangesToPenNodes(
+      {
+        nodeChanges: [
+          {
+            type: "FRAME",
+            name: "Award Page",
+            guid: { sessionID: 1, localID: 1 },
+            size: { x: 560, y: 1080 },
+            transform: { m00: 1, m01: 0, m02: 300, m10: 0, m11: 1, m12: 100 },
+          },
+          {
+            type: "RECTANGLE",
+            name: "Yellow Rail",
+            guid: { sessionID: 1, localID: 2 },
+            parentIndex: {
+              guid: { sessionID: 1, localID: 1 },
+              position: "a",
+            },
+            size: { x: 72, y: 816 },
+            transform: { m00: 1, m01: 0, m02: 20, m10: 0, m11: 1, m12: 40 },
+          },
+        ],
+        blobs: [],
+        imageFiles: new Map(),
+      } as any,
+      "preserve",
+    );
+
+    const root = nodes[0] as any;
+    const child = root.children[0] as any;
+
+    expect(root).toMatchObject({
+      type: "frame",
+      x: 300,
+      y: 100,
+      transform: { m02: 300, m12: 100 },
+      clipContent: true,
+    });
+    expect(child).toMatchObject({
+      type: "rectangle",
+      x: 20,
+      y: 40,
+      transform: { m02: 20, m12: 40 },
+    });
+  });
+
+  it("normalizes clear preserve-mode scene-space descendants to parent-relative coordinates", () => {
+    const { nodes } = figmaNodeChangesToPenNodes(
+      {
+        nodeChanges: [
+          {
+            type: "FRAME",
+            name: "Award Page",
+            guid: { sessionID: 1, localID: 1 },
+            size: { x: 560, y: 1080 },
+            transform: { m00: 1, m01: 0, m02: 300, m10: 0, m11: 1, m12: 100 },
+          },
+          {
+            type: "RECTANGLE",
+            name: "Yellow Rail",
+            guid: { sessionID: 1, localID: 2 },
+            parentIndex: {
+              guid: { sessionID: 1, localID: 1 },
+              position: "a",
+            },
+            size: { x: 72, y: 816 },
+            transform: { m00: 1, m01: 0, m02: 620, m10: 0, m11: 1, m12: 240 },
+          },
+        ],
+        blobs: [],
+        imageFiles: new Map(),
+      } as any,
+      "preserve",
+    );
+
+    const root = nodes[0] as any;
+    const child = root.children[0] as any;
+
+    expect(root).toMatchObject({
+      type: "frame",
+      x: 300,
+      y: 100,
+      transform: { m02: 300, m12: 100 },
+      clipContent: true,
+    });
+    expect(child).toMatchObject({
+      type: "rectangle",
+      x: 320,
+      y: 140,
+      transform: { m02: 620, m12: 240 },
+    });
   });
 
   it("preserves Figma node-level transform, visibility, blend mode, and smoothing", () => {

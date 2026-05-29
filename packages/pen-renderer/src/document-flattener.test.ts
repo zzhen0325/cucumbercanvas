@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { describe, expect, it } from "vitest";
 import { flattenToRenderNodes } from "./document-flattener.js";
+import { toCanvasKitNodeTransform } from "./node-renderer.js";
 
 describe("flattenToRenderNodes mask layers", () => {
   it("isolates translucent group opacity instead of multiplying every child", () => {
@@ -139,6 +140,110 @@ describe("flattenToRenderNodes mask layers", () => {
       cornerSmoothing: 0.6,
       source: "frame",
     });
+  });
+
+  it("aligns normalized Figma preserve-mode children with their frame clip", () => {
+    const renderNodes = flattenToRenderNodes([
+      {
+        id: "figma-frame",
+        type: "frame",
+        x: 300,
+        y: 100,
+        width: 560,
+        height: 1080,
+        clipContent: true,
+        transform: { m00: 1, m01: 0, m02: 300, m10: 0, m11: 1, m12: 100 },
+        children: [
+          {
+            id: "figma-child",
+            type: "rectangle",
+            x: 20,
+            y: 40,
+            width: 72,
+            height: 816,
+            transform: { m00: 1, m01: 0, m02: 20, m10: 0, m11: 1, m12: 40 },
+          },
+        ],
+      },
+    ]);
+
+    expect(renderNodes.map((rn) => rn.node.id)).toEqual([
+      "figma-frame",
+      "figma-child",
+    ]);
+    expect(renderNodes[1]).toMatchObject({
+      absX: 320,
+      absY: 140,
+      clipRect: {
+        x: 300,
+        y: 100,
+        w: 560,
+        h: 1080,
+        source: "frame",
+      },
+    });
+  });
+
+  it("keeps Figma-like transform translation from shifting rendered children", () => {
+    const renderNodes = flattenToRenderNodes([
+      {
+        id: "figma-frame",
+        type: "frame",
+        x: 300,
+        y: 100,
+        width: 560,
+        height: 1080,
+        clipContent: true,
+        children: [
+          {
+            id: "local-transform-child",
+            type: "rectangle",
+            x: 20,
+            y: 40,
+            width: 72,
+            height: 120,
+            transform: { m00: 1, m01: 0, m02: 20, m10: 0, m11: 1, m12: 40 },
+          },
+          {
+            id: "scene-transform-child",
+            type: "rectangle",
+            x: 120,
+            y: 40,
+            width: 72,
+            height: 120,
+            transform: { m00: 1, m01: 0, m02: 420, m10: 0, m11: 1, m12: 140 },
+          },
+        ],
+      },
+    ]);
+
+    const localChild = renderNodes.find(
+      (rn) => rn.node.id === "local-transform-child",
+    );
+    const sceneChild = renderNodes.find(
+      (rn) => rn.node.id === "scene-transform-child",
+    );
+
+    expect(localChild).toMatchObject({ absX: 320, absY: 140 });
+    expect(sceneChild).toMatchObject({ absX: 420, absY: 140 });
+    expect(
+      localChild
+        ? toCanvasKitNodeTransform(
+            localChild.node,
+            localChild.absX,
+            localChild.absY,
+          )
+        : "missing",
+    ).toBeNull();
+    expect(
+      sceneChild
+        ? toCanvasKitNodeTransform(
+            sceneChild.node,
+            sceneChild.absX,
+            sceneChild.absY,
+          )
+        : "missing",
+    ).toBeNull();
   });
 
   it("carries alpha mask opacity from mask layer opacity and fill alpha", () => {

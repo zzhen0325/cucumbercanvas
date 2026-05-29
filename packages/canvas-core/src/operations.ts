@@ -14,6 +14,7 @@ import {
   isBoundsInside,
   setActiveChildren,
 } from "./document.js";
+import { getNodeSceneBounds, getNodeSceneOrigin } from "./geometry.js";
 import type { CanvasBounds, CanvasOperation } from "./types.js";
 
 export function applyCanvasOperation(
@@ -361,11 +362,7 @@ function getSceneBounds(
   nodeId: string,
   activePageId?: string | null,
 ): CanvasBounds | null {
-  const node = findNode(doc, nodeId, activePageId);
-  if (!node) return null;
-  const bounds = getNodeBounds(node);
-  const origin = getSceneOrigin(doc, nodeId, activePageId);
-  return { ...bounds, x: origin.x, y: origin.y };
+  return getNodeSceneBounds(doc, nodeId, activePageId);
 }
 
 function isPointInsideBounds(
@@ -403,23 +400,14 @@ function getSceneOrigin(
   nodeId: string,
   activePageId?: string | null,
 ): { x: number; y: number } {
-  const node = findNode(doc, nodeId, activePageId);
-  if (!node) {
+  const origin = getNodeSceneOrigin(doc, nodeId, activePageId);
+  if (!origin) {
     throw new CanvasOperationError(
       "node_not_found",
       `Node ${nodeId} does not exist.`,
     );
   }
-
-  let x = node.x ?? 0;
-  let y = node.y ?? 0;
-  let parent = findParent(doc, nodeId, activePageId);
-  while (parent) {
-    x += parent.x ?? 0;
-    y += parent.y ?? 0;
-    parent = findParent(doc, parent.id, activePageId);
-  }
-  return { x, y };
+  return origin;
 }
 
 function buildScenePreservingUpdates(

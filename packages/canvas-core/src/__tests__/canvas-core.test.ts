@@ -20,6 +20,8 @@ import {
   getActiveChildren,
   getFigmaAutoLayoutMeta,
   getNodeBounds,
+  getNodeSceneBounds,
+  getNodeSceneOrigin,
   getOrderedCanvasNodes,
   getVisibleCanvasNodesInBounds,
   insertCanvasImportResult,
@@ -298,6 +300,83 @@ describe("cucumber canvas core", () => {
         height: 100,
       }).map((node) => node.id),
     ).toEqual(["visible"]);
+  });
+
+  it("resolves nested node scene origins and bounds", () => {
+    let doc = createEmptyDocument();
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: {
+        id: "outer",
+        type: "frame",
+        x: 100,
+        y: 50,
+        width: 300,
+        height: 200,
+        children: [
+          {
+            id: "inner",
+            type: "group",
+            x: 20,
+            y: 30,
+            width: 120,
+            height: 80,
+            children: [
+              {
+                id: "leaf",
+                type: "rectangle",
+                x: 7,
+                y: 9,
+                width: 40,
+                height: 24,
+              } as PenNode,
+            ],
+          } as PenNode,
+        ],
+      } as PenNode,
+    });
+
+    expect(getNodeSceneOrigin(doc, "leaf")).toEqual({ x: 127, y: 89 });
+    expect(getNodeSceneBounds(doc, "leaf")).toMatchObject({
+      x: 127,
+      y: 89,
+      width: 40,
+      height: 24,
+    });
+  });
+
+  it("hit-tests nested visible nodes by absolute scene bounds", () => {
+    let doc = createEmptyDocument();
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: {
+        id: "frame",
+        type: "frame",
+        x: 100,
+        y: 50,
+        width: 160,
+        height: 120,
+        children: [
+          {
+            id: "nested",
+            type: "rectangle",
+            x: 20,
+            y: 30,
+            width: 40,
+            height: 40,
+          } as PenNode,
+        ],
+      } as PenNode,
+    });
+
+    const hitIds = getVisibleCanvasNodesInBounds(doc, {
+      x: 118,
+      y: 78,
+      width: 48,
+      height: 48,
+    }).map((node) => node.id);
+
+    expect(hitIds).toContain("nested");
   });
 
   it("orders and hit-tests nodes from the active page", () => {
@@ -611,6 +690,51 @@ describe("cucumber canvas core", () => {
     expect(findNode(reparented.doc, "rect")).toMatchObject({
       x: 40,
       y: 30,
+    });
+  });
+
+  it("preserves scene line endpoints when reparenting into a frame", () => {
+    let doc = createEmptyDocument();
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: {
+        id: "frame",
+        type: "frame",
+        x: 100,
+        y: 50,
+        width: 180,
+        height: 140,
+        children: [],
+      } as PenNode,
+    });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: {
+        id: "line",
+        type: "line",
+        x: 140,
+        y: 80,
+        x2: 220,
+        y2: 120,
+      } as PenNode,
+    });
+
+    const reparented = reparentNodesByDropPoint(doc, ["line"], {
+      x: 150,
+      y: 90,
+    });
+
+    expect(reparented.movedIds).toEqual(["line"]);
+    expect(findParent(reparented.doc, "line")?.id).toBe("frame");
+    expect(findNode(reparented.doc, "line")).toMatchObject({
+      x: 40,
+      y: 30,
+      x2: 120,
+      y2: 70,
+    });
+    expect(getNodeSceneBounds(reparented.doc, "line")).toMatchObject({
+      x: 140,
+      y: 80,
     });
   });
 

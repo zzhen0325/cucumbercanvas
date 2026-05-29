@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import {
   type CucumberCanvasDocument,
@@ -68,10 +68,13 @@ export function CanvasEngineHarness() {
     setCanvasKey((value) => value + 1);
   };
 
-  const handleDocumentChange = (nextDoc: CucumberCanvasDocument) => {
-    setPersistedDoc(nextDoc);
-    setDoc(nextDoc);
-  };
+  const handleDocumentChange = useCallback(
+    (nextDoc: CucumberCanvasDocument) => {
+      setPersistedDoc(nextDoc);
+      setDoc(nextDoc);
+    },
+    [],
+  );
 
   return (
     <main

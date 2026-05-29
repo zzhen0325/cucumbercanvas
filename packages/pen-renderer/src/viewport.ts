@@ -6,9 +6,56 @@ export type { ViewportState } from "./types.js";
 /**
  * Compute the 3x3 transform matrix for CanvasKit from viewport state.
  * CanvasKit uses column-major [scaleX, skewX, transX, skewY, scaleY, transY, pers0, pers1, pers2]
+ * panX/panY are CSS-pixel offsets in canvas-local coordinates. The renderer
+ * applies device-pixel-ratio scaling before this matrix, so viewport math always
+ * works in browser CSS pixels until scene drawing begins.
  */
 export function viewportMatrix(vp: ViewportState): number[] {
   return [vp.zoom, 0, vp.panX, 0, vp.zoom, vp.panY, 0, 0, 1];
+}
+
+export function clientToCanvasLocal(
+  clientX: number,
+  clientY: number,
+  canvasRect: Pick<DOMRect, "left" | "top">,
+): { x: number; y: number } {
+  return {
+    x: clientX - canvasRect.left,
+    y: clientY - canvasRect.top,
+  };
+}
+
+export function canvasLocalToScene(
+  localX: number,
+  localY: number,
+  vp: ViewportState,
+): { x: number; y: number } {
+  return {
+    x: (localX - vp.panX) / vp.zoom,
+    y: (localY - vp.panY) / vp.zoom,
+  };
+}
+
+export function sceneToCanvasLocal(
+  sceneX: number,
+  sceneY: number,
+  vp: ViewportState,
+): { x: number; y: number } {
+  return {
+    x: sceneX * vp.zoom + vp.panX,
+    y: sceneY * vp.zoom + vp.panY,
+  };
+}
+
+export function clientDeltaToSceneDelta(
+  deltaX: number,
+  deltaY: number,
+  vp: ViewportState,
+): { x: number; y: number } {
+  return {
+    x: deltaX / vp.zoom,
+    y: deltaY / vp.zoom,
+  };
 }
 
 /**
@@ -20,12 +67,8 @@ export function screenToScene(
   canvasRect: DOMRect,
   vp: ViewportState,
 ): { x: number; y: number } {
-  const sx = clientX - canvasRect.left;
-  const sy = clientY - canvasRect.top;
-  return {
-    x: (sx - vp.panX) / vp.zoom,
-    y: (sy - vp.panY) / vp.zoom,
-  };
+  const local = clientToCanvasLocal(clientX, clientY, canvasRect);
+  return canvasLocalToScene(local.x, local.y, vp);
 }
 
 /**
@@ -37,9 +80,10 @@ export function sceneToScreen(
   canvasRect: DOMRect,
   vp: ViewportState,
 ): { x: number; y: number } {
+  const local = sceneToCanvasLocal(sceneX, sceneY, vp);
   return {
-    x: sceneX * vp.zoom + vp.panX + canvasRect.left,
-    y: sceneY * vp.zoom + vp.panY + canvasRect.top,
+    x: local.x + canvasRect.left,
+    y: local.y + canvasRect.top,
   };
 }
 
@@ -58,13 +102,12 @@ export function zoomToPoint(
   const sy = screenY - canvasRect.top;
 
   // The scene point under the cursor should stay fixed
-  const sceneX = (sx - vp.panX) / vp.zoom;
-  const sceneY = (sy - vp.panY) / vp.zoom;
+  const scene = canvasLocalToScene(sx, sy, vp);
 
   return {
     zoom: clampedZoom,
-    panX: sx - sceneX * clampedZoom,
-    panY: sy - sceneY * clampedZoom,
+    panX: sx - scene.x * clampedZoom,
+    panY: sy - scene.y * clampedZoom,
   };
 }
 

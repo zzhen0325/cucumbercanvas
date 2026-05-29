@@ -931,6 +931,24 @@ export function insertCanvasImportResult(
   if (isNative) {
     // Native Figma path: nodes are already PenNode tree
     const nativeNodes = result.nodes as PenNode[];
+    const placementStats = {
+      source: result.source,
+      rootCount: result.rootNodeIds.length,
+      nodeCount: nativeNodes.reduce(
+        (count, node) => count + countPenNodeTree(node),
+        0,
+      ),
+      transformTranslationIgnoredForRender: nativeNodes.reduce(
+        (count, node) => count + countTransformTranslationNodes(node),
+        0,
+      ),
+      coordinateContract: "x-y-canonical",
+      offsetX,
+      offsetY,
+      maxOffset: Math.max(Math.abs(offsetX), Math.abs(offsetY)),
+    };
+    console.info("[canvas-import] native-placement.offset", placementStats);
+
     for (const rootId of result.rootNodeIds) {
       const penNode = nativeNodes.find((n) => n.id === rootId);
       if (!penNode) continue;
@@ -1312,6 +1330,32 @@ function offsetPenNodeRoot(
     ...(record.x2 !== undefined ? { x2: record.x2 + offsetX } : {}),
     ...(record.y2 !== undefined ? { y2: record.y2 + offsetY } : {}),
   } as PenNode;
+}
+
+function countPenNodeTree(node: PenNode): number {
+  const children = "children" in node ? node.children : undefined;
+  if (!Array.isArray(children)) return 1;
+  return (
+    1 + children.reduce((count, child) => count + countPenNodeTree(child), 0)
+  );
+}
+
+function countTransformTranslationNodes(node: PenNode): number {
+  const transform = (
+    node as PenNode & {
+      transform?: { m02?: number; m12?: number };
+    }
+  ).transform;
+  const hasTranslation =
+    typeof transform?.m02 === "number" || typeof transform?.m12 === "number";
+  const children = "children" in node ? node.children : undefined;
+  const childCount = Array.isArray(children)
+    ? children.reduce(
+        (count, child) => count + countTransformTranslationNodes(child),
+        0,
+      )
+    : 0;
+  return (hasTranslation ? 1 : 0) + childCount;
 }
 
 /** Convert a flat ImportNode to a PenNode with import metadata. */

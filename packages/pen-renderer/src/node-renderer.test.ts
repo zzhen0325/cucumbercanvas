@@ -261,7 +261,44 @@ describe("toCanvasKitNodeTransform", () => {
     ).toBeNull();
   });
 
-  it("converts a preserved Figma matrix without double-applying x/y", () => {
+  it("ignores pure transform translation so selection bounds stay canonical", () => {
+    expect(
+      toCanvasKitNodeTransform(
+        {
+          id: "translation-only",
+          x: 20,
+          y: 40,
+          transform: {
+            m00: 1,
+            m01: 0,
+            m02: 9999,
+            m10: 0,
+            m11: 1,
+            m12: -9999,
+          },
+        },
+        320,
+        140,
+      ),
+    ).toBeNull();
+  });
+
+  it("returns null for imported child transforms stored in scene coordinates", () => {
+    expect(
+      toCanvasKitNodeTransform(
+        {
+          id: "scene-child",
+          x: 20,
+          y: 40,
+          transform: { m00: 1, m01: 0, m02: 320, m10: 0, m11: 1, m12: 140 },
+        },
+        320,
+        140,
+      ),
+    ).toBeNull();
+  });
+
+  it("anchors non-identity preserved matrices at flattened bounds", () => {
     expect(
       toCanvasKitNodeTransform(
         {
@@ -280,7 +317,7 @@ describe("toCanvasKitNodeTransform", () => {
         10,
         20,
       ),
-    ).toEqual([2, 0.5, 70, 0.25, 1.5, 167.5, 0, 0, 1]);
+    ).toEqual([2, 0.5, -20, 0.25, 1.5, -12.5, 0, 0, 1]);
   });
 });
 

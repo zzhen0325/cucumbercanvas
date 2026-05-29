@@ -218,7 +218,13 @@ export function figmaToPenDocument(
     layoutMode,
   };
 
-  const children = convertChildren(page, ctx);
+  const children =
+    layoutMode === "preserve"
+      ? normalizePreserveModeCoordinates(
+          convertChildren(page, ctx),
+          "single-page",
+        )
+      : convertChildren(page, ctx);
   const imageBlobs = collectImageBlobs(decoded.blobs);
 
   const pageName = page.figma.name ?? "Page 1";
@@ -305,7 +311,13 @@ export function figmaAllPagesToPenDocument(
       layoutMode,
     };
 
-    const pageChildren = convertChildren(page, ctx);
+    const pageChildren =
+      layoutMode === "preserve"
+        ? normalizePreserveModeCoordinates(
+            convertChildren(page, ctx),
+            "all-pages",
+          )
+        : convertChildren(page, ctx);
     const pageName = page.figma.name ?? `Page ${i + 1}`;
 
     penPages.push({
@@ -416,5 +428,140 @@ export function figmaNodeChangesToPenNodes(
 
   const imageBlobs = collectImageBlobs(decoded.blobs);
 
-  return { nodes, warnings, imageBlobs };
+  return {
+    nodes:
+      layoutMode === "preserve"
+        ? normalizePreserveModeCoordinates(nodes, "node-changes")
+        : nodes,
+    warnings,
+    imageBlobs,
+  };
+}
+
+function normalizePreserveModeCoordinates(
+  nodes: PenNode[],
+  source: "single-page" | "all-pages" | "node-changes",
+): PenNode[] {
+  const stats = {
+    source,
+    rootCount: nodes.length,
+    nodeCount: 0,
+    adjustedNodeCount: 0,
+    maxOffsetX: 0,
+    maxOffsetY: 0,
+  };
+  const normalized = nodes.map((node) =>
+    normalizePreserveModeNode(node, undefined, stats),
+  );
+
+  console.info("[pen-figma] preserve-coordinates.normalized", stats);
+  return normalized;
+}
+
+function normalizePreserveModeNode(
+  node: PenNode,
+  coordinateParentSceneOrigin: { x: number; y: number } | undefined,
+  stats: {
+    nodeCount: number;
+    adjustedNodeCount: number;
+    maxOffsetX: number;
+    maxOffsetY: number;
+  },
+): PenNode {
+  stats.nodeCount += 1;
+
+  const originalX = node.x ?? 0;
+  const originalY = node.y ?? 0;
+  const offsetX = coordinateParentSceneOrigin
+    ? coordinateParentSceneOrigin.x
+    : 0;
+  const offsetY = coordinateParentSceneOrigin
+    ? coordinateParentSceneOrigin.y
+    : 0;
+  let next = node;
+  const record = node as PenNode & {
+    x2?: number;
+    y2?: number;
+  };
+
+  if (coordinateParentSceneOrigin) {
+    stats.adjustedNodeCount += 1;
+    stats.maxOffsetX = Math.max(stats.maxOffsetX, Math.abs(offsetX));
+    stats.maxOffsetY = Math.max(stats.maxOffsetY, Math.abs(offsetY));
+
+    next = {
+      ...node,
+      x: roundPreserveCoordinate(originalX - offsetX),
+      y: roundPreserveCoordinate(originalY - offsetY),
+      ...(record.x2 !== undefined
+        ? { x2: roundPreserveCoordinate(record.x2 - offsetX) }
+        : {}),
+      ...(record.y2 !== undefined
+        ? { y2: roundPreserveCoordinate(record.y2 - offsetY) }
+        : {}),
+    } as PenNode;
+  }
+
+  const children = "children" in node ? node.children : undefined;
+  if (Array.isArray(children) && children.length > 0) {
+    const childParentSceneOrigin = shouldNormalizeChildCoordinates(node, children)
+      ? { x: originalX, y: originalY }
+      : undefined;
+    const normalizedChildren = children.map((child) =>
+      normalizePreserveModeNode(
+        child,
+        childParentSceneOrigin,
+        stats,
+      ),
+    );
+    next = {
+      ...next,
+      children: normalizedChildren,
+    } as PenNode;
+  }
+
+  return next;
+}
+
+function roundPreserveCoordinate(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function shouldNormalizeChildCoordinates(
+  parent: PenNode,
+  children: PenNode[],
+): boolean {
+  const parentWidth =
+    "width" in parent && typeof parent.width === "number" ? parent.width : 0;
+  const parentHeight =
+    "height" in parent && typeof parent.height === "number" ? parent.height : 0;
+  if (parentWidth <= 0 || parentHeight <= 0) return false;
+
+  let localOutlierCount = 0;
+  let sceneFitsCount = 0;
+  for (const child of children) {
+    const childWidth =
+      "width" in child && typeof child.width === "number" ? child.width : 0;
+    const childHeight =
+      "height" in child && typeof child.height === "number" ? child.height : 0;
+    const childX = child.x ?? 0;
+    const childY = child.y ?? 0;
+    const localOutside =
+      childX < 0 ||
+      childY < 0 ||
+      childX + childWidth > parentWidth ||
+      childY + childHeight > parentHeight;
+    const sceneX = childX - (parent.x ?? 0);
+    const sceneY = childY - (parent.y ?? 0);
+    const sceneInside =
+      sceneX >= 0 &&
+      sceneY >= 0 &&
+      sceneX + childWidth <= parentWidth &&
+      sceneY + childHeight <= parentHeight;
+
+    if (localOutside) localOutlierCount += 1;
+    if (sceneInside) sceneFitsCount += 1;
+  }
+
+  return localOutlierCount > 0 && sceneFitsCount >= localOutlierCount;
 }

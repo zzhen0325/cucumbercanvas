@@ -1,5 +1,10 @@
 import type { PenDocument, PenNode } from "@cucumber/pen-types";
-import { findNode, getActiveChildren, getNodeBounds } from "./document.js";
+import {
+  findNode,
+  findParent,
+  getActiveChildren,
+  getNodeBounds,
+} from "./document.js";
 import type { CanvasBounds } from "./types.js";
 
 export interface OrderedCanvasNode {
@@ -46,11 +51,46 @@ export function getSelectionBounds(
   activePageId?: string | null,
 ): CanvasBounds | null {
   const boundsList = nodeIds
-    .map((id) => findNode(doc, id, activePageId))
-    .filter((node): node is NonNullable<typeof node> => Boolean(node))
-    .map((node) => getNodeBounds(node));
+    .map((id) => getNodeSceneBounds(doc, id, activePageId))
+    .filter((bounds): bounds is CanvasBounds => Boolean(bounds));
   if (boundsList.length === 0) return null;
   return getBoundsUnion(boundsList);
+}
+
+export function getNodeSceneOrigin(
+  doc: PenDocument,
+  nodeId: string,
+  activePageId?: string | null,
+): { x: number; y: number } | null {
+  const node = findNode(doc, nodeId, activePageId);
+  if (!node) return null;
+
+  let x = node.x ?? 0;
+  let y = node.y ?? 0;
+  let parent = findParent(doc, nodeId, activePageId);
+  while (parent) {
+    x += parent.x ?? 0;
+    y += parent.y ?? 0;
+    parent = findParent(doc, parent.id, activePageId);
+  }
+  return { x, y };
+}
+
+export function getNodeSceneBounds(
+  doc: PenDocument,
+  nodeId: string,
+  activePageId?: string | null,
+): CanvasBounds | null {
+  const node = findNode(doc, nodeId, activePageId);
+  const origin = getNodeSceneOrigin(doc, nodeId, activePageId);
+  if (!node || !origin) return null;
+
+  const bounds = getNodeBounds(node);
+  return {
+    ...bounds,
+    x: origin.x,
+    y: origin.y,
+  };
 }
 
 export function getOrderedCanvasNodes(
@@ -79,6 +119,10 @@ export function getVisibleCanvasNodesInBounds(
     .map((e) => e.node)
     .filter(
       (node) =>
-        node.visible !== false && boundsIntersect(getNodeBounds(node), bounds),
+        node.visible !== false &&
+        boundsIntersect(
+          getNodeSceneBounds(doc, node.id, activePageId) ?? getNodeBounds(node),
+          bounds,
+        ),
     );
 }

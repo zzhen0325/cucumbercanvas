@@ -246,14 +246,11 @@ export function toCanvasKitNodeTransform(
     );
   }
 
-  const localX = typeof node.x === "number" ? node.x : 0;
-  const localY = typeof node.y === "number" ? node.y : 0;
-  const parentSceneX = absX - localX;
-  const parentSceneY = absY - localY;
-  const sceneOriginX = parentSceneX + transform.m02;
-  const sceneOriginY = parentSceneY + transform.m12;
-  const translateX = sceneOriginX - transform.m00 * absX - transform.m01 * absY;
-  const translateY = sceneOriginY - transform.m10 * absX - transform.m11 * absY;
+  // RenderNode.absX/absY is the canonical placement already used by
+  // selection, hit testing, and clipping. Figma's m02/m12 is retained as import
+  // metadata but must not become a second placement source.
+  const translateX = absX - transform.m00 * absX - transform.m01 * absY;
+  const translateY = absY - transform.m10 * absX - transform.m11 * absY;
 
   const matrix = [
     transform.m00,

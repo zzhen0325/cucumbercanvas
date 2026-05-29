@@ -324,7 +324,7 @@ export class PenRenderer {
     const selected = this.getSelectedOverlayRenderNodes();
     for (let i = selected.length - 1; i >= 0; i--) {
       const rn = selected[i];
-      if (!rn || rn.node.type === "text") continue;
+      if (!rn) continue;
       const rotateHit = this.hitTestRotateHandle(rn, scene.x, scene.y);
       if (rotateHit) return { type: "rotate", nodeId: rn.node.id };
       const resizeHit = this.hitTestResizeHandle(rn, scene.x, scene.y);
@@ -506,7 +506,6 @@ export class PenRenderer {
     );
 
     for (const rn of this.getSelectedOverlayRenderNodes()) {
-      if (rn.node.type === "text") continue;
       this.drawSelectionOverlay(canvas, rn);
     }
 

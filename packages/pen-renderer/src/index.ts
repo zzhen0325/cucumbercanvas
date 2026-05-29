@@ -52,6 +52,10 @@ export {
 } from "./document-flattener.js";
 export {
   viewportMatrix,
+  clientToCanvasLocal,
+  canvasLocalToScene,
+  sceneToCanvasLocal,
+  clientDeltaToSceneDelta,
   screenToScene,
   sceneToScreen,
   zoomToPoint,

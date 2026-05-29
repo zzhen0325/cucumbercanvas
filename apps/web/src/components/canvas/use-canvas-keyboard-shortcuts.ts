@@ -37,6 +37,7 @@ export function useCanvasKeyboardShortcuts(options: {
   ungroupSelection: () => string[];
   nudgeSelection: (dx: number, dy: number) => void;
   reorderSelection: (direction: "forward" | "backward") => void;
+  editSelectedText?: () => boolean;
   setActiveTool: (tool: CanvasToolShortcut) => void;
 }) {
   useEffect(() => {
@@ -115,6 +116,13 @@ export function useCanvasKeyboardShortcuts(options: {
         event.preventDefault();
         options.deleteSelection();
         return;
+      }
+
+      if (event.key === "Enter" && !isMod && !event.altKey) {
+        if (options.editSelectedText?.()) {
+          event.preventDefault();
+          return;
+        }
       }
 
       const nudgeByKey: Record<string, { x: number; y: number }> = {

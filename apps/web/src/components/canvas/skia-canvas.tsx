@@ -21,6 +21,7 @@ import {
   getCanvasImportBounds,
   getCanvasPages,
   getNodeBounds,
+  getNodeSceneBounds,
   getOrderedCanvasNodes,
   getVisibleCanvasNodesInBounds,
   insertCanvasImportResult,
@@ -43,7 +44,9 @@ import {
 import {
   type EditorOverlayState,
   PenRenderer,
+  type ViewportState,
   loadCanvasKit,
+  sceneToCanvasLocal,
   screenToScene,
 } from "@cucumber/pen-renderer";
 import type { ContainerRole, PenDocument, PenNode } from "@cucumber/pen-types";
@@ -99,8 +102,9 @@ function toSceneElement(
   node: PenNode,
   depth = 0,
   parentId: string | null = null,
+  sceneBounds?: CanvasBounds,
 ): CanvasSceneElement {
-  const b = getNodeBounds(node);
+  const b = sceneBounds ?? getNodeBounds(node);
   const nodeRecord = node as unknown as Record<string, unknown>;
   const meta = nodeRecord.meta as Record<string, unknown> | undefined;
   const customData = {
@@ -188,7 +192,14 @@ function toSceneElements(
   const walk = (nodes: PenNode[], depth: number, parentId: string | null) => {
     for (const node of nodes) {
       if (node.visible !== false) {
-        elements.push(toSceneElement(node, depth, parentId));
+        elements.push(
+          toSceneElement(
+            node,
+            depth,
+            parentId,
+            getNodeSceneBounds(doc, node.id, activePageId) ?? undefined,
+          ),
+        );
       }
       if ("children" in node && Array.isArray(node.children)) {
         walk(node.children as PenNode[], depth + 1, node.id);
@@ -199,13 +210,17 @@ function toSceneElements(
   return elements;
 }
 
-function toAppState(doc: PenDocument, selection?: string[]): CanvasAppState {
+function toAppState(
+  doc: PenDocument,
+  selection?: string[],
+  viewportOverride?: ViewportState,
+): CanvasAppState {
   const runtimeState = getCanvasApiRuntimeState(doc, selection);
   const { viewport } = runtimeState;
   return {
-    zoom: { value: viewport?.zoom ?? 1 },
-    scrollX: viewport?.x ?? 0,
-    scrollY: viewport?.y ?? 0,
+    zoom: { value: viewportOverride?.zoom ?? viewport?.zoom ?? 1 },
+    scrollX: viewportOverride?.panX ?? viewport?.x ?? 0,
+    scrollY: viewportOverride?.panY ?? viewport?.y ?? 0,
     viewBackgroundColor: viewport?.backgroundColor ?? "#ffffff",
     selectedElementIds: Object.fromEntries(
       runtimeState.selection.map((id: string) => [id, true]),
@@ -233,12 +248,42 @@ function toFiles(doc: PenDocument): Record<string, CanvasFileRecord> {
 function defaultBounds(
   doc: PenDocument,
   _type: string,
-  _parentId?: string | null,
+  parentId?: string | null,
+  viewport?: ViewportState | null,
+  viewportRect?: Pick<DOMRect, "width" | "height"> | null,
 ): CanvasBounds {
   const vp = getCanvasApiRuntimeState(doc).viewport;
-  const cx = -((vp.x ?? 0) / (vp.zoom ?? 1)) + 200;
-  const cy = -((vp.y ?? 0) / (vp.zoom ?? 1)) + 200;
-  return { x: cx, y: cy, width: 300, height: 200 };
+  const width = 300;
+  const height = 200;
+  const sceneCenter =
+    viewport && viewportRect
+      ? {
+          x: ((viewportRect.width ?? 0) / 2 - viewport.panX) / viewport.zoom,
+          y: ((viewportRect.height ?? 0) / 2 - viewport.panY) / viewport.zoom,
+        }
+      : {
+          x: -((vp.x ?? 0) / (vp.zoom ?? 1)) + 200,
+          y: -((vp.y ?? 0) / (vp.zoom ?? 1)) + 200,
+        };
+  const sceneBounds = {
+    x: sceneCenter.x - width / 2,
+    y: sceneCenter.y - height / 2,
+    width,
+    height,
+  };
+  if (!parentId) return sceneBounds;
+
+  const parentBounds = getNodeSceneBounds(doc, parentId);
+  if (!parentBounds) {
+    throw new Error(
+      `Cannot place node because parent ${parentId} was not found.`,
+    );
+  }
+  return {
+    ...sceneBounds,
+    x: sceneBounds.x - parentBounds.x,
+    y: sceneBounds.y - parentBounds.y,
+  };
 }
 
 function normalizePenDocument(raw: unknown): PenDocument {
@@ -272,17 +317,26 @@ type ResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
 
 const MIN_DRAW_SIZE = 2;
 const MOVE_COMMIT_THRESHOLD_PX = 2;
+const TEXT_DRAG_THRESHOLD_PX = 4;
 const CANVAS_SELECTION_COLOR = "#37BFF9";
 const DEFAULT_RECT_FILL = "#d3f256";
 const DEFAULT_SHAPE_FILL = "#f8fafc";
+const DEFAULT_TEXT_FONT_SIZE = 28;
+const DEFAULT_TEXT_LINE_HEIGHT = 1.4;
+const DEFAULT_TEXT_FONT_FAMILY =
+  'Inter, -apple-system, "Noto Sans SC", "PingFang SC", system-ui, sans-serif';
+const MIN_TEXT_BOX_SIZE = 8;
 
 type TextEditState = {
   nodeId: string;
+  isNew: boolean;
   x: number;
   y: number;
   width: number;
-  minHeight: number;
+  height: number;
   content: string;
+  initialContent: string;
+  textGrowth: "auto" | "fixed-width" | "fixed-width-height";
   fontSize: number;
   fontFamily: string;
   fontWeight: string;
@@ -342,12 +396,151 @@ function projectTextEditStateToViewport(
   editingText: TextEditState,
   viewport: { zoom: number; panX: number; panY: number },
 ) {
+  const local = sceneToCanvasLocal(editingText.x, editingText.y, viewport);
   return {
-    left: editingText.x * viewport.zoom + viewport.panX,
-    top: editingText.y * viewport.zoom + viewport.panY,
+    left: local.x,
+    top: local.y,
     width: Math.max(editingText.width * viewport.zoom, 1),
-    minHeight: Math.max(editingText.minHeight * viewport.zoom, 1),
+    height: Math.max(editingText.height * viewport.zoom, 1),
     fontSize: Math.max(editingText.fontSize * viewport.zoom, 1),
+  };
+}
+
+function cssFontFamily(fontFamily: string): string {
+  return fontFamily
+    .split(",")
+    .map((part) => {
+      const trimmed = part.trim();
+      if (!trimmed || trimmed.startsWith("'") || trimmed.startsWith('"')) {
+        return trimmed;
+      }
+      return /\s/.test(trimmed) ? `"${trimmed}"` : trimmed;
+    })
+    .join(", ");
+}
+
+function getTextMeasureContext() {
+  if (typeof document === "undefined") return null;
+  if (
+    typeof navigator !== "undefined" &&
+    navigator.userAgent.toLowerCase().includes("jsdom")
+  ) {
+    return null;
+  }
+  const canvas = document.createElement("canvas");
+  try {
+    return canvas.getContext("2d");
+  } catch {
+    return null;
+  }
+}
+
+function getLineHeightPx(
+  lineHeight: number | string | undefined,
+  fontSize: number,
+): number {
+  if (typeof lineHeight === "number") {
+    return lineHeight <= 4 ? lineHeight * fontSize : lineHeight;
+  }
+  if (typeof lineHeight === "string") {
+    const parsed = Number.parseFloat(lineHeight);
+    if (Number.isFinite(parsed)) {
+      return lineHeight.endsWith("px") ? parsed : parsed * fontSize;
+    }
+  }
+  return DEFAULT_TEXT_LINE_HEIGHT * fontSize;
+}
+
+function measureTextWidth(
+  ctx: CanvasRenderingContext2D | null,
+  text: string,
+  fontSize: number,
+): number {
+  if (ctx) return ctx.measureText(text).width;
+  return text.length * fontSize * 0.56;
+}
+
+function wrapTextLine(
+  ctx: CanvasRenderingContext2D | null,
+  line: string,
+  width: number,
+  fontSize: number,
+  output: string[],
+) {
+  if (!line) {
+    output.push("");
+    return;
+  }
+  let current = "";
+  for (const char of Array.from(line)) {
+    const candidate = `${current}${char}`;
+    if (
+      current &&
+      measureTextWidth(ctx, candidate, fontSize) > Math.max(width, 1)
+    ) {
+      output.push(current);
+      current = char;
+    } else {
+      current = candidate;
+    }
+  }
+  output.push(current);
+}
+
+function measureTextLayout(options: {
+  content: string;
+  fontSize: number;
+  fontFamily: string;
+  fontWeight: string;
+  lineHeight: number | string;
+  textGrowth: "auto" | "fixed-width" | "fixed-width-height";
+  width: number;
+  height: number;
+}) {
+  const ctx = getTextMeasureContext();
+  if (ctx) {
+    ctx.font = `${options.fontWeight} ${options.fontSize}px ${cssFontFamily(
+      options.fontFamily,
+    )}`;
+  }
+  const lineHeightPx = getLineHeightPx(options.lineHeight, options.fontSize);
+  const rawLines = options.content.split("\n");
+  const lines = rawLines.length > 0 ? rawLines : [""];
+
+  if (options.textGrowth === "fixed-width-height") {
+    return {
+      width: Math.max(options.width, MIN_TEXT_BOX_SIZE),
+      height: Math.max(options.height, MIN_TEXT_BOX_SIZE),
+    };
+  }
+
+  if (options.textGrowth === "fixed-width") {
+    const wrappedLines: string[] = [];
+    for (const line of lines) {
+      wrapTextLine(
+        ctx,
+        line,
+        Math.max(options.width, MIN_TEXT_BOX_SIZE),
+        options.fontSize,
+        wrappedLines,
+      );
+    }
+    return {
+      width: Math.max(options.width, MIN_TEXT_BOX_SIZE),
+      height: Math.max(wrappedLines.length, 1) * lineHeightPx,
+    };
+  }
+
+  let maxWidth = 0;
+  for (const line of lines) {
+    maxWidth = Math.max(
+      maxWidth,
+      measureTextWidth(ctx, line, options.fontSize),
+    );
+  }
+  return {
+    width: Math.max(maxWidth + 2, MIN_TEXT_BOX_SIZE),
+    height: Math.max(lines.length, 1) * lineHeightPx,
   };
 }
 
@@ -482,19 +675,19 @@ export const SkiaCanvas = memo(
       | {
           kind: "move";
           nodeIds: string[];
-          startX: number;
-          startY: number;
+          startPoint: { x: number; y: number };
           origins: Record<string, CanvasBounds>;
           hasMoved: boolean;
+          sceneDelta: { x: number; y: number };
         }
       | {
           kind: "resize";
           nodeId: string;
           handle: ResizeHandle;
-          startX: number;
-          startY: number;
+          startPoint: { x: number; y: number };
           origin: CanvasBounds;
           preserveAspectRatio: boolean;
+          sceneDelta: { x: number; y: number };
         }
       | {
           kind: "rotate";
@@ -509,12 +702,18 @@ export const SkiaCanvas = memo(
           startPoint: { x: number; y: number };
         }
       | {
+          kind: "drawText";
+          startPoint: { x: number; y: number };
+          startScreenX: number;
+          startScreenY: number;
+          hasMoved: boolean;
+        }
+      | {
           kind: "pen";
         }
       | {
           kind: "marquee";
-          startX: number;
-          startY: number;
+          startPoint: { x: number; y: number };
           originSelection: string[];
         };
     const dragRef = useRef<DragState | null>(null);
@@ -534,6 +733,30 @@ export const SkiaCanvas = memo(
       },
       [],
     );
+
+    const getPointerScenePoint = useCallback(
+      (event: { clientX: number; clientY: number }) => {
+        const renderer = rendererRef.current;
+        const rect = canvasContainerRef.current?.getBoundingClientRect();
+        if (!renderer || !rect) return null;
+        return screenToScene(
+          event.clientX,
+          event.clientY,
+          rect,
+          renderer.getViewport(),
+        );
+      },
+      [],
+    );
+
+    const getLiveViewportPlacement = useCallback(() => {
+      const renderer = rendererRef.current;
+      const rect = canvasContainerRef.current?.getBoundingClientRect();
+      return {
+        viewport: renderer?.getViewport() ?? null,
+        rect: rect ?? null,
+      };
+    }, []);
 
     // -----------------------------------------------------------------------
     // CanvasKit init
@@ -619,7 +842,11 @@ export const SkiaCanvas = memo(
       ) => {
         queueMicrotask(() => {
           const elements = toSceneElements(next, activePageId);
-          const state = toAppState(next, [...selection]);
+          const state = toAppState(
+            next,
+            [...selection],
+            rendererRef.current?.getViewport(),
+          );
           const files = toFiles(next);
           for (const listener of listenersRef.current) {
             listener(elements, state, files);
@@ -823,6 +1050,55 @@ export const SkiaCanvas = memo(
       [],
     );
 
+    const beginTextEdit = useCallback(
+      (node: PenNode, opts?: { isNew?: boolean; bounds?: CanvasBounds }) => {
+        const renderer = rendererRef.current;
+        if (!renderer || node.type !== "text") return false;
+        const rendererBounds = renderer.getNodeBounds(node.id);
+        const nodeBounds = getNodeBounds(node);
+        const bounds = opts?.bounds ?? {
+          x: rendererBounds?.x ?? nodeBounds.x,
+          y: rendererBounds?.y ?? nodeBounds.y,
+          width: rendererBounds?.w ?? nodeBounds.width,
+          height: rendererBounds?.h ?? nodeBounds.height,
+        };
+        const textNode = node as PenNode & {
+          fontSize?: number;
+          fontFamily?: string;
+          fontWeight?: string | number;
+          textAlign?: React.CSSProperties["textAlign"];
+          lineHeight?: number | string;
+          textGrowth?: "auto" | "fixed-width" | "fixed-width-height";
+        };
+        const content = getTextContent(node);
+        setSelection([node.id]);
+        setEditingText({
+          nodeId: node.id,
+          isNew: opts?.isNew ?? false,
+          x: bounds.x,
+          y: bounds.y,
+          width: bounds.width,
+          height: bounds.height,
+          content,
+          initialContent: content,
+          textGrowth: textNode.textGrowth ?? "fixed-width-height",
+          fontSize: textNode.fontSize ?? DEFAULT_TEXT_FONT_SIZE,
+          fontFamily: textNode.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY,
+          fontWeight: String(textNode.fontWeight ?? 400),
+          textAlign: textNode.textAlign ?? "left",
+          color: getFirstSolidFillColor(node),
+          lineHeight: textNode.lineHeight ?? DEFAULT_TEXT_LINE_HEIGHT,
+        });
+        console.info("[skia-canvas] text.edit.started", {
+          nodeId: node.id,
+          isNew: opts?.isNew ?? false,
+          textGrowth: textNode.textGrowth ?? "fixed-width-height",
+        });
+        return true;
+      },
+      [setSelection],
+    );
+
     // -----------------------------------------------------------------------
     // Pointer events (pan, marquee, move)
     // -----------------------------------------------------------------------
@@ -866,9 +1142,10 @@ export const SkiaCanvas = memo(
           return;
         }
 
+        const scenePoint = getPointerScenePoint(event);
+        if (!scenePoint) return;
+
         // Marquee selection
-        const screenX = event.clientX - rect.left;
-        const screenY = event.clientY - rect.top;
         const hit = renderer.hitTest(event.clientX, event.clientY);
         const activePageId = activePageIdRef.current;
 
@@ -884,34 +1161,31 @@ export const SkiaCanvas = memo(
               activePageId,
             );
             if (!node || node.locked) return;
-            const bounds = getNodeBounds(node);
+            const localBounds = getNodeBounds(node);
+            const sceneBounds =
+              getNodeSceneBounds(docRef.current, node.id, activePageId) ??
+              localBounds;
             if (controlHit.type === "resize") {
               dragRef.current = {
                 kind: "resize",
                 nodeId: controlHit.nodeId,
                 handle: controlHit.handle,
-                startX: event.clientX,
-                startY: event.clientY,
-                origin: bounds,
+                startPoint: scenePoint,
+                origin: localBounds,
                 preserveAspectRatio: event.shiftKey,
+                sceneDelta: { x: 0, y: 0 },
               };
             } else {
               const center = {
-                x: bounds.x + bounds.width / 2,
-                y: bounds.y + bounds.height / 2,
+                x: sceneBounds.x + sceneBounds.width / 2,
+                y: sceneBounds.y + sceneBounds.height / 2,
               };
-              const start = screenToScene(
-                event.clientX,
-                event.clientY,
-                rect,
-                renderer.getViewport(),
-              );
               dragRef.current = {
                 kind: "rotate",
                 nodeId: controlHit.nodeId,
                 center,
-                originRotation: bounds.rotation ?? 0,
-                startAngle: pointToAngle(center, start),
+                originRotation: localBounds.rotation ?? 0,
+                startAngle: pointToAngle(center, scenePoint),
               };
             }
             suppressNextClickRef.current = true;
@@ -940,10 +1214,10 @@ export const SkiaCanvas = memo(
               dragRef.current = {
                 kind: "move",
                 nodeIds: [...selectedIds],
-                startX: event.clientX,
-                startY: event.clientY,
+                startPoint: scenePoint,
                 origins,
                 hasMoved: false,
+                sceneDelta: { x: 0, y: 0 },
               };
               event.currentTarget.setPointerCapture(event.pointerId);
               return;
@@ -957,10 +1231,10 @@ export const SkiaCanvas = memo(
             dragRef.current = {
               kind: "move",
               nodeIds: [hit.id],
-              startX: event.clientX,
-              startY: event.clientY,
+              startPoint: scenePoint,
               origins: { [hit.id]: getNodeBounds(node) },
               hasMoved: false,
+              sceneDelta: { x: 0, y: 0 },
             };
             event.currentTarget.setPointerCapture(event.pointerId);
             console.info("[skia-canvas] selection.drag.armed", {
@@ -974,8 +1248,7 @@ export const SkiaCanvas = memo(
           if (!event.shiftKey) setSelection([]);
           dragRef.current = {
             kind: "marquee",
-            startX: screenX,
-            startY: screenY,
+            startPoint: scenePoint,
             originSelection: [...selectedIds],
           };
           setEditorOverlay({ marquee: null });
@@ -984,27 +1257,25 @@ export const SkiaCanvas = memo(
         }
 
         if (isDragDrawableTool(tool)) {
-          const scene = screenToScene(
-            event.clientX,
-            event.clientY,
-            rect,
-            renderer.getViewport(),
-          );
           dragRef.current = {
             kind: "drawShape",
             shapeType: tool,
-            startPoint: scene,
+            startPoint: scenePoint,
           };
           setEditorOverlay({
             shapePreview: getDrawableToolPreview(tool, {
-              x: scene.x,
-              y: scene.y,
+              x: scenePoint.x,
+              y: scenePoint.y,
               width: 0,
               height: 0,
             }),
             linePreview:
               tool === "line" || tool === "arrow"
-                ? { start: scene, end: scene, arrow: tool === "arrow" }
+                ? {
+                    start: scenePoint,
+                    end: scenePoint,
+                    arrow: tool === "arrow",
+                  }
                 : null,
           });
           event.currentTarget.setPointerCapture(event.pointerId);
@@ -1013,13 +1284,7 @@ export const SkiaCanvas = memo(
 
         if (tool === "path") {
           const viewport = renderer.getViewport();
-          const scene = screenToScene(
-            event.clientX,
-            event.clientY,
-            rect,
-            viewport,
-          );
-          if (penTool.onMouseDown(scene, viewport.zoom)) {
+          if (penTool.onMouseDown(scenePoint, viewport.zoom)) {
             dragRef.current = { kind: "pen" };
             suppressNextClickRef.current = true;
             event.currentTarget.setPointerCapture(event.pointerId);
@@ -1028,17 +1293,25 @@ export const SkiaCanvas = memo(
         }
 
         if (tool === "text") {
-          const scene = screenToScene(
-            event.clientX,
-            event.clientY,
-            rect,
-            renderer.getViewport(),
-          );
-          createShapeNode(tool, scene.x, scene.y);
-          setActiveTool("select");
+          dragRef.current = {
+            kind: "drawText",
+            startPoint: scenePoint,
+            startScreenX: event.clientX,
+            startScreenY: event.clientY,
+            hasMoved: false,
+          };
+          event.currentTarget.setPointerCapture(event.pointerId);
+          return;
         }
       },
-      [effectiveTool, penTool, selectedIds, setEditorOverlay, setSelection],
+      [
+        effectiveTool,
+        getPointerScenePoint,
+        penTool,
+        selectedIds,
+        setEditorOverlay,
+        setSelection,
+      ],
     );
 
     const handlePointerMove = useCallback(
@@ -1056,21 +1329,13 @@ export const SkiaCanvas = memo(
         }
 
         if (drag.kind === "marquee") {
-          const rect = canvasContainerRef.current?.getBoundingClientRect();
-          if (!rect) return;
-          const start = screenToScene(
-            rect.left + drag.startX,
-            rect.top + drag.startY,
-            rect,
-            renderer.getViewport(),
+          const scenePoint = getPointerScenePoint(event);
+          if (!scenePoint) return;
+          const bounds = normalizeDrawBounds(
+            drag.startPoint,
+            scenePoint,
+            false,
           );
-          const end = screenToScene(
-            event.clientX,
-            event.clientY,
-            rect,
-            renderer.getViewport(),
-          );
-          const bounds = normalizeDrawBounds(start, end, false);
           setEditorOverlay({ marquee: bounds });
           const hitIds = getVisibleCanvasNodesInBounds(
             docRef.current as CucumberCanvasDocument,
@@ -1085,14 +1350,8 @@ export const SkiaCanvas = memo(
         }
 
         if (drag.kind === "drawShape") {
-          const rect = canvasContainerRef.current?.getBoundingClientRect();
-          if (!rect) return;
-          const scene = screenToScene(
-            event.clientX,
-            event.clientY,
-            rect,
-            renderer.getViewport(),
-          );
+          const scene = getPointerScenePoint(event);
+          if (!scene) return;
           setEditorOverlay({
             shapePreview: getDrawableToolPreview(
               drag.shapeType,
@@ -1116,23 +1375,41 @@ export const SkiaCanvas = memo(
           return;
         }
 
-        if (drag.kind === "pen") {
-          const rect = canvasContainerRef.current?.getBoundingClientRect();
-          if (!rect) return;
-          const scene = screenToScene(
-            event.clientX,
-            event.clientY,
-            rect,
-            renderer.getViewport(),
+        if (drag.kind === "drawText") {
+          const scene = getPointerScenePoint(event);
+          if (!scene) return;
+          const screenDistance = Math.hypot(
+            event.clientX - drag.startScreenX,
+            event.clientY - drag.startScreenY,
           );
+          if (screenDistance >= TEXT_DRAG_THRESHOLD_PX) {
+            drag.hasMoved = true;
+            setEditorOverlay({
+              shapePreview: {
+                type: "rect",
+                bounds: normalizeDrawBounds(drag.startPoint, scene, false),
+                fillColor: "transparent",
+              },
+            });
+          }
+          return;
+        }
+
+        if (drag.kind === "pen") {
+          const scene = getPointerScenePoint(event);
+          if (!scene) return;
           penTool.onMouseMove(scene);
           return;
         }
 
         if (drag.kind === "move") {
+          const scene = getPointerScenePoint(event);
+          if (!scene) return;
+          const dx = scene.x - drag.startPoint.x;
+          const dy = scene.y - drag.startPoint.y;
           const vp = renderer.getViewport();
-          const screenDx = event.clientX - drag.startX;
-          const screenDy = event.clientY - drag.startY;
+          const screenDx = dx * vp.zoom;
+          const screenDy = dy * vp.zoom;
           if (
             !drag.hasMoved &&
             Math.hypot(screenDx, screenDy) < MOVE_COMMIT_THRESHOLD_PX
@@ -1140,9 +1417,7 @@ export const SkiaCanvas = memo(
             return;
           }
           drag.hasMoved = true;
-
-          const dx = screenDx / vp.zoom;
-          const dy = screenDy / vp.zoom;
+          drag.sceneDelta = { x: dx, y: dy };
 
           let next = docRef.current;
           for (const nodeId of drag.nodeIds) {
@@ -1167,9 +1442,11 @@ export const SkiaCanvas = memo(
         }
 
         if (drag.kind === "resize") {
-          const vp = renderer.getViewport();
-          const dx = (event.clientX - drag.startX) / vp.zoom;
-          const dy = (event.clientY - drag.startY) / vp.zoom;
+          const scene = getPointerScenePoint(event);
+          if (!scene) return;
+          const dx = scene.x - drag.startPoint.x;
+          const dy = scene.y - drag.startPoint.y;
+          drag.sceneDelta = { x: dx, y: dy };
           const bounds = calculateResizeBounds(
             drag.origin,
             drag.handle,
@@ -1177,10 +1454,54 @@ export const SkiaCanvas = memo(
             dy,
             event.shiftKey || drag.preserveAspectRatio,
           );
+          const node = findNode(
+            docRef.current,
+            drag.nodeId,
+            activePageIdRef.current,
+          );
+          let updates = boundsToNodeUpdates(bounds);
+          if (node?.type === "text") {
+            const textNode = node as PenNode & {
+              fontSize?: number;
+              fontFamily?: string;
+              fontWeight?: string | number;
+              lineHeight?: number | string;
+              textGrowth?: "auto" | "fixed-width" | "fixed-width-height";
+            };
+            let nextTextGrowth = textNode.textGrowth ?? "fixed-width-height";
+            const horizontalResize =
+              drag.handle.includes("e") || drag.handle.includes("w");
+            const verticalResize =
+              drag.handle.includes("n") || drag.handle.includes("s");
+            if (nextTextGrowth === "auto" && horizontalResize) {
+              nextTextGrowth = "fixed-width";
+            } else if (nextTextGrowth === "fixed-width" && verticalResize) {
+              nextTextGrowth = "fixed-width-height";
+            }
+            const measured = measureTextLayout({
+              content: getTextContent(node),
+              fontSize: textNode.fontSize ?? DEFAULT_TEXT_FONT_SIZE,
+              fontFamily: textNode.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY,
+              fontWeight: String(textNode.fontWeight ?? 400),
+              lineHeight: textNode.lineHeight ?? DEFAULT_TEXT_LINE_HEIGHT,
+              textGrowth: nextTextGrowth,
+              width:
+                nextTextGrowth === "auto"
+                  ? getNodeBounds(node).width
+                  : bounds.width,
+              height: bounds.height,
+            });
+            updates = {
+              ...updates,
+              width: measured.width,
+              height: measured.height,
+              textGrowth: nextTextGrowth,
+            } as Partial<PenNode>;
+          }
           const next = applyCanvasOperation(docRef.current, {
             type: "updateNode",
             nodeId: drag.nodeId,
-            updates: boundsToNodeUpdates(bounds),
+            updates,
             activePageId: activePageIdRef.current,
           });
           docRef.current = next;
@@ -1190,14 +1511,8 @@ export const SkiaCanvas = memo(
         }
 
         if (drag.kind === "rotate") {
-          const rect = canvasContainerRef.current?.getBoundingClientRect();
-          if (!rect) return;
-          const point = screenToScene(
-            event.clientX,
-            event.clientY,
-            rect,
-            renderer.getViewport(),
-          );
+          const point = getPointerScenePoint(event);
+          if (!point) return;
           const rotation =
             drag.originRotation +
             pointToAngle(drag.center, point) -
@@ -1213,7 +1528,7 @@ export const SkiaCanvas = memo(
           syncRendererDocument(renderer, next, activePageIdRef.current);
         }
       },
-      [penTool, setEditorOverlay, setSelection],
+      [getPointerScenePoint, penTool, setEditorOverlay, setSelection],
     );
 
     const handlePointerUp = useCallback(
@@ -1221,14 +1536,8 @@ export const SkiaCanvas = memo(
         const renderer = rendererRef.current;
         const drag = dragRef.current;
         if (drag?.kind === "drawShape" && renderer) {
-          const rect = canvasContainerRef.current?.getBoundingClientRect();
-          if (rect) {
-            const scene = screenToScene(
-              event.clientX,
-              event.clientY,
-              rect,
-              renderer.getViewport(),
-            );
+          const scene = getPointerScenePoint(event);
+          if (scene) {
             const bounds = normalizeDrawBounds(
               drag.startPoint,
               scene,
@@ -1277,20 +1586,57 @@ export const SkiaCanvas = memo(
           setActiveTool("select");
           suppressNextClickRef.current = true;
         }
+        if (drag?.kind === "drawText" && renderer) {
+          const scene = getPointerScenePoint(event);
+          if (scene) {
+            const bounds = normalizeDrawBounds(drag.startPoint, scene, false);
+            const isTextBox =
+              drag.hasMoved &&
+              bounds.width >= MIN_TEXT_BOX_SIZE &&
+              bounds.height >= MIN_TEXT_BOX_SIZE;
+            const nodeBounds = isTextBox
+              ? bounds
+              : {
+                  x: drag.startPoint.x,
+                  y: drag.startPoint.y,
+                  width: MIN_TEXT_BOX_SIZE,
+                  height: getLineHeightPx(
+                    DEFAULT_TEXT_LINE_HEIGHT,
+                    DEFAULT_TEXT_FONT_SIZE,
+                  ),
+                };
+            const textGrowth = isTextBox ? "fixed-width" : "auto";
+            const node = createTextCanvasNode(nodeBounds, textGrowth);
+            const next = applyCanvasOperation(docRef.current, {
+              type: "insertNode",
+              node,
+              activePageId: activePageIdRef.current,
+            });
+            commitDocument(next, { selection: [node.id] });
+            setSelection([node.id], { notifyScene: false });
+            beginTextEdit(node, {
+              isNew: true,
+              bounds: getNodeBounds(node),
+            });
+            console.info("[skia-canvas] text.created", {
+              nodeId: node.id,
+              textGrowth,
+              width: Math.round(nodeBounds.width),
+              height: Math.round(nodeBounds.height),
+              interaction: isTextBox ? "drag" : "click",
+            });
+          }
+          setEditorOverlay({ shapePreview: null });
+          suppressNextClickRef.current = true;
+        }
         if (drag?.kind === "pen") {
           penTool.onMouseUp();
           suppressNextClickRef.current = true;
         }
         if (drag?.kind === "move" && drag.hasMoved) {
           const activePageId = activePageIdRef.current;
-          const rect = canvasContainerRef.current?.getBoundingClientRect();
-          if (renderer && rect) {
-            const dropPoint = screenToScene(
-              event.clientX,
-              event.clientY,
-              rect,
-              renderer.getViewport(),
-            );
+          const dropPoint = getPointerScenePoint(event);
+          if (renderer && dropPoint) {
             const reparented = reparentNodesByDropPoint(
               docRef.current,
               drag.nodeIds,
@@ -1316,9 +1662,16 @@ export const SkiaCanvas = memo(
           drag?.kind === "resize" ||
           drag?.kind === "rotate"
         ) {
+          const viewport = renderer?.getViewport();
+          const sceneDelta =
+            drag.kind === "move" || drag.kind === "resize"
+              ? drag.sceneDelta
+              : { x: 0, y: 0 };
           onDocumentChange?.(docRef.current as CucumberCanvasDocument);
           console.info("[skia-canvas] selection.transform.committed", {
             kind: drag.kind,
+            zoom: viewport?.zoom ?? 1,
+            sceneDelta,
             nodeCount: drag.kind === "move" ? drag.nodeIds.length : 1,
           });
         }
@@ -1339,7 +1692,9 @@ export const SkiaCanvas = memo(
         }
       },
       [
+        beginTextEdit,
         commitDocument,
+        getPointerScenePoint,
         onDocumentChange,
         penTool,
         setEditorOverlay,
@@ -1347,55 +1702,53 @@ export const SkiaCanvas = memo(
       ],
     );
 
-    const beginTextEdit = useCallback(
-      (node: PenNode) => {
-        const renderer = rendererRef.current;
-        if (!renderer || node.type !== "text") return false;
-        const bounds = renderer.getNodeBounds(node.id);
-        if (!bounds) return false;
-        const textNode = node as PenNode & {
-          fontSize?: number;
-          fontFamily?: string;
-          fontWeight?: string | number;
-          textAlign?: React.CSSProperties["textAlign"];
-          lineHeight?: number | string;
-        };
-        setSelection([node.id]);
-        setEditingText({
-          nodeId: node.id,
-          x: bounds.x,
-          y: bounds.y,
-          width: bounds.w,
-          minHeight: bounds.h,
-          content: getTextContent(node),
-          fontSize: textNode.fontSize ?? 16,
-          fontFamily:
-            textNode.fontFamily ??
-            'Inter, -apple-system, "Noto Sans SC", "PingFang SC", system-ui, sans-serif',
-          fontWeight: String(textNode.fontWeight ?? 400),
-          textAlign: textNode.textAlign ?? "left",
-          color: getFirstSolidFillColor(node),
-          lineHeight: textNode.lineHeight ?? 1.4,
-        });
-        console.info("[skia-canvas] text.edit.started", { nodeId: node.id });
-        return true;
-      },
-      [setSelection],
-    );
-
     const commitTextEdit = useCallback(
       (nextContent: string) => {
         const currentEdit = editingText;
         if (!currentEdit) return;
         setEditingText(null);
-        if (nextContent === currentEdit.content) {
+        const activePageId = activePageIdRef.current;
+        const trimmedContent = nextContent.trim();
+        if (currentEdit.isNew && trimmedContent.length === 0) {
+          const existingNode = findNode(
+            docRef.current,
+            currentEdit.nodeId,
+            activePageId,
+          );
+          if (!existingNode) return;
+          const next = applyCanvasOperation(docRef.current, {
+            type: "deleteNode",
+            nodeId: currentEdit.nodeId,
+            activePageId,
+          });
+          commitDocument(next, { selection: [] });
+          setSelection([], { notifyScene: false });
+          console.info("[skia-canvas] text.edit.empty-new-deleted", {
+            nodeId: currentEdit.nodeId,
+          });
+          return;
+        }
+        const measured = measureTextLayout({
+          content: nextContent,
+          fontSize: currentEdit.fontSize,
+          fontFamily: currentEdit.fontFamily,
+          fontWeight: currentEdit.fontWeight,
+          lineHeight: currentEdit.lineHeight,
+          textGrowth: currentEdit.textGrowth,
+          width: currentEdit.width,
+          height: currentEdit.height,
+        });
+        if (
+          nextContent === currentEdit.initialContent &&
+          Math.round(measured.width) === Math.round(currentEdit.width) &&
+          Math.round(measured.height) === Math.round(currentEdit.height)
+        ) {
           console.info("[skia-canvas] text.edit.cancelled", {
             nodeId: currentEdit.nodeId,
             reason: "unchanged",
           });
           return;
         }
-        const activePageId = activePageIdRef.current;
         const existingNode = findNode(
           docRef.current,
           currentEdit.nodeId,
@@ -1412,19 +1765,49 @@ export const SkiaCanvas = memo(
         const next = applyCanvasOperation(docRef.current, {
           type: "updateNode",
           nodeId: currentEdit.nodeId,
-          updates: { content: nextContent } as Partial<PenNode>,
+          updates: {
+            content: nextContent,
+            width: measured.width,
+            height: measured.height,
+            textGrowth: currentEdit.textGrowth,
+          } as Partial<PenNode>,
           activePageId,
         });
         commitDocument(next, { selection: [currentEdit.nodeId] });
         setSelection([currentEdit.nodeId], { notifyScene: false });
         console.info("[skia-canvas] text.edit.committed", {
           nodeId: currentEdit.nodeId,
-          previousLength: currentEdit.content.length,
+          textGrowth: currentEdit.textGrowth,
+          previousLength: currentEdit.initialContent.length,
           nextLength: nextContent.length,
+          width: Math.round(measured.width),
+          height: Math.round(measured.height),
         });
       },
       [commitDocument, editingText, setSelection],
     );
+
+    const updateTextEditDraft = useCallback((nextContent: string) => {
+      setEditingText((current) => {
+        if (!current) return current;
+        const measured = measureTextLayout({
+          content: nextContent,
+          fontSize: current.fontSize,
+          fontFamily: current.fontFamily,
+          fontWeight: current.fontWeight,
+          lineHeight: current.lineHeight,
+          textGrowth: current.textGrowth,
+          width: current.width,
+          height: current.height,
+        });
+        return {
+          ...current,
+          content: nextContent,
+          width: measured.width,
+          height: measured.height,
+        };
+      });
+    }, []);
 
     const handleDoubleClick = useCallback(
       (event: React.MouseEvent<HTMLDivElement>) => {
@@ -1501,7 +1884,14 @@ export const SkiaCanvas = memo(
         height?: number;
       }) => {
         const id = createNodeId("container");
-        const defaultB = defaultBounds(docRef.current, "container");
+        const placement = getLiveViewportPlacement();
+        const defaultB = defaultBounds(
+          docRef.current,
+          "container",
+          null,
+          placement.viewport,
+          placement.rect,
+        );
         const b = {
           x: opts?.x ?? defaultB.x,
           y: opts?.y ?? defaultB.y,
@@ -1519,7 +1909,7 @@ export const SkiaCanvas = memo(
         console.info("[skia-canvas] container.created", { containerId: id });
         return container;
       },
-      [commitDocument, setSelection],
+      [commitDocument, getLiveViewportPlacement, setSelection],
     );
 
     const createShapeNode = useCallback(
@@ -1602,7 +1992,14 @@ export const SkiaCanvas = memo(
           nodeIds
             .map((id) => findNode(nextDoc, id, activePageId))
             .filter(isPenNode)
-            .map((node) => toSceneElement(node)),
+            .map((node) =>
+              toSceneElement(
+                node,
+                0,
+                null,
+                getNodeSceneBounds(nextDoc, node.id, activePageId) ?? undefined,
+              ),
+            ),
         );
       },
       [onSelectionChange],
@@ -1694,15 +2091,19 @@ export const SkiaCanvas = memo(
           return [];
         }
         const importBounds = getCanvasImportBounds(parsed);
-        const rect = canvasContainerRef.current?.getBoundingClientRect();
-        const viewport = rendererRef.current?.getViewport() ?? {
+        const placementContext = getLiveViewportPlacement();
+        const viewport = placementContext.viewport ?? {
           zoom: 1,
           panX: 0,
           panY: 0,
         };
         const viewportCenter = {
-          x: ((rect?.width ?? 0) / 2 - viewport.panX) / viewport.zoom,
-          y: ((rect?.height ?? 0) / 2 - viewport.panY) / viewport.zoom,
+          x:
+            ((placementContext.rect?.width ?? 0) / 2 - viewport.panX) /
+            viewport.zoom,
+          y:
+            ((placementContext.rect?.height ?? 0) / 2 - viewport.panY) /
+            viewport.zoom,
         };
         const targetCenter = options?.scenePoint ?? viewportCenter;
         const offsetX = importBounds
@@ -1738,6 +2139,7 @@ export const SkiaCanvas = memo(
           importSessionId: parsed.importSessionId,
           placement: options?.scenePoint ? "drop-point" : "viewport-center",
           targetCenter,
+          viewport,
           rootCount: parsed.rootNodeIds.length,
           assetCount: parsed.assets.length,
           insertedCount: inserted.insertedIds.length,
@@ -1752,7 +2154,14 @@ export const SkiaCanvas = memo(
         });
         return inserted.insertedIds;
       },
-      [commitDocument, notifySelectionForDoc, selectedIds, setSelection, toast],
+      [
+        commitDocument,
+        getLiveViewportPlacement,
+        notifySelectionForDoc,
+        selectedIds,
+        setSelection,
+        toast,
+      ],
     );
 
     const importDropPayloadsInGrid = useCallback(
@@ -1776,8 +2185,8 @@ export const SkiaCanvas = memo(
         });
         if (parsedEntries.length === 0) return [];
 
-        const rect = canvasContainerRef.current?.getBoundingClientRect();
-        const viewport = rendererRef.current?.getViewport() ?? {
+        const placementContext = getLiveViewportPlacement();
+        const viewport = placementContext.viewport ?? {
           zoom: 1,
           panX: 0,
           panY: 0,
@@ -1785,8 +2194,12 @@ export const SkiaCanvas = memo(
         const targetCenter =
           scenePoint ??
           ({
-            x: ((rect?.width ?? 0) / 2 - viewport.panX) / viewport.zoom,
-            y: ((rect?.height ?? 0) / 2 - viewport.panY) / viewport.zoom,
+            x:
+              ((placementContext.rect?.width ?? 0) / 2 - viewport.panX) /
+              viewport.zoom,
+            y:
+              ((placementContext.rect?.height ?? 0) / 2 - viewport.panY) /
+              viewport.zoom,
           } satisfies { x: number; y: number });
         const placements = computeImportGridPlacements(
           parsedEntries.map((entry) => entry.bounds),
@@ -1850,10 +2263,18 @@ export const SkiaCanvas = memo(
               results.flatMap((result) => result.context.fileTypes ?? []),
             ),
           ),
+          viewport,
         });
         return insertedIds;
       },
-      [commitDocument, notifySelectionForDoc, selectedIds, setSelection, toast],
+      [
+        commitDocument,
+        getLiveViewportPlacement,
+        notifySelectionForDoc,
+        selectedIds,
+        setSelection,
+        toast,
+      ],
     );
 
     const resetFileDragState = useCallback(() => {
@@ -1904,16 +2325,7 @@ export const SkiaCanvas = memo(
 
         const dataTransfer = event.dataTransfer;
         const renderer = rendererRef.current;
-        const rect = canvasContainerRef.current?.getBoundingClientRect();
-        const scenePoint =
-          renderer && rect
-            ? screenToScene(
-                event.clientX,
-                event.clientY,
-                rect,
-                renderer.getViewport(),
-              )
-            : undefined;
+        const scenePoint = getPointerScenePoint(event) ?? undefined;
         resetFileDragState();
 
         console.info("[skia-canvas] file-drop.detected", {
@@ -1921,6 +2333,7 @@ export const SkiaCanvas = memo(
           mimeTypes: Array.from(dataTransfer.types ?? []),
           fileCount: dataTransfer.files?.length ?? 0,
           scenePoint,
+          viewport: renderer?.getViewport() ?? { zoom: 1, panX: 0, panY: 0 },
         });
 
         void readDataTransferImportPayloads(dataTransfer).then(
@@ -1962,7 +2375,12 @@ export const SkiaCanvas = memo(
           },
         );
       },
-      [importDropPayloadsInGrid, resetFileDragState, toast],
+      [
+        getPointerScenePoint,
+        importDropPayloadsInGrid,
+        resetFileDragState,
+        toast,
+      ],
     );
 
     const pasteFromSystemClipboard = useCallback(async () => {
@@ -2053,7 +2471,14 @@ export const SkiaCanvas = memo(
           selectedIds,
           activePageIdRef.current,
         );
-        const b = defaultBounds(docRef.current, "image", targetContainerId);
+        const placement = getLiveViewportPlacement();
+        const b = defaultBounds(
+          docRef.current,
+          "image",
+          targetContainerId,
+          placement.viewport,
+          placement.rect,
+        );
         const asset: CanvasAsset = {
           id: assetId,
           url: artifact.url,
@@ -2099,7 +2524,7 @@ export const SkiaCanvas = memo(
           source,
         });
       },
-      [commitDocument, selectedIds, setSelection],
+      [commitDocument, getLiveViewportPlacement, selectedIds, setSelection],
     );
 
     const getActivePageId = useCallback(() => activePageIdRef.current, []);
@@ -2443,6 +2868,7 @@ export const SkiaCanvas = memo(
               getDocumentSelection(docRef.current, selectedIds),
               activePageIdRef.current,
             ),
+            rendererRef.current?.getViewport(),
           ),
         updateScene: (scene) => {
           if (scene.appState) {
@@ -2674,7 +3100,14 @@ export const SkiaCanvas = memo(
           insertImageNode(artifact, "generated"),
         insertVideoArtifact: (artifact) => {
           const id = createNodeId("videoEmbed");
-          const b = defaultBounds(docRef.current, "videoEmbed");
+          const placement = getLiveViewportPlacement();
+          const b = defaultBounds(
+            docRef.current,
+            "videoEmbed",
+            null,
+            placement.viewport,
+            placement.rect,
+          );
           const node: PenNode = {
             id,
             type: "videoEmbed",
@@ -2706,6 +3139,7 @@ export const SkiaCanvas = memo(
         duplicatePage,
         duplicateSelection,
         getActivePageId,
+        getLiveViewportPlacement,
         getPages,
         historyIndex,
         historyStack,
@@ -2774,6 +3208,16 @@ export const SkiaCanvas = memo(
         for (const nodeId of topSelection) {
           api.reorderNode(nodeId, direction);
         }
+      },
+      editSelectedText: () => {
+        if (selectedIds.length !== 1) return false;
+        const node = findNode(
+          docRef.current,
+          selectedIds[0] ?? "",
+          activePageIdRef.current,
+        );
+        if (!node || node.type !== "text") return false;
+        return beginTextEdit(node);
       },
       setActiveTool: (tool) => {
         setActiveTool(tool === "pen" ? "path" : tool);
@@ -2949,29 +3393,31 @@ export const SkiaCanvas = memo(
             // biome-ignore lint/a11y/noAutofocus: text editing opens from an explicit double-click and should focus the in-place editor immediately.
             autoFocus
             className="absolute z-30 box-border m-0 resize-none overflow-hidden rounded-sm border-2 border-sky-400 bg-white/95 px-px py-0 outline-none"
-            defaultValue={editingText.content}
+            value={editingText.content}
+            wrap={editingText.textGrowth === "auto" ? "off" : "soft"}
             style={{
               left: textEditOverlay.left,
               top: textEditOverlay.top,
               width: textEditOverlay.width,
-              minHeight: textEditOverlay.minHeight,
+              height: textEditOverlay.height,
               fontSize: textEditOverlay.fontSize,
               fontFamily: editingText.fontFamily,
               fontWeight: editingText.fontWeight,
               textAlign: editingText.textAlign,
               color: editingText.color,
               lineHeight: editingText.lineHeight,
+              whiteSpace:
+                editingText.textGrowth === "auto" ? "pre" : "pre-wrap",
+              overflowWrap:
+                editingText.textGrowth === "auto" ? "normal" : "break-word",
             }}
             onBlur={(event) => commitTextEdit(event.currentTarget.value)}
+            onChange={(event) => updateTextEditDraft(event.currentTarget.value)}
             onClick={(event) => event.stopPropagation()}
             onDoubleClick={(event) => event.stopPropagation()}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
-                console.info("[skia-canvas] text.edit.cancelled", {
-                  nodeId: editingText.nodeId,
-                  reason: "escape",
-                });
-                setEditingText(null);
+                commitTextEdit(event.currentTarget.value);
                 event.preventDefault();
                 event.stopPropagation();
                 return;
@@ -3238,6 +3684,40 @@ function calculateResizeBounds(
   }
 
   return { x, y, width, height, rotation: origin.rotation };
+}
+
+function createTextCanvasNode(
+  bounds: CanvasBounds,
+  textGrowth: "auto" | "fixed-width",
+): PenNode {
+  const layout = measureTextLayout({
+    content: "",
+    fontSize: DEFAULT_TEXT_FONT_SIZE,
+    fontFamily: DEFAULT_TEXT_FONT_FAMILY,
+    fontWeight: "400",
+    lineHeight: DEFAULT_TEXT_LINE_HEIGHT,
+    textGrowth,
+    width: bounds.width,
+    height: bounds.height,
+  });
+  return {
+    id: createNodeId("text"),
+    type: "text",
+    name: "Text",
+    x: bounds.x,
+    y: bounds.y,
+    width: textGrowth === "auto" ? layout.width : Math.max(bounds.width, 1),
+    height:
+      textGrowth === "auto"
+        ? layout.height
+        : Math.max(bounds.height, layout.height),
+    content: "",
+    fontSize: DEFAULT_TEXT_FONT_SIZE,
+    lineHeight: DEFAULT_TEXT_LINE_HEIGHT,
+    fontFamily: DEFAULT_TEXT_FONT_FAMILY,
+    textGrowth,
+    fill: [{ type: "solid", color: "#111827" }],
+  } as PenNode;
 }
 
 function createDrawableCanvasNode(
