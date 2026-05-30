@@ -59,5 +59,21 @@ export const screenshotResultSchema = z.object({
     .optional(),
 });
 
+export const canvasPatchOperationSchema = z
+  .object({
+    type: z.string().min(1),
+  })
+  .passthrough();
+
+export const canvasDocumentPatchParamsSchema = z.object({
+  baseVersion: z.number().int().nonnegative(),
+  transactionId: z.string().min(1),
+  operations: z.array(canvasPatchOperationSchema).min(1),
+  selection: z.array(z.string()).optional(),
+});
+
 export type ScreenshotParams = z.infer<typeof screenshotParamsSchema>;
 export type ScreenshotResult = z.infer<typeof screenshotResultSchema>;
+export type CanvasDocumentPatchParams = z.infer<
+  typeof canvasDocumentPatchParamsSchema
+>;

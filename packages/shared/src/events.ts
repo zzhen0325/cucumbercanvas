@@ -14,6 +14,7 @@ import {
   toolCallIdSchema,
 } from "./contracts.js";
 import { cucumberErrorSchema } from "./errors.js";
+import { canvasPatchOperationSchema } from "./ws-protocol.js";
 
 export {
   imageArtifactSchema,
@@ -97,6 +98,16 @@ export const canvasSyncEventSchema = z.object({
   timestamp: timestampSchema,
 });
 
+export const canvasPatchEventSchema = z.object({
+  type: z.literal("canvas.patch"),
+  runId: runIdSchema,
+  transactionId: z.string().min(1),
+  baseVersion: z.number().int().nonnegative(),
+  operations: z.array(canvasPatchOperationSchema).min(1),
+  selection: z.array(z.string()).optional(),
+  timestamp: timestampSchema,
+});
+
 export const streamEventSchema = z.discriminatedUnion("type", [
   runStartedEventSchema,
   runContextEventSchema,
@@ -109,6 +120,7 @@ export const streamEventSchema = z.discriminatedUnion("type", [
   runCompletedEventSchema,
   runFailedEventSchema,
   canvasSyncEventSchema,
+  canvasPatchEventSchema,
 ]);
 
 export type StreamEvent = z.infer<typeof streamEventSchema>;

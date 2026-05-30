@@ -5,6 +5,7 @@ import type { ZodType } from "zod";
 
 import {
   type Database,
+  canvasDocumentPatchParamsSchema,
   errorCodeValues,
   healthResponseSchema,
   runCancelResponseSchema,
@@ -507,6 +508,34 @@ describe("@cucumber/shared contracts", () => {
 
     expect(messageEvent.messageId).toBe("message_123");
     expect(toolEvent.toolCallId).toBe("tool_123");
+  });
+
+  it("accepts canvas patch RPC params and stream events", () => {
+    const params = canvasDocumentPatchParamsSchema.parse({
+      baseVersion: 3,
+      transactionId: "tx_123",
+      operations: [
+        {
+          type: "updateNode",
+          nodeId: "node_1",
+          updates: { x: 24 },
+        },
+      ],
+      selection: ["node_1"],
+    });
+
+    expect(params.operations[0]?.type).toBe("updateNode");
+    expect(() =>
+      streamEventSchema.parse({
+        type: "canvas.patch",
+        runId: "run_123",
+        baseVersion: 3,
+        transactionId: "tx_123",
+        operations: params.operations,
+        selection: params.selection,
+        timestamp: "2026-03-23T12:00:00.000Z",
+      }),
+    ).not.toThrow();
   });
 
   it("requires correlation fields for message and tool lifecycle events", () => {

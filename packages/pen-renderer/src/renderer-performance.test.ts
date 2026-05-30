@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyTransformPreviewToRenderNodes,
   filterRenderNodesToViewport,
+  filterRenderNodesToViewportWithTransformPreview,
 } from "./renderer.js";
 import type { RenderNode } from "./types.js";
 
@@ -61,5 +62,21 @@ describe("renderer performance helpers", () => {
       ["frame", 20, 30],
       ["child", 35, 45],
     ]);
+  });
+
+  it("filters transform previews without cloning non-preview render nodes", () => {
+    const nodes = [rn("static", 10, 10), rn("moving", -400, 0)];
+    const visible = filterRenderNodesToViewportWithTransformPreview(
+      nodes,
+      { left: 0, top: 0, right: 200, bottom: 200 },
+      { kind: "move", nodeIds: ["moving"], dx: 420, dy: 20 },
+      new Set(["moving"]),
+    );
+
+    expect(visible).toHaveLength(2);
+    expect(visible[0]).toBe(nodes[0]);
+    expect(visible[1]?.node.id).toBe("moving");
+    expect(visible[1]).not.toBe(nodes[1]);
+    expect(nodes[1]?.absX).toBe(-400);
   });
 });

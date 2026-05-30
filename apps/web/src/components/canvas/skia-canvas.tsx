@@ -11,6 +11,7 @@ import {
   type ImportNode,
   addCanvasPage,
   applyCanvasOperation,
+  applyCanvasTransaction,
   copyCanvasSelection,
   createNodeId,
   deleteCanvasPage,
@@ -71,6 +72,7 @@ import type {
   CanvasApiRuntimeState,
   CanvasAppState,
   CanvasChangeListener,
+  CanvasDocumentPatch,
   CanvasFileRecord,
   CanvasSceneElement,
   CanvasTool,
@@ -306,8 +308,7 @@ function syncRendererDocument(
   activePageId: string,
 ) {
   if (!renderer) return;
-  renderer.setDocument(doc);
-  renderer.setPage(activePageId);
+  renderer.setDocument(doc, activePageId);
 }
 
 type DrawableShapeTool = "rect" | "ellipse" | "polygon";
@@ -579,6 +580,8 @@ function getFirstSolidFillColor(node: PenNode, fallback = "#111827"): string {
 function createCanvasApiFacade(getLiveApi: () => CanvasApi): CanvasApi {
   return {
     getDocument: () => getLiveApi().getDocument(),
+    getDocumentVersion: () => getLiveApi().getDocumentVersion(),
+    applyDocumentPatch: (patch) => getLiveApi().applyDocumentPatch(patch),
     setDocument: (doc) => getLiveApi().setDocument(doc),
     getActivePageId: () => getLiveApi().getActivePageId(),
     setActivePage: (pageId) => getLiveApi().setActivePage(pageId),
@@ -675,6 +678,7 @@ export const SkiaCanvas = memo(
     );
     const docRef = useRef(doc);
     docRef.current = doc;
+    const documentVersionRef = useRef(0);
     const [activePageId, setActivePageId] = useState(() =>
       resolveActivePageId(docRef.current),
     );
@@ -988,6 +992,7 @@ export const SkiaCanvas = memo(
         setEditorOverlay({ selectedIds: nextSelection });
         docRef.current = committed;
         setDoc(committed);
+        documentVersionRef.current += 1;
 
         // Update renderer
         syncRendererDocument(rendererRef.current, committed, nextActivePageId);
@@ -1738,22 +1743,29 @@ export const SkiaCanvas = memo(
         }
         if (drag?.kind === "move" && drag.hasMoved) {
           const activePageId = activePageIdRef.current;
-          let next = docRef.current;
-          for (const nodeId of drag.nodeIds) {
+          const operations = drag.nodeIds.flatMap((nodeId) => {
             const origin = drag.origins[nodeId];
-            if (!origin) continue;
-            const node = findNode(next, nodeId, activePageId);
-            if (!node || node.locked) continue;
-            next = applyCanvasOperation(next, {
-              type: "updateNode",
-              nodeId,
-              updates: {
-                x: origin.x + drag.sceneDelta.x,
-                y: origin.y + drag.sceneDelta.y,
-              } as Partial<PenNode>,
-              activePageId,
-            });
-          }
+            if (!origin) return [];
+            const node = findNode(docRef.current, nodeId, activePageId);
+            if (!node || node.locked) return [];
+            return [
+              {
+                type: "updateNode" as const,
+                nodeId,
+                updates: {
+                  x: origin.x + drag.sceneDelta.x,
+                  y: origin.y + drag.sceneDelta.y,
+                } as Partial<PenNode>,
+                activePageId,
+              },
+            ];
+          });
+          let next =
+            operations.length > 0
+              ? applyCanvasTransaction(docRef.current, operations, {
+                  activePageId,
+                }).doc
+              : docRef.current;
           renderer?.clearTransformPreview();
           const dropPoint = getPointerScenePoint(event);
           if (renderer && dropPoint) {
@@ -2240,14 +2252,17 @@ export const SkiaCanvas = memo(
         activePageId,
       );
       if (ids.length === 0) return;
-      let next = docRef.current;
-      for (const nodeId of ids) {
-        next = applyCanvasOperation(next, {
-          type: "deleteNode",
-          nodeId,
-          activePageId,
-        });
-      }
+      const operations = ids.map(
+        (nodeId) =>
+          ({
+            type: "deleteNode",
+            nodeId,
+            activePageId,
+          }) as const,
+      );
+      const next = applyCanvasTransaction(docRef.current, operations, {
+        activePageId,
+      }).doc;
       commitDocument(next, { selection: [] });
       setSelection([], { notifyScene: false });
       console.info("[skia-canvas] selection.deleted", { count: ids.length });
@@ -2983,9 +2998,47 @@ export const SkiaCanvas = memo(
       [booleanRuntimeStatus, commitDocument, selectedIds, setSelection],
     );
 
+    const applyDocumentPatch = useCallback(
+      (patch: CanvasDocumentPatch) => {
+        const currentVersion = documentVersionRef.current;
+        if (patch.baseVersion !== currentVersion) {
+          console.warn("[skia-canvas] document.patch.rejected", {
+            baseVersion: patch.baseVersion,
+            currentVersion,
+            operationCount: patch.operations.length,
+            transactionId: patch.transactionId,
+            reason: "version_mismatch",
+          });
+          throw new Error(
+            `Canvas patch version mismatch. The live document is at version ${currentVersion}, but the patch was based on version ${patch.baseVersion}. Refresh the live canvas state and retry.`,
+          );
+        }
+        const activePageId = activePageIdRef.current;
+        const result = applyCanvasTransaction(
+          docRef.current,
+          patch.operations,
+          {
+            activePageId,
+            transactionId: patch.transactionId,
+          },
+        );
+        commitDocument(result.doc, { selection: patch.selection });
+        console.info("[skia-canvas] document.patch.applied", {
+          activePageId,
+          nextVersion: documentVersionRef.current,
+          operationCount: patch.operations.length,
+          transactionId: patch.transactionId,
+        });
+        return documentVersionRef.current;
+      },
+      [commitDocument],
+    );
+
     const api = useMemo<CanvasApi>(
       () => ({
         getDocument: () => docRef.current as CanvasApiDocument,
+        getDocumentVersion: () => documentVersionRef.current,
+        applyDocumentPatch,
         setDocument: (raw: unknown) => {
           const next = normalizeRuntimeDocumentForCanvasSet(raw);
           commitDocument(next, { captureHistory: false });
@@ -3236,6 +3289,12 @@ export const SkiaCanvas = memo(
               refBounds.y;
           }
           if (!refBounds) return;
+          const operations: Array<{
+            type: "updateNode";
+            nodeId: string;
+            updates: Partial<PenNode>;
+            activePageId: string;
+          }> = [];
           for (const n of nodes) {
             const b = getNodeBounds(n);
             let update: Partial<PenNode> = {};
@@ -3250,16 +3309,19 @@ export const SkiaCanvas = memo(
             else if (alignment === "bottom")
               update = { y: refBounds.y + refBounds.height - b.height };
             if (Object.keys(update).length > 0) {
-              const next = applyCanvasOperation(docRef.current, {
+              operations.push({
                 type: "updateNode",
                 nodeId: n.id,
                 updates: update as Partial<PenNode>,
                 activePageId,
               });
-              docRef.current = next;
             }
           }
-          commitDocument(docRef.current);
+          if (operations.length === 0) return;
+          const result = applyCanvasTransaction(docRef.current, operations, {
+            activePageId,
+          });
+          commitDocument(result.doc);
         },
         reorderNode: (nodeId, direction) => {
           const activePageId = activePageIdRef.current;
@@ -3343,6 +3405,7 @@ export const SkiaCanvas = memo(
         activeTool,
         addPage,
         applyBooleanOperation,
+        applyDocumentPatch,
         commitDocument,
         copySelection,
         createContainer,
@@ -3409,22 +3472,27 @@ export const SkiaCanvas = memo(
       nudgeSelection: (dx, dy) => {
         if (selectedIds.length === 0) return;
         const activePageId = activePageIdRef.current;
-        let next = docRef.current;
-        for (const nodeId of selectedIds) {
-          const node = findNode(next, nodeId, activePageId);
-          if (!node || node.locked) continue;
+        const operations = selectedIds.flatMap((nodeId) => {
+          const node = findNode(docRef.current, nodeId, activePageId);
+          if (!node || node.locked) return [];
           const bounds = getNodeBounds(node);
-          next = applyCanvasOperation(next, {
-            type: "updateNode",
-            nodeId,
-            updates: {
-              x: bounds.x + dx,
-              y: bounds.y + dy,
-            } as Partial<PenNode>,
-            activePageId,
-          });
-        }
-        commitDocument(next);
+          return [
+            {
+              type: "updateNode" as const,
+              nodeId,
+              updates: {
+                x: bounds.x + dx,
+                y: bounds.y + dy,
+              } as Partial<PenNode>,
+              activePageId,
+            },
+          ];
+        });
+        if (operations.length === 0) return;
+        commitDocument(
+          applyCanvasTransaction(docRef.current, operations, { activePageId })
+            .doc,
+        );
       },
       reorderSelection: (direction) => {
         const topSelection = getTopLevelSelectionIds(

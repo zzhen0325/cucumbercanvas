@@ -24,6 +24,9 @@ import type { RenderNode } from "./types.js";
 // ---------------------------------------------------------------------------
 
 let _measureCtx: CanvasRenderingContext2D | null = null;
+const TEXT_MEASURE_CACHE_MAX = 5000;
+const textMeasureCache = new Map<string, number>();
+
 function getMeasureCtx(): CanvasRenderingContext2D {
   if (!_measureCtx) {
     const c = document.createElement("canvas");
@@ -48,7 +51,8 @@ function getMeasureCtx(): CanvasRenderingContext2D {
  * resolution in computeLayoutPositions.
  */
 export function premeasureTextHeights(nodes: PenNode[]): PenNode[] {
-  return nodes.map((node) => {
+  let changed = false;
+  const measuredNodes = nodes.map((node) => {
     let result = node;
 
     if (node.type === "text") {
@@ -87,32 +91,20 @@ export function premeasureTextHeights(nodes: PenNode[]): PenNode[] {
         const fontFamily =
           tNode.fontFamily ??
           'Inter, -apple-system, "Noto Sans SC", "PingFang SC", system-ui, sans-serif';
-        const ctx = getMeasureCtx();
-        ctx.font = `${fontWeight} ${fontSize}px ${cssFontFamily(fontFamily)}`;
-
-        const wrapWidth = (tNode.width as number) + fontSize * 0.2;
-        const rawLines = content.split("\n");
-        const wrappedLines: string[] = [];
-        for (const raw of rawLines) {
-          if (!raw) {
-            wrappedLines.push("");
-            continue;
-          }
-          wrapLine(ctx, raw, wrapWidth, wrappedLines);
-        }
+        const width = tNode.width as number;
         const lineHeightMul = tNode.lineHeight ?? defaultLineHeight(fontSize);
-        const lineHeight = lineHeightMul * fontSize;
-        const glyphH = fontSize * 1.13;
-        const measuredHeight = Math.ceil(
-          wrappedLines.length <= 1
-            ? glyphH + 2
-            : (wrappedLines.length - 1) * lineHeight + glyphH + 2,
+        const measuredHeight = readCachedTextHeight(
+          content,
+          width,
+          fontSize,
+          fontWeight,
+          fontFamily,
+          lineHeightMul,
         );
         const currentHeight =
           typeof tNode.height === "number" ? tNode.height : 0;
-        const explicitLineCount = rawLines.length;
         const needsHeight =
-          currentHeight <= 0 || wrappedLines.length > explicitLineCount;
+          currentHeight <= 0 || measuredHeight > currentHeight;
         if (needsHeight && measuredHeight > currentHeight) {
           result = { ...node, height: measuredHeight } as unknown as PenNode;
         }
@@ -128,8 +120,59 @@ export function premeasureTextHeights(nodes: PenNode[]): PenNode[] {
       }
     }
 
+    if (result !== node) changed = true;
     return result;
   });
+
+  return changed ? measuredNodes : nodes;
+}
+
+function readCachedTextHeight(
+  content: string,
+  width: number,
+  fontSize: number,
+  fontWeight: string,
+  fontFamily: string,
+  lineHeightMul: number,
+): number {
+  const key = [
+    content,
+    width,
+    fontSize,
+    fontWeight,
+    fontFamily,
+    lineHeightMul,
+  ].join("\u0001");
+  const cached = textMeasureCache.get(key);
+  if (cached !== undefined) return cached;
+
+  const ctx = getMeasureCtx();
+  ctx.font = `${fontWeight} ${fontSize}px ${cssFontFamily(fontFamily)}`;
+
+  const wrapWidth = width + fontSize * 0.2;
+  const rawLines = content.split("\n");
+  const wrappedLines: string[] = [];
+  for (const raw of rawLines) {
+    if (!raw) {
+      wrappedLines.push("");
+      continue;
+    }
+    wrapLine(ctx, raw, wrapWidth, wrappedLines);
+  }
+  const lineHeight = lineHeightMul * fontSize;
+  const glyphH = fontSize * 1.13;
+  const measuredHeight = Math.ceil(
+    wrappedLines.length <= 1
+      ? glyphH + 2
+      : (wrappedLines.length - 1) * lineHeight + glyphH + 2,
+  );
+
+  if (textMeasureCache.size >= TEXT_MEASURE_CACHE_MAX) {
+    const firstKey = textMeasureCache.keys().next().value;
+    if (firstKey !== undefined) textMeasureCache.delete(firstKey);
+  }
+  textMeasureCache.set(key, measuredHeight);
+  return measuredHeight;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,24 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-29 CST
+Last updated: 2026-05-30 CST
+
+## 2026-05-30
+
+- Advanced the canvas performance slice: Skia renderer document sync now accepts the active page in a single call instead of triggering duplicate full-tree syncs, renderer text pre-measurement and frame labels now cache hot-path work, transform previews filter directly to visible nodes without cloning every render node, and multi-node move/delete/align/nudge paths can batch through a canvas transaction.
+- Added the first runtime state-management foundation for the canvas: `zustand` + `immer` are wired into a tested vanilla canvas runtime store with fine-grained document, selection, viewport, selected-node, and undo/redo selectors so future panel/tool migrations can avoid rerendering the whole `SkiaCanvas`.
+- Added patch-first live canvas protocol scaffolding: shared contracts now include canvas patch RPC params and `canvas.patch` stream events, the live editor exposes `canvas.document.patch` with version checks, and `LiveCanvasService` can send patch transactions without replacing the whole document.
+- Passed: `pnpm --filter @cucumber/pen-renderer test`.
+- Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/canvas-core.test.ts`.
+- Passed: `pnpm --filter @cucumber/shared test`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-runtime-store.test.ts`.
+- Passed: `pnpm --filter @cucumber/pen-renderer typecheck`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm --filter @cucumber/shared typecheck`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm lint`.
+- Passed: `pnpm --filter @cucumber/server build`.
+- Note: `pnpm --filter @cucumber/web build` currently fails before app compilation because Next cannot fetch Google Font `Poppins` due to `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` in the local certificate chain.
 
 ## 2026-05-29
 

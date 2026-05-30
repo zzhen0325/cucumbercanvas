@@ -1,4 +1,5 @@
 import {
+  type CanvasOperation,
   type CucumberCanvasDocument,
   flattenNodes,
   isCucumberCanvasDocument,
@@ -132,6 +133,40 @@ export function createLiveCanvasService(options: {
         nodeCount: flattenNodes(document).length,
         userId: user.id,
       });
+    },
+
+    async patchDocument(
+      user: AuthenticatedUser,
+      canvasId: string,
+      patch: {
+        baseVersion: number;
+        operations: CanvasOperation[];
+        selection?: string[];
+        transactionId: string;
+      },
+    ): Promise<{ version: number }> {
+      await assertCanvasAccess(user, canvasId);
+      const result = await rpcToLiveEditor<{ ok?: boolean; version?: unknown }>(
+        user,
+        canvasId,
+        "canvas.document.patch",
+        patch as unknown as Record<string, unknown>,
+      );
+      if (typeof result.version !== "number") {
+        throw new LiveCanvasServiceError(
+          "invalid_canvas_document",
+          "Live editor applied a patch but did not return a document version.",
+          500,
+        );
+      }
+      console.info("[live-canvas] patch synced to live editor", {
+        canvasId,
+        nextVersion: result.version,
+        operationCount: patch.operations.length,
+        transactionId: patch.transactionId,
+        userId: user.id,
+      });
+      return { version: result.version };
     },
   };
 }

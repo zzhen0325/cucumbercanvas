@@ -2,6 +2,7 @@
 
 import type {
   CanvasBounds,
+  CanvasOperation,
   CucumberCanvasDocument,
 } from "@cucumber/canvas-core";
 import {
@@ -65,6 +66,13 @@ type CanvasEditorProps = {
 const SAVE_DEBOUNCE_MS = 1_200;
 const THUMBNAIL_DEBOUNCE_MS = 10_000;
 
+type CanvasDocumentPatchParams = {
+  baseVersion: number;
+  operations: CanvasOperation[];
+  selection?: string[];
+  transactionId: string;
+};
+
 function resolveScreenshotBounds(
   api: CanvasApi,
   params: ScreenshotParams,
@@ -81,6 +89,52 @@ function resolveScreenshotBounds(
     return api.getViewportBounds();
   }
   return calculateDocumentBounds(api.getDocument(), api.getActivePageId());
+}
+
+function parseCanvasDocumentPatchParams(
+  params: Record<string, unknown>,
+): CanvasDocumentPatchParams {
+  const baseVersion = params.baseVersion;
+  const transactionId = params.transactionId;
+  const operations = params.operations;
+  const selection = params.selection;
+
+  if (!Number.isInteger(baseVersion) || (baseVersion as number) < 0) {
+    throw new Error(
+      "canvas.document.patch requires a non-negative baseVersion.",
+    );
+  }
+  if (typeof transactionId !== "string" || transactionId.trim().length === 0) {
+    throw new Error("canvas.document.patch requires a transactionId.");
+  }
+  if (!Array.isArray(operations) || operations.length === 0) {
+    throw new Error("canvas.document.patch requires at least one operation.");
+  }
+  for (const operation of operations) {
+    if (
+      !operation ||
+      typeof operation !== "object" ||
+      typeof (operation as { type?: unknown }).type !== "string"
+    ) {
+      throw new Error(
+        "canvas.document.patch operations must be canvas operation objects with a type.",
+      );
+    }
+  }
+  if (
+    selection !== undefined &&
+    (!Array.isArray(selection) ||
+      selection.some((nodeId) => typeof nodeId !== "string"))
+  ) {
+    throw new Error("canvas.document.patch selection must be string node IDs.");
+  }
+
+  return {
+    baseVersion: baseVersion as number,
+    operations: operations as CanvasOperation[],
+    ...(selection ? { selection: selection as string[] } : {}),
+    transactionId,
+  };
 }
 
 export function CanvasEditor({
@@ -257,6 +311,7 @@ export function CanvasEditor({
     );
     const unregisterGet = ws.registerRPC("canvas.document.get", async () => ({
       document: api.getDocument(),
+      version: api.getDocumentVersion(),
     }));
     const unregisterSet = ws.registerRPC(
       "canvas.document.set",
@@ -266,10 +321,31 @@ export function CanvasEditor({
         return { ok: true };
       },
     );
+    const unregisterPatch = ws.registerRPC(
+      "canvas.document.patch",
+      async (params) => {
+        const patch = parseCanvasDocumentPatchParams(params);
+        const version = api.applyDocumentPatch({
+          baseVersion: patch.baseVersion,
+          operations: patch.operations,
+          selection: patch.selection,
+          transactionId: patch.transactionId,
+        });
+        await api.flushPendingSave();
+        console.info("[canvas-editor] document patch applied", {
+          canvasId,
+          nextVersion: version,
+          operationCount: patch.operations.length,
+          transactionId: patch.transactionId,
+        });
+        return { ok: true, version };
+      },
+    );
     return () => {
       unregisterScreenshot();
       unregisterGet();
       unregisterSet();
+      unregisterPatch();
     };
   }, [api, canvasId, ws]);
 

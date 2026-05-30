@@ -22,6 +22,45 @@ export function applyCanvasOperation(
   operation: CanvasOperation,
 ): PenDocument {
   const next = cloneDocument(doc);
+  applyCanvasOperationToMutableDoc(next, operation);
+  return next;
+}
+
+export type CanvasTransactionMeta = {
+  activePageId?: string | null;
+  agentId?: string;
+  transactionId?: string;
+};
+
+export type CanvasTransactionResult = {
+  applied: number;
+  doc: PenDocument;
+  transactionId: string;
+};
+
+export function applyCanvasTransaction(
+  doc: PenDocument,
+  operations: CanvasOperation[],
+  meta: CanvasTransactionMeta = {},
+): CanvasTransactionResult {
+  const next = cloneDocument(doc);
+  for (const operation of operations) {
+    applyCanvasOperationToMutableDoc(
+      next,
+      applyTransactionDefaults(operation, meta),
+    );
+  }
+  return {
+    applied: operations.length,
+    doc: next,
+    transactionId: meta.transactionId ?? createTransactionId(),
+  };
+}
+
+function applyCanvasOperationToMutableDoc(
+  next: PenDocument,
+  operation: CanvasOperation,
+): void {
   const activePageId =
     "activePageId" in operation ? operation.activePageId : undefined;
   validateOperationActivePage(next, operation, activePageId);
@@ -170,8 +209,35 @@ export function applyCanvasOperation(
       );
     }
   }
+}
 
-  return next;
+function applyTransactionDefaults(
+  operation: CanvasOperation,
+  meta: CanvasTransactionMeta,
+): CanvasOperation {
+  if (
+    operation.type === "createDataFlowEdge" ||
+    operation.type === "removeDataFlowEdge"
+  ) {
+    return operation;
+  }
+  const withPage =
+    operation.activePageId === undefined && meta.activePageId !== undefined
+      ? { ...operation, activePageId: meta.activePageId }
+      : operation;
+  if (!meta.agentId) return withPage;
+  if (
+    withPage.type === "insertNode" ||
+    withPage.type === "updateNode" ||
+    withPage.type === "deleteNode"
+  ) {
+    return { ...withPage, agentId: withPage.agentId ?? meta.agentId };
+  }
+  return withPage;
+}
+
+function createTransactionId(): string {
+  return `canvas_tx_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export function detachNodesOutsideParentBounds(

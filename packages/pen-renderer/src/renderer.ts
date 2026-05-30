@@ -52,6 +52,7 @@ const FRAME_LABEL_HIT_PADDING_Y = 3;
 const RENDER_CULL_MARGIN_PX = 256;
 const SLOW_SYNC_THRESHOLD_MS = 18;
 const SLOW_FRAME_THRESHOLD_MS = 24;
+const FRAME_LABEL_CACHE_MAX = 256;
 const RESIZE_HANDLES: ResizeHandleDirection[] = [
   "n",
   "ne",
@@ -62,6 +63,15 @@ const RESIZE_HANDLES: ResizeHandleDirection[] = [
   "w",
   "nw",
 ];
+
+type CanvasKitImage = NonNullable<ReturnType<CanvasKit["MakeImage"]>>;
+
+type FrameLabelCacheEntry = {
+  image: CanvasKitImage;
+  bitmapWidth: number;
+  bitmapHeight: number;
+  lastUsed: number;
+};
 
 /**
  * Standalone read-only renderer for Cucumber (.op) design files.
@@ -89,6 +99,8 @@ export class PenRenderer {
   private interactionMode: RendererInteractionMode = "idle";
   private transformPreview: TransformPreviewState | null = null;
   private transformPreviewIds = new Set<string>();
+  private frameLabelCache = new Map<string, FrameLabelCacheEntry>();
+  private frameLabelCacheTick = 0;
 
   // Component/instance IDs for colored frame labels
   private reusableIds = new Set<string>();
@@ -171,6 +183,7 @@ export class PenRenderer {
   dispose() {
     if (this.animFrameId) cancelAnimationFrame(this.animFrameId);
     this.nodeRenderer.dispose();
+    this.clearFrameLabelCache();
     this.surface?.delete();
     this.surface = null;
   }
@@ -229,10 +242,13 @@ export class PenRenderer {
         mode,
       });
     } else if (surface && mode === "software") {
-      console.warn("[pen-renderer] Skia surface created with software fallback", {
-        ...context,
-        mode,
-      });
+      console.warn(
+        "[pen-renderer] Skia surface created with software fallback",
+        {
+          ...context,
+          mode,
+        },
+      );
     }
 
     return surface;
@@ -242,10 +258,15 @@ export class PenRenderer {
   // Document
   // ---------------------------------------------------------------------------
 
-  setDocument(doc: PenDocument) {
+  setDocument(doc: PenDocument, activePageId?: string | null) {
     this.document = doc;
-    this.activePageId = doc.pages?.[0]?.id ?? null;
+    this.activePageId =
+      activePageId ?? doc.activePageId ?? doc.pages?.[0]?.id ?? null;
     this.syncFromDocument();
+  }
+
+  setDocumentAndPage(doc: PenDocument, activePageId: string) {
+    this.setDocument(doc, activePageId);
   }
 
   getDocument(): PenDocument | null {
@@ -257,6 +278,7 @@ export class PenRenderer {
   // ---------------------------------------------------------------------------
 
   setPage(pageId: string) {
+    if (this.activePageId === pageId) return;
     this.activePageId = pageId;
     this.syncFromDocument();
   }
@@ -581,14 +603,43 @@ export class PenRenderer {
     const ck = this.ck;
     const dpr = this.options.devicePixelRatio ?? window.devicePixelRatio ?? 1;
     const bounds = getFrameLabelBounds(name, x, y, this._zoom, dpr);
+    const cacheEntry = this.getFrameLabelCacheEntry(name, selected, dpr);
+    if (cacheEntry) {
+      const paint = new ck.Paint();
+      paint.setAntiAlias(true);
+      canvas.drawImageRect(
+        cacheEntry.image,
+        ck.LTRBRect(0, 0, cacheEntry.bitmapWidth, cacheEntry.bitmapHeight),
+        ck.LTRBRect(bounds.left, bounds.top, bounds.right, bounds.bottom),
+        paint,
+      );
+      paint.delete();
+    }
+  }
+
+  private getFrameLabelCacheEntry(
+    name: string,
+    selected: boolean,
+    dpr: number,
+  ): FrameLabelCacheEntry | null {
+    const key = getFrameLabelCacheKey(name, this._zoom, dpr, selected);
+    const cached = this.frameLabelCache.get(key);
+    if (cached) {
+      cached.lastUsed = ++this.frameLabelCacheTick;
+      return cached;
+    }
+
+    const ck = this.ck;
+    const zoomBucket = getFrameLabelZoomBucket(this._zoom);
+    const bounds = getFrameLabelBounds(name, 0, 0, zoomBucket, dpr);
     const { fontSize, scale } = bounds;
 
-    // Use Canvas 2D to rasterize the label text
+    // Use Canvas 2D to rasterize the label text once per zoom bucket.
     const tmp = document.createElement("canvas");
     tmp.width = bounds.bitmapWidth;
     tmp.height = bounds.bitmapHeight;
     const ctx = tmp.getContext("2d");
-    if (!ctx) return;
+    if (!ctx) return null;
     ctx.scale(scale, scale);
     const fontWeight = selected
       ? FRAME_LABEL_SELECTED_FONT_WEIGHT
@@ -604,7 +655,7 @@ export class PenRenderer {
       bounds.bitmapWidth,
       bounds.bitmapHeight,
     );
-    const img = ck.MakeImage(
+    const image = ck.MakeImage(
       {
         width: bounds.bitmapWidth,
         height: bounds.bitmapHeight,
@@ -615,18 +666,40 @@ export class PenRenderer {
       imageData.data,
       bounds.bitmapWidth * 4,
     );
-    if (img) {
-      const paint = new ck.Paint();
-      paint.setAntiAlias(true);
-      canvas.drawImageRect(
-        img,
-        ck.LTRBRect(0, 0, bounds.bitmapWidth, bounds.bitmapHeight),
-        ck.LTRBRect(bounds.left, bounds.top, bounds.right, bounds.bottom),
-        paint,
-      );
-      paint.delete();
-      img.delete();
+    if (!image) return null;
+
+    const entry = {
+      image,
+      bitmapWidth: bounds.bitmapWidth,
+      bitmapHeight: bounds.bitmapHeight,
+      lastUsed: ++this.frameLabelCacheTick,
+    };
+    this.frameLabelCache.set(key, entry);
+    this.evictFrameLabelCacheIfNeeded();
+    return entry;
+  }
+
+  private evictFrameLabelCacheIfNeeded() {
+    if (this.frameLabelCache.size <= FRAME_LABEL_CACHE_MAX) return;
+    let oldestKey: string | null = null;
+    let oldestTick = Number.POSITIVE_INFINITY;
+    for (const [key, entry] of this.frameLabelCache) {
+      if (entry.lastUsed < oldestTick) {
+        oldestTick = entry.lastUsed;
+        oldestKey = key;
+      }
     }
+    if (!oldestKey) return;
+    const oldest = this.frameLabelCache.get(oldestKey);
+    oldest?.image.delete();
+    this.frameLabelCache.delete(oldestKey);
+  }
+
+  private clearFrameLabelCache() {
+    for (const entry of this.frameLabelCache.values()) {
+      entry.image.delete();
+    }
+    this.frameLabelCache.clear();
   }
 
   private shouldDrawFrameLabel(rn: RenderNode): boolean {
@@ -672,14 +745,8 @@ export class PenRenderer {
   }
 
   private getVisibleRenderNodes(): RenderNode[] {
-    const transformed = this.transformPreview
-      ? applyTransformPreviewToRenderNodes(
-          this.renderNodes,
-          this.transformPreview,
-          this.transformPreviewIds,
-        )
-      : this.renderNodes;
-    if (!this.canvasEl || transformed.length === 0) return transformed;
+    if (!this.canvasEl || this.renderNodes.length === 0)
+      return this.renderNodes;
 
     const margin = RENDER_CULL_MARGIN_PX / Math.max(this._zoom, MIN_ZOOM);
     const bounds = getViewportBounds(
@@ -688,7 +755,15 @@ export class PenRenderer {
       this.canvasEl.clientHeight,
       margin,
     );
-    return filterRenderNodesToViewport(transformed, bounds);
+    if (!this.transformPreview) {
+      return filterRenderNodesToViewport(this.renderNodes, bounds);
+    }
+    return filterRenderNodesToViewportWithTransformPreview(
+      this.renderNodes,
+      bounds,
+      this.transformPreview,
+      this.transformPreviewIds,
+    );
   }
 
   private collectTransformPreviewIds(
@@ -1297,6 +1372,22 @@ export function filterRenderNodesToViewport(
   return renderNodes.filter((rn) => isRenderNodeInBounds(rn, bounds));
 }
 
+export function filterRenderNodesToViewportWithTransformPreview(
+  renderNodes: RenderNode[],
+  bounds: { left: number; top: number; right: number; bottom: number },
+  preview: TransformPreviewState,
+  previewIds: ReadonlySet<string>,
+): RenderNode[] {
+  const visible: RenderNode[] = [];
+  for (const rn of renderNodes) {
+    const next = applyTransformPreviewToRenderNode(rn, preview, previewIds);
+    if (isRenderNodeInBounds(next, bounds)) {
+      visible.push(next);
+    }
+  }
+  return visible;
+}
+
 function isRenderNodeInBounds(
   rn: RenderNode,
   bounds: { left: number; top: number; right: number; bottom: number },
@@ -1419,6 +1510,21 @@ function estimateFrameLabelTextWidth(name: string, fontSize: number): number {
   }, 0);
 
   return Math.max(fontSize, units * fontSize);
+}
+
+function getFrameLabelZoomBucket(zoom: number): number {
+  return Math.max(MIN_ZOOM, Math.round(zoom * 20) / 20);
+}
+
+function getFrameLabelCacheKey(
+  name: string,
+  zoom: number,
+  dpr: number,
+  selected: boolean,
+): string {
+  const zoomBucket = getFrameLabelZoomBucket(zoom);
+  const dprBucket = Math.round(Math.max(dpr, 1) * 100) / 100;
+  return `${name}\u0001${zoomBucket}\u0001${dprBucket}\u0001${selected ? "1" : "0"}`;
 }
 
 function getRotateHandlePoint(x: number, y: number, w: number, zoom: number) {

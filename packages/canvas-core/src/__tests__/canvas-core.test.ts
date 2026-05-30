@@ -6,6 +6,7 @@ import {
   type CanvasImportResult,
   type PenNode,
   applyCanvasOperation,
+  applyCanvasTransaction,
   applyImportedAutoLayout,
   applyInstanceOverrides,
   buildAgentContext,
@@ -268,6 +269,85 @@ describe("cucumber canvas core", () => {
     });
 
     expect(getActiveChildren(doc).map((node) => node.id)).toEqual(["b", "a"]);
+  });
+
+  it("applies multiple operations in one transaction", () => {
+    let doc = createEmptyDocument();
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: {
+        id: "a",
+        type: "rectangle",
+        x: 0,
+        y: 0,
+        width: 20,
+        height: 20,
+      } as PenNode,
+    });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: {
+        id: "b",
+        type: "rectangle",
+        x: 30,
+        y: 0,
+        width: 20,
+        height: 20,
+      } as PenNode,
+    });
+
+    const result = applyCanvasTransaction(
+      doc,
+      [
+        {
+          type: "updateNode",
+          nodeId: "a",
+          updates: { x: 10 } as Partial<PenNode>,
+        },
+        {
+          type: "updateNode",
+          nodeId: "b",
+          updates: { x: 40 } as Partial<PenNode>,
+        },
+      ],
+      { transactionId: "tx-test" },
+    );
+
+    expect(result.applied).toBe(2);
+    expect(result.transactionId).toBe("tx-test");
+    expect(findNode(result.doc, "a")?.x).toBe(10);
+    expect(findNode(result.doc, "b")?.x).toBe(40);
+    expect(findNode(doc, "a")?.x).toBe(0);
+  });
+
+  it("rolls back a failed transaction by preserving the source document", () => {
+    const doc = applyCanvasOperation(createEmptyDocument(), {
+      type: "insertNode",
+      node: {
+        id: "a",
+        type: "rectangle",
+        x: 0,
+        y: 0,
+        width: 20,
+        height: 20,
+      } as PenNode,
+    });
+
+    expect(() =>
+      applyCanvasTransaction(doc, [
+        {
+          type: "updateNode",
+          nodeId: "a",
+          updates: { x: 10 } as Partial<PenNode>,
+        },
+        {
+          type: "updateNode",
+          nodeId: "missing",
+          updates: { x: 40 } as Partial<PenNode>,
+        },
+      ]),
+    ).toThrow("Node missing does not exist.");
+    expect(findNode(doc, "a")?.x).toBe(0);
   });
 
   it("hit-tests visible nodes inside marquee bounds", () => {

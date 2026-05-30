@@ -2,6 +2,7 @@ import type {
   AgentBinding,
   CanvasAsset,
   CanvasBounds,
+  CanvasOperation,
   ContextSlots,
   CucumberCanvasDocument,
   PenNode,
@@ -62,6 +63,13 @@ export type CanvasApiRuntimeState = {
   viewport: CanvasApiViewportState;
 };
 
+export type CanvasDocumentPatch = {
+  baseVersion: number;
+  transactionId: string;
+  operations: CanvasOperation[];
+  selection?: string[];
+};
+
 export type CanvasAppState = {
   zoom: { value: number };
   scrollX: number;
@@ -92,6 +100,8 @@ export type CanvasTool =
 
 export type CanvasApi = {
   getDocument: () => CanvasApiDocument;
+  getDocumentVersion: () => number;
+  applyDocumentPatch: (patch: CanvasDocumentPatch) => number;
   setDocument: (doc: unknown) => void;
   getActivePageId: () => string;
   setActivePage: (pageId: string) => void;
