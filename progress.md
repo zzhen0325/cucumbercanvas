@@ -6,11 +6,13 @@ Last updated: 2026-05-30 CST
 
 - Advanced the canvas performance slice: Skia renderer document sync now accepts the active page in a single call instead of triggering duplicate full-tree syncs, renderer text pre-measurement and frame labels now cache hot-path work, transform previews filter directly to visible nodes without cloning every render node, and multi-node move/delete/align/nudge paths can batch through a canvas transaction.
 - Added the first runtime state-management foundation for the canvas: `zustand` + `immer` are wired into a tested vanilla canvas runtime store with fine-grained document, selection, viewport, selected-node, and undo/redo selectors so future panel/tool migrations can avoid rerendering the whole `SkiaCanvas`.
+- Migrated `SkiaCanvas` core runtime state onto the Zustand/Immer store: document, active page, selection, active tool, history, version, and viewport snapshots now flow through store actions/subscriptions; toolbar, boolean toolbar, page tabs, and property panel consume selector-driven connected containers; keyboard shortcuts keep a stable listener through latest refs; and undo/redo now use past/future history semantics.
 - Added patch-first live canvas protocol scaffolding: shared contracts now include canvas patch RPC params and `canvas.patch` stream events, the live editor exposes `canvas.document.patch` with version checks, and `LiveCanvasService` can send patch transactions without replacing the whole document.
 - Passed: `pnpm --filter @cucumber/pen-renderer test`.
 - Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/canvas-core.test.ts`.
 - Passed: `pnpm --filter @cucumber/shared test`.
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-runtime-store.test.ts`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-runtime-store.test.ts test/skia-canvas-selection-snapshot.test.tsx`.
 - Passed: `pnpm --filter @cucumber/pen-renderer typecheck`.
 - Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
 - Passed: `pnpm --filter @cucumber/shared typecheck`.

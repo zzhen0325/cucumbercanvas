@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 type CanvasToolShortcut =
   | "select"
@@ -40,8 +40,12 @@ export function useCanvasKeyboardShortcuts(options: {
   editSelectedText?: () => boolean;
   setActiveTool: (tool: CanvasToolShortcut) => void;
 }) {
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      const options = optionsRef.current;
       const target = event.target as HTMLElement | null;
       if (isEditableTarget(target) || hasNativeTextSelection()) {
         return;
@@ -158,5 +162,5 @@ export function useCanvasKeyboardShortcuts(options: {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [options]);
+  }, []);
 }

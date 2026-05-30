@@ -62,6 +62,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useStore } from "zustand";
 
 import { useToast } from "@/components/toast";
 import { CanvasBooleanToolbar } from "./boolean-toolbar";
@@ -79,6 +80,21 @@ import type {
 } from "./canvas-api";
 import { exportDocumentImage } from "./canvas-export";
 import { bakePenAnchorsToPathData, usePenTool } from "./canvas-pen-tool";
+import {
+  type CanvasRuntimeStore,
+  CanvasRuntimeStoreProvider,
+  createCanvasRuntimeStore,
+  getCanvasApiDocument,
+  selectCanvasActiveTool,
+  selectCanvasBooleanInputState,
+  selectCanvasCanRedo,
+  selectCanvasCanUndo,
+  selectCanvasPageTabsState,
+  selectCanvasSelectedNodePanelState,
+  selectCanvasToolbarState,
+  useCanvasRuntimeShallowSelector,
+  useCanvasRuntimeStoreApi,
+} from "./canvas-runtime-store";
 import {
   getPrimarySelectedContainerId,
   getTopLevelSelectionIds,
@@ -640,6 +656,184 @@ function createCanvasApiFacade(getLiveApi: () => CanvasApi): CanvasApi {
   };
 }
 
+function getBooleanToolbarRejectionReason({
+  activePageId,
+  booleanRuntimeStatus,
+  doc,
+  selection,
+}: {
+  activePageId: string;
+  booleanRuntimeStatus: "loading" | "ready" | "failed";
+  doc: PenDocument;
+  selection: string[];
+}) {
+  const currentSelection = getDocumentSelection(doc, selection);
+  if (currentSelection.length < 2) return null;
+  if (booleanRuntimeStatus === "loading") {
+    return "Boolean operations are still loading the vector runtime.";
+  }
+  if (booleanRuntimeStatus === "failed") {
+    return "Boolean operations are unavailable because the vector runtime failed to load.";
+  }
+  const topSelectionIds = getTopLevelSelectionIds(
+    doc as CucumberCanvasDocument,
+    currentSelection,
+    activePageId,
+  );
+  if (topSelectionIds.length < 2) {
+    return "Select at least two top-level supported vector shapes.";
+  }
+  const topSelectionNodes = topSelectionIds
+    .map((id) => findNode(doc, id, activePageId))
+    .filter(isPenNode);
+  if (topSelectionNodes.length !== topSelectionIds.length) {
+    return "One or more selected nodes are no longer available on the active page.";
+  }
+  const activeChildren = getActiveChildren(doc, activePageId);
+  const activeRootIds = new Set(activeChildren.map((node) => node.id));
+  const nestedSelectionIds = topSelectionIds.filter(
+    (id) => !activeRootIds.has(id),
+  );
+  if (nestedSelectionIds.length > 0) {
+    return "Boolean operations require top-level selections on the active page.";
+  }
+  return getBooleanOpRejectionReason(topSelectionNodes);
+}
+
+function CanvasEditorToolbarConnected({
+  api,
+  onCreateContainer,
+  onImportImage,
+  onImportSvg,
+  onInsertIcon,
+  onToolChange,
+}: {
+  api: CanvasApi;
+  onCreateContainer: () => void;
+  onImportImage: () => void;
+  onImportSvg: () => void;
+  onInsertIcon?: () => void;
+  onToolChange: (tool: CanvasTool) => void;
+}) {
+  const toolbarState = useCanvasRuntimeShallowSelector(
+    selectCanvasToolbarState,
+  );
+  return (
+    <CanvasEditorToolbar
+      activeTool={toolbarState.activeTool}
+      canRedo={toolbarState.canRedo}
+      canUndo={toolbarState.canUndo}
+      onCreateContainer={onCreateContainer}
+      onDelete={api.deleteSelection}
+      onInsertIcon={onInsertIcon}
+      onImportImage={onImportImage}
+      onImportSvg={onImportSvg}
+      onRedo={api.redo}
+      onToolChange={onToolChange}
+      onUndo={api.undo}
+      selectedCount={toolbarState.selectedCount}
+    />
+  );
+}
+
+function CanvasBooleanToolbarConnected({
+  booleanRuntimeStatus,
+  onBooleanOperation,
+}: {
+  booleanRuntimeStatus: "loading" | "ready" | "failed";
+  onBooleanOperation: (operation: BooleanOpType) => void;
+}) {
+  const { activePageId, document, selection } = useCanvasRuntimeShallowSelector(
+    selectCanvasBooleanInputState,
+  );
+  const rejectionReason = useMemo(
+    () =>
+      getBooleanToolbarRejectionReason({
+        activePageId,
+        booleanRuntimeStatus,
+        doc: document,
+        selection,
+      }),
+    [activePageId, booleanRuntimeStatus, document, selection],
+  );
+  return (
+    <CanvasBooleanToolbar
+      onBooleanOperation={onBooleanOperation}
+      rejectionReason={rejectionReason}
+      visible={selection.length >= 2}
+    />
+  );
+}
+
+function CanvasPageTabsConnected({
+  api,
+}: {
+  api: Pick<
+    CanvasApi,
+    | "addPage"
+    | "deletePage"
+    | "duplicatePage"
+    | "renamePage"
+    | "reorderPage"
+    | "setActivePage"
+  >;
+}) {
+  const { activePageId, pages } = useCanvasRuntimeShallowSelector(
+    selectCanvasPageTabsState,
+  );
+  return (
+    <CanvasPageTabs
+      activePageId={activePageId}
+      onAddPage={() => api.addPage()}
+      onDeletePage={api.deletePage}
+      onDuplicatePage={api.duplicatePage}
+      onRenamePage={api.renamePage}
+      onReorderPage={api.reorderPage}
+      onSetActivePage={api.setActivePage}
+      pages={pages}
+    />
+  );
+}
+
+function CanvasPropertyPanelConnected({
+  api,
+  commitDocument,
+}: {
+  api: Pick<CanvasApi, "bindAgentToContainer" | "updateNode">;
+  commitDocument: (document: PenDocument) => void;
+}) {
+  const store = useCanvasRuntimeStoreApi();
+  const { node, styleDefinitions, variables } = useCanvasRuntimeShallowSelector(
+    selectCanvasSelectedNodePanelState,
+  );
+  if (!node) return null;
+  return (
+    <CanvasPropertyPanel
+      node={node}
+      onBindAgent={(binding: AgentBinding) => {
+        api.bindAgentToContainer(node.id, binding);
+      }}
+      onStyleDefinitionsChange={(nextStyleDefinitions) => {
+        commitDocument({
+          ...getCanvasApiDocument(store.getState()),
+          styleDefinitions: nextStyleDefinitions,
+        });
+      }}
+      onUpdate={(updates) => {
+        api.updateNode(node.id, updates);
+      }}
+      onVariablesChange={(nextVariables) => {
+        commitDocument({
+          ...getCanvasApiDocument(store.getState()),
+          variables: nextVariables,
+        });
+      }}
+      styleDefinitions={styleDefinitions}
+      variables={variables}
+    />
+  );
+}
+
 // ---------------------------------------------------------------------------
 // SkiaCanvas
 // ---------------------------------------------------------------------------
@@ -673,23 +867,21 @@ export const SkiaCanvas = memo(
     const [ckReady, setCkReady] = useState(false);
     const [ckError, setCkError] = useState<string | null>(null);
 
-    const [doc, setDoc] = useState<PenDocument>(() =>
-      normalizeRuntimeDocument(initialContent),
-    );
-    const docRef = useRef(doc);
-    docRef.current = doc;
-    const documentVersionRef = useRef(0);
-    const [activePageId, setActivePageId] = useState(() =>
-      resolveActivePageId(docRef.current),
-    );
-    const activePageIdRef = useRef(activePageId);
-    activePageIdRef.current = activePageId;
+    const runtimeStoreRef = useRef<CanvasRuntimeStore | null>(null);
+    if (!runtimeStoreRef.current) {
+      runtimeStoreRef.current = createCanvasRuntimeStore(
+        normalizeRuntimeDocument(initialContent),
+      );
+    }
+    const runtimeStore = runtimeStoreRef.current;
+    const initialRuntimeState = runtimeStore.getState();
+    const docRef = useRef(getCanvasApiDocument(initialRuntimeState));
+    const documentVersionRef = useRef(initialRuntimeState.version);
+    const activePageIdRef = useRef(initialRuntimeState.activePageId);
+    const selectedIdsRef = useRef<string[]>(initialRuntimeState.selection);
+    const activeToolRef = useRef<CanvasTool>(initialRuntimeState.activeTool);
 
     const listenersRef = useRef(new Set<CanvasChangeListener>());
-    const [historyStack, setHistoryStack] = useState<PenDocument[]>([]);
-    const [historyIndex, setHistoryIndex] = useState(-1);
-    const [activeTool, setActiveTool] = useState<CanvasTool>("select");
-    const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [editingText, setEditingText] = useState<TextEditState | null>(null);
     const [isFileDragActive, setIsFileDragActive] = useState(false);
     const fileDragDepthRef = useRef(0);
@@ -741,6 +933,7 @@ export const SkiaCanvas = memo(
     // Space-held → temporary hand tool
     const [spaceHeld, setSpaceHeld] = useState(false);
     const savedToolRef = useRef<CanvasTool>("select");
+    const activeTool = useStore(runtimeStore, selectCanvasActiveTool);
     const effectiveTool = spaceHeld ? "hand" : activeTool;
 
     // Drag state for pan/move/resize
@@ -838,15 +1031,27 @@ export const SkiaCanvas = memo(
       };
     }, []);
 
-    const scheduleRendererIdle = useCallback((delayMs = 120) => {
-      if (rendererIdleTimerRef.current) {
-        clearTimeout(rendererIdleTimerRef.current);
-      }
-      rendererIdleTimerRef.current = setTimeout(() => {
-        rendererIdleTimerRef.current = null;
-        rendererRef.current?.setInteractionMode("idle");
-      }, delayMs);
-    }, []);
+    const scheduleRendererIdle = useCallback(
+      (delayMs = 120) => {
+        if (rendererIdleTimerRef.current) {
+          clearTimeout(rendererIdleTimerRef.current);
+        }
+        rendererIdleTimerRef.current = setTimeout(() => {
+          rendererIdleTimerRef.current = null;
+          const renderer = rendererRef.current;
+          renderer?.setInteractionMode("idle");
+          const viewport = renderer?.getViewport();
+          if (viewport) {
+            runtimeStore.getState().setViewportSnapshot({
+              x: viewport.panX,
+              y: viewport.panY,
+              zoom: viewport.zoom,
+            });
+          }
+        }, delayMs);
+      },
+      [runtimeStore],
+    );
 
     // -----------------------------------------------------------------------
     // CanvasKit init
@@ -898,6 +1103,14 @@ export const SkiaCanvas = memo(
       renderer.init(canvas);
       syncRendererDocument(renderer, docRef.current, activePageIdRef.current);
       renderer.zoomToFit(64);
+      {
+        const viewport = renderer.getViewport();
+        runtimeStore.getState().setViewportSnapshot({
+          x: viewport.panX,
+          y: viewport.panY,
+          zoom: viewport.zoom,
+        });
+      }
       rendererRef.current = renderer;
       renderer.setEditorOverlays(editorOverlayRef.current);
 
@@ -926,7 +1139,7 @@ export const SkiaCanvas = memo(
         rendererRef.current = null;
         canvasElRef.current = null;
       };
-    }, [ckReady]);
+    }, [ckReady, runtimeStore]);
 
     // -----------------------------------------------------------------------
     // Document commit helper
@@ -954,6 +1167,83 @@ export const SkiaCanvas = memo(
       [],
     );
 
+    useEffect(
+      () =>
+        runtimeStore.subscribe(
+          (state) => state.activeTool,
+          (tool) => {
+            activeToolRef.current = tool;
+          },
+        ),
+      [runtimeStore],
+    );
+
+    useEffect(
+      () =>
+        runtimeStore.subscribe(
+          (state) => state.version,
+          (version, previousVersion) => {
+            if (version === previousVersion) return;
+            const state = runtimeStore.getState();
+            const committed = getCanvasApiDocument(state);
+            docRef.current = committed;
+            activePageIdRef.current = state.activePageId;
+            selectedIdsRef.current = state.selection;
+            documentVersionRef.current = state.version;
+            setEditorOverlay({ selectedIds: state.selection });
+            syncRendererDocument(
+              rendererRef.current,
+              committed,
+              state.activePageId,
+            );
+            if (state.lastDocumentCommit?.notifyDocumentChange) {
+              onDocumentChange?.(committed as CucumberCanvasDocument);
+            }
+            notifySceneListeners(
+              committed,
+              state.activePageId,
+              state.selection,
+            );
+          },
+        ),
+      [notifySceneListeners, onDocumentChange, runtimeStore, setEditorOverlay],
+    );
+
+    useEffect(
+      () =>
+        runtimeStore.subscribe(
+          (state) => state.selectionRevision,
+          (revision, previousRevision) => {
+            if (revision === previousRevision) return;
+            const state = runtimeStore.getState();
+            const currentDocument = getCanvasApiDocument(state);
+            docRef.current = currentDocument;
+            activePageIdRef.current = state.activePageId;
+            selectedIdsRef.current = state.selection;
+            setEditorOverlay({ selectedIds: state.selection });
+            const meta = state.lastSelectionCommit;
+            if (meta?.notifyScene) {
+              notifySceneListeners(
+                currentDocument,
+                state.activePageId,
+                state.selection,
+              );
+            }
+            if (meta?.notifySelection) {
+              onSelectionChange?.(
+                state.selection
+                  .map((id) =>
+                    findNode(currentDocument, id, state.activePageId),
+                  )
+                  .filter(isPenNode)
+                  .map((node) => toSceneElement(node)),
+              );
+            }
+          },
+        ),
+      [notifySceneListeners, onSelectionChange, runtimeStore, setEditorOverlay],
+    );
+
     const commitDocument = useCallback(
       (
         next: PenDocument,
@@ -963,53 +1253,13 @@ export const SkiaCanvas = memo(
           selection?: string[];
         },
       ) => {
-        const normalized = normalizeCanvasPages(next);
-        const nextActivePageId = resolveActivePageId(normalized);
-        const requestedSelection =
-          opts && "selection" in opts
-            ? (opts.selection ?? [])
-            : getDocumentSelection(normalized, selectedIds);
-        const nextSelection = filterSelectionForActivePage(
-          normalized,
-          requestedSelection,
-          nextActivePageId,
-        );
-        const committed = {
-          ...normalized,
-          activePageId: nextActivePageId,
-          selection: nextSelection,
-        } as CanvasApiDocument;
-        if (opts?.captureHistory !== false) {
-          setHistoryStack((prev) => {
-            const trimmed = prev.slice(0, historyIndex + 1);
-            return [...trimmed, docRef.current];
-          });
-          setHistoryIndex((prev) => prev + 1);
-        }
-        activePageIdRef.current = nextActivePageId;
-        setActivePageId(nextActivePageId);
-        setSelectedIds(nextSelection);
-        setEditorOverlay({ selectedIds: nextSelection });
-        docRef.current = committed;
-        setDoc(committed);
-        documentVersionRef.current += 1;
-
-        // Update renderer
-        syncRendererDocument(rendererRef.current, committed, nextActivePageId);
-
-        if (opts?.notify !== false) {
-          onDocumentChange?.(committed as CucumberCanvasDocument);
-        }
-
-        notifySceneListeners(committed, nextActivePageId, nextSelection);
+        const result = runtimeStore.getState().commitDocument(next, opts);
+        docRef.current = result.document;
+        activePageIdRef.current = result.activePageId;
+        selectedIdsRef.current = result.selection;
+        documentVersionRef.current = result.version;
       },
-      [
-        historyIndex,
-        notifySceneListeners,
-        onDocumentChange,
-        selectedIds,
-        setEditorOverlay,
-      ],
+      [runtimeStore],
     );
 
     // -----------------------------------------------------------------------
@@ -1021,31 +1271,18 @@ export const SkiaCanvas = memo(
         nodeIds: string[],
         opts?: { notifyScene?: boolean; notifySelection?: boolean },
       ) => {
-        const activePageId = activePageIdRef.current;
-        const validIds = nodeIds.filter((id) =>
-          Boolean(findNode(docRef.current, id, activePageId)),
-        );
-        setSelectedIds(validIds);
-        const next = {
-          ...docRef.current,
-          selection: validIds,
-        } as CanvasApiDocument;
-        docRef.current = next;
-        setDoc(next);
-        setEditorOverlay({ selectedIds: validIds });
-        if (opts?.notifyScene !== false) {
-          notifySceneListeners(next, activePageId, validIds);
-        }
-        if (opts?.notifySelection !== false) {
-          onSelectionChange?.(
-            validIds
-              .map((id) => findNode(docRef.current, id, activePageId))
-              .filter(isPenNode)
-              .map((node) => toSceneElement(node)),
-          );
-        }
+        const validIds = runtimeStore.getState().setSelection(nodeIds, opts);
+        selectedIdsRef.current = validIds;
       },
-      [notifySceneListeners, onSelectionChange, setEditorOverlay],
+      [runtimeStore],
+    );
+
+    const setActiveTool = useCallback(
+      (tool: CanvasTool) => {
+        runtimeStore.getState().setActiveTool(tool);
+        activeToolRef.current = tool;
+      },
+      [runtimeStore],
     );
 
     const penTool = usePenTool({
@@ -1118,15 +1355,16 @@ export const SkiaCanvas = memo(
 
         if (event.shiftKey) {
           if (!hit) return;
-          const next = selectedIds.includes(hit.id)
-            ? selectedIds.filter((id) => id !== hit.id)
-            : [...selectedIds, hit.id];
+          const currentSelection = selectedIdsRef.current;
+          const next = currentSelection.includes(hit.id)
+            ? currentSelection.filter((id) => id !== hit.id)
+            : [...currentSelection, hit.id];
           setSelection(next);
         } else {
           setSelection(hit ? [hit.id] : []);
         }
       },
-      [selectedIds, setSelection],
+      [setSelection],
     );
 
     // -----------------------------------------------------------------------
@@ -1306,9 +1544,10 @@ export const SkiaCanvas = memo(
           }
 
           if (hit && !event.shiftKey) {
+            const currentSelection = selectedIdsRef.current;
             const hitSelectedNode =
-              selectedIds.includes(hit.id) ||
-              selectedIds.some((selectedId) =>
+              currentSelection.includes(hit.id) ||
+              currentSelection.some((selectedId) =>
                 isDescendantOf(
                   docRef.current,
                   hit.id,
@@ -1319,13 +1558,13 @@ export const SkiaCanvas = memo(
             // Start move if clicking on the selected node or its visible descendants.
             if (hitSelectedNode) {
               const origins: Record<string, CanvasBounds> = {};
-              for (const id of selectedIds) {
+              for (const id of currentSelection) {
                 const n = findNode(docRef.current, id, activePageId);
                 if (n) origins[id] = getNodeBounds(n);
               }
               dragRef.current = {
                 kind: "move",
-                nodeIds: [...selectedIds],
+                nodeIds: [...currentSelection],
                 startPoint: scenePoint,
                 origins,
                 hasMoved: false,
@@ -1361,7 +1600,7 @@ export const SkiaCanvas = memo(
           dragRef.current = {
             kind: "marquee",
             startPoint: scenePoint,
-            originSelection: [...selectedIds],
+            originSelection: [...selectedIdsRef.current],
           };
           setEditorOverlay({ marquee: null });
           event.currentTarget.setPointerCapture(event.pointerId);
@@ -1420,7 +1659,6 @@ export const SkiaCanvas = memo(
         effectiveTool,
         getPointerScenePoint,
         penTool,
-        selectedIds,
         setEditorOverlay,
         setSelection,
       ],
@@ -1892,7 +2130,7 @@ export const SkiaCanvas = memo(
           if (
             !areStringArraysEqual(
               marqueeSelectionRef.current,
-              getDocumentSelection(docRef.current, selectedIds),
+              getDocumentSelection(docRef.current, selectedIdsRef.current),
             )
           ) {
             setSelection(marqueeSelectionRef.current, {
@@ -1921,8 +2159,8 @@ export const SkiaCanvas = memo(
         penTool,
         scheduleRendererIdle,
         setEditorOverlay,
+        setActiveTool,
         setSelection,
-        selectedIds,
       ],
     );
 
@@ -2230,11 +2468,12 @@ export const SkiaCanvas = memo(
     );
 
     const copySelection = useCallback(() => {
-      if (selectedIds.length === 0) return false;
+      const currentSelection = selectedIdsRef.current;
+      if (currentSelection.length === 0) return false;
       const activePageId = activePageIdRef.current;
       const topSelection = getTopLevelSelectionIds(
         docRef.current as CucumberCanvasDocument,
-        selectedIds,
+        currentSelection,
         activePageId,
       );
       clipboardRef.current = copyCanvasSelection(docRef.current, topSelection);
@@ -2242,13 +2481,14 @@ export const SkiaCanvas = memo(
         count: clipboardRef.current.nodes.length,
       });
       return true;
-    }, [selectedIds]);
+    }, []);
 
     const deleteSelection = useCallback(() => {
       const activePageId = activePageIdRef.current;
+      const currentSelection = selectedIdsRef.current;
       const ids = getTopLevelSelectionIds(
         docRef.current as CucumberCanvasDocument,
-        selectedIds,
+        currentSelection,
         activePageId,
       );
       if (ids.length === 0) return;
@@ -2266,7 +2506,7 @@ export const SkiaCanvas = memo(
       commitDocument(next, { selection: [] });
       setSelection([], { notifyScene: false });
       console.info("[skia-canvas] selection.deleted", { count: ids.length });
-    }, [commitDocument, selectedIds, setSelection]);
+    }, [commitDocument, setSelection]);
 
     const cutSelection = useCallback(() => {
       if (copySelection()) {
@@ -2277,9 +2517,10 @@ export const SkiaCanvas = memo(
     const pasteClipboard = useCallback(() => {
       const clipboard = clipboardRef.current;
       if (!clipboard) return [];
+      const currentSelection = selectedIdsRef.current;
       const parentId = getPrimarySelectedContainerId(
         docRef.current as CucumberCanvasDocument,
-        selectedIds,
+        currentSelection,
         activePageIdRef.current,
       );
       const result = pasteCanvasClipboard(docRef.current, clipboard, {
@@ -2294,7 +2535,7 @@ export const SkiaCanvas = memo(
         parentId,
       });
       return result.pastedIds;
-    }, [commitDocument, notifySelectionForDoc, selectedIds, setSelection]);
+    }, [commitDocument, notifySelectionForDoc, setSelection]);
 
     const importFromPayload = useCallback(
       (
@@ -2342,7 +2583,7 @@ export const SkiaCanvas = memo(
         const inserted = insertCanvasImportResult(docRef.current, parsed, {
           parentId: getPrimarySelectedContainerId(
             docRef.current as CucumberCanvasDocument,
-            selectedIds,
+            selectedIdsRef.current,
             activePageIdRef.current,
           ),
           offsetX,
@@ -2385,7 +2626,6 @@ export const SkiaCanvas = memo(
         commitDocument,
         getLiveViewportPlacement,
         notifySelectionForDoc,
-        selectedIds,
         setSelection,
         toast,
       ],
@@ -2434,11 +2674,11 @@ export const SkiaCanvas = memo(
         );
         const targetParentId = getPrimarySelectedContainerId(
           docRef.current as CucumberCanvasDocument,
-          selectedIds,
+          selectedIdsRef.current,
           activePageIdRef.current,
         );
 
-        let nextDoc = docRef.current;
+        let nextDoc: PenDocument = docRef.current;
         const insertedIds: string[] = [];
         let warningCount = 0;
 
@@ -2498,7 +2738,6 @@ export const SkiaCanvas = memo(
         commitDocument,
         getLiveViewportPlacement,
         notifySelectionForDoc,
-        selectedIds,
         setSelection,
         toast,
       ],
@@ -2660,11 +2899,12 @@ export const SkiaCanvas = memo(
     );
 
     const duplicateSelection = useCallback(() => {
-      if (selectedIds.length === 0) return [];
+      const currentSelection = selectedIdsRef.current;
+      if (currentSelection.length === 0) return [];
       const activePageId = activePageIdRef.current;
       const topSelection = getTopLevelSelectionIds(
         docRef.current as CucumberCanvasDocument,
-        selectedIds,
+        currentSelection,
         activePageId,
       );
       const result = duplicateCanvasNodes(docRef.current, topSelection, 18);
@@ -2675,7 +2915,7 @@ export const SkiaCanvas = memo(
         count: result.pastedIds.length,
       });
       return result.pastedIds;
-    }, [commitDocument, notifySelectionForDoc, selectedIds, setSelection]);
+    }, [commitDocument, notifySelectionForDoc, setSelection]);
 
     const insertImageNode = useCallback(
       (
@@ -2695,7 +2935,7 @@ export const SkiaCanvas = memo(
           artifact.assetId ?? artifact.jobId ?? createNodeId("asset");
         const targetContainerId = getPrimarySelectedContainerId(
           docRef.current as CucumberCanvasDocument,
-          selectedIds,
+          selectedIdsRef.current,
           activePageIdRef.current,
         );
         const placement = getLiveViewportPlacement();
@@ -2751,7 +2991,7 @@ export const SkiaCanvas = memo(
           source,
         });
       },
-      [commitDocument, getLiveViewportPlacement, selectedIds, setSelection],
+      [commitDocument, getLiveViewportPlacement, setSelection],
     );
 
     const getActivePageId = useCallback(() => activePageIdRef.current, []);
@@ -2838,7 +3078,7 @@ export const SkiaCanvas = memo(
         const activePageId = resolveActivePageId(result.document);
         const nextSelection = filterSelectionForActivePage(
           result.document,
-          getDocumentSelection(docRef.current, selectedIds),
+          getDocumentSelection(docRef.current, selectedIdsRef.current),
           activePageId,
         );
         commitDocument(result.document, { selection: nextSelection });
@@ -2849,7 +3089,7 @@ export const SkiaCanvas = memo(
           retainedSelectionCount: nextSelection.length,
         });
       },
-      [commitDocument, selectedIds, setSelection],
+      [commitDocument, setSelection],
     );
 
     const reorderPage = useCallback(
@@ -2874,7 +3114,10 @@ export const SkiaCanvas = memo(
                 : "Boolean operations are unavailable because the vector runtime failed to load.";
             console.warn("[skia-canvas] boolean-operation.rejected", {
               operation,
-              selectedIds: getDocumentSelection(docRef.current, selectedIds),
+              selectedIds: getDocumentSelection(
+                docRef.current,
+                selectedIdsRef.current,
+              ),
               reason,
             });
             return null;
@@ -2882,7 +3125,7 @@ export const SkiaCanvas = memo(
           const activePageId = resolveActivePageId(docRef.current);
           const currentSelection = getDocumentSelection(
             docRef.current,
-            selectedIds,
+            selectedIdsRef.current,
           );
           const topSelectionIds = getTopLevelSelectionIds(
             docRef.current as CucumberCanvasDocument,
@@ -2957,7 +3200,7 @@ export const SkiaCanvas = memo(
               ? Math.min(...insertionIndexes)
               : undefined;
 
-          let next = docRef.current;
+          let next: PenDocument = docRef.current;
           for (const nodeId of topSelectionIds) {
             next = applyCanvasOperation(next, {
               type: "deleteNode",
@@ -2989,13 +3232,16 @@ export const SkiaCanvas = memo(
         } catch (error) {
           console.warn("[skia-canvas] boolean-operation.failed", {
             operation,
-            selectedIds: getDocumentSelection(docRef.current, selectedIds),
+            selectedIds: getDocumentSelection(
+              docRef.current,
+              selectedIdsRef.current,
+            ),
             error,
           });
           return null;
         }
       },
-      [booleanRuntimeStatus, commitDocument, selectedIds, setSelection],
+      [booleanRuntimeStatus, commitDocument, setSelection],
     );
 
     const applyDocumentPatch = useCallback(
@@ -3042,12 +3288,15 @@ export const SkiaCanvas = memo(
         setDocument: (raw: unknown) => {
           const next = normalizeRuntimeDocumentForCanvasSet(raw);
           commitDocument(next, { captureHistory: false });
-          syncRendererDocument(
-            rendererRef.current,
-            docRef.current,
-            activePageIdRef.current,
-          );
           rendererRef.current?.zoomToFit(64);
+          const viewport = rendererRef.current?.getViewport();
+          if (viewport) {
+            runtimeStore.getState().setViewportSnapshot({
+              x: viewport.panX,
+              y: viewport.panY,
+              zoom: viewport.zoom,
+            });
+          }
         },
         getActivePageId,
         setActivePage,
@@ -3058,7 +3307,7 @@ export const SkiaCanvas = memo(
         deletePage,
         reorderPage,
         applyBooleanOperation,
-        getActiveTool: () => activeTool,
+        getActiveTool: () => activeToolRef.current,
         setActiveTool: (tool) => setActiveTool(tool),
         createContainer,
         insertNode: (node, containerId) => {
@@ -3130,7 +3379,7 @@ export const SkiaCanvas = memo(
             docRef.current,
             filterSelectionForActivePage(
               docRef.current,
-              getDocumentSelection(docRef.current, selectedIds),
+              getDocumentSelection(docRef.current, selectedIdsRef.current),
               activePageIdRef.current,
             ),
             rendererRef.current?.getViewport(),
@@ -3150,6 +3399,11 @@ export const SkiaCanvas = memo(
                 state.scrollX,
                 state.scrollY,
               );
+              runtimeStore.getState().setViewportSnapshot({
+                x: state.scrollX,
+                y: state.scrollY,
+                zoom: state.zoom.value,
+              });
             }
           }
         },
@@ -3179,23 +3433,23 @@ export const SkiaCanvas = memo(
         },
         scrollToContent: () => {
           rendererRef.current?.zoomToFit(64);
+          const viewport = rendererRef.current?.getViewport();
+          if (viewport) {
+            runtimeStore.getState().setViewportSnapshot({
+              x: viewport.panX,
+              y: viewport.panY,
+              zoom: viewport.zoom,
+            });
+          }
         },
         undo: () => {
-          if (historyIndex < 0) return;
-          const prev = historyStack[historyIndex];
-          if (!prev) return;
-          setHistoryIndex((i) => i - 1);
-          commitDocument(prev, { captureHistory: false });
+          runtimeStore.getState().undo();
         },
         redo: () => {
-          if (historyIndex >= historyStack.length - 1) return;
-          const next = historyStack[historyIndex + 1];
-          if (!next) return;
-          setHistoryIndex((i) => i + 1);
-          commitDocument(next, { captureHistory: false });
+          runtimeStore.getState().redo();
         },
-        canUndo: () => historyIndex >= 0,
-        canRedo: () => historyIndex < historyStack.length - 1,
+        canUndo: () => selectCanvasCanUndo(runtimeStore.getState()),
+        canRedo: () => selectCanvasCanRedo(runtimeStore.getState()),
         copySelection,
         pasteClipboard,
         duplicateSelection,
@@ -3203,7 +3457,7 @@ export const SkiaCanvas = memo(
         groupSelection: () => {
           const topSelection = getTopLevelSelectionIds(
             docRef.current as CucumberCanvasDocument,
-            selectedIds,
+            selectedIdsRef.current,
             activePageIdRef.current,
           );
           if (topSelection.length < 2) return null;
@@ -3228,42 +3482,38 @@ export const SkiaCanvas = memo(
           }
         },
         ungroupSelection: () => {
-          const groupIds = selectedIds.filter((id) => {
+          const groupIds = selectedIdsRef.current.filter((id) => {
             const node = findNode(docRef.current, id, activePageIdRef.current);
             return node && node.type === "group";
           });
           if (groupIds.length === 0) return [];
+          let nextDoc: PenDocument = docRef.current;
           const ungrouped: string[] = [];
           for (const gid of groupIds) {
-            const group = findNode(
-              docRef.current,
-              gid,
-              activePageIdRef.current,
-            );
+            const group = findNode(nextDoc, gid, activePageIdRef.current);
             if (!group || group.type !== "group") continue;
             const childIds = hasPenChildren(group)
               ? group.children.map((child) => child.id)
               : [];
             try {
-              const next = applyCanvasOperation(docRef.current, {
+              nextDoc = applyCanvasOperation(nextDoc, {
                 type: "ungroupNode",
                 groupId: gid,
                 activePageId: activePageIdRef.current,
               });
-              docRef.current = next;
               ungrouped.push(...childIds);
             } catch (e) {
               console.warn("[skia-canvas] selection.ungroup.failed", e);
             }
           }
-          commitDocument(docRef.current, { selection: ungrouped });
+          commitDocument(nextDoc, { selection: ungrouped });
           setSelection(ungrouped, { notifyScene: false });
           return ungrouped;
         },
         alignSelection: (alignment) => {
           const doc = docRef.current;
           const activePageId = activePageIdRef.current;
-          const nodes = selectedIds
+          const nodes = selectedIdsRef.current
             .map((id) => findNode(doc, id, activePageId))
             .filter((n): n is NonNullable<typeof n> => !!n && !n.locked);
           if (nodes.length < 2) return;
@@ -3402,7 +3652,6 @@ export const SkiaCanvas = memo(
         },
       }),
       [
-        activeTool,
         addPage,
         applyBooleanOperation,
         applyDocumentPatch,
@@ -3416,16 +3665,15 @@ export const SkiaCanvas = memo(
         getActivePageId,
         getLiveViewportPlacement,
         getPages,
-        historyIndex,
-        historyStack,
         importSvgMarkup,
         insertImageNode,
         pasteClipboard,
         pasteFromSystemClipboard,
         renamePage,
         reorderPage,
-        selectedIds,
+        runtimeStore,
         setActivePage,
+        setActiveTool,
         setSelection,
       ],
     );
@@ -3470,9 +3718,10 @@ export const SkiaCanvas = memo(
       groupSelection: api.groupSelection,
       ungroupSelection: api.ungroupSelection,
       nudgeSelection: (dx, dy) => {
-        if (selectedIds.length === 0) return;
+        const currentSelection = selectedIdsRef.current;
+        if (currentSelection.length === 0) return;
         const activePageId = activePageIdRef.current;
-        const operations = selectedIds.flatMap((nodeId) => {
+        const operations = currentSelection.flatMap((nodeId) => {
           const node = findNode(docRef.current, nodeId, activePageId);
           if (!node || node.locked) return [];
           const bounds = getNodeBounds(node);
@@ -3497,7 +3746,7 @@ export const SkiaCanvas = memo(
       reorderSelection: (direction) => {
         const topSelection = getTopLevelSelectionIds(
           docRef.current as CucumberCanvasDocument,
-          selectedIds,
+          selectedIdsRef.current,
           activePageIdRef.current,
         );
         for (const nodeId of topSelection) {
@@ -3505,10 +3754,11 @@ export const SkiaCanvas = memo(
         }
       },
       editSelectedText: () => {
-        if (selectedIds.length !== 1) return false;
+        const currentSelection = selectedIdsRef.current;
+        if (currentSelection.length !== 1) return false;
         const node = findNode(
           docRef.current,
-          selectedIds[0] ?? "",
+          currentSelection[0] ?? "",
           activePageIdRef.current,
         );
         if (!node || node.type !== "text") return false;
@@ -3563,40 +3813,6 @@ export const SkiaCanvas = memo(
       });
     }, [pasteFromSystemClipboard, toast]);
 
-    const booleanRejectionReason = useMemo(() => {
-      const currentSelection = getDocumentSelection(doc, selectedIds);
-      if (currentSelection.length < 2) return null;
-      if (booleanRuntimeStatus === "loading") {
-        return "Boolean operations are still loading the vector runtime.";
-      }
-      if (booleanRuntimeStatus === "failed") {
-        return "Boolean operations are unavailable because the vector runtime failed to load.";
-      }
-      const topSelectionIds = getTopLevelSelectionIds(
-        doc as CucumberCanvasDocument,
-        currentSelection,
-        activePageId,
-      );
-      if (topSelectionIds.length < 2) {
-        return "Select at least two top-level supported vector shapes.";
-      }
-      const topSelectionNodes = topSelectionIds
-        .map((id) => findNode(doc, id, activePageId))
-        .filter(isPenNode);
-      if (topSelectionNodes.length !== topSelectionIds.length) {
-        return "One or more selected nodes are no longer available on the active page.";
-      }
-      const activeChildren = getActiveChildren(doc, activePageId);
-      const activeRootIds = new Set(activeChildren.map((node) => node.id));
-      const nestedSelectionIds = topSelectionIds.filter(
-        (id) => !activeRootIds.has(id),
-      );
-      if (nestedSelectionIds.length > 0) {
-        return "Boolean operations require top-level selections on the active page.";
-      }
-      return getBooleanOpRejectionReason(topSelectionNodes);
-    }, [activePageId, booleanRuntimeStatus, doc, selectedIds]);
-
     // -----------------------------------------------------------------------
     // Initial document sync
     // -----------------------------------------------------------------------
@@ -3606,12 +3822,13 @@ export const SkiaCanvas = memo(
       if (!ckReady || !rendererRef.current) return;
       const next = normalizeRuntimeDocument(initialContent);
       commitDocument(next, { captureHistory: false });
-      syncRendererDocument(
-        rendererRef.current,
-        docRef.current,
-        activePageIdRef.current,
-      );
       rendererRef.current.zoomToFit(64);
+      const viewport = rendererRef.current.getViewport();
+      runtimeStore.getState().setViewportSnapshot({
+        x: viewport.panX,
+        y: viewport.panY,
+        zoom: viewport.zoom,
+      });
       rendererRef.current.setEditorOverlays(editorOverlayRef.current);
     }, [ckReady]);
 
@@ -3653,164 +3870,123 @@ export const SkiaCanvas = memo(
         : null;
 
     return (
-      <div
-        ref={canvasRootRef}
-        className={`relative h-full w-full overflow-hidden ${cursorClass}`}
-        style={{ backgroundColor: "#ffffff" }}
-        onClick={handleCanvasClick}
-        onKeyDown={() => undefined}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-        onDoubleClick={handleDoubleClick}
-        onDragEnter={handleDragEnter}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-      >
-        {/* CanvasKit canvas container */}
-        <div ref={canvasContainerRef} className="absolute inset-0" />
+      <CanvasRuntimeStoreProvider store={runtimeStore}>
+        <div
+          ref={canvasRootRef}
+          className={`relative h-full w-full overflow-hidden ${cursorClass}`}
+          style={{ backgroundColor: "#ffffff" }}
+          onClick={handleCanvasClick}
+          onKeyDown={() => undefined}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onDoubleClick={handleDoubleClick}
+          onDragEnter={handleDragEnter}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {/* CanvasKit canvas container */}
+          <div ref={canvasContainerRef} className="absolute inset-0" />
 
-        {isFileDragActive ? (
-          <div className="pointer-events-none absolute inset-3 z-30 rounded-lg border border-dashed border-primary/60 bg-background/65 shadow-inner backdrop-blur-[2px]">
-            <div className="flex h-full items-center justify-center">
-              <div className="rounded-lg border border-border bg-card/90 px-4 py-2 text-sm font-medium text-foreground shadow-card">
-                释放文件进入画布
+          {isFileDragActive ? (
+            <div className="pointer-events-none absolute inset-3 z-30 rounded-lg border border-dashed border-primary/60 bg-background/65 shadow-inner backdrop-blur-[2px]">
+              <div className="flex h-full items-center justify-center">
+                <div className="rounded-lg border border-border bg-card/90 px-4 py-2 text-sm font-medium text-foreground shadow-card">
+                  释放文件进入画布
+                </div>
               </div>
             </div>
+          ) : null}
+
+          {editingText && textEditOverlay ? (
+            <textarea
+              aria-label="Edit canvas text"
+              // biome-ignore lint/a11y/noAutofocus: text editing opens from an explicit double-click and should focus the in-place editor immediately.
+              autoFocus
+              className="absolute z-30 box-border m-0 resize-none overflow-hidden rounded-sm border-2 border-sky-400 bg-white/95 px-px py-0 outline-none"
+              value={editingText.content}
+              wrap={editingText.textGrowth === "auto" ? "off" : "soft"}
+              style={{
+                left: textEditOverlay.left,
+                top: textEditOverlay.top,
+                width: textEditOverlay.width,
+                height: textEditOverlay.height,
+                fontSize: textEditOverlay.fontSize,
+                fontFamily: editingText.fontFamily,
+                fontWeight: editingText.fontWeight,
+                textAlign: editingText.textAlign,
+                color: editingText.color,
+                lineHeight: editingText.lineHeight,
+                whiteSpace:
+                  editingText.textGrowth === "auto" ? "pre" : "pre-wrap",
+                overflowWrap:
+                  editingText.textGrowth === "auto" ? "normal" : "break-word",
+              }}
+              onBlur={(event) => commitTextEdit(event.currentTarget.value)}
+              onChange={(event) =>
+                updateTextEditDraft(event.currentTarget.value)
+              }
+              onClick={(event) => event.stopPropagation()}
+              onDoubleClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  commitTextEdit(event.currentTarget.value);
+                  event.preventDefault();
+                  event.stopPropagation();
+                  return;
+                }
+                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                  event.currentTarget.blur();
+                  event.preventDefault();
+                  event.stopPropagation();
+                  return;
+                }
+                event.stopPropagation();
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+              onPointerMove={(event) => event.stopPropagation()}
+              onPointerUp={(event) => event.stopPropagation()}
+              onWheel={(event) => event.stopPropagation()}
+            />
+          ) : null}
+
+          {/* Toolbar overlays */}
+          <CanvasEditorToolbarConnected
+            api={api}
+            onCreateContainer={() => createContainer()}
+            onInsertIcon={onInsertIcon}
+            onImportImage={handleImportImage}
+            onImportSvg={handleImportSvg}
+            onToolChange={setActiveTool}
+          />
+
+          <CanvasBooleanToolbarConnected
+            booleanRuntimeStatus={booleanRuntimeStatus}
+            onBooleanOperation={api.applyBooleanOperation}
+          />
+
+          <div className="absolute bottom-4 left-[clamp(6rem,50%,calc(100vw-6rem))] z-20 flex -translate-x-1/2 justify-center">
+            <CanvasPageTabsConnected api={api} />
           </div>
-        ) : null}
 
-        {editingText && textEditOverlay ? (
-          <textarea
-            aria-label="Edit canvas text"
-            // biome-ignore lint/a11y/noAutofocus: text editing opens from an explicit double-click and should focus the in-place editor immediately.
-            autoFocus
-            className="absolute z-30 box-border m-0 resize-none overflow-hidden rounded-sm border-2 border-sky-400 bg-white/95 px-px py-0 outline-none"
-            value={editingText.content}
-            wrap={editingText.textGrowth === "auto" ? "off" : "soft"}
-            style={{
-              left: textEditOverlay.left,
-              top: textEditOverlay.top,
-              width: textEditOverlay.width,
-              height: textEditOverlay.height,
-              fontSize: textEditOverlay.fontSize,
-              fontFamily: editingText.fontFamily,
-              fontWeight: editingText.fontWeight,
-              textAlign: editingText.textAlign,
-              color: editingText.color,
-              lineHeight: editingText.lineHeight,
-              whiteSpace:
-                editingText.textGrowth === "auto" ? "pre" : "pre-wrap",
-              overflowWrap:
-                editingText.textGrowth === "auto" ? "normal" : "break-word",
-            }}
-            onBlur={(event) => commitTextEdit(event.currentTarget.value)}
-            onChange={(event) => updateTextEditDraft(event.currentTarget.value)}
-            onClick={(event) => event.stopPropagation()}
-            onDoubleClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                commitTextEdit(event.currentTarget.value);
-                event.preventDefault();
-                event.stopPropagation();
-                return;
-              }
-              if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                event.currentTarget.blur();
-                event.preventDefault();
-                event.stopPropagation();
-                return;
-              }
-              event.stopPropagation();
-            }}
-            onPointerDown={(event) => event.stopPropagation()}
-            onPointerMove={(event) => event.stopPropagation()}
-            onPointerUp={(event) => event.stopPropagation()}
-            onWheel={(event) => event.stopPropagation()}
+          {/* Property panel */}
+          <CanvasPropertyPanelConnected
+            api={api}
+            commitDocument={commitDocument}
           />
-        ) : null}
 
-        {/* Toolbar overlays */}
-        <CanvasEditorToolbar
-          activeTool={activeTool}
-          canRedo={api.canRedo()}
-          canUndo={api.canUndo()}
-          onCreateContainer={() => createContainer()}
-          onDelete={api.deleteSelection}
-          onInsertIcon={onInsertIcon}
-          onImportImage={handleImportImage}
-          onImportSvg={handleImportSvg}
-          onRedo={api.redo}
-          onToolChange={setActiveTool}
-          onUndo={api.undo}
-          selectedCount={selectedIds.length}
-        />
-
-        <CanvasBooleanToolbar
-          onBooleanOperation={api.applyBooleanOperation}
-          rejectionReason={booleanRejectionReason}
-          visible={selectedIds.length >= 2}
-        />
-
-        <div className="absolute bottom-4 left-[clamp(6rem,50%,calc(100vw-6rem))] z-20 flex -translate-x-1/2 justify-center">
-          <CanvasPageTabs
-            pages={api.getPages()}
-            activePageId={activePageId}
-            onAddPage={() => api.addPage()}
-            onDeletePage={api.deletePage}
-            onDuplicatePage={api.duplicatePage}
-            onRenamePage={api.renamePage}
-            onReorderPage={api.reorderPage}
-            onSetActivePage={api.setActivePage}
-          />
+          {/* Loading indicator while CK initializes */}
+          {!rendererRef.current && ckReady ? (
+            <div className="absolute inset-0 flex items-center justify-center bg-white/50">
+              <p className="text-sm text-muted-foreground">
+                Initializing renderer...
+              </p>
+            </div>
+          ) : null}
         </div>
-
-        {/* Property panel */}
-        {selectedIds.length === 1 && selectedIds[0]
-          ? (() => {
-              const selectedNodeId = selectedIds[0];
-              if (!selectedNodeId) return null;
-              const selectedNode = findNode(doc, selectedNodeId, activePageId);
-              if (!selectedNode) return null;
-              return (
-                <CanvasPropertyPanel
-                  node={selectedNode}
-                  variables={doc.variables}
-                  styleDefinitions={doc.styleDefinitions}
-                  onVariablesChange={(variables) => {
-                    commitDocument({
-                      ...docRef.current,
-                      variables,
-                    });
-                  }}
-                  onStyleDefinitionsChange={(styleDefinitions) => {
-                    commitDocument({
-                      ...docRef.current,
-                      styleDefinitions,
-                    });
-                  }}
-                  onUpdate={(updates) => {
-                    api.updateNode(selectedNodeId, updates);
-                  }}
-                  onBindAgent={(binding: AgentBinding) => {
-                    api.bindAgentToContainer(selectedNodeId, binding);
-                  }}
-                />
-              );
-            })()
-          : null}
-
-        {/* Loading indicator while CK initializes */}
-        {!rendererRef.current && ckReady ? (
-          <div className="absolute inset-0 flex items-center justify-center bg-white/50">
-            <p className="text-sm text-muted-foreground">
-              Initializing renderer...
-            </p>
-          </div>
-        ) : null}
-      </div>
+      </CanvasRuntimeStoreProvider>
     );
   }),
 );

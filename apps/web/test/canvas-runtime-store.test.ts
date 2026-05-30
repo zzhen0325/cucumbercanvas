@@ -7,6 +7,8 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import {
   createCanvasRuntimeStore,
+  selectCanvasCanRedo,
+  selectCanvasCanUndo,
   selectCanvasDocument,
   selectCanvasSelectedCount,
   selectCanvasSelectedNode,
@@ -41,6 +43,7 @@ describe("canvas runtime store", () => {
     const store = createCanvasRuntimeStore(documentWithNodes());
     const onDocument = vi.fn();
     const onSelectionCount = vi.fn();
+    const initialVersion = store.getState().version;
 
     store.subscribe(selectCanvasDocument, onDocument);
     store.subscribe(selectCanvasSelectedCount, onSelectionCount);
@@ -49,6 +52,20 @@ describe("canvas runtime store", () => {
 
     expect(onDocument).not.toHaveBeenCalled();
     expect(onSelectionCount).toHaveBeenCalledTimes(1);
+    expect(store.getState().version).toBe(initialVersion);
+    expect(selectCanvasSelectedNode(store.getState())?.id).toBe("a");
+  });
+
+  it("keeps selected-node subscribers quiet for active-tool updates", () => {
+    const store = createCanvasRuntimeStore(documentWithNodes());
+    const onSelectedNode = vi.fn();
+
+    store.getState().setSelection(["a"]);
+    store.subscribe(selectCanvasSelectedNode, onSelectedNode);
+
+    store.getState().setActiveTool("text");
+
+    expect(onSelectedNode).not.toHaveBeenCalled();
     expect(selectCanvasSelectedNode(store.getState())?.id).toBe("a");
   });
 
@@ -87,9 +104,42 @@ describe("canvas runtime store", () => {
     );
 
     const state = store.getState();
-    expect(state.historyStack).toHaveLength(1);
-    expect(state.historyIndex).toBe(0);
+    expect(state.historyPast).toHaveLength(1);
+    expect(state.historyFuture).toHaveLength(0);
     expect(state.selection).toEqual(["a", "b"]);
     expect(state.version).toBe(1);
+  });
+
+  it("undoes and redoes document history with selection and active page", () => {
+    const store = createCanvasRuntimeStore(documentWithNodes());
+
+    store.getState().applyTransaction(
+      [
+        {
+          type: "updateNode",
+          nodeId: "a",
+          updates: { x: 10 } as Partial<PenNode>,
+        },
+      ],
+      { selection: ["a"], transactionId: "tx-history" },
+    );
+
+    expect(selectCanvasCanUndo(store.getState())).toBe(true);
+    expect(selectCanvasCanRedo(store.getState())).toBe(false);
+    expect(selectCanvasSelectedNode(store.getState())?.id).toBe("a");
+
+    store.getState().undo();
+
+    expect(selectCanvasCanUndo(store.getState())).toBe(false);
+    expect(selectCanvasCanRedo(store.getState())).toBe(true);
+    expect(store.getState().selection).toEqual([]);
+    expect(selectCanvasSelectedNode(store.getState())).toBeNull();
+
+    store.getState().redo();
+
+    expect(selectCanvasCanUndo(store.getState())).toBe(true);
+    expect(selectCanvasCanRedo(store.getState())).toBe(false);
+    expect(store.getState().selection).toEqual(["a"]);
+    expect(selectCanvasSelectedNode(store.getState())?.id).toBe("a");
   });
 });

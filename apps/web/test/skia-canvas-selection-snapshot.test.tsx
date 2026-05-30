@@ -261,6 +261,69 @@ describe("SkiaCanvas selection snapshots", () => {
     }
   });
 
+  it("restores document history through the stable CanvasApi undo and redo", async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    globalThis.ResizeObserver =
+      MockResizeObserver as unknown as typeof ResizeObserver;
+    const apiRef: { current: CanvasApi | null } = { current: null };
+
+    try {
+      const { container } = render(
+        <SkiaCanvas
+          initialContent={initialDocument}
+          onApiReady={(readyApi) => {
+            apiRef.current = readyApi;
+          }}
+        />,
+      );
+
+      await waitFor(() => expect(apiRef.current).not.toBeNull());
+      await waitFor(() =>
+        expect(container.querySelector("canvas")).not.toBeNull(),
+      );
+
+      const readyApi = apiRef.current;
+      if (!readyApi) throw new Error("Canvas API was not initialized.");
+
+      act(() => {
+        readyApi.insertNode({
+          id: "history-rect",
+          type: "rectangle",
+          x: 24,
+          y: 32,
+          width: 120,
+          height: 80,
+        } as PenNode);
+      });
+
+      expect(readyApi.canUndo()).toBe(true);
+      expect(readyApi.canRedo()).toBe(false);
+      expect(readyApi.getDocument().pages?.[0]?.children).toHaveLength(1);
+
+      act(() => {
+        readyApi.undo();
+      });
+
+      expect(readyApi.canUndo()).toBe(false);
+      expect(readyApi.canRedo()).toBe(true);
+      expect(readyApi.getDocument().pages?.[0]?.children).toHaveLength(0);
+
+      act(() => {
+        readyApi.redo();
+      });
+
+      expect(readyApi.canUndo()).toBe(true);
+      expect(readyApi.canRedo()).toBe(false);
+      expect(readyApi.getDocument().pages?.[0]?.children[0]).toMatchObject({
+        id: "history-rect",
+        x: 24,
+        y: 32,
+      });
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver;
+    }
+  });
+
   it("emits coherent onChange snapshots when a canvas action creates and selects a node", async () => {
     const originalResizeObserver = globalThis.ResizeObserver;
     const originalSetPointerCapture = HTMLElement.prototype.setPointerCapture;

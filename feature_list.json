@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-05-30T01:10:57+08:00",
+  "updatedAt": "2026-05-30T10:51:18+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -107,7 +107,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "product-engineering",
-      "summary": "Cucumber canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit with unified scene-space viewport interaction, transient transform previews, viewport render culling, image LOD sampling, single-pass renderer document sync, render hot-path caches, transaction-batched mutations, patch-first live canvas protocol scaffolding, and a tested Zustand/Immer runtime store foundation behind a standalone CanvasApi contract, PenDocument.pages is the only supported durable shape, legacy flat-map/root-children data fails fast, and paste/batch drag-drop import, text-tool Auto Width/Auto Height editing, and export flows produce editable PenNode trees with high-fidelity Figma layer ordering/fill/stroke cap/effect spread/style/PostScript-aware text/layout stretch/transform/shape/mask/component override-path metadata plus matching property-panel controls for layered fills and strokes, image crop matrices, gradient stops, blend modes, ordered effects, transforms, text fidelity, layout constraints, masks, editable style refs, editable variable refs, structured component refs/overrides, vector/path diagnostics, validated path editing, clipping, shape details, visible validation errors, and root/nested layer-ordering verification, with explicit degradation warnings.",
+      "summary": "Cucumber canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit with unified scene-space viewport interaction, transient transform previews, viewport render culling, image LOD sampling, single-pass renderer document sync, render hot-path caches, transaction-batched mutations, patch-first live canvas protocol scaffolding, fully migrated selector-driven Zustand/Immer SkiaCanvas core runtime state, connected toolbar/page/property-panel subscriptions, stable keyboard event callbacks, corrected history undo/redo semantics, and a standalone CanvasApi contract, PenDocument.pages is the only supported durable shape, legacy flat-map/root-children data fails fast, and paste/batch drag-drop import, text-tool Auto Width/Auto Height editing, and export flows produce editable PenNode trees with high-fidelity Figma layer ordering/fill/stroke cap/effect spread/style/PostScript-aware text/layout stretch/transform/shape/mask/component override-path metadata plus matching property-panel controls for layered fills and strokes, image crop matrices, gradient stops, blend modes, ordered effects, transforms, text fidelity, layout constraints, masks, editable style refs, editable variable refs, structured component refs/overrides, vector/path diagnostics, validated path editing, clipping, shape details, visible validation errors, and root/nested layer-ordering verification, with explicit degradation warnings.",
       "artifacts": [
         "packages/canvas-core",
         "packages/pen-figma",
@@ -157,6 +157,7 @@
         "apps/web/test/use-canvas-keyboard-shortcuts.test.tsx",
         "apps/web/test/canvas-export.test.ts",
         "apps/web/test/canvas-runtime-store.test.ts",
+        "apps/web/test/skia-canvas-selection-snapshot.test.tsx",
         "playwright.config.ts",
         "tests/e2e/canvas-import.spec.ts",
         "tests/e2e/canvas-agent-output.spec.ts",
