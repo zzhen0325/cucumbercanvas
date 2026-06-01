@@ -22,6 +22,7 @@ import {
   getActiveChildren,
   getCanvasImportBounds,
   getCanvasPages,
+  getLineEndpoints,
   getNodeBounds,
   getNodeSceneBounds,
   getOrderedCanvasNodes,
@@ -1184,6 +1185,14 @@ export const SkiaCanvas = memo(
           sceneDelta: { x: number; y: number };
         }
       | {
+          kind: "lineEndpoint";
+          nodeId: string;
+          endpoint: "start" | "end";
+          startPoint: { x: number; y: number };
+          originStart: { x: number; y: number };
+          originEnd: { x: number; y: number };
+        }
+      | {
           kind: "rotate";
           nodeId: string;
           center: { x: number; y: number };
@@ -1194,6 +1203,7 @@ export const SkiaCanvas = memo(
           kind: "drawShape";
           shapeType: DrawableCanvasTool;
           startPoint: { x: number; y: number };
+          fromCenter: boolean;
         }
       | {
           kind: "drawText";
@@ -2020,7 +2030,18 @@ export const SkiaCanvas = memo(
             const sceneBounds =
               getNodeSceneBounds(docRef.current, node.id, activePageId) ??
               localBounds;
-            if (controlHit.type === "resize") {
+            if (controlHit.type === "line-endpoint" && node.type === "line") {
+              const endpoints = getLineEndpoints(node);
+              dragRef.current = {
+                kind: "lineEndpoint",
+                nodeId: controlHit.nodeId,
+                endpoint: controlHit.endpoint,
+                startPoint: scenePoint,
+                originStart: endpoints.start,
+                originEnd: endpoints.end,
+              };
+              renderer.setInteractionMode("transform");
+            } else if (controlHit.type === "resize") {
               dragRef.current = {
                 kind: "resize",
                 nodeId: controlHit.nodeId,
@@ -2120,7 +2141,15 @@ export const SkiaCanvas = memo(
             kind: "drawShape",
             shapeType: tool,
             startPoint: scenePoint,
+            fromCenter: event.altKey,
           };
+          const lineDraft =
+            tool === "line" || tool === "arrow"
+              ? getLineDrawDraft(scenePoint, scenePoint, {
+                  constrain: event.shiftKey,
+                  fromCenter: event.altKey,
+                })
+              : null;
           setEditorOverlay({
             shapePreview: getDrawableToolPreview(tool, {
               x: scenePoint.x,
@@ -2131,8 +2160,8 @@ export const SkiaCanvas = memo(
             linePreview:
               tool === "line" || tool === "arrow"
                 ? {
-                    start: scenePoint,
-                    end: scenePoint,
+                    start: lineDraft?.start ?? scenePoint,
+                    end: lineDraft?.end ?? scenePoint,
                     arrow: tool === "arrow",
                   }
                 : null,
@@ -2228,6 +2257,13 @@ export const SkiaCanvas = memo(
         if (drag.kind === "drawShape") {
           const scene = getPointerScenePoint(event);
           if (!scene) return;
+          const lineDraft =
+            drag.shapeType === "line" || drag.shapeType === "arrow"
+              ? getLineDrawDraft(drag.startPoint, scene, {
+                  constrain: event.shiftKey,
+                  fromCenter: drag.fromCenter || event.altKey,
+                })
+              : null;
           setEditorOverlay({
             shapePreview: getDrawableToolPreview(
               drag.shapeType,
@@ -2242,11 +2278,40 @@ export const SkiaCanvas = memo(
             linePreview:
               drag.shapeType === "line" || drag.shapeType === "arrow"
                 ? {
-                    start: drag.startPoint,
-                    end: scene,
+                    start: lineDraft?.start ?? drag.startPoint,
+                    end: lineDraft?.end ?? scene,
                     arrow: drag.shapeType === "arrow",
                   }
                 : null,
+          });
+          return;
+        }
+
+        if (drag.kind === "lineEndpoint") {
+          const scene = getPointerScenePoint(event);
+          if (!scene) return;
+          const next = getLineEndpointDragDraft(drag, scene, event.shiftKey);
+          const node = findNode(
+            docRef.current,
+            drag.nodeId,
+            activePageIdRef.current,
+          ) as
+            | (PenNode & {
+                _connectorType?: string;
+                stroke?: {
+                  endTip?: string;
+                };
+              })
+            | undefined;
+          setEditorOverlay({
+            linePreview: {
+              start: next.start,
+              end: next.end,
+              arrow:
+                node?._connectorType === "arrow" ||
+                (node?.stroke?.endTip !== undefined &&
+                  node.stroke.endTip !== "none"),
+            },
           });
           return;
         }
@@ -2408,6 +2473,13 @@ export const SkiaCanvas = memo(
         if (drag?.kind === "drawShape" && renderer) {
           const scene = getPointerScenePoint(event);
           if (scene) {
+            const lineDraft =
+              drag.shapeType === "line" || drag.shapeType === "arrow"
+                ? getLineDrawDraft(drag.startPoint, scene, {
+                    constrain: event.shiftKey,
+                    fromCenter: drag.fromCenter || event.altKey,
+                  })
+                : null;
             const bounds = normalizeDrawBounds(
               drag.startPoint,
               scene,
@@ -2419,16 +2491,18 @@ export const SkiaCanvas = memo(
               drag.shapeType === "line" || drag.shapeType === "arrow";
             const isDrawableSize = isLineTool
               ? Math.hypot(
-                  scene.x - drag.startPoint.x,
-                  scene.y - drag.startPoint.y,
+                  (lineDraft?.end.x ?? scene.x) -
+                    (lineDraft?.start.x ?? drag.startPoint.x),
+                  (lineDraft?.end.y ?? scene.y) -
+                    (lineDraft?.start.y ?? drag.startPoint.y),
                 ) >= MIN_DRAW_SIZE
               : bounds.width >= MIN_DRAW_SIZE && bounds.height >= MIN_DRAW_SIZE;
             if (isDrawableSize) {
               const node = createDrawableCanvasNode(
                 drag.shapeType,
                 bounds,
-                drag.startPoint,
-                scene,
+                lineDraft?.start ?? drag.startPoint,
+                lineDraft?.end ?? scene,
               );
               const next = applyCanvasOperation(docRef.current, {
                 type: "insertNode",
@@ -2513,6 +2587,22 @@ export const SkiaCanvas = memo(
             if (!origin) return [];
             const node = findNode(docRef.current, nodeId, activePageId);
             if (!node || node.locked) return [];
+            if (node.type === "line") {
+              const endpoints = getLineEndpoints(node);
+              return [
+                {
+                  type: "updateNode" as const,
+                  nodeId,
+                  updates: {
+                    x: endpoints.start.x + drag.sceneDelta.x,
+                    y: endpoints.start.y + drag.sceneDelta.y,
+                    x2: endpoints.end.x + drag.sceneDelta.x,
+                    y2: endpoints.end.y + drag.sceneDelta.y,
+                  } as Partial<PenNode>,
+                  activePageId,
+                },
+              ];
+            }
             return [
               {
                 type: "updateNode" as const,
@@ -2552,6 +2642,35 @@ export const SkiaCanvas = memo(
           }
           const commit = commitDocument(next, { selection: drag.nodeIds });
           syncCommittedDocumentToRenderer(commit, "selection.move.commit");
+          renderer?.clearTransformPreview();
+        }
+        if (drag?.kind === "lineEndpoint") {
+          const activePageId = activePageIdRef.current;
+          const scene = getPointerScenePoint(event);
+          if (scene) {
+            const draft = getLineEndpointDragDraft(drag, scene, event.shiftKey);
+            const next = applyCanvasOperation(docRef.current, {
+              type: "updateNode",
+              nodeId: drag.nodeId,
+              updates:
+                drag.endpoint === "start"
+                  ? ({ x: draft.start.x, y: draft.start.y } as Partial<PenNode>)
+                  : ({
+                      x2: draft.end.x,
+                      y2: draft.end.y,
+                    } as Partial<PenNode>),
+              activePageId,
+            });
+            const commit = commitDocument(next, { selection: [drag.nodeId] });
+            syncCommittedDocumentToRenderer(commit, "line.endpoint.commit");
+            console.info("[skia-canvas] line.endpoint.committed", {
+              nodeId: drag.nodeId,
+              endpoint: drag.endpoint,
+              start: draft.start,
+              end: draft.end,
+            });
+          }
+          setEditorOverlay({ linePreview: null });
           renderer?.clearTransformPreview();
         }
         if (drag?.kind === "resize") {
@@ -2967,9 +3086,12 @@ export const SkiaCanvas = memo(
               y2: cy,
               stroke: {
                 thickness: 3,
+                cap: "round",
+                ...(shapeType === "arrow"
+                  ? { endTip: "line-arrow" as const }
+                  : null),
                 fill: [{ type: "solid" as const, color: "#111827" }],
               },
-              ...(shapeType === "arrow" ? { _connectorType: "arrow" } : null),
             } as unknown as PenNode;
             break;
           default:
@@ -4815,6 +4937,67 @@ function normalizeDrawBounds(
   };
 }
 
+function getLineDrawDraft(
+  startPoint: { x: number; y: number },
+  pointerPoint: { x: number; y: number },
+  opts: { constrain: boolean; fromCenter: boolean },
+): { start: { x: number; y: number }; end: { x: number; y: number } } {
+  const vector = opts.constrain
+    ? constrainVectorTo45Degrees({
+        x: pointerPoint.x - startPoint.x,
+        y: pointerPoint.y - startPoint.y,
+      })
+    : { x: pointerPoint.x - startPoint.x, y: pointerPoint.y - startPoint.y };
+
+  if (opts.fromCenter) {
+    return {
+      start: { x: startPoint.x - vector.x, y: startPoint.y - vector.y },
+      end: { x: startPoint.x + vector.x, y: startPoint.y + vector.y },
+    };
+  }
+
+  return {
+    start: startPoint,
+    end: { x: startPoint.x + vector.x, y: startPoint.y + vector.y },
+  };
+}
+
+function getLineEndpointDragDraft(
+  drag: {
+    endpoint: "start" | "end";
+    originStart: { x: number; y: number };
+    originEnd: { x: number; y: number };
+  },
+  pointerPoint: { x: number; y: number },
+  constrain: boolean,
+): { start: { x: number; y: number }; end: { x: number; y: number } } {
+  const fixed = drag.endpoint === "start" ? drag.originEnd : drag.originStart;
+  const vector = constrain
+    ? constrainVectorTo45Degrees({
+        x: pointerPoint.x - fixed.x,
+        y: pointerPoint.y - fixed.y,
+      })
+    : { x: pointerPoint.x - fixed.x, y: pointerPoint.y - fixed.y };
+  const moved = { x: fixed.x + vector.x, y: fixed.y + vector.y };
+  return drag.endpoint === "start"
+    ? { start: moved, end: drag.originEnd }
+    : { start: drag.originStart, end: moved };
+}
+
+function constrainVectorTo45Degrees(vector: {
+  x: number;
+  y: number;
+}): { x: number; y: number } {
+  const length = Math.hypot(vector.x, vector.y);
+  if (length <= 0) return vector;
+  const angle = Math.atan2(vector.y, vector.x);
+  const snapped = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+  return {
+    x: Math.cos(snapped) * length,
+    y: Math.sin(snapped) * length,
+  };
+}
+
 function boundsToNodeUpdates(bounds: CanvasBounds): Partial<PenNode> {
   return {
     x: bounds.x,
@@ -5012,8 +5195,9 @@ function createLineNode(
     y2: end.y,
     stroke: {
       thickness: 3,
+      cap: "round",
+      ...(type === "arrow" ? { endTip: "line-arrow" as const } : null),
       fill: [{ type: "solid", color: "#111827" }],
     },
-    ...(type === "arrow" ? { _connectorType: "arrow" } : null),
   } as unknown as PenNode;
 }

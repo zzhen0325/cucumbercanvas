@@ -20,6 +20,8 @@ import {
   findParent,
   getActiveChildren,
   getFigmaAutoLayoutMeta,
+  getLineEndpoints,
+  getLineSceneEndpoints,
   getNodeBounds,
   getNodeSceneBounds,
   getNodeSceneOrigin,
@@ -815,6 +817,57 @@ describe("cucumber canvas core", () => {
     expect(getNodeSceneBounds(reparented.doc, "line")).toMatchObject({
       x: 140,
       y: 80,
+    });
+  });
+
+  it("computes endpoint-driven line bounds in local and scene coordinates", () => {
+    let doc = createEmptyDocument();
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: {
+        id: "frame",
+        type: "frame",
+        x: 100,
+        y: 50,
+        width: 200,
+        height: 120,
+        children: [
+          {
+            id: "line",
+            type: "line",
+            x: 90,
+            y: 70,
+            x2: 10,
+            y2: 20,
+          } as PenNode,
+        ],
+      } as PenNode,
+    });
+
+    const line = findNode(doc, "line");
+    if (!line || line.type !== "line") {
+      throw new Error("Expected line fixture to exist.");
+    }
+
+    expect(getLineEndpoints(line)).toEqual({
+      start: { x: 90, y: 70 },
+      end: { x: 10, y: 20 },
+    });
+    expect(getNodeBounds(line)).toMatchObject({
+      x: 10,
+      y: 20,
+      width: 80,
+      height: 50,
+    });
+    expect(getLineSceneEndpoints(doc, "line")).toEqual({
+      start: { x: 190, y: 120 },
+      end: { x: 110, y: 70 },
+    });
+    expect(getNodeSceneBounds(doc, "line")).toMatchObject({
+      x: 110,
+      y: 70,
+      width: 80,
+      height: 50,
     });
   });
 

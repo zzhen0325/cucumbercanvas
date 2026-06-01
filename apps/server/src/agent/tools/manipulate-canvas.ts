@@ -1322,6 +1322,8 @@ function manipulateCucumberCanvas(args: {
             stroke: {
               thickness: op.strokeWidth ?? 2,
               align: "center" as const,
+              cap: "round" as const,
+              ...(isArrow ? { endTip: "line-arrow" as const } : null),
               fill: [{ type: "solid" as const, color: strokeColor }],
             },
           } satisfies PenNode;

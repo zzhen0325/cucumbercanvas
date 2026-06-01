@@ -126,4 +126,5 @@ export interface EditorOverlayState {
 
 export type SelectionControlHit =
   | { type: "resize"; nodeId: string; handle: ResizeHandleDirection }
-  | { type: "rotate"; nodeId: string };
+  | { type: "rotate"; nodeId: string }
+  | { type: "line-endpoint"; nodeId: string; endpoint: "start" | "end" };

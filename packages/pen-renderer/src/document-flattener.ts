@@ -362,8 +362,8 @@ export function flattenToRenderNodes(
         resolved = { ...resolved, height: computedH } as unknown as PenNode;
     }
 
-    const absX = (resolved.x ?? 0) + offsetX;
-    const absY = (resolved.y ?? 0) + offsetY;
+    let absX = (resolved.x ?? 0) + offsetX;
+    let absY = (resolved.y ?? 0) + offsetY;
 
     // Compute authoritative dimensions once via getNodeWidth/getNodeHeight.
     // Used for: RenderNode absW/absH, child available space, and clip rect.
@@ -372,13 +372,13 @@ export function flattenToRenderNodes(
     // causing divergence when nodes lacked numeric dimensions.
     const nodeW = getNodeWidth(resolved, parentAvailW);
     const nodeH = getNodeHeight(resolved, parentAvailH, parentAvailW);
-    const absW =
+    let absW =
       nodeW > 0
         ? nodeW
         : "width" in resolved
           ? sizeToNumber(resolved.width, 100)
           : 100;
-    const absH =
+    let absH =
       nodeH > 0
         ? nodeH
         : "height" in resolved
@@ -392,6 +392,12 @@ export function flattenToRenderNodes(
     if (renderNode.type === "line") {
       if (typeof renderNode.x2 === "number") renderNode.x2 += offsetX;
       if (typeof renderNode.y2 === "number") renderNode.y2 += offsetY;
+      const x2 = renderNode.x2 ?? absX + 100;
+      const y2 = renderNode.y2 ?? absY;
+      absX = Math.min(renderNode.x ?? absX, x2);
+      absY = Math.min(renderNode.y ?? absY, y2);
+      absW = Math.abs(x2 - (renderNode.x ?? absX));
+      absH = Math.abs(y2 - (renderNode.y ?? absY));
     }
 
     const children = "children" in node ? node.children : undefined;

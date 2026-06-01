@@ -132,11 +132,20 @@ export interface PenStroke {
   align?: "inside" | "center" | "outside";
   join?: "miter" | "bevel" | "round";
   cap?: "none" | "round" | "square";
+  startTip?: PenStrokeEndpointTip;
+  endTip?: PenStrokeEndpointTip;
   dashPattern?: number[];
   dashOffset?: number;
   miterLimit?: number;
   fill?: PenFill[];
 }
+
+export type PenStrokeEndpointTip =
+  | "none"
+  | "line-arrow"
+  | "triangle-arrow"
+  | "reverse-triangle"
+  | "diamond";
 
 export interface BlurEffect {
   type: "blur" | "background_blur";

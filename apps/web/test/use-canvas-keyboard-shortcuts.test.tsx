@@ -152,7 +152,7 @@ describe("useCanvasKeyboardShortcuts paste handling", () => {
     const options = createOptions();
     await mountHook(options);
 
-    for (const key of ["v", "t", "h", "r", "o", "f", "p"]) {
+    for (const key of ["v", "t", "h", "r", "o", "f", "p", "l"]) {
       const event = new KeyboardEvent("keydown", {
         key,
         bubbles: true,
@@ -160,6 +160,14 @@ describe("useCanvasKeyboardShortcuts paste handling", () => {
       });
       document.dispatchEvent(event);
     }
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "L",
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
 
     expect(options.setActiveTool).toHaveBeenNthCalledWith(1, "select");
     expect(options.setActiveTool).toHaveBeenNthCalledWith(2, "text");
@@ -168,6 +176,8 @@ describe("useCanvasKeyboardShortcuts paste handling", () => {
     expect(options.setActiveTool).toHaveBeenNthCalledWith(5, "ellipse");
     expect(options.setActiveTool).toHaveBeenNthCalledWith(6, "container");
     expect(options.setActiveTool).toHaveBeenNthCalledWith(7, "pen");
+    expect(options.setActiveTool).toHaveBeenNthCalledWith(8, "line");
+    expect(options.setActiveTool).toHaveBeenNthCalledWith(9, "arrow");
   });
 
   it("handles browser-style canvas zoom shortcuts", async () => {

@@ -12,6 +12,7 @@ type CanvasHarnessSnapshot = {
     locked?: boolean;
     path?: string;
     rotation?: number;
+    stroke?: unknown;
     type: string;
     visible?: boolean;
     width?: number;
@@ -211,13 +212,20 @@ test.describe("skia canvas harness", () => {
         y2: expect.any(Number),
       }),
     );
-    expect(lineNodes.find((node) => node.connectorType === "arrow")).toEqual(
+    expect(
+      lineNodes.find(
+        (node) =>
+          typeof node.stroke === "object" &&
+          node.stroke !== null &&
+          "endTip" in node.stroke,
+      ),
+    ).toEqual(
       expect.objectContaining({
-        connectorType: "arrow",
         height: expect.any(Number),
         width: expect.any(Number),
         x2: expect.any(Number),
         y2: expect.any(Number),
+        stroke: expect.objectContaining({ endTip: "line-arrow" }),
       }),
     );
     expect(snapshot.nodes.find((node) => node.type === "path")).toMatchObject({

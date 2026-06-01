@@ -1,4 +1,5 @@
 import type { PenDocument, PenNode, PenPage } from "@cucumber/pen-types";
+import { getLineBounds, isLineNode } from "./line-geometry.js";
 import {
   CanvasPageOperationError,
   DEFAULT_CANVAS_PAGE_ID,
@@ -186,6 +187,9 @@ export function getNodeChildren(
 }
 
 export function getNodeBounds(node: PenNode): CanvasBounds {
+  if (isLineNode(node)) {
+    return getLineBounds(node);
+  }
   const x = node.x ?? 0;
   const y = node.y ?? 0;
   const measuredNode = node as PenNode & { width?: unknown; height?: unknown };

@@ -1,4 +1,4 @@
-import type { CucumberCanvasDocument } from "@cucumber/canvas-core";
+import type { CucumberCanvasDocument, PenNode } from "@cucumber/canvas-core";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -18,29 +18,41 @@ async function readBlobText(blob: Blob): Promise<string> {
   });
 }
 
-const doc: CucumberCanvasDocument = {
-  version: "cucumber-canvas-v1",
-  children: [
-    {
-      id: "rect-a",
-      type: "rectangle",
-      x: 100,
-      y: 200,
-      width: 300,
-      height: 120,
-      fill: [{ type: "solid", color: "#d3f256" }],
-    },
-    {
-      id: "rect-b",
-      type: "rectangle",
-      x: 700,
-      y: 500,
-      width: 100,
-      height: 90,
-      fill: [{ type: "solid", color: "#111827" }],
-    },
-  ],
-};
+function singlePageDoc(children: PenNode[]): CucumberCanvasDocument {
+  return {
+    version: "cucumber-canvas-v1",
+    activePageId: "page-main",
+    children: [],
+    pages: [
+      {
+        id: "page-main",
+        name: "Page Main",
+        children,
+      },
+    ],
+  };
+}
+
+const doc: CucumberCanvasDocument = singlePageDoc([
+  {
+    id: "rect-a",
+    type: "rectangle",
+    x: 100,
+    y: 200,
+    width: 300,
+    height: 120,
+    fill: [{ type: "solid", color: "#d3f256" }],
+  },
+  {
+    id: "rect-b",
+    type: "rectangle",
+    x: 700,
+    y: 500,
+    width: 100,
+    height: 90,
+    fill: [{ type: "solid", color: "#111827" }],
+  },
+]);
 
 const multiPageDoc: CucumberCanvasDocument = {
   version: "cucumber-canvas-v1",
@@ -148,9 +160,8 @@ describe("canvas export", () => {
   });
 
   it("warns when unsupported node types are exported as rectangles", () => {
-    const warnings = analyzeDocumentExportWarnings({
-      version: "cucumber-canvas-v1",
-      children: [
+    const warnings = analyzeDocumentExportWarnings(
+      singlePageDoc([
         {
           id: "sticky-note-a",
           type: "sticky_note",
@@ -158,9 +169,9 @@ describe("canvas export", () => {
           y: 0,
           width: 120,
           height: 80,
-        },
-      ],
-    } as unknown as CucumberCanvasDocument);
+        } as unknown as PenNode,
+      ]),
+    );
 
     expect(warnings).toEqual([
       {
@@ -173,18 +184,17 @@ describe("canvas export", () => {
   });
 
   it("warns when canonical nodes do not have first-class SVG export support", () => {
-    const warnings = analyzeDocumentExportWarnings({
-      version: "cucumber-canvas-v1",
-      children: [
+    const warnings = analyzeDocumentExportWarnings(
+      singlePageDoc([
         {
           id: "video-a",
           type: "videoEmbed",
           x: 0,
           y: 0,
           src: "https://example.com/clip.mp4",
-        },
-      ],
-    });
+        } as unknown as PenNode,
+      ]),
+    );
 
     expect(warnings).toEqual([
       {
@@ -197,9 +207,8 @@ describe("canvas export", () => {
   });
 
   it("warns when image nodes do not have a usable source", () => {
-    const warnings = analyzeDocumentExportWarnings({
-      version: "cucumber-canvas-v1",
-      children: [
+    const warnings = analyzeDocumentExportWarnings(
+      singlePageDoc([
         {
           id: "image-without-src",
           type: "image",
@@ -209,8 +218,8 @@ describe("canvas export", () => {
           height: 80,
           src: "",
         },
-      ],
-    } as unknown as CucumberCanvasDocument);
+      ]),
+    );
 
     expect(warnings).toEqual([
       {
@@ -223,9 +232,8 @@ describe("canvas export", () => {
   });
 
   it("warns when image fills are degraded to shape fallback fills", () => {
-    const warnings = analyzeDocumentExportWarnings({
-      version: "cucumber-canvas-v1",
-      children: [
+    const warnings = analyzeDocumentExportWarnings(
+      singlePageDoc([
         {
           id: "rect-with-image-fill",
           type: "rectangle",
@@ -240,8 +248,8 @@ describe("canvas export", () => {
             },
           ],
         },
-      ],
-    });
+      ]),
+    );
 
     expect(warnings).toEqual([
       {
@@ -254,9 +262,8 @@ describe("canvas export", () => {
   });
 
   it("warns when gradient fills are degraded to fallback fills", () => {
-    const warnings = analyzeDocumentExportWarnings({
-      version: "cucumber-canvas-v1",
-      children: [
+    const warnings = analyzeDocumentExportWarnings(
+      singlePageDoc([
         {
           id: "rect-with-gradient-fill",
           type: "rectangle",
@@ -274,8 +281,8 @@ describe("canvas export", () => {
             },
           ],
         },
-      ],
-    } as unknown as CucumberCanvasDocument);
+      ]),
+    );
 
     expect(warnings).toEqual([
       {
@@ -288,9 +295,8 @@ describe("canvas export", () => {
   });
 
   it("warns when rich text segments are flattened by SVG export", () => {
-    const warnings = analyzeDocumentExportWarnings({
-      version: "cucumber-canvas-v1",
-      children: [
+    const warnings = analyzeDocumentExportWarnings(
+      singlePageDoc([
         {
           id: "rich-text-a",
           type: "text",
@@ -299,9 +305,9 @@ describe("canvas export", () => {
           width: 240,
           height: 80,
           content: [{ text: "Bold", fontWeight: 700 }, { text: " normal" }],
-        },
-      ],
-    } as unknown as CucumberCanvasDocument);
+        } as unknown as PenNode,
+      ]),
+    );
 
     expect(warnings).toEqual([
       {
@@ -323,29 +329,26 @@ describe("canvas export", () => {
 
   it("limits export warnings to the requested bounds", () => {
     const warnings = analyzeDocumentExportWarnings(
-      {
-        version: "cucumber-canvas-v1",
-        children: [
-          {
-            id: "visible-gradient",
-            type: "rectangle",
-            x: 0,
-            y: 0,
-            width: 120,
-            height: 80,
-            fill: [{ type: "linear_gradient" }],
-          },
-          {
-            id: "outside-gradient",
-            type: "rectangle",
-            x: 500,
-            y: 500,
-            width: 120,
-            height: 80,
-            fill: [{ type: "linear_gradient" }],
-          },
-        ],
-      } as unknown as CucumberCanvasDocument,
+      singlePageDoc([
+        {
+          id: "visible-gradient",
+          type: "rectangle",
+          x: 0,
+          y: 0,
+          width: 120,
+          height: 80,
+          fill: [{ type: "linear_gradient" }],
+        },
+        {
+          id: "outside-gradient",
+          type: "rectangle",
+          x: 500,
+          y: 500,
+          width: 120,
+          height: 80,
+          fill: [{ type: "linear_gradient" }],
+        },
+      ] as unknown as PenNode[]),
       { bounds: { x: 0, y: 0, width: 200, height: 200 } },
     );
 
@@ -358,9 +361,8 @@ describe("canvas export", () => {
   });
 
   it("does not warn for supported text, rectangle, and image nodes", () => {
-    const warnings = analyzeDocumentExportWarnings({
-      version: "cucumber-canvas-v1",
-      children: [
+    const warnings = analyzeDocumentExportWarnings(
+      singlePageDoc([
         {
           id: "text-a",
           type: "text",
@@ -387,8 +389,8 @@ describe("canvas export", () => {
           height: 80,
           src: "https://example.com/asset.png",
         },
-      ],
-    } as unknown as CucumberCanvasDocument);
+      ]),
+    );
 
     expect(warnings).toEqual([]);
   });

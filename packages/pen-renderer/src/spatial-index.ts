@@ -77,7 +77,7 @@ export class SpatialIndex {
     candidates.sort((a, b) => b.zIndex - a.zIndex);
     return candidates
       .map((c) => c.renderNode)
-      .filter((rn) => isPointHittableRenderNode(rn));
+      .filter((rn) => isPointHittableRenderNode(rn, sceneX, sceneY));
   }
 
   /**
@@ -210,6 +210,9 @@ export class RenderNodeViewportIndex {
 export function getHittableBounds(
   renderNode: RenderNode,
 ): Pick<RTreeItem, "minX" | "minY" | "maxX" | "maxY"> | null {
+  if (renderNode.node.type === "line") {
+    return getLineIndexBounds(renderNode, true);
+  }
   const visualOutset = resolveVisualOutset(renderNode.node);
   let minX = renderNode.absX - visualOutset.left;
   let minY = renderNode.absY - visualOutset.top;
@@ -229,6 +232,9 @@ export function getHittableBounds(
 export function getViewportRenderBounds(
   renderNode: RenderNode,
 ): Pick<RTreeItem, "minX" | "minY" | "maxX" | "maxY"> | null {
+  if (renderNode.node.type === "line") {
+    return getLineIndexBounds(renderNode, false);
+  }
   const visualOutset = resolveVisualOutset(renderNode.node);
   let minX = renderNode.absX - visualOutset.left;
   let minY = renderNode.absY - visualOutset.top;
@@ -245,9 +251,18 @@ export function getViewportRenderBounds(
   return { minX, minY, maxX, maxY };
 }
 
-export function isPointHittableRenderNode(renderNode: RenderNode): boolean {
+export function isPointHittableRenderNode(
+  renderNode: RenderNode,
+  sceneX?: number,
+  sceneY?: number,
+): boolean {
   const node = renderNode.node;
   if (resolveNodeOpacity(node.opacity) <= 0) return false;
+
+  if (node.type === "line") {
+    if (typeof sceneX !== "number" || typeof sceneY !== "number") return true;
+    return isPointNearLineRenderNode(renderNode, { x: sceneX, y: sceneY });
+  }
 
   if (
     node.type === "frame" ||
@@ -272,6 +287,77 @@ export function isPointHittableRenderNode(renderNode: RenderNode): boolean {
   }
 
   return true;
+}
+
+function getLineIndexBounds(
+  renderNode: RenderNode,
+  includeHitPadding: boolean,
+): Pick<RTreeItem, "minX" | "minY" | "maxX" | "maxY"> | null {
+  const endpoints = getLineRenderEndpoints(renderNode);
+  const strokeWidth =
+    "stroke" in renderNode.node && renderNode.node.stroke
+      ? resolveStrokeThickness(renderNode.node.stroke)
+      : 1;
+  const tipPadding =
+    Math.max(strokeWidth * 4, 12) +
+    (includeHitPadding ? Math.max(6, strokeWidth) : 0);
+  let minX = Math.min(endpoints.start.x, endpoints.end.x) - tipPadding;
+  let minY = Math.min(endpoints.start.y, endpoints.end.y) - tipPadding;
+  let maxX = Math.max(endpoints.start.x, endpoints.end.x) + tipPadding;
+  let maxY = Math.max(endpoints.start.y, endpoints.end.y) + tipPadding;
+  const clip = renderNode.clipRect;
+  if (clip) {
+    minX = Math.max(minX, clip.x);
+    minY = Math.max(minY, clip.y);
+    maxX = Math.min(maxX, clip.x + clip.w);
+    maxY = Math.min(maxY, clip.y + clip.h);
+  }
+  if (maxX < minX || maxY < minY) return null;
+  return { minX, minY, maxX, maxY };
+}
+
+function getLineRenderEndpoints(renderNode: RenderNode): {
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+} {
+  const node = renderNode.node as PenNode & { x2?: number; y2?: number };
+  const start = { x: node.x ?? renderNode.absX, y: node.y ?? renderNode.absY };
+  return {
+    start,
+    end: {
+      x: typeof node.x2 === "number" ? node.x2 : start.x + 100,
+      y: typeof node.y2 === "number" ? node.y2 : start.y,
+    },
+  };
+}
+
+function isPointNearLineRenderNode(
+  renderNode: RenderNode,
+  point: { x: number; y: number },
+): boolean {
+  const endpoints = getLineRenderEndpoints(renderNode);
+  const strokeWidth =
+    "stroke" in renderNode.node && renderNode.node.stroke
+      ? resolveStrokeThickness(renderNode.node.stroke)
+      : 1;
+  const tolerance = Math.max(6, strokeWidth * 1.5);
+  return distanceToSegment(point, endpoints.start, endpoints.end) <= tolerance;
+}
+
+function distanceToSegment(
+  point: { x: number; y: number },
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+): number {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq <= 0) return Math.hypot(point.x - start.x, point.y - start.y);
+  const t = Math.max(
+    0,
+    Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lenSq),
+  );
+  return Math.hypot(point.x - (start.x + t * dx), point.y - (start.y + t * dy));
 }
 
 export function hasVisibleFill(fill: PenFill[] | undefined): boolean {

@@ -35,6 +35,7 @@ const penRendererMockState = vi.hoisted(() => ({
     () =>
       | { type: "resize"; nodeId: string; handle: "e" | "s" | "se" }
       | { type: "rotate"; nodeId: string }
+      | { type: "line-endpoint"; nodeId: string; endpoint: "start" | "end" }
       | null
   >(() => null),
   hitTestRect: vi.fn<() => unknown[]>(() => []),
@@ -1477,7 +1478,7 @@ describe("SkiaCanvas selection snapshots", () => {
         (resizedTextNode as (PenNode & { height?: number }) | undefined)
           ?.height,
       ).toBeGreaterThan(40);
-      expect(onDocumentChange).toHaveBeenCalled();
+      await waitFor(() => expect(onDocumentChange).toHaveBeenCalled());
     } finally {
       globalThis.ResizeObserver = originalResizeObserver;
       HTMLElement.prototype.setPointerCapture = originalSetPointerCapture;
@@ -1820,14 +1821,22 @@ describe("SkiaCanvas selection snapshots", () => {
       if (!stage) throw new Error("Canvas stage was not initialized.");
       const firePointerEvent = (
         type: "pointerdown" | "pointermove" | "pointerup",
-        options: { clientX: number; clientY: number; pointerId: number },
+        options: {
+          altKey?: boolean;
+          clientX: number;
+          clientY: number;
+          pointerId: number;
+          shiftKey?: boolean;
+        },
       ) => {
         const event = new MouseEvent(type, {
+          altKey: options.altKey ?? false,
           bubbles: true,
           cancelable: true,
           button: 0,
           clientX: options.clientX,
           clientY: options.clientY,
+          shiftKey: options.shiftKey ?? false,
         });
         Object.defineProperty(event, "pointerId", {
           configurable: true,
@@ -1855,6 +1864,78 @@ describe("SkiaCanvas selection snapshots", () => {
           clientX: 110,
           clientY: 70,
           pointerId: 1,
+        });
+      });
+
+      await act(async () => {
+        apiRef.current?.setActiveTool("line");
+      });
+      await waitFor(() => expect(apiRef.current?.getActiveTool()).toBe("line"));
+      await act(async () => {
+        firePointerEvent("pointerdown", {
+          clientX: 300,
+          clientY: 300,
+          pointerId: 11,
+        });
+        firePointerEvent("pointermove", {
+          clientX: 250,
+          clientY: 260,
+          pointerId: 11,
+        });
+        firePointerEvent("pointerup", {
+          clientX: 250,
+          clientY: 260,
+          pointerId: 11,
+        });
+      });
+
+      await act(async () => {
+        apiRef.current?.setActiveTool("line");
+      });
+      await waitFor(() => expect(apiRef.current?.getActiveTool()).toBe("line"));
+      await act(async () => {
+        firePointerEvent("pointerdown", {
+          clientX: 400,
+          clientY: 400,
+          pointerId: 12,
+          shiftKey: true,
+        });
+        firePointerEvent("pointermove", {
+          clientX: 400,
+          clientY: 470,
+          pointerId: 12,
+          shiftKey: true,
+        });
+        firePointerEvent("pointerup", {
+          clientX: 400,
+          clientY: 470,
+          pointerId: 12,
+          shiftKey: true,
+        });
+      });
+
+      await act(async () => {
+        apiRef.current?.setActiveTool("line");
+      });
+      await waitFor(() => expect(apiRef.current?.getActiveTool()).toBe("line"));
+      await act(async () => {
+        firePointerEvent("pointerdown", {
+          altKey: true,
+          clientX: 120,
+          clientY: 120,
+          pointerId: 13,
+        });
+        firePointerEvent("pointermove", {
+          altKey: true,
+          clientX: 150,
+          clientY: 145,
+          pointerId: 13,
+        });
+        firePointerEvent("pointerup", {
+          altKey: true,
+          clientX: 150,
+          clientY: 145,
+          pointerId: 13,
         });
       });
 
@@ -1907,7 +1988,7 @@ describe("SkiaCanvas selection snapshots", () => {
       });
 
       const nodes = readyApi.getDocument().pages?.[0]?.children ?? [];
-      expect(nodes).toHaveLength(3);
+      expect(nodes).toHaveLength(6);
       expect(nodes[0]).toMatchObject({
         type: "line",
         x: 10,
@@ -1917,19 +1998,139 @@ describe("SkiaCanvas selection snapshots", () => {
       });
       expect(nodes[1]).toMatchObject({
         type: "line",
+        x: 300,
+        y: 300,
+        x2: 250,
+        y2: 260,
+      });
+      expect(nodes[2]).toMatchObject({
+        type: "line",
+        x: 400,
+        y: 400,
+        x2: 400,
+        y2: 470,
+      });
+      expect(nodes[3]).toMatchObject({
+        type: "line",
+        x: 90,
+        y: 95,
+        x2: 150,
+        y2: 145,
+      });
+      expect(nodes[4]).toMatchObject({
+        type: "line",
         x: 200,
         y: 90,
         x2: 260,
         y2: 150,
-        _connectorType: "arrow",
+        stroke: expect.objectContaining({ endTip: "line-arrow" }),
       });
-      expect(nodes[2]).toMatchObject({
+      expect(nodes[5]).toMatchObject({
         type: "frame",
         x: 50,
         y: 60,
         width: 200,
         height: 150,
         clipContent: true,
+      });
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver;
+      HTMLElement.prototype.setPointerCapture = originalSetPointerCapture;
+      HTMLElement.prototype.releasePointerCapture =
+        originalReleasePointerCapture;
+      HTMLElement.prototype.hasPointerCapture = originalHasPointerCapture;
+    }
+  });
+
+  it("edits only the dragged endpoint for selected line nodes", async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    const originalSetPointerCapture = HTMLElement.prototype.setPointerCapture;
+    const originalReleasePointerCapture =
+      HTMLElement.prototype.releasePointerCapture;
+    const originalHasPointerCapture = HTMLElement.prototype.hasPointerCapture;
+    globalThis.ResizeObserver =
+      MockResizeObserver as unknown as typeof ResizeObserver;
+    HTMLElement.prototype.setPointerCapture = vi.fn();
+    HTMLElement.prototype.releasePointerCapture = vi.fn();
+    HTMLElement.prototype.hasPointerCapture = vi.fn(() => true);
+    const apiRef: { current: CanvasApi | null } = { current: null };
+    const docWithLine: CucumberCanvasDocument = {
+      ...initialDocument,
+      pages: [
+        {
+          id: "page-default",
+          name: "Page 1",
+          children: [
+            {
+              id: "line-edit",
+              type: "line",
+              x: 20,
+              y: 30,
+              x2: 120,
+              y2: 80,
+              stroke: {
+                thickness: 3,
+                fill: [{ type: "solid", color: "#111827" }],
+              },
+            } as PenNode,
+          ],
+        },
+      ],
+    };
+
+    try {
+      const { container } = render(
+        <SkiaCanvas
+          initialContent={docWithLine}
+          onApiReady={(readyApi) => {
+            apiRef.current = readyApi;
+          }}
+        />,
+      );
+
+      await waitFor(() => expect(apiRef.current).not.toBeNull());
+      await waitFor(() =>
+        expect(container.querySelector("canvas")).not.toBeNull(),
+      );
+      const readyApi = apiRef.current;
+      if (!readyApi) throw new Error("Canvas API was not initialized.");
+      const canvasElement = container.querySelector("canvas") as HTMLElement;
+      const stage = canvasElement.parentElement?.parentElement;
+      if (!stage) throw new Error("Canvas stage was not initialized.");
+
+      await act(async () => {
+        readyApi.setSelection(["line-edit"]);
+      });
+      penRendererMockState.hitTestSelectionControl.mockReturnValue({
+        endpoint: "end",
+        nodeId: "line-edit",
+        type: "line-endpoint",
+      });
+
+      await act(async () => {
+        fireCanvasPointerEvent(stage, "pointerdown", {
+          clientX: 120,
+          clientY: 80,
+          pointerId: 41,
+        });
+        fireCanvasPointerEvent(stage, "pointermove", {
+          clientX: 160,
+          clientY: 125,
+          pointerId: 41,
+        });
+        fireCanvasPointerEvent(stage, "pointerup", {
+          clientX: 160,
+          clientY: 125,
+          pointerId: 41,
+        });
+      });
+
+      expect(readyApi.getDocument().pages?.[0]?.children[0]).toMatchObject({
+        id: "line-edit",
+        x: 20,
+        y: 30,
+        x2: 160,
+        y2: 125,
       });
     } finally {
       globalThis.ResizeObserver = originalResizeObserver;

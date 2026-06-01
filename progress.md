@@ -4,6 +4,16 @@ Last updated: 2026-06-01 CST
 
 ## 2026-06-01
 
+- Advanced the Figma-style line/arrow tool slice: line nodes now use endpoint-driven geometry helpers for local/scene bounds, reverse-drag/Shift/Option creation keeps real `x/y/x2/y2` endpoints, selected lines expose endpoint handles, line moves update both endpoints, arrows use typed stroke endpoint tips with legacy `_connectorType` render/export compatibility, and SVG export now emits real line endpoints plus marker/dash/cap data.
+- Passed: `pnpm --filter @cucumber/canvas-core test`.
+- Passed: `pnpm --filter @cucumber/pen-renderer test`.
+- Passed: `pnpm exec vitest run test/skia-canvas-selection-snapshot.test.tsx test/canvas-export.test.ts test/canvas-property-panel.test.tsx test/use-canvas-keyboard-shortcuts.test.tsx test/canvas-editor-toolbar.test.tsx` from `apps/web`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm lint`.
+- Passed: `pnpm --filter @cucumber/web build` with existing Paper optional dependency / metadataBase warnings.
+- Failed: root `pnpm typecheck` still stops in existing unrelated `packages/pen-core/__tests__` strictness diagnostics (`Object is possibly undefined`), outside this line/arrow tool slice.
+- Failed: `pnpm exec playwright test tests/e2e/skia-canvas.spec.ts --workers=1` timed out while the harness stayed on `Loading CanvasKit...`, leaving toolbar buttons disabled before any line/arrow assertions ran.
 - Closed the next multi-image canvas performance slice: viewport pan cache construction is now gated by node/image thresholds and pending interaction LOD readiness, interactive image draws avoid falling back to 2048px base rasters while 512px LODs are pending, and viewport-cache skip/build logs now report image counts, pending LODs, dimensions, zoom, and interaction mode.
 - Moved canvas image persistence off inline base64 for the current PenDocument model: canvas saves extract base64 `assets`, image node `src`, and image-fill URLs into `project-assets`, return the normalized slim document to the Web client, and the editor applies that save response without history pollution, save loops, or viewport reset.
 - Kept generated and imported images on URL-backed assets: server-side generated image insertion now writes Storage public URLs directly, raster paste/drop uploads through the existing uploads API before committing to the canvas, and thumbnail uploads now preserve SVG/PNG/WebP MIME extensions with clearer upload diagnostics.

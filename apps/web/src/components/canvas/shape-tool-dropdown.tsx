@@ -41,8 +41,8 @@ const SHAPE_TOOLS: Array<{
   { icon: Square, label: "Rectangle", shortcut: "R", tool: "rect" },
   { icon: Circle, label: "Ellipse", shortcut: "O", tool: "ellipse" },
   { icon: Pentagon, label: "Polygon", tool: "polygon" },
-  { icon: Minus, label: "Line", tool: "line" },
-  { icon: ArrowRight, label: "Arrow", tool: "arrow" },
+  { icon: Minus, label: "Line", shortcut: "L", tool: "line" },
+  { icon: ArrowRight, label: "Arrow", shortcut: "Shift+L", tool: "arrow" },
   { icon: PenTool, label: "Path", shortcut: "P", tool: "path" },
 ];
 

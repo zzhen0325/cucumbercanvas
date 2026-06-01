@@ -13,6 +13,7 @@ export type {
   ImageFill,
   PenFill,
   PenStroke,
+  PenStrokeEndpointTip,
   BlurEffect,
   ShadowEffect,
   PenEffect,

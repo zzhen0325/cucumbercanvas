@@ -2,6 +2,7 @@ import {
   type CanvasBounds,
   type CucumberCanvasDocument,
   flattenNodes,
+  getLineEndpoints,
   getNodeBounds,
   normalizeBounds,
 } from "@cucumber/canvas-core";
@@ -38,6 +39,11 @@ type ExportableNode = {
     color?: string;
     fill?: Array<{ color?: string }>;
     thickness?: number;
+    cap?: "none" | "round" | "square";
+    dashPattern?: number[];
+    dashOffset?: number;
+    startTip?: string;
+    endTip?: string;
   };
   color?: string;
   content?: unknown;
@@ -45,6 +51,8 @@ type ExportableNode = {
   startAnchor?: string;
   endAnchor?: string;
   _connectorType?: string;
+  x2?: number;
+  y2?: number;
   polygonCount?: number;
   points?: number;
   d?: string;
@@ -216,17 +224,44 @@ function renderDocumentSvg(
         return `<image href="${escapeAttr(node.src)}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid slice"${transform} />`;
       }
       if (node.type === "line") {
-        const startAnchor = n.startAnchor ?? "tl";
-        const endAnchor = n.endAnchor ?? "br";
-        const start = anchorToPoint(startAnchor, w, h);
-        const end = anchorToPoint(endAnchor, w, h);
-        const markerId = `svg-marker-${escapeAttr(node.id)}`;
+        const endpoints = getLineEndpoints(node);
+        const start = {
+          x: (endpoints.start.x - bounds.x) * scale,
+          y: (endpoints.start.y - bounds.y) * scale,
+        };
+        const end = {
+          x: (endpoints.end.x - bounds.x) * scale,
+          y: (endpoints.end.y - bounds.y) * scale,
+        };
+        const startTip = n.stroke?.startTip ?? "none";
+        const endTip =
+          n.stroke?.endTip ??
+          (n._connectorType === "arrow" ? "line-arrow" : "none");
+        const startMarkerId = `svg-marker-start-${escapeAttr(node.id)}`;
+        const endMarkerId = `svg-marker-end-${escapeAttr(node.id)}`;
         const strokeColor = n.stroke?.fill?.[0]?.color ?? "#111827";
-        const defs =
-          n._connectorType === "arrow"
-            ? `<defs><marker id="${markerId}" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="${escapeAttr(strokeColor)}" /></marker></defs>`
+        const markerDefs = [
+          markerDef(startMarkerId, startTip, strokeColor),
+          markerDef(endMarkerId, endTip, strokeColor),
+        ]
+          .filter(Boolean)
+          .join("");
+        const defs = markerDefs ? `<defs>${markerDefs}</defs>` : "";
+        const dash =
+          n.stroke?.dashPattern && n.stroke.dashPattern.length > 0
+            ? ` stroke-dasharray="${escapeAttr(n.stroke.dashPattern.join(" "))}"`
             : "";
-        return `${defs}<line x1="${x + start.x}" y1="${y + start.y}" x2="${x + end.x}" y2="${y + end.y}" stroke="${escapeAttr(strokeColor)}" stroke-width="${n.stroke?.thickness ?? 3}" stroke-linecap="round"${n._connectorType === "arrow" ? ` marker-end="url(#${markerId})"` : ""}${transform} />`;
+        const dashOffset =
+          typeof n.stroke?.dashOffset === "number"
+            ? ` stroke-dashoffset="${n.stroke.dashOffset}"`
+            : "";
+        const lineCap =
+          n.stroke?.cap && n.stroke.cap !== "none" ? n.stroke.cap : "butt";
+        const markerStart =
+          startTip !== "none" ? ` marker-start="url(#${startMarkerId})"` : "";
+        const markerEnd =
+          endTip !== "none" ? ` marker-end="url(#${endMarkerId})"` : "";
+        return `${defs}<line x1="${start.x}" y1="${start.y}" x2="${end.x}" y2="${end.y}" stroke="${escapeAttr(strokeColor)}" stroke-width="${n.stroke?.thickness ?? 3}" stroke-linecap="${lineCap}"${dash}${dashOffset}${markerStart}${markerEnd}${transform} />`;
       }
       if (node.type === "ellipse") {
         const fillColor = n.fill?.[0]?.color ?? "#f8fafc";
@@ -292,21 +327,19 @@ function createPolygonPoints(points: number, width: number, height: number) {
     .join(" ");
 }
 
-function anchorToPoint(
-  anchor: string,
-  width: number,
-  height: number,
-): { x: number; y: number } {
-  switch (anchor) {
-    case "tr":
-      return { x: width, y: 0 };
-    case "bl":
-      return { x: 0, y: height };
-    case "br":
-      return { x: width, y: height };
-    default:
-      return { x: 0, y: 0 };
+function markerDef(id: string, tip: string, color: string): string | undefined {
+  if (tip === "none") return undefined;
+  const escapedColor = escapeAttr(color);
+  if (tip === "line-arrow") {
+    return `<marker id="${id}" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M1,1 L8,5 L1,9" fill="none" stroke="${escapedColor}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></marker>`;
   }
+  if (tip === "diamond") {
+    return `<marker id="${id}" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth"><path d="M10,6 L6,10 L2,6 L6,2 Z" fill="${escapedColor}" /></marker>`;
+  }
+  if (tip === "reverse-triangle") {
+    return `<marker id="${id}" markerWidth="10" markerHeight="10" refX="2" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M1,1 L9,5 L1,9 Z" fill="${escapedColor}" /></marker>`;
+  }
+  return `<marker id="${id}" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M1,1 L9,5 L1,9 Z" fill="${escapedColor}" /></marker>`;
 }
 
 function escapeText(value: string): string {

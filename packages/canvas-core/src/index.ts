@@ -6,6 +6,7 @@ export * from "./pages.js";
 export * from "./context.js";
 export * from "./operations.js";
 export * from "./geometry.js";
+export * from "./line-geometry.js";
 export * from "./history.js";
 export * from "./clipboard.js";
 

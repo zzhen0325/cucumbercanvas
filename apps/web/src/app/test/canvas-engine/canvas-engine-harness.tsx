@@ -202,6 +202,7 @@ export function CanvasEngineHarness() {
                 locked: "locked" in node ? node.locked : undefined,
                 path: "path" in node ? node.path : undefined,
                 rotation: "rotation" in node ? node.rotation : undefined,
+                stroke: "stroke" in node ? node.stroke : undefined,
                 type: node.type,
                 visible: "visible" in node ? node.visible : undefined,
                 x: node.x,

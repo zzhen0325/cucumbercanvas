@@ -26,6 +26,7 @@ import type {
   PenEffect,
   PenFill,
   PenStroke,
+  PenStrokeEndpointTip,
   ShadowEffect,
 } from "@cucumber/pen-types";
 import type {
@@ -2579,8 +2580,10 @@ export class SkiaNodeRenderer {
   ) {
     const ck = this.ck;
     const lNode = node as LineNode;
-    const x2 = lNode.x2 ?? x + 100;
-    const y2 = lNode.y2 ?? y;
+    const x1 = lNode.x ?? x;
+    const y1 = lNode.y ?? y;
+    const x2 = lNode.x2 ?? x1 + 100;
+    const y2 = lNode.y2 ?? y1;
     const stroke = lNode.stroke ?? {
       thickness: DEFAULT_STROKE_WIDTH,
       fill: [{ type: "solid", color: DEFAULT_STROKE }],
@@ -2604,26 +2607,119 @@ export class SkiaNodeRenderer {
         },
       },
       (paint) => {
-        canvas.drawLine(x, y, x2, y2, paint);
-        if (
-          (lNode as unknown as { _connectorType?: string })._connectorType ===
-          "arrow"
-        ) {
-          const dx = x2 - x;
-          const dy = y2 - y;
-          if (Math.hypot(dx, dy) > 0) {
-            const angle = Math.atan2(dy, dx);
-            const size = Math.max(strokeWidth * 3.5, 10);
-            const leftX = x2 - Math.cos(angle - Math.PI / 6) * size;
-            const leftY = y2 - Math.sin(angle - Math.PI / 6) * size;
-            const rightX = x2 - Math.cos(angle + Math.PI / 6) * size;
-            const rightY = y2 - Math.sin(angle + Math.PI / 6) * size;
-            canvas.drawLine(x2, y2, leftX, leftY, paint);
-            canvas.drawLine(x2, y2, rightX, rightY, paint);
-          }
-        }
+        canvas.drawLine(x1, y1, x2, y2, paint);
+        this.drawLineEndpointTip(canvas, lNode, stroke, paint, "start", {
+          x: x1,
+          y: y1,
+          angle: Math.atan2(y1 - y2, x1 - x2),
+          strokeWidth,
+          opacity,
+        });
+        this.drawLineEndpointTip(canvas, lNode, stroke, paint, "end", {
+          x: x2,
+          y: y2,
+          angle: Math.atan2(y2 - y1, x2 - x1),
+          strokeWidth,
+          opacity,
+        });
       },
     );
+  }
+
+  private drawLineEndpointTip(
+    canvas: Canvas,
+    node: LineNode,
+    stroke: PenStroke,
+    strokePaint: Paint,
+    endpoint: "start" | "end",
+    tip: {
+      x: number;
+      y: number;
+      angle: number;
+      strokeWidth: number;
+      opacity: number;
+    },
+  ) {
+    if (!Number.isFinite(tip.angle)) return;
+    const legacyArrow =
+      endpoint === "end" &&
+      (node as unknown as { _connectorType?: string })._connectorType ===
+        "arrow";
+    const configured = endpoint === "start" ? stroke.startTip : stroke.endTip;
+    const tipKind: PenStrokeEndpointTip =
+      configured ?? (legacyArrow ? "line-arrow" : "none");
+    if (tipKind === "none") return;
+
+    const ck = this.ck;
+    const size = Math.max(tip.strokeWidth * 3.5, 10);
+    const back = {
+      x: tip.x - Math.cos(tip.angle) * size,
+      y: tip.y - Math.sin(tip.angle) * size,
+    };
+
+    if (tipKind === "line-arrow") {
+      const left = {
+        x: tip.x - Math.cos(tip.angle - Math.PI / 6) * size,
+        y: tip.y - Math.sin(tip.angle - Math.PI / 6) * size,
+      };
+      const right = {
+        x: tip.x - Math.cos(tip.angle + Math.PI / 6) * size,
+        y: tip.y - Math.sin(tip.angle + Math.PI / 6) * size,
+      };
+      canvas.drawLine(tip.x, tip.y, left.x, left.y, strokePaint);
+      canvas.drawLine(tip.x, tip.y, right.x, right.y, strokePaint);
+      return;
+    }
+
+    const fillPaint = new ck.Paint();
+    fillPaint.setStyle(ck.PaintStyle.Fill);
+    fillPaint.setAntiAlias(true);
+    const color = parseColor(ck, resolveStrokeColor(stroke) ?? DEFAULT_STROKE);
+    color[3] = (color[3] ?? 1) * tip.opacity;
+    fillPaint.setColor(color);
+
+    if (tipKind === "diamond") {
+      const side = size * 0.5;
+      const path = new ck.Path();
+      const left = pointFromPolar(back, tip.angle - Math.PI / 2, side);
+      const tail = pointFromPolar(back, tip.angle + Math.PI, side);
+      const right = pointFromPolar(back, tip.angle + Math.PI / 2, side);
+      path.moveTo(tip.x, tip.y);
+      path.lineTo(left.x, left.y);
+      path.lineTo(tail.x, tail.y);
+      path.lineTo(right.x, right.y);
+      path.close();
+      canvas.drawPath(path, fillPaint);
+      path.delete();
+      fillPaint.delete();
+      return;
+    }
+
+    const triangleTip =
+      tipKind === "reverse-triangle"
+        ? {
+            x: tip.x - Math.cos(tip.angle) * size * 0.8,
+            y: tip.y - Math.sin(tip.angle) * size * 0.8,
+          }
+        : { x: tip.x, y: tip.y };
+    const baseCenter =
+      tipKind === "reverse-triangle"
+        ? { x: tip.x, y: tip.y }
+        : {
+            x: tip.x - Math.cos(tip.angle) * size,
+            y: tip.y - Math.sin(tip.angle) * size,
+          };
+    const half = size * 0.45;
+    const left = pointFromPolar(baseCenter, tip.angle - Math.PI / 2, half);
+    const right = pointFromPolar(baseCenter, tip.angle + Math.PI / 2, half);
+    const path = new ck.Path();
+    path.moveTo(triangleTip.x, triangleTip.y);
+    path.lineTo(left.x, left.y);
+    path.lineTo(right.x, right.y);
+    path.close();
+    canvas.drawPath(path, fillPaint);
+    path.delete();
+    fillPaint.delete();
   }
 
   private drawPolygon(
@@ -3381,4 +3477,15 @@ export class SkiaNodeRenderer {
     iconPaint.delete();
     dotPaint.delete();
   }
+}
+
+function pointFromPolar(
+  origin: { x: number; y: number },
+  angle: number,
+  distance: number,
+): { x: number; y: number } {
+  return {
+    x: origin.x + Math.cos(angle) * distance,
+    y: origin.y + Math.sin(angle) * distance,
+  };
 }

@@ -15,6 +15,7 @@ import {
 import { pathDataToAnchors } from "@cucumber/pen-core";
 import type {
   BlendMode,
+  PenStrokeEndpointTip,
   PenStyleDefinition,
   StyledTextSegment,
   VariableDefinition,
@@ -479,6 +480,17 @@ function strokeWithDashPattern(
   if (!dashPattern || dashPattern.length === 0) return strokeWithoutDash;
   return { ...strokeWithoutDash, dashPattern };
 }
+
+const STROKE_ENDPOINT_TIP_OPTIONS: Array<{
+  label: string;
+  value: PenStrokeEndpointTip;
+}> = [
+  { label: "无", value: "none" },
+  { label: "线形箭头", value: "line-arrow" },
+  { label: "三角箭头", value: "triangle-arrow" },
+  { label: "反向三角", value: "reverse-triangle" },
+  { label: "菱形", value: "diamond" },
+];
 
 function cornerRadiusTuple(
   cornerRadius: unknown,
@@ -1928,6 +1940,46 @@ function StrokeSection({
             <option value="miter">连接 斜接</option>
             <option value="bevel">连接 斜切</option>
             <option value="round">连接 圆角</option>
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <select
+            aria-label="起点样式"
+            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+            value={stroke?.startTip ?? "none"}
+            onChange={(event) =>
+              onUpdate({
+                stroke: {
+                  ...buildStroke(),
+                  startTip: event.currentTarget.value as PenStrokeEndpointTip,
+                },
+              } as Partial<PenNode>)
+            }
+          >
+            {STROKE_ENDPOINT_TIP_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                起点 {option.label}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="终点样式"
+            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+            value={stroke?.endTip ?? "none"}
+            onChange={(event) =>
+              onUpdate({
+                stroke: {
+                  ...buildStroke(),
+                  endTip: event.currentTarget.value as PenStrokeEndpointTip,
+                },
+              } as Partial<PenNode>)
+            }
+          >
+            {STROKE_ENDPOINT_TIP_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                终点 {option.label}
+              </option>
+            ))}
           </select>
         </div>
         <div className="grid grid-cols-3 gap-2">
@@ -4832,6 +4884,18 @@ function ShapeSection({
     return (
       <InspectorSection title="线条">
         <div className="grid grid-cols-2 gap-2">
+          <NumberField
+            label="X1"
+            ariaLabel="起点 X"
+            value={node.x ?? 0}
+            onChange={(x) => onUpdate({ x } as Partial<PenNode>)}
+          />
+          <NumberField
+            label="Y1"
+            ariaLabel="起点 Y"
+            value={node.y ?? 0}
+            onChange={(y) => onUpdate({ y } as Partial<PenNode>)}
+          />
           <NumberField
             label="X2"
             ariaLabel="终点 X"

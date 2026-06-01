@@ -7,7 +7,9 @@ type CanvasToolShortcut =
   | "rect"
   | "ellipse"
   | "container"
-  | "pen";
+  | "pen"
+  | "line"
+  | "arrow";
 
 function isEditableTarget(target: HTMLElement | null) {
   return (
@@ -165,6 +167,11 @@ export function useCanvasKeyboardShortcuts(options: {
       }
 
       if (!isMod && !event.altKey) {
+        if (key === "l" && event.shiftKey) {
+          options.setActiveTool("arrow");
+          event.preventDefault();
+          return;
+        }
         const toolShortcuts: Record<string, CanvasToolShortcut> = {
           v: "select",
           t: "text",
@@ -173,10 +180,12 @@ export function useCanvasKeyboardShortcuts(options: {
           o: "ellipse",
           f: "container",
           p: "pen",
+          l: "line",
         };
         const nextTool = toolShortcuts[key];
         if (nextTool) {
           options.setActiveTool(nextTool);
+          event.preventDefault();
         }
       }
     };

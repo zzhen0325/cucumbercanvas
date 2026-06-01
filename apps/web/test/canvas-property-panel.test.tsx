@@ -1494,9 +1494,25 @@ describe("CanvasPropertyPanel", () => {
     fireEvent.change(screen.getByRole("spinbutton", { name: "终点 Y" }), {
       target: { value: "24" },
     });
+    fireEvent.change(screen.getByLabelText("起点样式"), {
+      target: { value: "diamond" },
+    });
+    fireEvent.change(screen.getByLabelText("终点样式"), {
+      target: { value: "line-arrow" },
+    });
 
     expect(onUpdate).toHaveBeenCalledWith({ x2: 120 });
     expect(onUpdate).toHaveBeenCalledWith({ y2: 24 });
+    expect(onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stroke: expect.objectContaining({ startTip: "diamond" }),
+      }),
+    );
+    expect(onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stroke: expect.objectContaining({ endTip: "line-arrow" }),
+      }),
+    );
   });
 
   it("adds and updates layered effects with concrete payloads", async () => {

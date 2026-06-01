@@ -490,6 +490,17 @@ export class PenRenderer {
     for (let i = selected.length - 1; i >= 0; i--) {
       const rn = selected[i];
       if (!rn) continue;
+      if (rn.node.type === "line") {
+        const endpointHit = this.hitTestLineEndpoint(rn, scene.x, scene.y);
+        if (endpointHit) {
+          return {
+            type: "line-endpoint",
+            nodeId: rn.node.id,
+            endpoint: endpointHit,
+          };
+        }
+        continue;
+      }
       const rotateHit = this.hitTestRotateHandle(rn, scene.x, scene.y);
       if (rotateHit) return { type: "rotate", nodeId: rn.node.id };
       const resizeHit = this.hitTestResizeHandle(rn, scene.x, scene.y);
@@ -1328,6 +1339,10 @@ export class PenRenderer {
     canvas: ReturnType<Surface["getCanvas"]>,
     rn: RenderNode,
   ) {
+    if (rn.node.type === "line") {
+      this.drawLineSelectionOverlay(canvas, rn);
+      return;
+    }
     const ck = this.ck;
     const color = this.editorOverlays.selectionColor ?? DEFAULT_SELECTION_COLOR;
     const invZoom = 1 / this._zoom;
@@ -1402,6 +1417,49 @@ export class PenRenderer {
     handleFill.delete();
     handleStroke.delete();
     canvas.restore();
+  }
+
+  private drawLineSelectionOverlay(
+    canvas: ReturnType<Surface["getCanvas"]>,
+    rn: RenderNode,
+  ) {
+    const ck = this.ck;
+    const color = this.editorOverlays.selectionColor ?? DEFAULT_SELECTION_COLOR;
+    const invZoom = 1 / this._zoom;
+    const endpoints = getLineRenderEndpoints(rn);
+
+    const strokePaint = new ck.Paint();
+    strokePaint.setStyle(ck.PaintStyle.Stroke);
+    strokePaint.setAntiAlias(true);
+    strokePaint.setStrokeWidth(1.5 * invZoom);
+    strokePaint.setColor(parseColor(ck, color));
+    canvas.drawLine(
+      endpoints.start.x,
+      endpoints.start.y,
+      endpoints.end.x,
+      endpoints.end.y,
+      strokePaint,
+    );
+
+    const handleFill = new ck.Paint();
+    handleFill.setStyle(ck.PaintStyle.Fill);
+    handleFill.setAntiAlias(true);
+    handleFill.setColor(parseColor(ck, "#ffffff"));
+
+    const handleStroke = new ck.Paint();
+    handleStroke.setStyle(ck.PaintStyle.Stroke);
+    handleStroke.setAntiAlias(true);
+    handleStroke.setStrokeWidth(1 * invZoom);
+    handleStroke.setColor(parseColor(ck, color));
+
+    for (const point of [endpoints.start, endpoints.end]) {
+      canvas.drawCircle(point.x, point.y, 5 * invZoom, handleFill);
+      canvas.drawCircle(point.x, point.y, 5 * invZoom, handleStroke);
+    }
+
+    strokePaint.delete();
+    handleFill.delete();
+    handleStroke.delete();
   }
 
   private drawMarqueeOverlay(
@@ -1727,6 +1785,28 @@ export class PenRenderer {
     return null;
   }
 
+  private hitTestLineEndpoint(
+    rn: RenderNode,
+    sceneX: number,
+    sceneY: number,
+  ): "start" | "end" | null {
+    const endpoints = getLineRenderEndpoints(rn);
+    const hitRadius = 8 / this._zoom;
+    if (
+      Math.hypot(sceneX - endpoints.start.x, sceneY - endpoints.start.y) <=
+      hitRadius
+    ) {
+      return "start";
+    }
+    if (
+      Math.hypot(sceneX - endpoints.end.x, sceneY - endpoints.end.y) <=
+      hitRadius
+    ) {
+      return "end";
+    }
+    return null;
+  }
+
   private hitTestRotateHandle(
     rn: RenderNode,
     sceneX: number,
@@ -2038,6 +2118,21 @@ function getResizeHandlePoint(
     nw: { x, y },
   };
   return points[handle];
+}
+
+function getLineRenderEndpoints(rn: RenderNode): {
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+} {
+  const node = rn.node as PenNode & { x2?: number; y2?: number };
+  const start = { x: node.x ?? rn.absX, y: node.y ?? rn.absY };
+  return {
+    start,
+    end: {
+      x: typeof node.x2 === "number" ? node.x2 : start.x + 100,
+      y: typeof node.y2 === "number" ? node.y2 : start.y,
+    },
+  };
 }
 
 export interface FrameLabelBounds {

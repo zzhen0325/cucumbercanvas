@@ -5,6 +5,7 @@ import {
   getActiveChildren,
   getNodeBounds,
 } from "./document.js";
+import { getLineEndpoints, isLineNode } from "./line-geometry.js";
 import type { CanvasBounds } from "./types.js";
 
 export interface OrderedCanvasNode {
@@ -85,11 +86,50 @@ export function getNodeSceneBounds(
   const origin = getNodeSceneOrigin(doc, nodeId, activePageId);
   if (!node || !origin) return null;
 
+  if (isLineNode(node)) {
+    const endpoints = getLineSceneEndpoints(doc, nodeId, activePageId);
+    if (!endpoints) return null;
+    return {
+      x: Math.min(endpoints.start.x, endpoints.end.x),
+      y: Math.min(endpoints.start.y, endpoints.end.y),
+      width: Math.abs(endpoints.end.x - endpoints.start.x),
+      height: Math.abs(endpoints.end.y - endpoints.start.y),
+      rotation: node.rotation,
+    };
+  }
+
   const bounds = getNodeBounds(node);
   return {
     ...bounds,
     x: origin.x,
     y: origin.y,
+  };
+}
+
+export function getLineSceneEndpoints(
+  doc: PenDocument,
+  nodeId: string,
+  activePageId?: string | null,
+): {
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+} | null {
+  const node = findNode(doc, nodeId, activePageId);
+  if (!isLineNode(node)) return null;
+
+  let parentX = 0;
+  let parentY = 0;
+  let parent = findParent(doc, nodeId, activePageId);
+  while (parent) {
+    parentX += parent.x ?? 0;
+    parentY += parent.y ?? 0;
+    parent = findParent(doc, parent.id, activePageId);
+  }
+
+  const { start, end } = getLineEndpoints(node);
+  return {
+    start: { x: parentX + start.x, y: parentY + start.y },
+    end: { x: parentX + end.x, y: parentY + end.y },
   };
 }
 
