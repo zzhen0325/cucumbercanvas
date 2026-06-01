@@ -4,6 +4,7 @@ import {
   applyCanvasOperation,
   applyCanvasTransaction,
   connectorPointForBounds,
+  connectorPointForNodeBounds,
   findConnectorSnapTarget,
 } from "../index.js";
 
@@ -26,6 +27,13 @@ function frame(id: string, x: number, y: number): PenNode {
     width: 100,
     height: 80,
     children: [],
+  } as PenNode;
+}
+
+function sticky(id: string, x: number, y: number): PenNode {
+  return {
+    ...frame(id, x, y),
+    meta: { boardKind: "sticky" },
   } as PenNode;
 }
 
@@ -71,6 +79,21 @@ describe("connector geometry", () => {
     expect(snap?.nodeId).toBe("a");
     expect(snap?.side).toBe("right");
     expect(snap?.ratio).toBeCloseTo(0.45, 2);
+  });
+
+  it("uses sticky connector handles as endpoint points", () => {
+    const node = sticky("sticky-a", 10, 20);
+    const bounds = { x: 10, y: 20, width: 100, height: 80 };
+
+    expect(connectorPointForNodeBounds(node, bounds, "right", 0.5)).toEqual({
+      x: 128,
+      y: 60,
+    });
+
+    const snap = findConnectorSnapTarget(doc([node]), { x: 128, y: 60 });
+    expect(snap?.nodeId).toBe("sticky-a");
+    expect(snap?.side).toBe("right");
+    expect(snap?.point).toEqual({ x: 128, y: 60 });
   });
 
   it("refreshes connector endpoints after a container moves", () => {

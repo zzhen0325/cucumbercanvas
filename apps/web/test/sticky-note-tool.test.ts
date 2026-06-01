@@ -5,6 +5,7 @@ import {
   createStickyNoteNode,
   findStickyNoteTextNode,
   getSelectableStickyHitNode,
+  getStickyConnectorPoint,
 } from "@/components/canvas/sticky-note-tool";
 
 describe("sticky-note-tool", () => {
@@ -49,5 +50,22 @@ describe("sticky-note-tool", () => {
     expect(getSelectableStickyHitNode(doc, sticky, "page-1")?.id).toBe(
       sticky.id,
     );
+  });
+
+  it("uses sticky blue dots as connector endpoint points", () => {
+    const sticky = createStickyNoteNode({
+      x: 40,
+      y: 60,
+      width: 220,
+      height: 200,
+    });
+
+    expect(
+      getStickyConnectorPoint(
+        { x: 40, y: 60, width: 220, height: 200 },
+        "right",
+        sticky,
+      ),
+    ).toEqual({ x: 278, y: 160 });
   });
 });

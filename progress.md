@@ -6,6 +6,15 @@ Last updated: 2026-06-01 CST
 
 - Encapsulated the sticky-note tool into a dedicated helper module: sticky nodes now carry explicit `sticky_note` container metadata, context-container defaults, and non-selectable body text metadata; SkiaCanvas remaps sticky body-text hits back to the parent sticky for click, shift-click, marquee, context-menu, and post-edit selection.
 - Added sticky-specific connector affordances: selected sticky notes now show four blue side connector dots instead of side resize handles, dragging a dot previews an arrow connector, dropping on another connector target attaches to that target, and dropping into empty canvas creates a new linked sticky container plus a smooth routed arrow.
+- Unified sticky connector endpoint geometry with the visible blue side dots: sticky connector bindings now resolve/snap to the outward handle positions, sticky connector drag creation starts/ends on those points, and the renderer keeps the blue dots in scene-space so zoom does not desync handles from line endpoints.
+- Added live-following connector transform previews: when a sticky/container moves, attached connector line endpoints are previewed with the moving bound node during drag instead of waiting for the committed document reconciliation after pointerup.
+- Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/connector-geometry.test.ts`.
+- Passed: `pnpm --filter @cucumber/pen-renderer exec vitest run src/renderer-performance.test.ts`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/sticky-note-tool.test.ts`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm --filter @cucumber/pen-renderer typecheck`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: targeted `pnpm exec biome check packages/canvas-core/src/connector-geometry.ts packages/canvas-core/src/__tests__/connector-geometry.test.ts packages/pen-renderer/src/renderer.ts packages/pen-renderer/src/renderer-performance.test.ts apps/web/src/components/canvas/sticky-note-tool.ts apps/web/src/components/canvas/skia-canvas.tsx apps/web/test/sticky-note-tool.test.ts`.
 - Passed: `pnpm --filter @cucumber/pen-renderer typecheck`.
 - Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/sticky-note-tool.test.ts`.

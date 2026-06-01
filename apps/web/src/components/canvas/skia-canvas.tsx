@@ -2428,6 +2428,7 @@ export const SkiaCanvas = memo(
               const startPoint = getStickyConnectorPoint(
                 sceneBounds,
                 controlHit.side,
+                node,
               );
               dragRef.current = {
                 kind: "stickyConnector",
@@ -3241,6 +3242,7 @@ export const SkiaCanvas = memo(
                 const endPoint = getStickyConnectorPoint(
                   getNodeBounds(sticky),
                   targetSide,
+                  sticky,
                 );
                 const connector = createLineNode(
                   "arrow",

@@ -17,6 +17,7 @@ import { isLineNode } from "./line-geometry.js";
 import type { CanvasBounds } from "./types.js";
 
 export const CONNECTOR_SNAP_DISTANCE = 24;
+export const STICKY_CONNECTOR_HANDLE_OFFSET = 18;
 
 export type ConnectorEndpointPoint = { x: number; y: number };
 
@@ -56,6 +57,30 @@ export function connectorPointForBounds(
   }
 }
 
+export function connectorPointForNodeBounds(
+  node: PenNode,
+  bounds: CanvasBounds,
+  side: PenConnectorSide,
+  ratio: number,
+): ConnectorEndpointPoint {
+  const point = connectorPointForBounds(bounds, side, ratio);
+  if (!isStickyConnectorTargetNode(node)) return point;
+  switch (side) {
+    case "top":
+      return { x: point.x, y: point.y - STICKY_CONNECTOR_HANDLE_OFFSET };
+    case "right":
+      return { x: point.x + STICKY_CONNECTOR_HANDLE_OFFSET, y: point.y };
+    case "bottom":
+      return { x: point.x, y: point.y + STICKY_CONNECTOR_HANDLE_OFFSET };
+    case "left":
+      return { x: point.x - STICKY_CONNECTOR_HANDLE_OFFSET, y: point.y };
+    default: {
+      const _exhaustive: never = side;
+      throw new Error(`Unsupported connector side: ${String(_exhaustive)}`);
+    }
+  }
+}
+
 export function resolveConnectorEndpointPoint(
   doc: PenDocument,
   endpoint: PenConnectorEndpointBinding,
@@ -65,7 +90,12 @@ export function resolveConnectorEndpointPoint(
   if (!isConnectorTargetNode(target)) return null;
   const bounds = getNodeSceneBounds(doc, target.id, activePageId);
   if (!bounds) return null;
-  return connectorPointForBounds(bounds, endpoint.side, endpoint.ratio);
+  return connectorPointForNodeBounds(
+    target,
+    bounds,
+    endpoint.side,
+    endpoint.ratio,
+  );
 }
 
 export function findConnectorSnapTarget(
@@ -85,7 +115,7 @@ export function findConnectorSnapTarget(
     if (!isConnectorTargetNode(node) || excluded.has(node.id)) continue;
     const bounds = getNodeSceneBounds(doc, node.id, options.activePageId);
     if (!bounds) continue;
-    const snap = snapPointToBounds(node.id, bounds, point);
+    const snap = snapPointToBounds(node, bounds, point);
     if (!snap || snap.distance > threshold) continue;
     if (!best || snap.distance < best.distance) best = snap;
   }
@@ -238,21 +268,21 @@ function getInvalidConnectorEndpoint(
 }
 
 function snapPointToBounds(
-  nodeId: string,
+  node: PenNode,
   bounds: CanvasBounds,
   point: ConnectorEndpointPoint,
 ): ConnectorSnapTarget | null {
   const candidates: ConnectorSnapTarget[] = [
-    sideCandidate(nodeId, bounds, point, "top"),
-    sideCandidate(nodeId, bounds, point, "right"),
-    sideCandidate(nodeId, bounds, point, "bottom"),
-    sideCandidate(nodeId, bounds, point, "left"),
+    sideCandidate(node, bounds, point, "top"),
+    sideCandidate(node, bounds, point, "right"),
+    sideCandidate(node, bounds, point, "bottom"),
+    sideCandidate(node, bounds, point, "left"),
   ];
   return candidates.sort((a, b) => a.distance - b.distance)[0] ?? null;
 }
 
 function sideCandidate(
-  nodeId: string,
+  node: PenNode,
   bounds: CanvasBounds,
   point: ConnectorEndpointPoint,
   side: PenConnectorSide,
@@ -262,14 +292,18 @@ function sideCandidate(
     ? (point.x - bounds.x) / Math.max(bounds.width, 1)
     : (point.y - bounds.y) / Math.max(bounds.height, 1);
   const ratio = clamp01(rawRatio);
-  const snapPoint = connectorPointForBounds(bounds, side, ratio);
+  const snapPoint = connectorPointForNodeBounds(node, bounds, side, ratio);
   return {
-    nodeId,
+    nodeId: node.id,
     side,
     ratio,
     distance: Math.hypot(point.x - snapPoint.x, point.y - snapPoint.y),
     point: snapPoint,
   };
+}
+
+function isStickyConnectorTargetNode(node: PenNode): boolean {
+  return node.meta?.boardKind === "sticky";
 }
 
 function isConnectorTargetNode(node: PenNode | undefined): node is PenNode {

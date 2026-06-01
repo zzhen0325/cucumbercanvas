@@ -2,6 +2,7 @@ import {
   type CanvasBounds,
   type CucumberCanvasDocument,
   connectorPointForBounds,
+  connectorPointForNodeBounds,
   createNodeId,
   findNode,
   findParent,
@@ -62,7 +63,11 @@ export function findStickyNoteTextNode(sticky: PenNode): PenNode | null {
 export function getStickyConnectorPoint(
   bounds: CanvasBounds,
   side: PenConnectorSide,
+  node?: PenNode,
 ) {
+  if (node) {
+    return connectorPointForNodeBounds(node, bounds, side, 0.5);
+  }
   return connectorPointForBounds(bounds, side, 0.5);
 }
 

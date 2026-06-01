@@ -1,4 +1,4 @@
-import type { PenNode } from "@cucumber/pen-types";
+import type { LineNode, PenNode } from "@cucumber/pen-types";
 import { describe, expect, it } from "vitest";
 import {
   applyTransformPreviewToRenderNodes,
@@ -85,6 +85,46 @@ describe("renderer performance helpers", () => {
       ["frame", 20, 30],
       ["child", 35, 45],
     ]);
+  });
+
+  it("previews attached connector endpoints while a container moves", () => {
+    const connector: RenderNode = {
+      node: {
+        id: "connector",
+        type: "line",
+        x: 118,
+        y: 40,
+        x2: 220,
+        y2: 40,
+        connector: {
+          start: { nodeId: "sticky", side: "right", ratio: 0.5 },
+          end: { nodeId: "target", side: "left", ratio: 0.5 },
+          routing: "smooth",
+        },
+      } as LineNode,
+      absX: 118,
+      absY: 40,
+      absW: 102,
+      absH: 1,
+    };
+
+    const [previewed] = applyTransformPreviewToRenderNodes(
+      [connector],
+      { kind: "move", nodeIds: ["sticky"], dx: 50, dy: 20 },
+      new Set(["sticky", "connector"]),
+    );
+
+    expect(previewed?.node).toMatchObject({
+      x: 168,
+      y: 60,
+      x2: 220,
+      y2: 40,
+    });
+    expect(previewed?.absX).toBe(168);
+    expect(previewed?.absY).toBe(40);
+    expect(previewed?.absW).toBe(52);
+    expect(previewed?.absH).toBe(20);
+    expect((connector.node as LineNode).x).toBe(118);
   });
 
   it("filters transform previews without cloning non-preview render nodes", () => {

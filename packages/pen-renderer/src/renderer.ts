@@ -11,6 +11,7 @@ import {
   setRootChildrenProvider,
 } from "@cucumber/pen-core";
 import type {
+  LineNode,
   PenConnectorSide,
   PenDocument,
   PenNode,
@@ -77,6 +78,7 @@ const STICKY_CONNECTOR_SIDES: PenConnectorSide[] = [
   "bottom",
   "left",
 ];
+const STICKY_CONNECTOR_HANDLE_OFFSET = 18;
 
 type CanvasKitImage = NonNullable<ReturnType<CanvasKit["MakeImage"]>>;
 
@@ -1281,13 +1283,11 @@ export class PenRenderer {
     const visible = this.viewportIndex
       .search(bounds)
       .map((rn) =>
-        this.transformPreviewIds.has(rn.node.id)
-          ? applyTransformPreviewToRenderNode(
-              rn,
-              this.transformPreview as TransformPreviewState,
-              this.transformPreviewIds,
-            )
-          : rn,
+        applyTransformPreviewToRenderNode(
+          rn,
+          this.transformPreview as TransformPreviewState,
+          this.transformPreviewIds,
+        ),
       )
       .filter((rn) => isRenderNodeInBounds(rn, bounds));
     const visibleIds = new Set(visible.map((rn) => rn.node.id));
@@ -1329,14 +1329,21 @@ export class PenRenderer {
         }
       }
     };
-    visit(getActivePageChildren(this.document, this.activePageId), false);
+    const activeChildren = getActivePageChildren(
+      this.document,
+      this.activePageId,
+    );
+    visit(activeChildren, false);
     for (const id of roots) ids.add(id);
+    if (preview.kind === "move") {
+      collectConnectorIdsAttachedToNodes(activeChildren, ids);
+    }
     return ids;
   }
 
   private applyTransformPreviewToRenderNode(rn: RenderNode): RenderNode {
     const preview = this.transformPreview;
-    if (!preview || !this.transformPreviewIds.has(rn.node.id)) return rn;
+    if (!preview) return rn;
 
     return applyTransformPreviewToRenderNode(
       rn,
@@ -1864,7 +1871,6 @@ export class PenRenderer {
         rn.absY,
         rn.absW,
         rn.absH,
-        this._zoom,
       );
       canvas.drawCircle(point.x, point.y, 6 * invZoom, fill);
       canvas.drawCircle(point.x, point.y, 6 * invZoom, stroke);
@@ -1888,7 +1894,6 @@ export class PenRenderer {
         rn.absY,
         rn.absW,
         rn.absH,
-        this._zoom,
       );
       if (Math.hypot(local.x - point.x, local.y - point.y) <= hitRadius) {
         return side;
@@ -2039,10 +2044,17 @@ function applyTransformPreviewToRenderNode(
   preview: TransformPreviewState,
   previewIds: ReadonlySet<string>,
 ): RenderNode {
-  if (!previewIds.has(rn.node.id)) return rn;
   if (preview.kind === "move") {
+    const connectorPreview = previewConnectorLineRenderNode(
+      rn,
+      preview,
+      previewIds,
+    );
+    if (connectorPreview) return connectorPreview;
+    if (!previewIds.has(rn.node.id)) return rn;
     return translateRenderNode(rn, preview.dx, preview.dy);
   }
+  if (!previewIds.has(rn.node.id)) return rn;
   if (preview.kind === "resize" && rn.node.id === preview.nodeId) {
     return resizeRenderNode(rn, preview.bounds);
   }
@@ -2050,6 +2062,52 @@ function applyTransformPreviewToRenderNode(
     return rotateRenderNode(rn, preview.rotation);
   }
   return rn;
+}
+
+function previewConnectorLineRenderNode(
+  rn: RenderNode,
+  preview: Extract<TransformPreviewState, { kind: "move" }>,
+  previewIds: ReadonlySet<string>,
+): RenderNode | null {
+  if (!isConnectorPreviewLineNode(rn.node)) return null;
+  if (preview.nodeIds.includes(rn.node.id)) return null;
+
+  const startMoves =
+    Boolean(rn.node.connector.start) &&
+    previewIds.has(rn.node.connector.start?.nodeId ?? "");
+  const endMoves =
+    Boolean(rn.node.connector.end) &&
+    previewIds.has(rn.node.connector.end?.nodeId ?? "");
+  if (!startMoves && !endMoves) return null;
+
+  const endpoints = getLineRenderEndpoints(rn);
+  const nextStart = startMoves
+    ? {
+        x: endpoints.start.x + preview.dx,
+        y: endpoints.start.y + preview.dy,
+      }
+    : endpoints.start;
+  const nextEnd = endMoves
+    ? {
+        x: endpoints.end.x + preview.dx,
+        y: endpoints.end.y + preview.dy,
+      }
+    : endpoints.end;
+
+  return {
+    ...rn,
+    node: {
+      ...rn.node,
+      x: nextStart.x,
+      y: nextStart.y,
+      x2: nextEnd.x,
+      y2: nextEnd.y,
+    },
+    absX: Math.min(nextStart.x, nextEnd.x),
+    absY: Math.min(nextStart.y, nextEnd.y),
+    absW: Math.max(Math.abs(nextEnd.x - nextStart.x), 1),
+    absH: Math.max(Math.abs(nextEnd.y - nextStart.y), 1),
+  };
 }
 
 export function isViewportInteractionCacheReusable(
@@ -2238,18 +2296,22 @@ function getStickyConnectorHandlePoint(
   y: number,
   w: number,
   h: number,
-  zoom: number,
 ) {
-  const offset = 18 / zoom;
   switch (side) {
     case "top":
-      return { x: x + w / 2, y: y - offset };
+      return { x: x + w / 2, y: y - STICKY_CONNECTOR_HANDLE_OFFSET };
     case "right":
-      return { x: x + w + offset, y: y + h / 2 };
+      return {
+        x: x + w + STICKY_CONNECTOR_HANDLE_OFFSET,
+        y: y + h / 2,
+      };
     case "bottom":
-      return { x: x + w / 2, y: y + h + offset };
+      return {
+        x: x + w / 2,
+        y: y + h + STICKY_CONNECTOR_HANDLE_OFFSET,
+      };
     case "left":
-      return { x: x - offset, y: y + h / 2 };
+      return { x: x - STICKY_CONNECTOR_HANDLE_OFFSET, y: y + h / 2 };
     default: {
       const _exhaustive: never = side;
       throw new Error(`Unsupported sticky connector side: ${_exhaustive}`);
@@ -2259,6 +2321,30 @@ function getStickyConnectorHandlePoint(
 
 function isStickyNoteRenderNode(rn: RenderNode): boolean {
   return rn.node.meta?.boardKind === "sticky";
+}
+
+function collectConnectorIdsAttachedToNodes(
+  nodes: PenNode[],
+  targetIds: Set<string>,
+) {
+  for (const node of nodes) {
+    if (
+      isConnectorPreviewLineNode(node) &&
+      ((node.connector.start && targetIds.has(node.connector.start.nodeId)) ||
+        (node.connector.end && targetIds.has(node.connector.end.nodeId)))
+    ) {
+      targetIds.add(node.id);
+    }
+    if ("children" in node && Array.isArray(node.children)) {
+      collectConnectorIdsAttachedToNodes(node.children as PenNode[], targetIds);
+    }
+  }
+}
+
+function isConnectorPreviewLineNode(
+  node: PenNode,
+): node is LineNode & { connector: NonNullable<LineNode["connector"]> } {
+  return node.type === "line" && Boolean((node as LineNode).connector);
 }
 
 function getLineRenderEndpoints(rn: RenderNode): {
