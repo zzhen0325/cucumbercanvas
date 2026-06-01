@@ -4053,10 +4053,12 @@ export const SkiaCanvas = memo(
     }, []);
 
     const deleteSelection = useCallback(() => {
-      const activePageId = activePageIdRef.current;
-      const currentSelection = selectedIdsRef.current;
+      const state = runtimeStore.getState();
+      const activePageId = state.activePageId;
+      const currentDocument = state.document;
+      const currentSelection = state.selection;
       const ids = getTopLevelSelectionIds(
-        docRef.current as CucumberCanvasDocument,
+        currentDocument as CucumberCanvasDocument,
         currentSelection,
         activePageId,
       );
@@ -4069,13 +4071,17 @@ export const SkiaCanvas = memo(
             activePageId,
           }) as const,
       );
-      const next = applyCanvasTransaction(docRef.current, operations, {
+      const next = applyCanvasTransaction(currentDocument, operations, {
         activePageId,
       }).doc;
       commitDocument(next, { selection: [] });
       setSelection([], { notifyScene: false });
-      console.info("[skia-canvas] selection.deleted", { count: ids.length });
-    }, [commitDocument, setSelection]);
+      console.info("[skia-canvas] selection.deleted", {
+        activePageId,
+        count: ids.length,
+        nodeIds: ids,
+      });
+    }, [commitDocument, runtimeStore, setSelection]);
 
     const cutSelection = useCallback(() => {
       if (copySelection()) {

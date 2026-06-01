@@ -361,6 +361,71 @@ describe("SkiaCanvas selection snapshots", () => {
     }
   });
 
+  it("deletes the live selected node and leaves unselected nodes intact", async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    globalThis.ResizeObserver =
+      MockResizeObserver as unknown as typeof ResizeObserver;
+    const apiRef: { current: CanvasApi | null } = { current: null };
+    const docWithRects: CucumberCanvasDocument = {
+      ...initialDocument,
+      pages: [
+        {
+          id: "page-default",
+          name: "Page 1",
+          children: [
+            {
+              id: "rect-a",
+              type: "rectangle",
+              x: 10,
+              y: 10,
+              width: 100,
+              height: 80,
+            } as PenNode,
+            {
+              id: "rect-b",
+              type: "rectangle",
+              x: 140,
+              y: 10,
+              width: 100,
+              height: 80,
+            } as PenNode,
+          ],
+        },
+      ],
+    };
+
+    try {
+      const { container } = render(
+        <SkiaCanvas
+          initialContent={docWithRects}
+          onApiReady={(readyApi) => {
+            apiRef.current = readyApi;
+          }}
+        />,
+      );
+
+      await waitFor(() => expect(apiRef.current).not.toBeNull());
+      await waitFor(() =>
+        expect(container.querySelector("canvas")).not.toBeNull(),
+      );
+
+      const readyApi = apiRef.current;
+      if (!readyApi) throw new Error("Canvas API was not initialized.");
+
+      act(() => {
+        readyApi.setSelection(["rect-b"]);
+        readyApi.deleteSelection();
+      });
+
+      expect(readyApi.getDocument().selection).toEqual([]);
+      expect(
+        readyApi.getDocument().pages?.[0]?.children.map((node) => node.id),
+      ).toEqual(["rect-a"]);
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver;
+    }
+  });
+
   it("coalesces renderer document syncs into the next animation frame", async () => {
     const originalResizeObserver = globalThis.ResizeObserver;
     const originalRequestAnimationFrame = globalThis.requestAnimationFrame;

@@ -130,6 +130,32 @@ describe("useCanvasKeyboardShortcuts paste handling", () => {
     text.remove();
   });
 
+  it("keeps Delete wired to the canvas even when a stale DOM text selection exists", async () => {
+    const options = createOptions();
+    await mountHook(options);
+
+    const text = document.createElement("p");
+    text.textContent = "Previously highlighted assistant text";
+    document.body.appendChild(text);
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    const event = new KeyboardEvent("keydown", {
+      key: "Delete",
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(event);
+
+    expect(options.deleteSelection).toHaveBeenCalledOnce();
+    expect(event.defaultPrevented).toBe(true);
+
+    text.remove();
+  });
+
   it("uses Ctrl+C for canvas copy when no DOM text is selected", async () => {
     const options = createOptions({
       copySelection: vi.fn().mockReturnValue(true),

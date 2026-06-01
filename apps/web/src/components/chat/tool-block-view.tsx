@@ -302,7 +302,7 @@ export const ToolBlockView = React.memo(function ToolBlockView({
 });
 
 /* ------------------------------------------------------------------ */
-/*  MediaShimmer — shimmer placeholder during media generation         */
+/*  MediaShimmer — transparent loading surface during media generation */
 /* ------------------------------------------------------------------ */
 
 const MediaShimmer = React.memo(function MediaShimmer({
@@ -317,14 +317,14 @@ const MediaShimmer = React.memo(function MediaShimmer({
   return (
     <div className="rounded-xl border-[0.5px] border-border overflow-hidden">
       <div
-        className="relative w-full max-h-[280px] overflow-hidden"
+        className="relative w-full max-h-[280px] overflow-hidden bg-transparent"
         style={{ aspectRatio: aspectRatio.replace(":", " / ") }}
       >
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted">
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-transparent">
           {isVideoTool ? (
             <svg
               aria-hidden="true"
-              className="h-10 w-10 text-muted-foreground/50"
+              className="h-10 w-10 text-muted-foreground/45"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -335,7 +335,7 @@ const MediaShimmer = React.memo(function MediaShimmer({
           ) : (
             <svg
               aria-hidden="true"
-              className="h-10 w-10 text-muted-foreground/50"
+              className="h-10 w-10 text-muted-foreground/45"
               viewBox="0 0 24 24"
               fill="currentColor"
             >
@@ -349,7 +349,7 @@ const MediaShimmer = React.memo(function MediaShimmer({
             className="h-full w-1/2"
             style={{
               background:
-                "linear-gradient(110deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%)",
+                "linear-gradient(110deg, transparent 0%, rgba(255,255,255,0.35) 50%, transparent 100%)",
             }}
           />
         </div>
@@ -428,6 +428,8 @@ const ImageArtifactCard = React.memo(function ImageArtifactCard({
   hasDetails: boolean;
   onOpenPanel: () => void;
 }) {
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageLoadFailed, setImageLoadFailed] = useState(false);
   const handleDownload = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -444,6 +446,17 @@ const ImageArtifactCard = React.memo(function ImageArtifactCard({
     },
     [artifact.url, artifact.title],
   );
+  const handleImageLoad = useCallback(() => {
+    setImageLoaded(true);
+    setImageLoadFailed(false);
+  }, []);
+  const handleImageError = useCallback(() => {
+    setImageLoadFailed(true);
+    console.warn("[tool-block-view] image-artifact.load_failed", {
+      urlPreview: artifact.url.slice(0, 96),
+      title: artifact.title,
+    });
+  }, [artifact.title, artifact.url]);
 
   return (
     <div
@@ -457,13 +470,40 @@ const ImageArtifactCard = React.memo(function ImageArtifactCard({
       }}
     >
       {/* Image preview */}
-      <div className="relative aspect-square max-h-[280px] w-full overflow-hidden bg-muted">
+      <div className="relative aspect-square max-h-[280px] w-full overflow-hidden bg-transparent">
         <img
           src={artifact.url}
           alt={artifact.title ?? "Generated image"}
-          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+          className={`h-full w-full object-cover transition-all duration-500 group-hover:scale-[1.03] ${
+            imageLoaded
+              ? "opacity-100"
+              : imageLoadFailed
+                ? "opacity-0"
+                : "opacity-45"
+          }`}
           loading="lazy"
+          onLoad={handleImageLoad}
+          onError={handleImageError}
         />
+        {!imageLoaded && !imageLoadFailed && (
+          <div
+            className="pointer-events-none absolute inset-0 animate-shimmer-scan"
+            aria-hidden="true"
+          >
+            <div
+              className="h-full w-1/2"
+              style={{
+                background:
+                  "linear-gradient(110deg, transparent 0%, rgba(255,255,255,0.42) 50%, transparent 100%)",
+              }}
+            />
+          </div>
+        )}
+        {imageLoadFailed && (
+          <div className="absolute inset-0 flex items-center justify-center bg-transparent px-4 text-center text-[12px] leading-relaxed text-muted-foreground">
+            图片加载失败，可能是图片链接已过期或网络不可用。
+          </div>
+        )}
         {/* Gradient overlay with download button */}
         <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
           <button

@@ -1057,6 +1057,9 @@ export class SkiaNodeRenderer {
   } {
     const ck = this.ck;
     const fillOpacity = (fill.opacity ?? 1) * opacity;
+    const setTransparentLoadingPaint = () => {
+      paint.setColor(Float32Array.of(0, 0, 0, 0));
+    };
     const url = fill.url;
     if (!url) {
       const c = parseColor(ck, "#e5e7eb");
@@ -1074,7 +1077,12 @@ export class SkiaNodeRenderer {
     });
     if (cached === undefined) this.imageLoader.request(url);
     if (!cached) {
-      const isMissing = this.imageLoader.getStatus(url)?.state === "missing";
+      const state = this.imageLoader.getStatus(url)?.state;
+      if (!state || state === "loading") {
+        setTransparentLoadingPaint();
+        return { needsDrawImageRect: false };
+      }
+      const isMissing = state === "missing";
       const c = parseColor(ck, isMissing ? "#f1d7d7" : "#e5e7eb");
       c[3] = (c[3] ?? 1) * fillOpacity;
       paint.setColor(c);
@@ -1435,6 +1443,9 @@ export class SkiaNodeRenderer {
       c[3] = (c[3] ?? 1) * fillOpacity;
       paint.setColor(c);
     };
+    const setTransparentLoadingPaint = () => {
+      paint.setColor(Float32Array.of(0, 0, 0, 0));
+    };
 
     const url = fill.url;
     if (!url) {
@@ -1451,7 +1462,12 @@ export class SkiaNodeRenderer {
     });
     if (cached === undefined) this.imageLoader.request(url);
     if (!cached) {
-      const isMissing = this.imageLoader.getStatus(url)?.state === "missing";
+      const state = this.imageLoader.getStatus(url)?.state;
+      if (!state || state === "loading") {
+        setTransparentLoadingPaint();
+        return;
+      }
+      const isMissing = state === "missing";
       setFallbackColor(isMissing ? "#f1d7d7" : "#e5e7eb");
       return;
     }
@@ -3338,11 +3354,11 @@ export class SkiaNodeRenderer {
     });
     if (cached === undefined) {
       this.imageLoader.request(src);
-      this.drawImageFallback(canvas, x, y, w, h, cr, opacity, false);
       return;
     }
     if (!cached) {
       const status = this.imageLoader.getStatus(src);
+      if (!status || status.state === "loading") return;
       this.drawImageFallback(
         canvas,
         x,

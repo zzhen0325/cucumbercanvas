@@ -86,7 +86,7 @@ export function ShapeToolDropdown({
     <DropdownMenu modal={false}>
       <div
         className={cn(
-          "flex flex-col items-center rounded-lg border border-transparent transition-colors",
+          "flex  items-center rounded-lg border border-transparent transition-colors",
           activeShape && "border-foreground/10 bg-foreground/[0.08]",
         )}
       >

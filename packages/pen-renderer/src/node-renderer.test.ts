@@ -295,6 +295,34 @@ describe("layer blur rendering", () => {
       [22, 32, 158, 108],
     ]);
   });
+
+  it("leaves image nodes transparent while their source is loading", () => {
+    const { canvas, calls, renderer } = createLayerBlurImageHarness();
+    const requests: string[] = [];
+
+    renderer.imageLoader.getForDisplay = () => undefined;
+    renderer.imageLoader.getStatus = () => ({ state: "loading" });
+    renderer.imageLoader.request = (src: string) => {
+      requests.push(src);
+    };
+    renderer.drawNode(
+      canvas as never,
+      {
+        absH: 80,
+        absW: 100,
+        absX: 10,
+        absY: 20,
+        node: {
+          id: "loading-image",
+          src: "asset://loading",
+          type: "image",
+        },
+      } as never,
+    );
+
+    expect(requests).toEqual(["asset://loading"]);
+    expect(calls).toEqual([]);
+  });
 });
 
 describe("path cache", () => {

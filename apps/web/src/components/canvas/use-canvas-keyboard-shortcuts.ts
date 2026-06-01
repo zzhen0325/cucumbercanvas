@@ -55,12 +55,22 @@ export function useCanvasKeyboardShortcuts(options: {
     const handleKeyDown = (event: KeyboardEvent) => {
       const options = optionsRef.current;
       const target = event.target as HTMLElement | null;
-      if (isEditableTarget(target) || hasNativeTextSelection()) {
+      if (isEditableTarget(target)) {
         return;
       }
 
       const isMod = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
+
+      if (event.key === "Delete" || event.key === "Backspace") {
+        event.preventDefault();
+        options.deleteSelection();
+        return;
+      }
+
+      if (hasNativeTextSelection()) {
+        return;
+      }
 
       if (isMod && key === "z") {
         event.preventDefault();
@@ -139,12 +149,6 @@ export function useCanvasKeyboardShortcuts(options: {
       if (key === "]" && !isMod) {
         event.preventDefault();
         options.reorderSelection("forward");
-        return;
-      }
-
-      if (event.key === "Delete" || event.key === "Backspace") {
-        event.preventDefault();
-        options.deleteSelection();
         return;
       }
 
