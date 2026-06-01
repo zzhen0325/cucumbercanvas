@@ -22,6 +22,14 @@ export interface ImageDisplayRequest {
   interactionMode?: "idle" | "viewport" | "transform";
 }
 
+type ImageLodTask = {
+  cacheKey: string;
+  htmlImg: HTMLImageElement;
+  lodSize: number;
+  sourceHeight: number;
+  sourceWidth: number;
+};
+
 /**
  * Async image loader for CanvasKit. Loads images via browser's native Image
  * element (supports all browser-supported formats), rasterizes to Canvas 2D,
@@ -36,6 +44,9 @@ export class SkiaImageLoader {
   private pendingPromises = new Set<Promise<unknown>>();
   private status = new Map<string, ImageLoadStatus>();
   private onLoaded: (() => void) | null = null;
+  private lodQueue: ImageLodTask[] = [];
+  private lodTimer: ReturnType<typeof setTimeout> | null = null;
+  private disposed = false;
   private sourceResolver: (src: string) => ResolvedImageSource = (src) => ({
     cacheKey: createImageCacheKey(src),
     loadUrl: src,
@@ -78,6 +89,11 @@ export class SkiaImageLoader {
 
   /** Start loading an image if not already cached or in progress. */
   request(src: string) {
+    if (this.disposed) {
+      throw new Error(
+        "Cannot request an image after SkiaImageLoader.dispose().",
+      );
+    }
     const resolved = this.sourceResolver(src);
     if (
       this.cache.has(resolved.cacheKey) ||
@@ -104,6 +120,10 @@ export class SkiaImageLoader {
     return this.pendingPromises.size;
   }
 
+  pendingLodCount(): number {
+    return this.lodQueue.length + (this.lodTimer ? 1 : 0);
+  }
+
   /**
    * Wait for every currently pending image load to settle.
    * Used by SkiaEngine.waitForSettled to coordinate readback timing.
@@ -114,6 +134,12 @@ export class SkiaImageLoader {
   }
 
   dispose() {
+    this.disposed = true;
+    if (this.lodTimer) {
+      clearTimeout(this.lodTimer);
+      this.lodTimer = null;
+    }
+    this.lodQueue = [];
     const deleted = new Set<SkImage>();
     for (const img of this.cache.values()) {
       if (img && !deleted.has(img)) {
@@ -143,12 +169,16 @@ export class SkiaImageLoader {
       }
       // Use browser Image element — supports all browser-supported formats
       const htmlImg = await this.loadHtmlImage(source.loadUrl);
-      const skImg = this.htmlImageToSkia(htmlImg, MAX_IMAGE_DIMENSION);
+      const skImg = this.htmlImageToSkia(
+        htmlImg,
+        MAX_IMAGE_DIMENSION,
+        `${source.cacheKey}:base`,
+      );
       this.cache.set(source.cacheKey, skImg);
-      if (skImg) this.createLodVariants(source.cacheKey, htmlImg, skImg);
       this.loading.delete(source.cacheKey);
       this.status.set(source.cacheKey, { state: skImg ? "loaded" : "error" });
       this.onLoaded?.();
+      if (skImg) this.scheduleLodVariants(source.cacheKey, htmlImg, skImg);
     } catch (e) {
       console.warn("Failed to load image:", source.loadUrl?.slice(0, 80), e);
       this.cache.set(source.cacheKey, null);
@@ -174,6 +204,7 @@ export class SkiaImageLoader {
   private htmlImageToSkia(
     htmlImg: HTMLImageElement,
     maxDimension: number,
+    logContext: string,
   ): SkImage | null {
     const sourceW = htmlImg.naturalWidth || htmlImg.width;
     const sourceH = htmlImg.naturalHeight || htmlImg.height;
@@ -204,7 +235,7 @@ export class SkiaImageLoader {
     ctx.drawImage(htmlImg, 0, 0, width, height);
     const imageData = ctx.getImageData(0, 0, width, height);
 
-    return (
+    const image =
       this.ck.MakeImage(
         {
           width,
@@ -215,11 +246,26 @@ export class SkiaImageLoader {
         },
         imageData.data,
         width * 4,
-      ) ?? null
-    );
+      ) ?? null;
+
+    return image ? this.withDefaultMipmaps(image, logContext) : null;
   }
 
-  private createLodVariants(
+  private withDefaultMipmaps(image: SkImage, logContext: string): SkImage {
+    try {
+      const mipmapped = image.makeCopyWithDefaultMipmaps();
+      image.delete();
+      return mipmapped;
+    } catch (error) {
+      console.warn("[pen-renderer] image-loader.mipmap.failed", {
+        logContext,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return image;
+    }
+  }
+
+  private scheduleLodVariants(
     cacheKey: string,
     htmlImg: HTMLImageElement,
     baseImage: SkImage,
@@ -234,20 +280,55 @@ export class SkiaImageLoader {
         variants.set(lodSize, baseImage);
         continue;
       }
-      const variant = this.htmlImageToSkia(htmlImg, lodSize);
-      if (!variant) continue;
-      variants.set(lodSize, variant);
-      console.info("[pen-renderer] image-loader.variant.created", {
+      this.lodQueue.push({
         cacheKey,
-        sourceWidth: sourceW,
-        sourceHeight: sourceH,
+        htmlImg,
         lodSize,
-        rasterWidth: variant.width(),
-        rasterHeight: variant.height(),
+        sourceHeight: sourceH,
+        sourceWidth: sourceW,
       });
     }
 
     this.lodCache.set(cacheKey, variants);
+    this.scheduleNextLodTask();
+  }
+
+  private scheduleNextLodTask() {
+    if (this.disposed || this.lodTimer || this.lodQueue.length === 0) return;
+    this.lodTimer = setTimeout(() => {
+      this.lodTimer = null;
+      this.processOneLodTask();
+      this.scheduleNextLodTask();
+    }, 16);
+  }
+
+  private processOneLodTask() {
+    const task = this.lodQueue.shift();
+    if (!task || this.disposed) return;
+    const variants = this.lodCache.get(task.cacheKey);
+    if (!variants || !this.cache.has(task.cacheKey)) return;
+    const startedAt =
+      typeof performance !== "undefined" ? performance.now() : Date.now();
+    const variant = this.htmlImageToSkia(
+      task.htmlImg,
+      task.lodSize,
+      `${task.cacheKey}:${task.lodSize}`,
+    );
+    if (!variant) return;
+    variants.set(task.lodSize, variant);
+    const durationMs =
+      (typeof performance !== "undefined" ? performance.now() : Date.now()) -
+      startedAt;
+    console.info("[pen-renderer] image-loader.variant.created", {
+      cacheKey: task.cacheKey,
+      durationMs: Math.round(durationMs),
+      lodSize: task.lodSize,
+      rasterHeight: variant.height(),
+      rasterWidth: variant.width(),
+      sourceHeight: task.sourceHeight,
+      sourceWidth: task.sourceWidth,
+    });
+    this.onLoaded?.();
   }
 
   private getSafeRasterSize(
@@ -308,10 +389,9 @@ export function chooseImageLodSize(request: ImageDisplayRequest): number {
     dpr;
   const interactive = request.interactionMode !== "idle";
 
-  if (interactive) {
-    if (targetPixels <= 1024) return 512;
-    return 1024;
-  }
+  // During pan/zoom/transform we favor stable frame times over image sharpness.
+  // Idle renders switch back to sharper LODs after the interaction settles.
+  if (interactive) return 512;
 
   if (targetPixels <= 512) return 512;
   if (targetPixels <= 1024) return 1024;

@@ -4,7 +4,10 @@ import {
   applyTransformPreviewToRenderNodes,
   filterRenderNodesToViewport,
   filterRenderNodesToViewportWithTransformPreview,
+  getViewportInteractionCacheDrawOffset,
+  isViewportInteractionCacheReusable,
 } from "./renderer.js";
+import { RenderNodeViewportIndex } from "./spatial-index.js";
 import type { RenderNode } from "./types.js";
 
 function rn(id: string, x: number, y: number, w = 100, h = 100): RenderNode {
@@ -44,6 +47,25 @@ describe("renderer performance helpers", () => {
     ).toEqual(["visible-a", "visible-b"]);
   });
 
+  it("queries viewport index in render order without dropping locked nodes", () => {
+    const locked = rn("locked-visible", 10, 10);
+    const nodes = [
+      rn("before", -400, 0),
+      locked,
+      rn("visible-b", 90, 90),
+      rn("after", 400, 0),
+    ];
+    locked.node = { ...locked.node, locked: true } as PenNode;
+    const index = new RenderNodeViewportIndex();
+    index.rebuild(nodes);
+
+    expect(
+      index
+        .search({ left: 0, top: 0, right: 200, bottom: 200 })
+        .map((node) => node.node.id),
+    ).toEqual(["locked-visible", "visible-b"]);
+  });
+
   it("applies transform previews without mutating base render nodes", () => {
     const nodes = [rn("frame", 20, 30), rn("child", 35, 45, 20, 20)];
     const previewed = applyTransformPreviewToRenderNodes(
@@ -78,5 +100,69 @@ describe("renderer performance helpers", () => {
     expect(visible[1]?.node.id).toBe("moving");
     expect(visible[1]).not.toBe(nodes[1]);
     expect(nodes[1]?.absX).toBe(-400);
+  });
+
+  it("reuses viewport interaction cache inside pan padding", () => {
+    const cache = {
+      key: "scene|canvas|zoom",
+      zoom: 0.25,
+      panX: 100,
+      panY: 50,
+      paddingX: 256,
+      paddingY: 256,
+    };
+
+    expect(
+      isViewportInteractionCacheReusable(cache, {
+        key: "scene|canvas|zoom",
+        zoom: 0.25,
+        panX: 220,
+        panY: -20,
+      }),
+    ).toBe(true);
+    expect(
+      getViewportInteractionCacheDrawOffset(cache, {
+        zoom: 0.25,
+        panX: 220,
+        panY: -20,
+        dpr: 2,
+      }),
+    ).toEqual({ x: -272, y: -652, reused: true });
+  });
+
+  it("rejects viewport interaction cache after zoom changes or padding is exceeded", () => {
+    const cache = {
+      key: "scene|canvas|zoom",
+      zoom: 0.25,
+      panX: 0,
+      panY: 0,
+      paddingX: 128,
+      paddingY: 128,
+    };
+
+    expect(
+      isViewportInteractionCacheReusable(cache, {
+        key: "scene|canvas|zoom",
+        zoom: 0.5,
+        panX: 0,
+        panY: 0,
+      }),
+    ).toBe(false);
+    expect(
+      isViewportInteractionCacheReusable(cache, {
+        key: "scene|canvas|zoom",
+        zoom: 0.25,
+        panX: 129,
+        panY: 0,
+      }),
+    ).toBe(false);
+    expect(
+      getViewportInteractionCacheDrawOffset(cache, {
+        zoom: 0.25,
+        panX: 129,
+        panY: 0,
+        dpr: 2,
+      }),
+    ).toBeNull();
   });
 });

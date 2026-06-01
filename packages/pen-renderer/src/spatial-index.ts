@@ -145,7 +145,88 @@ export class SpatialIndex {
   }
 }
 
+/**
+ * Render-only viewport index. Unlike hit testing, locked nodes and structural
+ * containers must remain queryable because they still contribute pixels/order.
+ */
+export class RenderNodeViewportIndex {
+  private tree = new RBush<RTreeItem>();
+  private items = new Map<string, RTreeItem>();
+
+  rebuild(nodes: RenderNode[]) {
+    this.tree.clear();
+    this.items.clear();
+
+    const items: RTreeItem[] = [];
+    for (let index = 0; index < nodes.length; index += 1) {
+      const rn = nodes[index];
+      if (!rn) continue;
+      if (("visible" in rn.node ? rn.node.visible : undefined) === false) {
+        continue;
+      }
+      const bounds = getViewportRenderBounds(rn);
+      if (!bounds) continue;
+      const item = {
+        minX: bounds.minX,
+        minY: bounds.minY,
+        maxX: bounds.maxX,
+        maxY: bounds.maxY,
+        nodeId: rn.node.id,
+        renderNode: rn,
+        zIndex: index,
+      };
+      items.push(item);
+      this.items.set(rn.node.id, item);
+    }
+
+    this.tree.load(items);
+  }
+
+  search(bounds: {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+  }): RenderNode[] {
+    const candidates = this.tree.search({
+      minX: bounds.left,
+      minY: bounds.top,
+      maxX: bounds.right,
+      maxY: bounds.bottom,
+    });
+    candidates.sort((a, b) => a.zIndex - b.zIndex);
+    return candidates.map((candidate) => candidate.renderNode);
+  }
+
+  get(nodeId: string): RenderNode | undefined {
+    return this.items.get(nodeId)?.renderNode;
+  }
+
+  getOrder(nodeId: string): number {
+    return this.items.get(nodeId)?.zIndex ?? Number.MAX_SAFE_INTEGER;
+  }
+}
+
 export function getHittableBounds(
+  renderNode: RenderNode,
+): Pick<RTreeItem, "minX" | "minY" | "maxX" | "maxY"> | null {
+  const visualOutset = resolveVisualOutset(renderNode.node);
+  let minX = renderNode.absX - visualOutset.left;
+  let minY = renderNode.absY - visualOutset.top;
+  let maxX = renderNode.absX + renderNode.absW + visualOutset.right;
+  let maxY = renderNode.absY + renderNode.absH + visualOutset.bottom;
+  const clip = renderNode.clipRect;
+  if (clip) {
+    minX = Math.max(minX, clip.x);
+    minY = Math.max(minY, clip.y);
+    maxX = Math.min(maxX, clip.x + clip.w);
+    maxY = Math.min(maxY, clip.y + clip.h);
+  }
+  if (maxX < minX || maxY < minY) return null;
+  return { minX, minY, maxX, maxY };
+}
+
+export function getViewportRenderBounds(
   renderNode: RenderNode,
 ): Pick<RTreeItem, "minX" | "minY" | "maxX" | "maxY"> | null {
   const visualOutset = resolveVisualOutset(renderNode.node);

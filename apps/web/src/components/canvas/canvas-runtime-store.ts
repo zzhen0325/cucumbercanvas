@@ -105,6 +105,7 @@ export type CanvasRuntimeStore = ReturnType<typeof createCanvasRuntimeStore>;
 const CanvasRuntimeStoreContext = createContext<CanvasRuntimeStore | null>(
   null,
 );
+const CANVAS_HISTORY_LIMIT = 100;
 
 function areStringArraysEqual(a: readonly string[], b: readonly string[]) {
   if (a.length !== b.length) return false;
@@ -209,6 +210,15 @@ function applyPreparedRuntimeCommit(
     state.historyPast.push(
       toRuntimeDocument(state.document, state.activePageId, state.selection),
     );
+    if (state.historyPast.length > CANVAS_HISTORY_LIMIT) {
+      state.historyPast.splice(
+        0,
+        state.historyPast.length - CANVAS_HISTORY_LIMIT,
+      );
+      console.info("[canvas-runtime-store] history trimmed", {
+        limit: CANVAS_HISTORY_LIMIT,
+      });
+    }
     state.historyFuture = [];
   }
   state.document = result.document;
@@ -388,6 +398,12 @@ export function createCanvasRuntimeStore(initialDocument: PenDocument) {
                 state.selection,
               ),
             );
+            if (draft.historyPast.length > CANVAS_HISTORY_LIMIT) {
+              draft.historyPast.splice(
+                0,
+                draft.historyPast.length - CANVAS_HISTORY_LIMIT,
+              );
+            }
             applyPreparedRuntimeCommit(draft, prepared, {
               captureHistory: false,
             });
@@ -482,6 +498,9 @@ export function createCanvasRuntimeStore(initialDocument: PenDocument) {
                 state.selection,
               ),
             );
+            if (draft.historyFuture.length > CANVAS_HISTORY_LIMIT) {
+              draft.historyFuture.splice(CANVAS_HISTORY_LIMIT);
+            }
             applyPreparedRuntimeCommit(draft, prepared, {
               captureHistory: false,
             });

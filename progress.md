@@ -4,10 +4,28 @@ Last updated: 2026-06-01 CST
 
 ## 2026-06-01
 
+- Advanced the canvas hot-path performance pass: SkiaCanvas scene summaries now build a single DFS scene index with node/parent/bounds maps and coalesce scene listener snapshots per frame, selection notifications reuse the index instead of repeated `findNode` / parent-bound scans, document-change callbacks skip empty RAF work when no listener exists, and slow snapshot logs include node/visible/file/selection context.
+- Added renderer viewport indexing: render culling now uses a dedicated render-node R-tree that preserves paint order and keeps locked-but-rendered nodes queryable, while transform previews only merge preview nodes that move into view.
+- Added Skia path geometry caching: path nodes cache parsed CanvasKit paths and geometry bounds with LRU eviction/dispose cleanup, renderer slow-frame logs now include path-cache stats, and tests cover cache hits plus path-data invalidation.
+- Moved image LOD generation off the image load completion task: base images become drawable first, 512/1024 variants are generated in timed slices with duration logs and redraw callbacks, and dispose clears queued LOD work.
+- Reduced canvas-side React/panel churn: layers precompute parent/move-target maps and render a fixed-row window, files consume the shared scene/files snapshot passed through `onChange`, design-system refresh is throttled and skipped while the icon tab is active, canvas history is capped, and the canvas page ignores selection updates whose summary did not change.
+- Passed: `pnpm --filter @cucumber/pen-renderer test`.
+- Passed: `pnpm --filter @cucumber/pen-renderer typecheck`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm exec vitest run test/skia-canvas-selection-snapshot.test.tsx test/canvas-layers-panel.test.tsx test/canvas-design-system-panel.test.tsx` from `apps/web`.
+- Failed: `pnpm --filter @cucumber/web test -- test/skia-canvas-selection-snapshot.test.tsx test/canvas-layers-panel.test.tsx test/canvas-design-system-panel.test.tsx test/canvas-files-panel.test.tsx` is parsed by the package script as a broad web run; touched tests passed inside that run, but unrelated existing failures remain in `apps/web/test/canvas-export.test.ts` legacy no-page fixtures and `apps/web/test/projects.test.tsx` toast text matching.
 - Added the Skia canvas document-sync scheduler: runtime document commits now coalesce renderer `setDocument` work into the next animation frame, defer renderer tree rebuilds while pointer drags are active, flush the latest pending document before a new pointer interaction needs hit-testing, and log deferred/coalesced sync flushes with source/version/page context.
+- Advanced the Skia image-rendering performance path: loaded images and LOD variants now generate default CanvasKit mipmaps, idle image draws use Skia sampling options with mipmap filtering, viewport/transform/marquee/drawing interactions switch to low-cost nearest sampling, transient shader/color-filter handles are released after being attached to paints, marquee rubber-band feedback moved to a DOM overlay so it no longer redraws image nodes, and transform interactions build a Skia offscreen background snapshot so subsequent drag frames redraw only the moving nodes plus overlays.
+- Added viewport pan snapshot reuse for image-heavy canvases: viewport interactions now build an expanded Skia offscreen snapshot at the current zoom, reuse it while pan deltas stay inside the padding window, redraw only overlays/frame labels on cached pan frames, clear the cache on zoom/document/resize/background/asset changes, and log viewport-cache builds/clears for local diagnosis.
+- Routed CanvasApi-driven viewport updates through the same interaction path: toolbar/keyboard/API zoom and scroll updates now switch the renderer to `viewport` mode before changing pan/zoom and schedule the idle restore afterward, so programmatic viewport changes do not redraw image-heavy canvases through the idle path.
+- Added SkiaCanvas regression coverage asserting CanvasApi scroll/zoom updates enter renderer `viewport` interaction mode while background-only updates do not.
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/skia-canvas-selection-snapshot.test.tsx`.
+- Passed: `pnpm --filter @cucumber/pen-renderer test -- renderer-performance.test.ts image-loader.test.ts`.
+- Passed: `pnpm --filter @cucumber/pen-renderer typecheck`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/skia-canvas-selection-snapshot.test.tsx test/canvas-runtime-store.test.ts`.
 - Passed: `pnpm exec biome check --write apps/web/src/components/canvas/skia-canvas.tsx apps/web/test/skia-canvas-selection-snapshot.test.tsx`.
 - Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Failed: `pnpm --filter @cucumber/web test -- skia-canvas-selection-snapshot.test.tsx canvas-runtime-store.test.ts` was parsed by the package script as a broad web test run and hit existing unrelated failures in `apps/web/test/canvas-export.test.ts` legacy no-page fixtures plus `apps/web/test/projects.test.tsx` toast text matching; the corrected direct Vitest command above passed.
 
 ## 2026-05-31
 

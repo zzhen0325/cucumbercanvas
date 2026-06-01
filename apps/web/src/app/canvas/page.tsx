@@ -100,6 +100,7 @@ function CanvasPageContent() {
   const [selectedCanvasElements, setSelectedCanvasElements] = useState<
     CanvasSelectedElement[]
   >([]);
+  const selectedCanvasElementsKeyRef = useRef("");
   const [importSummary, setImportSummary] =
     useState<CanvasImportSummary | null>(null);
   const [showImportWarnings, setShowImportWarnings] = useState(false);
@@ -157,6 +158,26 @@ function CanvasPageContent() {
     canvasApiRef.current = api;
     setCanvasApi(api);
   }, []);
+
+  const handleSelectionChange = useCallback(
+    (elements: CanvasSelectedElement[]) => {
+      const summaryKey = elements
+        .map((element) =>
+          [
+            element.id,
+            element.type,
+            element.fileId ?? "",
+            element.importWarningCount ?? 0,
+            (element.degradationHints ?? []).join(","),
+          ].join(":"),
+        )
+        .join("|");
+      if (summaryKey === selectedCanvasElementsKeyRef.current) return;
+      selectedCanvasElementsKeyRef.current = summaryKey;
+      setSelectedCanvasElements(elements);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (selectedCanvasElements.length === 0) return;
@@ -428,7 +449,7 @@ function CanvasPageContent() {
           onInsertIcon={handleInsertIconFromToolbar}
           ws={ws}
           leftPanelOpen={layersOpen || filesOpen || designOpen}
-          onSelectionChange={setSelectedCanvasElements}
+          onSelectionChange={handleSelectionChange}
         />
         <CanvasEmptyHint canvasApi={canvasApi} onOpenChat={handleOpenChat} />
         <CanvasBottomBar

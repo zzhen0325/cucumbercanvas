@@ -28,7 +28,15 @@ import type {
   PenStroke,
   ShadowEffect,
 } from "@cucumber/pen-types";
-import type { Canvas, CanvasKit, Font, Paint, Typeface } from "canvaskit-wasm";
+import type {
+  Canvas,
+  CanvasKit,
+  ColorFilter,
+  Font,
+  Paint,
+  Shader,
+  Typeface,
+} from "canvaskit-wasm";
 import type { FontManagerOptions, SkiaFontManager } from "./font-manager.js";
 import { SkiaImageLoader } from "./image-loader.js";
 import {
@@ -50,6 +58,24 @@ import type { RendererInteractionMode } from "./types.js";
 import type { IconLookupFn, RenderNode } from "./types.js";
 
 const FALLBACK_ICON_D = "M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0";
+const PATH_CACHE_MAX = 768;
+
+type SkiaPath = NonNullable<ReturnType<CanvasKit["Path"]["MakeFromSVGString"]>>;
+
+type PathCacheEntry = {
+  bounds: Float32Array;
+  lastUsed: number;
+  path: SkiaPath;
+  rawD: string;
+};
+
+export type PathCacheSnapshot = {
+  entries: number;
+  evictions: number;
+  hitRate: number;
+  hits: number;
+  misses: number;
+};
 
 type DeferredImageFillDraw = {
   fill: ImageFill;
@@ -568,6 +594,11 @@ export class SkiaNodeRenderer {
     | import("canvaskit-wasm").RuntimeEffect
     | null
     | undefined;
+  private pathCache = new Map<string, PathCacheEntry>();
+  private pathCacheTick = 0;
+  private pathCacheHits = 0;
+  private pathCacheMisses = 0;
+  private pathCacheEvictions = 0;
 
   // Injectable icon lookup
   private iconLookup: IconLookupFn | null = null;
@@ -612,6 +643,7 @@ export class SkiaNodeRenderer {
     this.diamondGradientEffect = undefined;
     this.textRenderer.dispose();
     this.imageLoader.dispose();
+    this.clearPathCache();
   }
 
   clearTextCache() {
@@ -619,6 +651,43 @@ export class SkiaNodeRenderer {
   }
   clearParaCache() {
     this.textRenderer.clearParaCache();
+  }
+
+  clearPathCache() {
+    for (const entry of this.pathCache.values()) {
+      entry.path.delete();
+    }
+    this.pathCache.clear();
+  }
+
+  getPathCacheSnapshot(): PathCacheSnapshot {
+    const total = this.pathCacheHits + this.pathCacheMisses;
+    return {
+      entries: this.pathCache.size,
+      evictions: this.pathCacheEvictions,
+      hitRate: total > 0 ? this.pathCacheHits / total : 0,
+      hits: this.pathCacheHits,
+      misses: this.pathCacheMisses,
+    };
+  }
+
+  private getImageSamplingOptions() {
+    const ck = this.ck;
+    return this.interactionMode === "idle"
+      ? { filterMode: ck.FilterMode.Linear, mipmapMode: ck.MipmapMode.Linear }
+      : { filterMode: ck.FilterMode.Nearest, mipmapMode: ck.MipmapMode.None };
+  }
+
+  private setPaintShader(paint: Paint, shader: Shader | null) {
+    if (!shader) return;
+    paint.setShader(shader);
+    shader.delete();
+  }
+
+  private setPaintColorFilter(paint: Paint, filter: ColorFilter | null) {
+    if (!filter) return;
+    paint.setColorFilter(filter);
+    filter.delete();
   }
 
   // ---------------------------------------------------------------------------
@@ -733,7 +802,7 @@ export class SkiaNodeRenderer {
           positions,
           ck.TileMode.Clamp,
         );
-        if (shader) paint.setShader(shader);
+        this.setPaintShader(paint, shader);
       } else {
         const firstStop = stops[0];
         const stopColor = firstStop?.color;
@@ -769,7 +838,7 @@ export class SkiaNodeRenderer {
           startAngle,
           endAngle,
         );
-        if (shader) paint.setShader(shader);
+        this.setPaintShader(paint, shader);
       } else {
         const firstStop = stops[0];
         const stopColor = firstStop?.color;
@@ -794,7 +863,7 @@ export class SkiaNodeRenderer {
           colors,
         );
         if (shader) {
-          paint.setShader(shader);
+          this.setPaintShader(paint, shader);
         } else {
           this.applyRadialGradientFallback(
             paint,
@@ -838,7 +907,7 @@ export class SkiaNodeRenderer {
           positions,
           ck.TileMode.Clamp,
         );
-        if (shader) paint.setShader(shader);
+        this.setPaintShader(paint, shader);
       } else {
         const firstStop = stops[0];
         const stopColor = firstStop?.color;
@@ -952,7 +1021,7 @@ export class SkiaNodeRenderer {
       positions,
       this.ck.TileMode.Clamp,
     );
-    if (shader) paint.setShader(shader);
+    this.setPaintShader(paint, shader);
   }
 
   private applyImageFillToPaint(
@@ -1007,18 +1076,18 @@ export class SkiaNodeRenderer {
       const dispX = absX + (w - imgW) / 2;
       const dispY = absY + (h - imgH) / 2;
       const localMatrix = Float32Array.of(1, 0, -dispX, 0, 1, -dispY, 0, 0, 1);
+      const { filterMode, mipmapMode } = this.getImageSamplingOptions();
       const shader = cached.makeShaderOptions(
         ck.TileMode.Repeat,
         ck.TileMode.Repeat,
-        ck.FilterMode.Linear,
-        ck.MipmapMode.None,
+        filterMode,
+        mipmapMode,
         localMatrix,
       );
       if (shader) {
-        paint.setShader(shader);
+        this.setPaintShader(paint, shader);
         if (fillOpacity < 1) paint.setAlphaf(fillOpacity);
-        const cf = this.buildImageAdjustmentFilter(fill);
-        if (cf) paint.setColorFilter(cf);
+        this.setPaintColorFilter(paint, this.buildImageAdjustmentFilter(fill));
       }
       return { needsDrawImageRect: false };
     }
@@ -1062,11 +1131,11 @@ export class SkiaNodeRenderer {
     const mode = fill.mode ?? "fill";
     const paint = new ck.Paint();
     paint.setAntiAlias(true);
+    const { filterMode, mipmapMode } = this.getImageSamplingOptions();
     if (fillOpacity < 1) paint.setAlphaf(fillOpacity);
     const blendMode = this.mapBlendMode(fill.blendMode);
     if (blendMode) paint.setBlendMode(blendMode);
-    const adjFilter = this.buildImageAdjustmentFilter(fill);
-    if (adjFilter) paint.setColorFilter(adjFilter);
+    this.setPaintColorFilter(paint, this.buildImageAdjustmentFilter(fill));
 
     if (fill.transform) {
       const shaderMatrix = getImageFillShaderMatrix(fill, imgW, imgH, {
@@ -1083,12 +1152,12 @@ export class SkiaNodeRenderer {
         const shader = cached.makeShaderOptions(
           tileMode,
           tileMode,
-          ck.FilterMode.Linear,
-          ck.MipmapMode.None,
+          filterMode,
+          mipmapMode,
           shaderMatrix.matrix,
         );
         if (shader) {
-          paint.setShader(shader);
+          this.setPaintShader(paint, shader);
           canvas.drawRect(ck.LTRBRect(absX, absY, absX + w, absY + h), paint);
           paint.delete();
           return;
@@ -1098,7 +1167,7 @@ export class SkiaNodeRenderer {
 
     const transformedSource = getImageFillTransformSourceRect(fill, imgW, imgH);
     if (transformedSource) {
-      canvas.drawImageRect(
+      canvas.drawImageRectOptions(
         cached,
         ck.LTRBRect(
           transformedSource.left,
@@ -1107,6 +1176,8 @@ export class SkiaNodeRenderer {
           transformedSource.bottom,
         ),
         ck.LTRBRect(absX, absY, absX + w, absY + h),
+        filterMode,
+        mipmapMode,
         paint,
       );
       paint.delete();
@@ -1119,17 +1190,21 @@ export class SkiaNodeRenderer {
       const dh = imgH * scale;
       const dx = absX + (w - dw) / 2;
       const dy = absY + (h - dh) / 2;
-      canvas.drawImageRect(
+      canvas.drawImageRectOptions(
         cached,
         ck.LTRBRect(0, 0, imgW, imgH),
         ck.LTRBRect(dx, dy, dx + dw, dy + dh),
+        filterMode,
+        mipmapMode,
         paint,
       );
     } else if (mode === "stretch") {
-      canvas.drawImageRect(
+      canvas.drawImageRectOptions(
         cached,
         ck.LTRBRect(0, 0, imgW, imgH),
         ck.LTRBRect(absX, absY, absX + w, absY + h),
+        filterMode,
+        mipmapMode,
         paint,
       );
     } else {
@@ -1138,10 +1213,12 @@ export class SkiaNodeRenderer {
       const dh = imgH * scale;
       const dx = absX + (w - dw) / 2;
       const dy = absY + (h - dh) / 2;
-      canvas.drawImageRect(
+      canvas.drawImageRectOptions(
         cached,
         ck.LTRBRect(0, 0, imgW, imgH),
         ck.LTRBRect(dx, dy, dx + dw, dy + dh),
+        filterMode,
+        mipmapMode,
         paint,
       );
     }
@@ -1378,19 +1455,19 @@ export class SkiaNodeRenderer {
 
     const tileMode =
       shaderMatrix.tile === "repeat" ? ck.TileMode.Repeat : ck.TileMode.Clamp;
+    const { filterMode, mipmapMode } = this.getImageSamplingOptions();
     const shader = cached.makeShaderOptions(
       tileMode,
       tileMode,
-      ck.FilterMode.Linear,
-      ck.MipmapMode.None,
+      filterMode,
+      mipmapMode,
       shaderMatrix.matrix,
     );
-    if (shader) paint.setShader(shader);
+    this.setPaintShader(paint, shader);
     if (fillOpacity < 1) paint.setAlphaf(fillOpacity);
     const blendMode = this.mapBlendMode(fill.blendMode);
     if (blendMode) paint.setBlendMode(blendMode);
-    const adjFilter = this.buildImageAdjustmentFilter(fill);
-    if (adjFilter) paint.setColorFilter(adjFilter);
+    this.setPaintColorFilter(paint, this.buildImageAdjustmentFilter(fill));
   }
 
   // ---------------------------------------------------------------------------
@@ -2736,22 +2813,103 @@ export class SkiaNodeRenderer {
     w: number,
     h: number,
   ): import("canvaskit-wasm").Path | null {
-    const ck = this.ck;
     const rawD =
       typeof pNode.d === "string" && pNode.d.trim().length > 0
         ? pNode.d
         : "M0 0 L0 0";
-    let path: ReturnType<typeof ck.Path.MakeFromSVGString> = null;
-    if (hasInvalidNumbers(rawD)) {
-      path = tryManualPathParse(ck, rawD);
-    } else {
-      const d = sanitizeSvgPath(rawD);
-      path = ck.Path.MakeFromSVGString(d);
-      if (!path && d !== rawD) path = ck.Path.MakeFromSVGString(rawD);
-      if (!path) path = tryManualPathParse(ck, rawD);
-    }
-    if (!path) return null;
+    const geometry = this.getCachedPathGeometry(pNode, rawD);
+    if (!geometry) return null;
+    this.transformPathToNodeBounds(geometry.path, geometry.bounds, x, y, w, h);
+    return geometry.path;
+  }
 
+  private getPathCacheKey(pNode: PathNode, rawD: string): string {
+    const anchorKey = pNode.anchors
+      ? JSON.stringify({ anchors: pNode.anchors, closed: pNode.closed })
+      : "";
+    return [
+      pNode.id,
+      pNode.iconId ?? "",
+      pNode.fillRule ?? "nonzero",
+      rawD,
+      anchorKey,
+    ].join("\u0001");
+  }
+
+  private cloneCachedPath(entry: PathCacheEntry): SkiaPath | null {
+    const copy = (entry.path as SkiaPath & { copy?: () => SkiaPath }).copy?.();
+    if (copy) return copy;
+    if (hasInvalidNumbers(entry.rawD)) {
+      return tryManualPathParse(this.ck, entry.rawD) as SkiaPath | null;
+    }
+    const sanitized = sanitizeSvgPath(entry.rawD);
+    return (
+      this.ck.Path.MakeFromSVGString(sanitized) ??
+      (sanitized !== entry.rawD
+        ? this.ck.Path.MakeFromSVGString(entry.rawD)
+        : null) ??
+      (tryManualPathParse(this.ck, entry.rawD) as SkiaPath | null)
+    );
+  }
+
+  private getCachedPathGeometry(
+    pNode: PathNode,
+    rawD: string,
+  ): { bounds: Float32Array; path: SkiaPath } | null {
+    const key = this.getPathCacheKey(pNode, rawD);
+    const cached = this.pathCache.get(key);
+    if (cached) {
+      this.pathCacheHits += 1;
+      cached.lastUsed = ++this.pathCacheTick;
+      const path = this.cloneCachedPath(cached);
+      if (path) {
+        this.applyBasePathFillType(path, pNode);
+        return { bounds: cached.bounds, path };
+      }
+      this.pathCache.delete(key);
+      cached.path.delete();
+    }
+
+    this.pathCacheMisses += 1;
+    const path = this.createBasePath(pNode, rawD);
+    if (!path) return null;
+    const bounds = this.resolvePathBounds(pNode, rawD, path);
+    path.setFillType(
+      pNode.fillRule === "evenodd"
+        ? this.ck.FillType.EvenOdd
+        : this.ck.FillType.Winding,
+    );
+    const entry: PathCacheEntry = {
+      bounds,
+      lastUsed: ++this.pathCacheTick,
+      path,
+      rawD,
+    };
+    this.pathCache.set(key, entry);
+    this.evictPathCacheIfNeeded();
+    const cloned = this.cloneCachedPath(entry);
+    if (!cloned) return null;
+    this.applyBasePathFillType(cloned, pNode);
+    return { bounds, path: cloned };
+  }
+
+  private createBasePath(pNode: PathNode, rawD: string): SkiaPath | null {
+    if (hasInvalidNumbers(rawD)) {
+      return tryManualPathParse(this.ck, rawD) as SkiaPath | null;
+    }
+    const sanitized = sanitizeSvgPath(rawD);
+    return (
+      this.ck.Path.MakeFromSVGString(sanitized) ??
+      (sanitized !== rawD ? this.ck.Path.MakeFromSVGString(rawD) : null) ??
+      (tryManualPathParse(this.ck, rawD) as SkiaPath | null)
+    );
+  }
+
+  private resolvePathBounds(
+    pNode: PathNode,
+    rawD: string,
+    path: SkiaPath,
+  ): Float32Array {
     const parsedAnchors = pNode.anchors
       ? {
           anchors: pNode.anchors,
@@ -2761,7 +2919,7 @@ export class SkiaNodeRenderer {
     const geometryBounds = parsedAnchors
       ? getPathBoundsFromAnchors(parsedAnchors.anchors, parsedAnchors.closed)
       : null;
-    const bounds = geometryBounds
+    return geometryBounds
       ? Float32Array.of(
           geometryBounds.x,
           geometryBounds.y,
@@ -2769,24 +2927,72 @@ export class SkiaNodeRenderer {
           geometryBounds.y + geometryBounds.height,
         )
       : path.getBounds();
+  }
+
+  private applyBasePathFillType(path: SkiaPath, pNode: PathNode) {
+    path.setFillType(
+      pNode.fillRule === "evenodd"
+        ? this.ck.FillType.EvenOdd
+        : this.ck.FillType.Winding,
+    );
+  }
+
+  private transformPathToNodeBounds(
+    path: SkiaPath,
+    bounds: Float32Array,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    preserveAspectRatio = false,
+  ) {
     const b0 = bounds[0] ?? 0;
     const b1 = bounds[1] ?? 0;
     const nativeW = (bounds[2] ?? 0) - b0;
     const nativeH = (bounds[3] ?? 0) - b1;
     if (w > 0 && h > 0 && nativeW > 0.01 && nativeH > 0.01) {
+      const sx = preserveAspectRatio
+        ? Math.min(w / nativeW, h / nativeH)
+        : w / nativeW;
+      const sy = preserveAspectRatio ? sx : h / nativeH;
       path.transform(
-        ck.Matrix.multiply(
-          ck.Matrix.translated(x - b0 * (w / nativeW), y - b1 * (h / nativeH)),
-          ck.Matrix.scaled(w / nativeW, h / nativeH),
+        this.ck.Matrix.multiply(
+          this.ck.Matrix.translated(x - b0 * sx, y - b1 * sy),
+          this.ck.Matrix.scaled(sx, sy),
         ),
       );
-    } else {
-      path.offset(x, y);
+      return;
     }
-    path.setFillType(
-      pNode.fillRule === "evenodd" ? ck.FillType.EvenOdd : ck.FillType.Winding,
-    );
-    return path;
+    if (nativeW > 0.01 || nativeH > 0.01) {
+      const sx = nativeW > 0.01 && w > 0 ? w / nativeW : 1;
+      const sy = nativeH > 0.01 && h > 0 ? h / nativeH : 1;
+      path.transform(
+        this.ck.Matrix.multiply(
+          this.ck.Matrix.translated(x - b0 * sx, y - b1 * sy),
+          this.ck.Matrix.scaled(sx, sy),
+        ),
+      );
+      return;
+    }
+    path.offset(x, y);
+  }
+
+  private evictPathCacheIfNeeded() {
+    while (this.pathCache.size > PATH_CACHE_MAX) {
+      let oldestKey: string | null = null;
+      let oldestTick = Number.POSITIVE_INFINITY;
+      for (const [key, entry] of this.pathCache) {
+        if (entry.lastUsed < oldestTick) {
+          oldestKey = key;
+          oldestTick = entry.lastUsed;
+        }
+      }
+      if (!oldestKey) return;
+      const entry = this.pathCache.get(oldestKey);
+      this.pathCache.delete(oldestKey);
+      entry?.path.delete();
+      this.pathCacheEvictions += 1;
+    }
   }
 
   private drawPath(
@@ -2807,16 +3013,8 @@ export class SkiaNodeRenderer {
     const fills = pNode.fill;
     const stroke = pNode.stroke;
 
-    let path: ReturnType<typeof ck.Path.MakeFromSVGString> = null;
-    if (hasInvalidNumbers(rawD)) {
-      path = tryManualPathParse(ck, rawD);
-    } else {
-      const d = sanitizeSvgPath(rawD);
-      path = ck.Path.MakeFromSVGString(d);
-      if (!path && d !== rawD) path = ck.Path.MakeFromSVGString(rawD);
-      if (!path) path = tryManualPathParse(ck, rawD);
-    }
-    if (!path) {
+    const geometry = this.getCachedPathGeometry(pNode, rawD);
+    if (!geometry) {
       if (w > 0 && h > 0) {
         const { paint: fp } = this.makeFillPaint(fills, w, h, opacity, x, y);
         canvas.drawRect(ck.LTRBRect(x, y, x + w, y + h), fp);
@@ -2824,58 +3022,24 @@ export class SkiaNodeRenderer {
       }
       return;
     }
-
-    const parsedAnchors = pNode.anchors
-      ? {
-          anchors: pNode.anchors,
-          closed: pNode.closed ?? /[Zz]\s*$/.test(rawD),
-        }
-      : pathDataToAnchors(rawD);
-    const geometryBounds = parsedAnchors
-      ? getPathBoundsFromAnchors(parsedAnchors.anchors, parsedAnchors.closed)
-      : null;
-    const bounds = geometryBounds
-      ? Float32Array.of(
-          geometryBounds.x,
-          geometryBounds.y,
-          geometryBounds.x + geometryBounds.width,
-          geometryBounds.y + geometryBounds.height,
-        )
-      : path.getBounds();
-    const b2 = bounds[2] ?? 0;
-    const b0 = bounds[0] ?? 0;
-    const b3 = bounds[3] ?? 0;
-    const b1 = bounds[1] ?? 0;
-    const nativeW = b2 - b0;
-    const nativeH = b3 - b1;
-    if (w > 0 && h > 0 && nativeW > 0.01 && nativeH > 0.01) {
-      const isIcon = !!pNode.iconId;
-      const sx = isIcon ? Math.min(w / nativeW, h / nativeH) : w / nativeW;
-      const sy = isIcon ? sx : h / nativeH;
-      path.transform(
-        ck.Matrix.multiply(
-          ck.Matrix.translated(x - b0 * sx, y - b1 * sy),
-          ck.Matrix.scaled(sx, sy),
-        ),
-      );
-    } else if (nativeW > 0.01 || nativeH > 0.01) {
-      const sx = nativeW > 0.01 && w > 0 ? w / nativeW : 1;
-      const sy = nativeH > 0.01 && h > 0 ? h / nativeH : 1;
-      path.transform(
-        ck.Matrix.multiply(
-          ck.Matrix.translated(x - b0 * sx, y - b1 * sy),
-          ck.Matrix.scaled(sx, sy),
-        ),
-      );
-    } else {
-      path.offset(x, y);
-    }
+    const { path } = geometry;
+    this.transformPathToNodeBounds(
+      path,
+      geometry.bounds,
+      x,
+      y,
+      w,
+      h,
+      Boolean(pNode.iconId),
+    );
 
     const fillLayers = getVisibleFillLayers(fills, stroke);
     const strokeWidth = resolveStrokeWidth(stroke);
     const hasVisibleStroke =
       strokeWidth > 0 && getVisibleStrokePaintLayers(stroke).length > 0;
-    const isClosedPath = parsedAnchors?.closed ?? /[Zz]\s*$/.test(rawD);
+    const isClosedPath = pNode.anchors
+      ? (pNode.closed ?? /[Zz]\s*$/.test(rawD))
+      : /[Zz]\s*$/.test(rawD);
 
     if (fillLayers.length > 0 || !hasVisibleStroke) {
       const closeCount = (rawD.match(/Z/gi) || []).length;
@@ -3065,21 +3229,21 @@ export class SkiaNodeRenderer {
     const paint = new ck.Paint();
     paint.setAntiAlias(true);
     if (opacity < 1) paint.setAlphaf(opacity);
-    const adjFilter = this.buildImageAdjustmentFilter(iNode);
-    if (adjFilter) paint.setColorFilter(adjFilter);
+    this.setPaintColorFilter(paint, this.buildImageAdjustmentFilter(iNode));
 
     const fit = iNode.objectFit ?? "fill";
+    const { filterMode, mipmapMode } = this.getImageSamplingOptions();
     if (fit === "tile") {
       const tileMatrix = Float32Array.of(1, 0, -x, 0, 1, -y, 0, 0, 1);
       const shader = cached.makeShaderOptions(
         ck.TileMode.Repeat,
         ck.TileMode.Repeat,
-        ck.FilterMode.Linear,
-        ck.MipmapMode.None,
+        filterMode,
+        mipmapMode,
         tileMatrix,
       );
       if (shader) {
-        paint.setShader(shader);
+        this.setPaintShader(paint, shader);
         canvas.drawRect(ck.LTRBRect(x, y, x + w, y + h), paint);
       }
     } else {
@@ -3093,10 +3257,12 @@ export class SkiaNodeRenderer {
       }
       bgPaint.delete();
       const rect = getImageObjectFitDrawRect(fit, imgW, imgH, { x, y, w, h });
-      canvas.drawImageRect(
+      canvas.drawImageRectOptions(
         cached,
         ck.LTRBRect(0, 0, imgW, imgH),
         ck.LTRBRect(rect.x, rect.y, rect.x + rect.w, rect.y + rect.h),
+        filterMode,
+        mipmapMode,
         paint,
       );
     }

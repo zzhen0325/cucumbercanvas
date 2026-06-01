@@ -1,3 +1,4 @@
+import type { PathNode } from "@cucumber/pen-types";
 import { describe, expect, it } from "vitest";
 import {
   SkiaNodeRenderer,
@@ -57,7 +58,7 @@ function createLayerBlurImageHarness() {
     [];
   const ck = {
     ClipOp: { Intersect: "intersect" },
-    FilterMode: { Linear: "linear" },
+    FilterMode: { Linear: "linear", Nearest: "nearest" },
     ImageFilter: {
       MakeBlur: (sigmaX: number, sigmaY: number) => {
         const filter = {
@@ -78,7 +79,7 @@ function createLayerBlurImageHarness() {
       right,
       bottom,
     ],
-    MipmapMode: { None: "none" },
+    MipmapMode: { Linear: "linear", None: "none" },
     Paint: FakePaint,
     TileMode: { Clamp: "clamp" },
     TypefaceFontProvider: {
@@ -104,6 +105,9 @@ function createLayerBlurImageHarness() {
       calls.push("clipRect");
     },
     drawImageRect() {
+      calls.push("drawImageRect");
+    },
+    drawImageRectOptions() {
       calls.push("drawImageRect");
     },
     restore() {
@@ -290,6 +294,103 @@ describe("layer blur rendering", () => {
       [10, 20, 170, 120],
       [22, 32, 158, 108],
     ]);
+  });
+});
+
+describe("path cache", () => {
+  function createPathCacheHarness() {
+    let parseCount = 0;
+    let deleteCount = 0;
+    const makePath = () => ({
+      copy: () => makePath(),
+      delete: () => {
+        deleteCount += 1;
+      },
+      getBounds: () => Float32Array.of(0, 0, 10, 10),
+      offset: () => {},
+      setFillType: () => {},
+      transform: () => {},
+    });
+    const ck = {
+      FillType: { EvenOdd: "evenodd", Winding: "winding" },
+      Matrix: {
+        multiply: () => [],
+        scaled: () => [],
+        translated: () => [],
+      },
+      Path: {
+        MakeFromSVGString: () => {
+          parseCount += 1;
+          return makePath();
+        },
+      },
+      TypefaceFontProvider: {
+        Make: () => ({
+          countFamilies: () => 0,
+          delete: () => {},
+          registerFont: () => null,
+        }),
+      },
+    };
+    const renderer = new SkiaNodeRenderer(ck as never);
+    const cacheable = renderer as unknown as {
+      clearPathCache: () => void;
+      getCachedPathGeometry: (
+        node: PathNode,
+        rawD: string,
+      ) => { path: { delete: () => void } } | null;
+      getPathCacheSnapshot: () => {
+        entries: number;
+        hits: number;
+        misses: number;
+      };
+    };
+    const node = {
+      id: "path-1",
+      type: "path",
+      d: "M0 0 L10 0 L10 10 Z",
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
+    } as PathNode;
+    return {
+      cacheable,
+      getDeleteCount: () => deleteCount,
+      getParseCount: () => parseCount,
+      node,
+    };
+  }
+
+  it("reuses parsed path geometry for identical node data", () => {
+    const { cacheable, getParseCount, node } = createPathCacheHarness();
+    const first = cacheable.getCachedPathGeometry(node, node.d ?? "");
+    const second = cacheable.getCachedPathGeometry(node, node.d ?? "");
+
+    first?.path.delete();
+    second?.path.delete();
+    expect(getParseCount()).toBe(1);
+    expect(cacheable.getPathCacheSnapshot()).toMatchObject({
+      entries: 1,
+      hits: 1,
+      misses: 1,
+    });
+  });
+
+  it("invalidates cached geometry when path data changes and disposes entries", () => {
+    const { cacheable, getDeleteCount, getParseCount, node } =
+      createPathCacheHarness();
+    cacheable.getCachedPathGeometry(node, node.d ?? "")?.path.delete();
+    cacheable
+      .getCachedPathGeometry(
+        { ...node, d: "M0 0 L20 0 L20 20 Z" },
+        "M0 0 L20 0 L20 20 Z",
+      )
+      ?.path.delete();
+
+    expect(getParseCount()).toBe(2);
+    cacheable.clearPathCache();
+    expect(getDeleteCount()).toBeGreaterThanOrEqual(4);
   });
 });
 

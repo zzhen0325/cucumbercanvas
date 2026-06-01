@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { chooseImageLodSize, createImageCacheKey } from "./image-loader.js";
+import { describe, expect, it, vi } from "vitest";
+import {
+  SkiaImageLoader,
+  chooseImageLodSize,
+  createImageCacheKey,
+} from "./image-loader.js";
 
 describe("createImageCacheKey", () => {
   it("keeps normal URLs unchanged", () => {
@@ -32,7 +36,7 @@ describe("chooseImageLodSize", () => {
         zoom: 1,
         interactionMode: "transform",
       }),
-    ).toBe(1024);
+    ).toBe(512);
     expect(
       chooseImageLodSize({
         targetWidth: 600,
@@ -68,5 +72,88 @@ describe("chooseImageLodSize", () => {
         interactionMode: "idle",
       }),
     ).toBe(2048);
+  });
+});
+
+describe("SkiaImageLoader LOD scheduling", () => {
+  function fakeImage(size: number) {
+    return {
+      delete: vi.fn(),
+      height: () => size,
+      makeCopyWithDefaultMipmaps: () => fakeImage(size),
+      width: () => size,
+    };
+  }
+
+  it("generates LOD variants in separate timer slices after base image is drawable", () => {
+    vi.useFakeTimers();
+    try {
+      const loader = new SkiaImageLoader({} as never);
+      const internals = loader as unknown as {
+        cache: Map<string, ReturnType<typeof fakeImage>>;
+        htmlImageToSkia: ReturnType<typeof vi.fn>;
+        lodCache: Map<string, Map<number, ReturnType<typeof fakeImage>>>;
+        scheduleLodVariants: (
+          cacheKey: string,
+          image: HTMLImageElement,
+          base: ReturnType<typeof fakeImage>,
+        ) => void;
+      };
+      const base = fakeImage(2048);
+      internals.cache.set("image", base);
+      internals.htmlImageToSkia = vi.fn((_image, size: number) =>
+        fakeImage(size),
+      );
+
+      internals.scheduleLodVariants(
+        "image",
+        { naturalHeight: 2048, naturalWidth: 2048 } as HTMLImageElement,
+        base,
+      );
+
+      expect(internals.htmlImageToSkia).not.toHaveBeenCalled();
+      expect(loader.pendingLodCount()).toBeGreaterThan(0);
+      vi.advanceTimersByTime(16);
+      expect(internals.htmlImageToSkia).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(16);
+      expect(internals.htmlImageToSkia).toHaveBeenCalledTimes(2);
+      expect(internals.lodCache.get("image")?.has(512)).toBe(true);
+      expect(internals.lodCache.get("image")?.has(1024)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears queued LOD work on dispose", () => {
+    vi.useFakeTimers();
+    try {
+      const loader = new SkiaImageLoader({} as never);
+      const internals = loader as unknown as {
+        cache: Map<string, ReturnType<typeof fakeImage>>;
+        htmlImageToSkia: ReturnType<typeof vi.fn>;
+        scheduleLodVariants: (
+          cacheKey: string,
+          image: HTMLImageElement,
+          base: ReturnType<typeof fakeImage>,
+        ) => void;
+      };
+      const base = fakeImage(2048);
+      internals.cache.set("image", base);
+      internals.htmlImageToSkia = vi.fn((_image, size: number) =>
+        fakeImage(size),
+      );
+      internals.scheduleLodVariants(
+        "image",
+        { naturalHeight: 2048, naturalWidth: 2048 } as HTMLImageElement,
+        base,
+      );
+
+      loader.dispose();
+      vi.advanceTimersByTime(32);
+      expect(internals.htmlImageToSkia).not.toHaveBeenCalled();
+      expect(loader.pendingLodCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

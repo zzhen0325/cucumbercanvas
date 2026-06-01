@@ -154,6 +154,20 @@ function toSceneElement(
   };
 }
 
+type CanvasSceneIndex = {
+  boundsById: Map<string, CanvasBounds>;
+  elementById: Map<string, CanvasSceneElement>;
+  elements: CanvasSceneElement[];
+  nodeById: Map<string, PenNode>;
+  parentIdById: Map<string, string | null>;
+};
+
+type CanvasSceneSnapshot = {
+  files: Record<string, CanvasFileRecord>;
+  index: CanvasSceneIndex;
+  state: CanvasAppState;
+};
+
 function getClipboardImportStrategy(result: CanvasImportResult): string {
   if (result.source !== "figma") return result.source;
   const usedNative = result.nodes.some((node) => {
@@ -201,30 +215,51 @@ function summarizeImportedNodes(result: CanvasImportResult) {
   });
 }
 
-function toSceneElements(
+function buildCanvasSceneIndex(
   doc: PenDocument,
   activePageId?: string | null,
-): CanvasSceneElement[] {
+): CanvasSceneIndex {
   const elements: CanvasSceneElement[] = [];
-  const walk = (nodes: PenNode[], depth: number, parentId: string | null) => {
+  const elementById = new Map<string, CanvasSceneElement>();
+  const nodeById = new Map<string, PenNode>();
+  const parentIdById = new Map<string, string | null>();
+  const boundsById = new Map<string, CanvasBounds>();
+
+  const walk = (
+    nodes: PenNode[],
+    depth: number,
+    parentId: string | null,
+    parentSceneX: number,
+    parentSceneY: number,
+  ) => {
     for (const node of nodes) {
+      const localBounds = getNodeBounds(node);
+      const sceneBounds = {
+        ...localBounds,
+        x: parentSceneX + localBounds.x,
+        y: parentSceneY + localBounds.y,
+      };
+      nodeById.set(node.id, node);
+      parentIdById.set(node.id, parentId);
+      boundsById.set(node.id, sceneBounds);
       if (node.visible !== false) {
-        elements.push(
-          toSceneElement(
-            node,
-            depth,
-            parentId,
-            getNodeSceneBounds(doc, node.id, activePageId) ?? undefined,
-          ),
-        );
+        const element = toSceneElement(node, depth, parentId, sceneBounds);
+        elements.push(element);
+        elementById.set(node.id, element);
       }
       if ("children" in node && Array.isArray(node.children)) {
-        walk(node.children as PenNode[], depth + 1, node.id);
+        walk(
+          node.children as PenNode[],
+          depth + 1,
+          node.id,
+          sceneBounds.x,
+          sceneBounds.y,
+        );
       }
     }
   };
-  walk(getActiveChildren(doc, activePageId), 0, null);
-  return elements;
+  walk(getActiveChildren(doc, activePageId), 0, null, 0, 0);
+  return { boundsById, elementById, elements, nodeById, parentIdById };
 }
 
 function toAppState(
@@ -260,6 +295,48 @@ function toFiles(doc: PenDocument): Record<string, CanvasFileRecord> {
       },
     ]),
   );
+}
+
+function buildCanvasSceneSnapshot(
+  doc: PenDocument,
+  activePageId: string,
+  selection: readonly string[],
+  viewportOverride?: ViewportState,
+): CanvasSceneSnapshot {
+  const startedAt =
+    typeof performance !== "undefined" ? performance.now() : Date.now();
+  const index = buildCanvasSceneIndex(doc, activePageId);
+  const state = toAppState(doc, [...selection], viewportOverride);
+  const files = toFiles(doc);
+  const durationMs =
+    (typeof performance !== "undefined" ? performance.now() : Date.now()) -
+    startedAt;
+  if (durationMs > 12) {
+    console.info("[skia-canvas] scene.snapshot.slow", {
+      durationMs: Math.round(durationMs),
+      fileCount: Object.keys(files).length,
+      nodeCount: index.nodeById.size,
+      selectedCount: selection.length,
+      visibleCount: index.elements.length,
+    });
+  }
+  return { files, index, state };
+}
+
+function getSceneSnapshotCacheKey(
+  version: number,
+  activePageId: string,
+  selection: readonly string[],
+  viewport?: ViewportState,
+) {
+  return [
+    version,
+    activePageId,
+    selection.join(","),
+    viewport
+      ? `${viewport.zoom.toFixed(4)},${viewport.panX.toFixed(2)},${viewport.panY.toFixed(2)}`
+      : "no-viewport",
+  ].join("|");
 }
 
 function defaultBounds(
@@ -871,6 +948,7 @@ export const SkiaCanvas = memo(
   ) {
     const canvasRootRef = useRef<HTMLDivElement>(null);
     const canvasContainerRef = useRef<HTMLDivElement>(null);
+    const marqueeOverlayElRef = useRef<HTMLDivElement | null>(null);
     const canvasElRef = useRef<HTMLCanvasElement | null>(null);
     const ckRef = useRef<CanvasKit | null>(null);
     const rendererRef = useRef<PenRenderer | null>(null);
@@ -892,6 +970,20 @@ export const SkiaCanvas = memo(
     const activePageIdRef = useRef(initialRuntimeState.activePageId);
     const selectedIdsRef = useRef<string[]>(initialRuntimeState.selection);
     const activeToolRef = useRef<CanvasTool>(initialRuntimeState.activeTool);
+    const sceneSnapshotRef = useRef<CanvasSceneSnapshot>(
+      buildCanvasSceneSnapshot(
+        docRef.current,
+        activePageIdRef.current,
+        selectedIdsRef.current,
+      ),
+    );
+    const sceneSnapshotCacheKeyRef = useRef(
+      getSceneSnapshotCacheKey(
+        documentVersionRef.current,
+        activePageIdRef.current,
+        selectedIdsRef.current,
+      ),
+    );
 
     const listenersRef = useRef(new Set<CanvasChangeListener>());
     const [editingText, setEditingText] = useState<TextEditState | null>(null);
@@ -904,6 +996,16 @@ export const SkiaCanvas = memo(
     const rendererDocumentSyncRafRef = useRef<number | null>(null);
     const pendingRendererDocumentSyncRef =
       useRef<PendingRendererDocumentSync | null>(null);
+    const sceneNotificationRafRef = useRef<number | null>(null);
+    const pendingSceneNotificationRef = useRef<{
+      activePageId: string;
+      doc: PenDocument;
+      selection: readonly string[];
+    } | null>(null);
+    const documentChangeRafRef = useRef<number | null>(null);
+    const pendingDocumentChangeRef = useRef<CucumberCanvasDocument | null>(
+      null,
+    );
     const marqueeSelectionRef = useRef<string[]>([]);
     const editorOverlayRef = useRef<EditorOverlayState>({
       selectedIds: [],
@@ -1092,6 +1194,31 @@ export const SkiaCanvas = memo(
       [],
     );
 
+    const setMarqueeDomOverlay = useCallback((bounds: CanvasBounds | null) => {
+      const el = marqueeOverlayElRef.current;
+      if (!el) return;
+      if (!bounds || bounds.width <= 0 || bounds.height <= 0) {
+        el.style.display = "none";
+        return;
+      }
+
+      const renderer = rendererRef.current;
+      if (!renderer) {
+        el.style.display = "none";
+        return;
+      }
+
+      const viewport = renderer.getViewport();
+      const topLeft = sceneToCanvasLocal(bounds.x, bounds.y, viewport);
+      const width = Math.max(bounds.width * viewport.zoom, 1);
+      const height = Math.max(bounds.height * viewport.zoom, 1);
+
+      el.style.display = "block";
+      el.style.transform = `translate3d(${topLeft.x}px, ${topLeft.y}px, 0)`;
+      el.style.width = `${width}px`;
+      el.style.height = `${height}px`;
+    }, []);
+
     const getPointerScenePoint = useCallback(
       (event: { clientX: number; clientY: number }) => {
         const renderer = rendererRef.current;
@@ -1224,7 +1351,17 @@ export const SkiaCanvas = memo(
           cancelAnimationFrame(rendererDocumentSyncRafRef.current);
           rendererDocumentSyncRafRef.current = null;
         }
+        if (sceneNotificationRafRef.current !== null) {
+          cancelAnimationFrame(sceneNotificationRafRef.current);
+          sceneNotificationRafRef.current = null;
+        }
+        if (documentChangeRafRef.current !== null) {
+          cancelAnimationFrame(documentChangeRafRef.current);
+          documentChangeRafRef.current = null;
+        }
         pendingRendererDocumentSyncRef.current = null;
+        pendingSceneNotificationRef.current = null;
+        pendingDocumentChangeRef.current = null;
         renderer.dispose();
         if (canvas.parentElement) canvas.parentElement.removeChild(canvas);
         rendererRef.current = null;
@@ -1242,20 +1379,60 @@ export const SkiaCanvas = memo(
         activePageId: string,
         selection: readonly string[],
       ) => {
-        queueMicrotask(() => {
-          const elements = toSceneElements(next, activePageId);
-          const state = toAppState(
-            next,
-            [...selection],
+        if (listenersRef.current.size === 0) return;
+        pendingSceneNotificationRef.current = {
+          activePageId,
+          doc: next,
+          selection,
+        };
+        if (sceneNotificationRafRef.current !== null) return;
+        sceneNotificationRafRef.current = requestAnimationFrame(() => {
+          sceneNotificationRafRef.current = null;
+          const pending = pendingSceneNotificationRef.current;
+          pendingSceneNotificationRef.current = null;
+          if (!pending) return;
+          const snapshot = buildCanvasSceneSnapshot(
+            pending.doc,
+            pending.activePageId,
+            pending.selection,
             rendererRef.current?.getViewport(),
           );
-          const files = toFiles(next);
+          sceneSnapshotRef.current = snapshot;
+          sceneSnapshotCacheKeyRef.current = getSceneSnapshotCacheKey(
+            documentVersionRef.current,
+            pending.activePageId,
+            pending.selection,
+            rendererRef.current?.getViewport(),
+          );
+          if (snapshot.index.elements.length > 1000) {
+            console.info("[skia-canvas] scene.snapshot.dispatched", {
+              listenerCount: listenersRef.current.size,
+              nodeCount: snapshot.index.nodeById.size,
+              visibleCount: snapshot.index.elements.length,
+            });
+          }
           for (const listener of listenersRef.current) {
-            listener(elements, state, files);
+            listener(snapshot.index.elements, snapshot.state, snapshot.files);
           }
         });
       },
       [],
+    );
+
+    const scheduleDocumentChange = useCallback(
+      (next: CucumberCanvasDocument) => {
+        if (!onDocumentChange) return;
+        pendingDocumentChangeRef.current = next;
+        if (documentChangeRafRef.current !== null) return;
+        documentChangeRafRef.current = requestAnimationFrame(() => {
+          documentChangeRafRef.current = null;
+          const pending = pendingDocumentChangeRef.current;
+          pendingDocumentChangeRef.current = null;
+          if (!pending) return;
+          onDocumentChange?.(pending);
+        });
+      },
+      [onDocumentChange],
     );
 
     useEffect(
@@ -1289,7 +1466,7 @@ export const SkiaCanvas = memo(
               state.lastDocumentCommit?.source ?? "document.commit",
             );
             if (state.lastDocumentCommit?.notifyDocumentChange) {
-              onDocumentChange?.(committed as CucumberCanvasDocument);
+              scheduleDocumentChange(committed as CucumberCanvasDocument);
             }
             notifySceneListeners(
               committed,
@@ -1300,8 +1477,8 @@ export const SkiaCanvas = memo(
         ),
       [
         notifySceneListeners,
-        onDocumentChange,
         runtimeStore,
+        scheduleDocumentChange,
         scheduleRendererDocumentSync,
         setEditorOverlay,
       ],
@@ -1328,13 +1505,25 @@ export const SkiaCanvas = memo(
               );
             }
             if (meta?.notifySelection) {
+              const snapshot = buildCanvasSceneSnapshot(
+                currentDocument,
+                state.activePageId,
+                state.selection,
+                rendererRef.current?.getViewport(),
+              );
+              sceneSnapshotRef.current = snapshot;
+              sceneSnapshotCacheKeyRef.current = getSceneSnapshotCacheKey(
+                state.version,
+                state.activePageId,
+                state.selection,
+                rendererRef.current?.getViewport(),
+              );
               onSelectionChange?.(
                 state.selection
-                  .map((id) =>
-                    findNode(currentDocument, id, state.activePageId),
-                  )
-                  .filter(isPenNode)
-                  .map((node) => toSceneElement(node)),
+                  .map((id) => snapshot.index.elementById.get(id))
+                  .filter((element): element is CanvasSceneElement =>
+                    Boolean(element),
+                  ),
               );
             }
           },
@@ -1715,17 +1904,20 @@ export const SkiaCanvas = memo(
 
           // Start marquee
           if (!event.shiftKey) setSelection([]);
+          renderer.setInteractionMode("transform");
           dragRef.current = {
             kind: "marquee",
             startPoint: scenePoint,
             originSelection: [...selectedIdsRef.current],
           };
           setEditorOverlay({ marquee: null });
+          setMarqueeDomOverlay(null);
           event.currentTarget.setPointerCapture(event.pointerId);
           return;
         }
 
         if (isDragDrawableTool(tool)) {
+          renderer.setInteractionMode("transform");
           dragRef.current = {
             kind: "drawShape",
             shapeType: tool,
@@ -1762,6 +1954,7 @@ export const SkiaCanvas = memo(
         }
 
         if (tool === "text") {
+          renderer.setInteractionMode("transform");
           dragRef.current = {
             kind: "drawText",
             startPoint: scenePoint,
@@ -1779,6 +1972,7 @@ export const SkiaCanvas = memo(
         getPointerScenePoint,
         penTool,
         setEditorOverlay,
+        setMarqueeDomOverlay,
         setSelection,
       ],
     );
@@ -1805,7 +1999,7 @@ export const SkiaCanvas = memo(
             scenePoint,
             false,
           );
-          setEditorOverlay({ marquee: bounds });
+          setMarqueeDomOverlay(bounds);
           const hitIds = renderer.hitTestRect(bounds).map((node) => node.id);
           const nextSelection = Array.from(
             new Set([...drag.originSelection, ...hitIds]),
@@ -1993,7 +2187,13 @@ export const SkiaCanvas = memo(
           });
         }
       },
-      [getPointerScenePoint, penTool, setEditorOverlay, setSelection],
+      [
+        getPointerScenePoint,
+        penTool,
+        setEditorOverlay,
+        setMarqueeDomOverlay,
+        setSelection,
+      ],
     );
 
     const handlePointerUp = useCallback(
@@ -2050,6 +2250,7 @@ export const SkiaCanvas = memo(
           setEditorOverlay({ shapePreview: null, linePreview: null });
           setActiveTool("select");
           suppressNextClickRef.current = true;
+          scheduleRendererIdle();
         }
         if (drag?.kind === "drawText" && renderer) {
           const scene = getPointerScenePoint(event);
@@ -2093,10 +2294,12 @@ export const SkiaCanvas = memo(
           }
           setEditorOverlay({ shapePreview: null });
           suppressNextClickRef.current = true;
+          scheduleRendererIdle();
         }
         if (drag?.kind === "pen") {
           penTool.onMouseUp();
           suppressNextClickRef.current = true;
+          scheduleRendererIdle();
         }
         if (drag?.kind === "move" && drag.hasMoved) {
           const activePageId = activePageIdRef.current;
@@ -2256,8 +2459,10 @@ export const SkiaCanvas = memo(
               notifySelection: true,
             });
           }
+          setMarqueeDomOverlay(null);
           setEditorOverlay({ marquee: null });
           suppressNextClickRef.current = true;
+          scheduleRendererIdle();
           console.info("[skia-canvas] selection.marquee.committed", {
             selectedCount: getCanvasApiRuntimeState(docRef.current).selection
               .length,
@@ -2278,6 +2483,7 @@ export const SkiaCanvas = memo(
         penTool,
         scheduleRendererIdle,
         setEditorOverlay,
+        setMarqueeDomOverlay,
         setActiveTool,
         setSelection,
       ],
@@ -2569,17 +2775,24 @@ export const SkiaCanvas = memo(
     const notifySelectionForDoc = useCallback(
       (nextDoc: PenDocument, nodeIds: string[]) => {
         const activePageId = activePageIdRef.current;
+        const snapshot = buildCanvasSceneSnapshot(
+          nextDoc,
+          activePageId,
+          nodeIds,
+          rendererRef.current?.getViewport(),
+        );
+        sceneSnapshotRef.current = snapshot;
+        sceneSnapshotCacheKeyRef.current = getSceneSnapshotCacheKey(
+          documentVersionRef.current,
+          activePageId,
+          nodeIds,
+          rendererRef.current?.getViewport(),
+        );
         onSelectionChange?.(
           nodeIds
-            .map((id) => findNode(nextDoc, id, activePageId))
-            .filter(isPenNode)
-            .map((node) =>
-              toSceneElement(
-                node,
-                0,
-                null,
-                getNodeSceneBounds(nextDoc, node.id, activePageId) ?? undefined,
-              ),
+            .map((id) => snapshot.index.elementById.get(id))
+            .filter((element): element is CanvasSceneElement =>
+              Boolean(element),
             ),
         );
       },
@@ -3399,6 +3612,28 @@ export const SkiaCanvas = memo(
       [commitDocument],
     );
 
+    const getCurrentSceneSnapshot = useCallback(() => {
+      const viewport = rendererRef.current?.getViewport();
+      const cacheKey = getSceneSnapshotCacheKey(
+        documentVersionRef.current,
+        activePageIdRef.current,
+        selectedIdsRef.current,
+        viewport,
+      );
+      if (sceneSnapshotCacheKeyRef.current === cacheKey) {
+        return sceneSnapshotRef.current;
+      }
+      const snapshot = buildCanvasSceneSnapshot(
+        docRef.current,
+        activePageIdRef.current,
+        selectedIdsRef.current,
+        viewport,
+      );
+      sceneSnapshotRef.current = snapshot;
+      sceneSnapshotCacheKeyRef.current = cacheKey;
+      return snapshot;
+    }, []);
+
     const api = useMemo<CanvasApi>(
       () => ({
         getDocument: () => getCanvasApiDocument(runtimeStore.getState()),
@@ -3490,9 +3725,8 @@ export const SkiaCanvas = memo(
             height: (rect?.height ?? 1) / viewport.zoom,
           };
         },
-        getSceneElements: () =>
-          toSceneElements(docRef.current, activePageIdRef.current),
-        getFiles: () => toFiles(docRef.current),
+        getSceneElements: () => getCurrentSceneSnapshot().index.elements,
+        getFiles: () => getCurrentSceneSnapshot().files,
         getAppState: () => {
           const currentDocument = getCanvasApiDocument(runtimeStore.getState());
           return toAppState(
@@ -3515,6 +3749,7 @@ export const SkiaCanvas = memo(
               zoom?: number;
               backgroundColor?: string;
             } = {};
+            let viewportChanged = false;
 
             if (renderer && state.zoom) {
               const vp = renderer.getViewport();
@@ -3540,7 +3775,9 @@ export const SkiaCanvas = memo(
                 }
               }
 
+              renderer.setInteractionMode("viewport");
               renderer.setViewport(nextZoom, nextPanX, nextPanY);
+              viewportChanged = true;
               viewportPatch.x = nextPanX;
               viewportPatch.y = nextPanY;
               viewportPatch.zoom = nextZoom;
@@ -3551,7 +3788,9 @@ export const SkiaCanvas = memo(
               const vp = renderer.getViewport();
               const nextPanX = state.scrollX ?? vp.panX;
               const nextPanY = state.scrollY ?? vp.panY;
+              renderer.setInteractionMode("viewport");
               renderer.setViewport(vp.zoom, nextPanX, nextPanY);
+              viewportChanged = true;
               viewportPatch.x = nextPanX;
               viewportPatch.y = nextPanY;
               viewportPatch.zoom = vp.zoom;
@@ -3572,6 +3811,10 @@ export const SkiaCanvas = memo(
                 hasZoom: Boolean(state.zoom),
                 zoom: viewportPatch.zoom,
               });
+            }
+
+            if (viewportChanged) {
+              scheduleRendererIdle();
             }
           }
         },
@@ -3831,6 +4074,7 @@ export const SkiaCanvas = memo(
         duplicatePage,
         duplicateSelection,
         getActivePageId,
+        getCurrentSceneSnapshot,
         getLiveViewportPlacement,
         getPages,
         importSvgMarkup,
@@ -3843,6 +4087,7 @@ export const SkiaCanvas = memo(
         setActivePage,
         setActiveTool,
         setSelection,
+        scheduleRendererIdle,
       ],
     );
 
@@ -4148,6 +4393,13 @@ export const SkiaCanvas = memo(
               onWheel={(event) => event.stopPropagation()}
             />
           ) : null}
+
+          <div
+            ref={marqueeOverlayElRef}
+            aria-hidden="true"
+            className="pointer-events-none absolute left-0 top-0 z-20 hidden border border-sky-400 bg-sky-400/10"
+            style={{ willChange: "transform,width,height" }}
+          />
 
           {/* Toolbar overlays */}
           <CanvasEditorToolbarConnected

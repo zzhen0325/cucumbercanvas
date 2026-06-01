@@ -215,12 +215,22 @@ export function CanvasDesignSystemPanel({
 
   useEffect(() => {
     if (!open || !canvasApi) return;
+    if (activeTab === "icons") return;
     refresh();
-    const unsubscribe = canvasApi.onChange(refresh);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleRefresh = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        refresh();
+      }, 150);
+    };
+    const unsubscribe = canvasApi.onChange(scheduleRefresh);
     return () => {
+      if (timer) clearTimeout(timer);
       if (typeof unsubscribe === "function") unsubscribe();
     };
-  }, [open, canvasApi, refresh]);
+  }, [open, activeTab, canvasApi, refresh]);
 
   useEffect(() => {
     if (!open) return;

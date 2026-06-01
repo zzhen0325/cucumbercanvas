@@ -2,7 +2,11 @@
 
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
-import type { CanvasApi, CanvasFileRecord } from "./canvas/canvas-api";
+import type {
+  CanvasApi,
+  CanvasFileRecord,
+  CanvasSceneElement,
+} from "./canvas/canvas-api";
 
 export type CanvasFilesPanelProps = {
   canvasApi: CanvasApi | null;
@@ -11,27 +15,31 @@ export type CanvasFilesPanelProps = {
 };
 
 /* -- Throttle utility -- */
-function throttle(
-  fn: () => void,
+function throttle<T extends unknown[]>(
+  fn: (...args: T) => void,
   ms: number,
-): (() => void) & { cancel: () => void } {
+): ((...args: T) => void) & { cancel: () => void } {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let pending = false;
-  const throttled = (() => {
+  let latestArgs: T | null = null;
+  const throttled = ((...args: T) => {
     pending = true;
+    latestArgs = args;
     if (timer) return;
     timer = setTimeout(() => {
       timer = null;
-      if (pending) fn();
+      if (pending && latestArgs) fn(...latestArgs);
       pending = false;
+      latestArgs = null;
     }, ms);
-  }) as (() => void) & { cancel: () => void };
+  }) as ((...args: T) => void) & { cancel: () => void };
   throttled.cancel = () => {
     if (timer) {
       clearTimeout(timer);
       timer = null;
     }
     pending = false;
+    latestArgs = null;
   };
   return throttled;
 }
@@ -119,38 +127,52 @@ export function CanvasFilesPanel({
 }: CanvasFilesPanelProps) {
   const [imageFiles, setImageFiles] = useState<ImageFile[]>([]);
 
+  const applyFilesSnapshot = useCallback(
+    (
+      allElements: CanvasSceneElement[],
+      files: Record<string, CanvasFileRecord>,
+    ) => {
+      const images: ImageFile[] = [];
+      let idx = 0;
+      for (const el of allElements) {
+        if (el.isDeleted || el.type !== "image" || !el.fileId) continue;
+        // Only show AI-generated images, not user-uploaded ones
+        if (el.customData?.source !== "generated" && !el.customData?.title) {
+          continue;
+        }
+        idx++;
+        const file = files[el.fileId];
+        const titleCandidate = el.customData?.title ?? el.customData?.label;
+        const title =
+          typeof titleCandidate === "string" ? titleCandidate : `Image ${idx}`;
+        images.push({ id: el.id, name: title, dataURL: file?.dataURL ?? "" });
+      }
+      setImageFiles(images.reverse());
+    },
+    [],
+  );
+
   const refreshFiles = useCallback(() => {
     if (!canvasApi) return;
-    const allElements = canvasApi.getSceneElements();
-    const files: Record<string, CanvasFileRecord> = canvasApi.getFiles() ?? {};
-    const images: ImageFile[] = [];
-    let idx = 0;
-    for (const el of allElements) {
-      if (el.isDeleted || el.type !== "image" || !el.fileId) continue;
-      // Only show AI-generated images, not user-uploaded ones
-      if (el.customData?.source !== "generated" && !el.customData?.title)
-        continue;
-      idx++;
-      const file = files[el.fileId];
-      const titleCandidate = el.customData?.title ?? el.customData?.label;
-      const title =
-        typeof titleCandidate === "string" ? titleCandidate : `Image ${idx}`;
-      images.push({ id: el.id, name: title, dataURL: file?.dataURL ?? "" });
-    }
-    setImageFiles(images.reverse());
-  }, [canvasApi]);
+    applyFilesSnapshot(
+      canvasApi.getSceneElements(),
+      canvasApi.getFiles() ?? {},
+    );
+  }, [applyFilesSnapshot, canvasApi]);
 
   // Throttle refresh to avoid excessive re-renders during canvas operations
   useEffect(() => {
     if (!open || !canvasApi) return;
     refreshFiles();
-    const throttledRefresh = throttle(refreshFiles, 200);
-    const unsubscribe = canvasApi.onChange(() => throttledRefresh());
+    const throttledRefresh = throttle(applyFilesSnapshot, 200);
+    const unsubscribe = canvasApi.onChange((nextElements, _state, nextFiles) =>
+      throttledRefresh(nextElements, nextFiles ?? {}),
+    );
     return () => {
       throttledRefresh.cancel();
       if (typeof unsubscribe === "function") unsubscribe();
     };
-  }, [open, canvasApi, refreshFiles]);
+  }, [open, applyFilesSnapshot, canvasApi, refreshFiles]);
 
   useEffect(() => {
     if (!open) return;

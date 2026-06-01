@@ -10,7 +10,7 @@ import {
   MoreHorizontal,
   Unlock,
 } from "lucide-react";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   CanvasApi,
@@ -32,6 +32,9 @@ export type CanvasLayersPanelProps = {
   open: boolean;
   onClose: () => void;
 };
+
+const LAYER_ROW_HEIGHT = 44;
+const LAYER_ROW_OVERSCAN = 8;
 
 /* -- Throttle utility -- */
 /** Simple trailing-edge throttle. Ensures fn fires at most once per `ms`. */
@@ -442,11 +445,14 @@ export function CanvasLayersPanel({
   onClose,
 }: CanvasLayersPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const [elements, setElements] = useState<CanvasSceneElement[]>([]);
   const [files, setFiles] = useState<Record<string, CanvasFileRecord>>({});
   const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
   const [collapsedIds, setCollapsedIds] = useState<Record<string, boolean>>({});
   const [actionError, setActionError] = useState<string | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [listHeight, setListHeight] = useState(640);
   const dragIdRef = useRef<string | null>(null);
   const orderedElementsRef = useRef<CanvasSceneElement[]>([]);
 
@@ -519,6 +525,18 @@ export function CanvasLayersPanel({
       if (typeof unsubscribe === "function") unsubscribe();
     };
   }, [open, canvasApi, applySceneSnapshot, refreshElements]);
+
+  useEffect(() => {
+    if (!open) return;
+    const list = listRef.current;
+    if (!list) return;
+    const updateHeight = () => setListHeight(list.clientHeight || 640);
+    updateHeight();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, [open]);
 
   /* -- Escape to close -- */
   useEffect(() => {
@@ -668,64 +686,89 @@ export function CanvasLayersPanel({
     [canvasApi, runLayerAction],
   );
 
-  const childrenByParent = elements.reduce<Record<string, number>>(
-    (acc, el) => {
-      const parentId =
-        (el.customData?.containerId as string | null | undefined) ?? null;
+  const getLayerParentId = useCallback(
+    (el: CanvasSceneElement): string | null =>
+      (el.customData?.containerId as string | null | undefined) ?? null,
+    [],
+  );
+
+  const layerIndex = useMemo(() => {
+    const elementById = new Map<string, CanvasSceneElement>();
+    const childrenByParent: Record<string, number> = {};
+    const containers: CanvasSceneElement[] = [];
+    let rootCount = 0;
+    for (const el of elements) {
+      elementById.set(el.id, el);
+      const parentId = getLayerParentId(el);
       const key = parentId ?? "__root__";
-      acc[key] = (acc[key] ?? 0) + 1;
-      return acc;
-    },
-    {},
-  );
-  const visibleElements = elements.filter((el) => {
-    let parentId =
-      (el.customData?.containerId as string | null | undefined) ?? null;
-    while (parentId) {
-      if (collapsedIds[parentId]) return false;
-      const parent = elements.find((candidate) => candidate.id === parentId);
-      parentId =
-        (parent?.customData?.containerId as string | null | undefined) ?? null;
+      childrenByParent[key] = (childrenByParent[key] ?? 0) + 1;
+      if (parentId === null) rootCount += 1;
+      if (el.type === "frame" || el.type === "group") containers.push(el);
     }
-    return true;
-  });
-  const containerElements = elements.filter(
-    (el) => el.type === "frame" || el.type === "group",
-  );
-
-  const getLayerParentId = (el: CanvasSceneElement): string | null =>
-    (el.customData?.containerId as string | null | undefined) ?? null;
-
-  const getMoveTargets = (el: CanvasSceneElement) => {
-    const currentParentId = getLayerParentId(el);
-    const targets: Array<{
-      label: string;
-      targetIndex: number;
-      targetParentId: string | null;
-    }> = [];
-
-    if (currentParentId !== null) {
-      const rootCount = elements.filter(
-        (candidate) => getLayerParentId(candidate) === null,
-      ).length;
-      targets.push({
-        label: "Move to canvas root",
-        targetIndex: rootCount,
-        targetParentId: null,
-      });
+    const visibleElements = elements.filter((el) => {
+      let parentId = getLayerParentId(el);
+      while (parentId) {
+        if (collapsedIds[parentId]) return false;
+        const parent = elementById.get(parentId);
+        if (!parent) break;
+        parentId = getLayerParentId(parent);
+      }
+      return true;
+    });
+    const moveTargetsById = new Map<
+      string,
+      Array<{
+        label: string;
+        targetIndex: number;
+        targetParentId: string | null;
+      }>
+    >();
+    for (const el of elements) {
+      const currentParentId = getLayerParentId(el);
+      const targets: Array<{
+        label: string;
+        targetIndex: number;
+        targetParentId: string | null;
+      }> = [];
+      if (currentParentId !== null) {
+        targets.push({
+          label: "Move to canvas root",
+          targetIndex: rootCount,
+          targetParentId: null,
+        });
+      }
+      for (const container of containers) {
+        if (container.id === el.id || container.id === currentParentId) {
+          continue;
+        }
+        targets.push({
+          label: `Move into ${elLabel(container)}`,
+          targetIndex: childrenByParent[container.id] ?? 0,
+          targetParentId: container.id,
+        });
+      }
+      moveTargetsById.set(el.id, targets);
     }
+    return { childrenByParent, moveTargetsById, visibleElements };
+  }, [collapsedIds, elements, getLayerParentId]);
 
-    for (const container of containerElements) {
-      if (container.id === el.id || container.id === currentParentId) continue;
-      targets.push({
-        label: `Move into ${elLabel(container)}`,
-        targetIndex: childrenByParent[container.id] ?? 0,
-        targetParentId: container.id,
-      });
-    }
-
-    return targets;
-  };
+  const virtualWindow = useMemo(() => {
+    const visibleElements = layerIndex.visibleElements;
+    const start = Math.max(
+      0,
+      Math.floor(scrollTop / LAYER_ROW_HEIGHT) - LAYER_ROW_OVERSCAN,
+    );
+    const end = Math.min(
+      visibleElements.length,
+      Math.ceil((scrollTop + listHeight) / LAYER_ROW_HEIGHT) +
+        LAYER_ROW_OVERSCAN,
+    );
+    return {
+      offsetY: start * LAYER_ROW_HEIGHT,
+      rows: visibleElements.slice(start, end),
+      totalHeight: visibleElements.length * LAYER_ROW_HEIGHT,
+    };
+  }, [layerIndex.visibleElements, listHeight, scrollTop]);
 
   if (!open) return null;
 
@@ -763,37 +806,55 @@ export function CanvasLayersPanel({
 
       {/* Layer list -- uses content-visibility for large canvas performance */}
       <div
+        ref={listRef}
         className="flex-1 overflow-y-auto px-1 py-1"
         style={{ contain: "layout style" }}
+        onScroll={(event) => {
+          setScrollTop(event.currentTarget.scrollTop);
+          setListHeight(event.currentTarget.clientHeight || 640);
+        }}
       >
         {elements.length === 0 ? (
           <p className="px-2 py-8 text-center text-xs text-muted-foreground">
             画布为空
           </p>
         ) : (
-          visibleElements.map((el) => (
-            <LayerRow
-              key={el.id}
-              el={el}
-              files={files}
-              selected={!!selectedIds[el.id]}
-              collapsed={!!collapsedIds[el.id]}
-              canCollapse={Boolean(childrenByParent[el.id])}
-              moveTargets={getMoveTargets(el)}
-              onSelect={selectElement}
-              onToggleLock={toggleLock}
-              onToggleVisible={toggleVisible}
-              onReorder={reorderElement}
-              onToggleCollapse={toggleCollapse}
-              onRename={renameElement}
-              onDelete={deleteElement}
-              onDuplicate={duplicateElement}
-              onDragStart={handleDragStart}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              onMoveToParentIndex={moveElementToParentIndex}
-            />
-          ))
+          <div
+            style={{ height: virtualWindow.totalHeight, position: "relative" }}
+          >
+            <div
+              style={{
+                left: 0,
+                position: "absolute",
+                right: 0,
+                top: virtualWindow.offsetY,
+              }}
+            >
+              {virtualWindow.rows.map((el) => (
+                <LayerRow
+                  key={el.id}
+                  el={el}
+                  files={files}
+                  selected={!!selectedIds[el.id]}
+                  collapsed={!!collapsedIds[el.id]}
+                  canCollapse={Boolean(layerIndex.childrenByParent[el.id])}
+                  moveTargets={layerIndex.moveTargetsById.get(el.id) ?? []}
+                  onSelect={selectElement}
+                  onToggleLock={toggleLock}
+                  onToggleVisible={toggleVisible}
+                  onReorder={reorderElement}
+                  onToggleCollapse={toggleCollapse}
+                  onRename={renameElement}
+                  onDelete={deleteElement}
+                  onDuplicate={duplicateElement}
+                  onDragStart={handleDragStart}
+                  onDragOver={handleDragOver}
+                  onDrop={handleDrop}
+                  onMoveToParentIndex={moveElementToParentIndex}
+                />
+              ))}
+            </div>
+          </div>
         )}
       </div>
     </div>

@@ -22,7 +22,7 @@ import {
 } from "./document-flattener.js";
 import { SkiaNodeRenderer } from "./node-renderer.js";
 import { parseColor } from "./paint-utils.js";
-import { SpatialIndex } from "./spatial-index.js";
+import { RenderNodeViewportIndex, SpatialIndex } from "./spatial-index.js";
 import type {
   EditorLineOverlay,
   EditorOverlayState,
@@ -53,6 +53,8 @@ const RENDER_CULL_MARGIN_PX = 256;
 const SLOW_SYNC_THRESHOLD_MS = 18;
 const SLOW_FRAME_THRESHOLD_MS = 24;
 const FRAME_LABEL_CACHE_MAX = 256;
+const VIEWPORT_INTERACTION_CACHE_PADDING_PX = 256;
+const VIEWPORT_EPSILON = 0.001;
 const RESIZE_HANDLES: ResizeHandleDirection[] = [
   "n",
   "ne",
@@ -71,6 +73,28 @@ type FrameLabelCacheEntry = {
   bitmapWidth: number;
   bitmapHeight: number;
   lastUsed: number;
+};
+
+type InteractionBackgroundCacheEntry = {
+  image: CanvasKitImage;
+  key: string;
+  width: number;
+  height: number;
+};
+
+export type ViewportInteractionCacheSnapshot = {
+  key: string;
+  paddingX: number;
+  paddingY: number;
+  panX: number;
+  panY: number;
+  zoom: number;
+};
+
+type ViewportInteractionCacheEntry = ViewportInteractionCacheSnapshot & {
+  image: CanvasKitImage;
+  width: number;
+  height: number;
 };
 
 /**
@@ -94,6 +118,7 @@ export class PenRenderer {
   private canvasEl: HTMLCanvasElement | null = null;
   private nodeRenderer: SkiaNodeRenderer;
   private spatialIndex = new SpatialIndex();
+  private viewportIndex = new RenderNodeViewportIndex();
   private renderNodes: RenderNode[] = [];
   private options: PenRendererOptions;
   private interactionMode: RendererInteractionMode = "idle";
@@ -101,6 +126,10 @@ export class PenRenderer {
   private transformPreviewIds = new Set<string>();
   private frameLabelCache = new Map<string, FrameLabelCacheEntry>();
   private frameLabelCacheTick = 0;
+  private interactionBackgroundCache: InteractionBackgroundCacheEntry | null =
+    null;
+  private viewportInteractionCache: ViewportInteractionCacheEntry | null = null;
+  private sceneSerial = 0;
 
   // Component/instance IDs for colored frame labels
   private reusableIds = new Set<string>();
@@ -159,7 +188,10 @@ export class PenRenderer {
     }
 
     this.nodeRenderer.init();
-    this.nodeRenderer.setRedrawCallback(() => this.markDirty());
+    this.nodeRenderer.setRedrawCallback(() => {
+      this.clearViewportInteractionCache("asset_loaded");
+      this.markDirty();
+    });
     (
       this.nodeRenderer as unknown as {
         textRenderer: { _onFontLoaded?: () => void };
@@ -184,6 +216,8 @@ export class PenRenderer {
     if (this.animFrameId) cancelAnimationFrame(this.animFrameId);
     this.nodeRenderer.dispose();
     this.clearFrameLabelCache();
+    this.clearInteractionBackgroundCache("dispose");
+    this.clearViewportInteractionCache("dispose");
     this.surface?.delete();
     this.surface = null;
   }
@@ -202,6 +236,8 @@ export class PenRenderer {
       });
       return;
     }
+    this.clearInteractionBackgroundCache("resize");
+    this.clearViewportInteractionCache("resize");
     this.markDirty();
   }
 
@@ -296,9 +332,14 @@ export class PenRenderer {
   // ---------------------------------------------------------------------------
 
   setViewport(zoom: number, panX: number, panY: number) {
+    const previousZoom = this._zoom;
     this._zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
     this._panX = panX;
     this._panY = panY;
+    if (Math.abs(previousZoom - this._zoom) > VIEWPORT_EPSILON) {
+      this.clearInteractionBackgroundCache("viewport_zoom");
+      this.clearViewportInteractionCache("viewport_zoom");
+    }
     this.markDirty();
   }
 
@@ -308,6 +349,8 @@ export class PenRenderer {
 
   setBackgroundColor(color: string) {
     this.options.backgroundColor = color;
+    this.clearInteractionBackgroundCache("background");
+    this.clearViewportInteractionCache("background");
     this.markDirty();
   }
 
@@ -360,6 +403,10 @@ export class PenRenderer {
   setInteractionMode(mode: RendererInteractionMode) {
     this.interactionMode = mode;
     this.nodeRenderer.interactionMode = mode;
+    if (mode === "idle") {
+      this.clearInteractionBackgroundCache("interaction_idle");
+      this.clearViewportInteractionCache("interaction_idle");
+    }
     this.markDirty();
   }
 
@@ -500,7 +547,11 @@ export class PenRenderer {
     const measured = premeasureTextHeights(variableResolved);
 
     this.renderNodes = flattenToRenderNodes(measured);
+    this.sceneSerial += 1;
+    this.clearInteractionBackgroundCache("document_sync");
+    this.clearViewportInteractionCache("document_sync");
     this.spatialIndex.rebuild(this.renderNodes);
+    this.viewportIndex.rebuild(this.renderNodes);
     const elapsed =
       (typeof performance !== "undefined" ? performance.now() : Date.now()) -
       startedAt;
@@ -544,6 +595,66 @@ export class PenRenderer {
     const bgColor = this.options.backgroundColor ?? CANVAS_BACKGROUND_DARK;
     canvas.clear(parseColor(ck, bgColor));
 
+    const visibleRenderNodes = this.getVisibleRenderNodes();
+    const usedViewportInteractionCache = this.drawViewportInteractionCache(
+      canvas,
+      visibleRenderNodes,
+      dpr,
+    );
+    if (usedViewportInteractionCache) {
+      this.drawViewportDecorations(canvas, visibleRenderNodes, dpr);
+      this.surface.flush();
+      const elapsed =
+        (typeof performance !== "undefined" ? performance.now() : Date.now()) -
+        startedAt;
+      if (elapsed > SLOW_FRAME_THRESHOLD_MS) {
+        console.info("[pen-renderer] renderer.frame.slow", {
+          durationMs: Math.round(elapsed),
+          total: this.renderNodes.length,
+          rendered: 0,
+          visible: visibleRenderNodes.length,
+          culled: Math.max(
+            0,
+            this.renderNodes.length - visibleRenderNodes.length,
+          ),
+          imageCount: 0,
+          pathCache: this.nodeRenderer.getPathCacheSnapshot(),
+          cachedViewportNodeCount: visibleRenderNodes.length,
+          zoom: Number(this._zoom.toFixed(3)),
+          interactionMode: this.interactionMode,
+        });
+      }
+      return;
+    }
+
+    const transformPreviewNodes =
+      this.transformPreview && this.interactionMode === "transform"
+        ? visibleRenderNodes.filter((rn) =>
+            this.transformPreviewIds.has(rn.node.id),
+          )
+        : [];
+    const useInteractionBackgroundCache =
+      transformPreviewNodes.length > 0 &&
+      !visibleRenderNodes.some((rn) => Boolean(rn.opacityGroup));
+    let drewInteractionBackgroundCache = false;
+    let interactionBackgroundNodeCount = 0;
+
+    if (useInteractionBackgroundCache) {
+      const backgroundNodes = visibleRenderNodes.filter(
+        (rn) => !this.transformPreviewIds.has(rn.node.id),
+      );
+      interactionBackgroundNodeCount = backgroundNodes.length;
+      drewInteractionBackgroundCache = this.drawInteractionBackgroundCache(
+        canvas,
+        backgroundNodes,
+        dpr,
+      );
+    }
+
+    const nodesToDraw = drewInteractionBackgroundCache
+      ? transformPreviewNodes
+      : visibleRenderNodes;
+
     // Apply viewport transform
     canvas.save();
     canvas.scale(dpr, dpr);
@@ -555,26 +666,12 @@ export class PenRenderer {
     this.nodeRenderer.zoom = this._zoom;
     this.nodeRenderer.devicePixelRatio = dpr;
 
-    const visibleRenderNodes = this.getVisibleRenderNodes();
-
     // Draw visible render nodes only. Image-heavy canvases should not pay the
     // cost of sampling offscreen rasters while users pan, zoom, or drag.
-    this.nodeRenderer.drawRenderNodes(canvas, visibleRenderNodes);
+    this.nodeRenderer.drawRenderNodes(canvas, nodesToDraw);
 
     this.drawEditorOverlays(canvas);
-
-    // Draw frame labels for root frames + reusable + instances
-    for (const rn of visibleRenderNodes) {
-      if (!rn.node.name) continue;
-      if (!this.shouldDrawFrameLabel(rn)) continue;
-      this.drawFrameLabel(
-        canvas,
-        rn.node.name,
-        rn.absX,
-        rn.absY,
-        this.editorOverlays.selectedIds.includes(rn.node.id),
-      );
-    }
+    this.drawFrameLabels(canvas, visibleRenderNodes);
 
     canvas.restore();
     this.surface.flush();
@@ -585,12 +682,17 @@ export class PenRenderer {
       console.info("[pen-renderer] renderer.frame.slow", {
         durationMs: Math.round(elapsed),
         total: this.renderNodes.length,
-        rendered: visibleRenderNodes.length,
+        rendered: nodesToDraw.length,
+        visible: visibleRenderNodes.length,
         culled: Math.max(
           0,
           this.renderNodes.length - visibleRenderNodes.length,
         ),
-        imageCount: countImageRenderNodes(visibleRenderNodes),
+        imageCount: countImageRenderNodes(nodesToDraw),
+        pathCache: this.nodeRenderer.getPathCacheSnapshot(),
+        cachedBackgroundNodeCount: drewInteractionBackgroundCache
+          ? interactionBackgroundNodeCount
+          : 0,
         zoom: Number(this._zoom.toFixed(3)),
         interactionMode: this.interactionMode,
       });
@@ -707,6 +809,285 @@ export class PenRenderer {
     this.frameLabelCache.clear();
   }
 
+  private drawFrameLabels(
+    canvas: ReturnType<Surface["getCanvas"]>,
+    visibleRenderNodes: RenderNode[],
+  ) {
+    // Draw frame labels for root frames + reusable + instances
+    for (const rn of visibleRenderNodes) {
+      if (!rn.node.name) continue;
+      if (!this.shouldDrawFrameLabel(rn)) continue;
+      this.drawFrameLabel(
+        canvas,
+        rn.node.name,
+        rn.absX,
+        rn.absY,
+        this.editorOverlays.selectedIds.includes(rn.node.id),
+      );
+    }
+  }
+
+  private drawViewportDecorations(
+    canvas: ReturnType<Surface["getCanvas"]>,
+    visibleRenderNodes: RenderNode[],
+    dpr: number,
+  ) {
+    canvas.save();
+    canvas.scale(dpr, dpr);
+    canvas.concat(
+      viewportMatrix({ zoom: this._zoom, panX: this._panX, panY: this._panY }),
+    );
+    this.nodeRenderer.zoom = this._zoom;
+    this.nodeRenderer.devicePixelRatio = dpr;
+    this.drawEditorOverlays(canvas);
+    this.drawFrameLabels(canvas, visibleRenderNodes);
+    canvas.restore();
+  }
+
+  private clearInteractionBackgroundCache(reason: string) {
+    if (!this.interactionBackgroundCache) return;
+    this.interactionBackgroundCache.image.delete();
+    this.interactionBackgroundCache = null;
+    console.info("[pen-renderer] renderer.interaction-cache.cleared", {
+      reason,
+    });
+  }
+
+  private clearViewportInteractionCache(reason: string) {
+    if (!this.viewportInteractionCache) return;
+    this.viewportInteractionCache.image.delete();
+    this.viewportInteractionCache = null;
+    console.info("[pen-renderer] renderer.viewport-cache.cleared", {
+      reason,
+    });
+  }
+
+  private getViewportInteractionCacheKey(dpr: number) {
+    const canvas = this.canvasEl;
+    if (!canvas) return null;
+    return [
+      this.sceneSerial,
+      canvas.width,
+      canvas.height,
+      Number(dpr.toFixed(3)),
+      Number(this._zoom.toFixed(4)),
+    ].join("|");
+  }
+
+  private drawViewportInteractionCache(
+    canvas: ReturnType<Surface["getCanvas"]>,
+    visibleRenderNodes: RenderNode[],
+    dpr: number,
+  ): boolean {
+    if (this.interactionMode !== "viewport" || this.transformPreview) {
+      return false;
+    }
+    const cache = this.ensureViewportInteractionCache(dpr);
+    if (!cache) return false;
+
+    const offset = getViewportInteractionCacheDrawOffset(cache, {
+      zoom: this._zoom,
+      panX: this._panX,
+      panY: this._panY,
+      dpr,
+    });
+    if (!offset) {
+      this.clearViewportInteractionCache("pan_outside_padding");
+      return false;
+    }
+
+    const paint = new this.ck.Paint();
+    paint.setAntiAlias(false);
+    canvas.drawImage(cache.image, offset.x, offset.y, paint);
+    paint.delete();
+
+    if (visibleRenderNodes.length > 0 && offset.reused) {
+      return true;
+    }
+    return true;
+  }
+
+  private ensureViewportInteractionCache(
+    dpr: number,
+  ): ViewportInteractionCacheEntry | null {
+    const canvas = this.canvasEl;
+    if (!canvas || canvas.width <= 0 || canvas.height <= 0) return null;
+    const key = this.getViewportInteractionCacheKey(dpr);
+    if (!key) return null;
+    if (
+      this.viewportInteractionCache &&
+      isViewportInteractionCacheReusable(this.viewportInteractionCache, {
+        key,
+        zoom: this._zoom,
+        panX: this._panX,
+        panY: this._panY,
+      })
+    ) {
+      return this.viewportInteractionCache;
+    }
+
+    this.clearViewportInteractionCache("cache_miss");
+
+    const startedAt =
+      typeof performance !== "undefined" ? performance.now() : Date.now();
+    const paddingX = Math.ceil(VIEWPORT_INTERACTION_CACHE_PADDING_PX * dpr);
+    const paddingY = Math.ceil(VIEWPORT_INTERACTION_CACHE_PADDING_PX * dpr);
+    const surfaceWidth = canvas.width + paddingX * 2;
+    const surfaceHeight = canvas.height + paddingY * 2;
+    const surface = this.ck.MakeSurface(surfaceWidth, surfaceHeight);
+    if (!surface) {
+      console.warn("[pen-renderer] renderer.viewport-cache.failed", {
+        reason: "surface_unavailable",
+        width: surfaceWidth,
+        height: surfaceHeight,
+      });
+      return null;
+    }
+
+    const cacheViewport = {
+      zoom: this._zoom,
+      panX: this._panX,
+      panY: this._panY,
+    };
+    const paddingCssX = paddingX / dpr;
+    const paddingCssY = paddingY / dpr;
+    const cacheNodes = this.getVisibleRenderNodesForViewport(
+      cacheViewport,
+      RENDER_CULL_MARGIN_PX + Math.max(paddingCssX, paddingCssY),
+    );
+    const offscreen = surface.getCanvas();
+    offscreen.clear(this.ck.TRANSPARENT);
+    offscreen.save();
+    offscreen.scale(dpr, dpr);
+    offscreen.translate(paddingCssX, paddingCssY);
+    offscreen.concat(viewportMatrix(cacheViewport));
+    this.nodeRenderer.zoom = this._zoom;
+    this.nodeRenderer.devicePixelRatio = dpr;
+    this.nodeRenderer.drawRenderNodes(offscreen, cacheNodes);
+    offscreen.restore();
+    surface.flush();
+
+    const image = surface.makeImageSnapshot();
+    surface.delete();
+    const entry = {
+      image,
+      key,
+      width: surfaceWidth,
+      height: surfaceHeight,
+      paddingX: paddingCssX,
+      paddingY: paddingCssY,
+      panX: this._panX,
+      panY: this._panY,
+      zoom: this._zoom,
+    };
+    this.viewportInteractionCache = entry;
+
+    const elapsed =
+      (typeof performance !== "undefined" ? performance.now() : Date.now()) -
+      startedAt;
+    console.info("[pen-renderer] renderer.viewport-cache.built", {
+      durationMs: Math.round(elapsed),
+      nodeCount: cacheNodes.length,
+      width: entry.width,
+      height: entry.height,
+      paddingX: Math.round(entry.paddingX),
+      paddingY: Math.round(entry.paddingY),
+      zoom: Number(this._zoom.toFixed(3)),
+    });
+    return entry;
+  }
+
+  private getInteractionBackgroundCacheKey(dpr: number) {
+    const canvas = this.canvasEl;
+    if (!canvas || this.transformPreviewIds.size === 0) return null;
+    const previewIds = Array.from(this.transformPreviewIds).sort().join(",");
+    return [
+      this.sceneSerial,
+      canvas.width,
+      canvas.height,
+      Number(dpr.toFixed(3)),
+      Number(this._zoom.toFixed(4)),
+      Number(this._panX.toFixed(2)),
+      Number(this._panY.toFixed(2)),
+      previewIds,
+    ].join("|");
+  }
+
+  private drawInteractionBackgroundCache(
+    canvas: ReturnType<Surface["getCanvas"]>,
+    backgroundNodes: RenderNode[],
+    dpr: number,
+  ): boolean {
+    const cache = this.ensureInteractionBackgroundCache(backgroundNodes, dpr);
+    if (!cache) return false;
+
+    const paint = new this.ck.Paint();
+    paint.setAntiAlias(false);
+    canvas.drawImage(cache.image, 0, 0, paint);
+    paint.delete();
+    return true;
+  }
+
+  private ensureInteractionBackgroundCache(
+    backgroundNodes: RenderNode[],
+    dpr: number,
+  ): InteractionBackgroundCacheEntry | null {
+    const canvas = this.canvasEl;
+    if (!canvas || canvas.width <= 0 || canvas.height <= 0) return null;
+    const key = this.getInteractionBackgroundCacheKey(dpr);
+    if (!key) return null;
+    if (this.interactionBackgroundCache?.key === key) {
+      return this.interactionBackgroundCache;
+    }
+
+    this.clearInteractionBackgroundCache("cache_miss");
+
+    const startedAt =
+      typeof performance !== "undefined" ? performance.now() : Date.now();
+    const surface = this.ck.MakeSurface(canvas.width, canvas.height);
+    if (!surface) {
+      console.warn("[pen-renderer] renderer.interaction-cache.failed", {
+        reason: "surface_unavailable",
+        width: canvas.width,
+        height: canvas.height,
+      });
+      return null;
+    }
+
+    const offscreen = surface.getCanvas();
+    offscreen.clear(this.ck.TRANSPARENT);
+    offscreen.save();
+    offscreen.scale(dpr, dpr);
+    offscreen.concat(
+      viewportMatrix({ zoom: this._zoom, panX: this._panX, panY: this._panY }),
+    );
+    this.nodeRenderer.drawRenderNodes(offscreen, backgroundNodes);
+    offscreen.restore();
+    surface.flush();
+
+    const image = surface.makeImageSnapshot();
+    surface.delete();
+    const entry = {
+      image,
+      key,
+      width: canvas.width,
+      height: canvas.height,
+    };
+    this.interactionBackgroundCache = entry;
+
+    const elapsed =
+      (typeof performance !== "undefined" ? performance.now() : Date.now()) -
+      startedAt;
+    console.info("[pen-renderer] renderer.interaction-cache.built", {
+      durationMs: Math.round(elapsed),
+      nodeCount: backgroundNodes.length,
+      width: entry.width,
+      height: entry.height,
+      zoom: Number(this._zoom.toFixed(3)),
+    });
+    return entry;
+  }
+
   private shouldDrawFrameLabel(rn: RenderNode): boolean {
     if (!rn.node.name) return false;
     const isRootFrame = rn.node.type === "frame" && !rn.clipRect;
@@ -750,25 +1131,61 @@ export class PenRenderer {
   }
 
   private getVisibleRenderNodes(): RenderNode[] {
+    return this.getVisibleRenderNodesForViewport(
+      { zoom: this._zoom, panX: this._panX, panY: this._panY },
+      RENDER_CULL_MARGIN_PX,
+    );
+  }
+
+  private getVisibleRenderNodesForViewport(
+    viewport: ViewportState,
+    marginPx: number,
+  ): RenderNode[] {
     if (!this.canvasEl || this.renderNodes.length === 0)
       return this.renderNodes;
 
-    const margin = RENDER_CULL_MARGIN_PX / Math.max(this._zoom, MIN_ZOOM);
+    const margin = marginPx / Math.max(viewport.zoom, MIN_ZOOM);
     const bounds = getViewportBounds(
-      { zoom: this._zoom, panX: this._panX, panY: this._panY },
+      viewport,
       this.canvasEl.clientWidth,
       this.canvasEl.clientHeight,
       margin,
     );
     if (!this.transformPreview) {
-      return filterRenderNodesToViewport(this.renderNodes, bounds);
+      return this.viewportIndex.search(bounds);
     }
-    return filterRenderNodesToViewportWithTransformPreview(
-      this.renderNodes,
-      bounds,
-      this.transformPreview,
-      this.transformPreviewIds,
+    const visible = this.viewportIndex
+      .search(bounds)
+      .map((rn) =>
+        this.transformPreviewIds.has(rn.node.id)
+          ? applyTransformPreviewToRenderNode(
+              rn,
+              this.transformPreview as TransformPreviewState,
+              this.transformPreviewIds,
+            )
+          : rn,
+      )
+      .filter((rn) => isRenderNodeInBounds(rn, bounds));
+    const visibleIds = new Set(visible.map((rn) => rn.node.id));
+    for (const nodeId of this.transformPreviewIds) {
+      if (visibleIds.has(nodeId)) continue;
+      const rn = this.viewportIndex.get(nodeId);
+      if (!rn) continue;
+      const previewed = applyTransformPreviewToRenderNode(
+        rn,
+        this.transformPreview,
+        this.transformPreviewIds,
+      );
+      if (!isRenderNodeInBounds(previewed, bounds)) continue;
+      visible.push(previewed);
+      visibleIds.add(nodeId);
+    }
+    visible.sort(
+      (a, b) =>
+        this.viewportIndex.getOrder(a.node.id) -
+        this.viewportIndex.getOrder(b.node.id),
     );
+    return visible;
   }
 
   private collectTransformPreviewIds(
@@ -1368,6 +1785,36 @@ function applyTransformPreviewToRenderNode(
     return rotateRenderNode(rn, preview.rotation);
   }
   return rn;
+}
+
+export function isViewportInteractionCacheReusable(
+  cache: ViewportInteractionCacheSnapshot,
+  viewport: { key: string; zoom: number; panX: number; panY: number },
+): boolean {
+  if (cache.key !== viewport.key) return false;
+  if (Math.abs(cache.zoom - viewport.zoom) > VIEWPORT_EPSILON) return false;
+  return (
+    Math.abs(viewport.panX - cache.panX) <= cache.paddingX &&
+    Math.abs(viewport.panY - cache.panY) <= cache.paddingY
+  );
+}
+
+export function getViewportInteractionCacheDrawOffset(
+  cache: ViewportInteractionCacheSnapshot,
+  viewport: { zoom: number; panX: number; panY: number; dpr: number },
+): { x: number; y: number; reused: boolean } | null {
+  if (Math.abs(cache.zoom - viewport.zoom) > VIEWPORT_EPSILON) return null;
+  const dx = viewport.panX - cache.panX;
+  const dy = viewport.panY - cache.panY;
+  if (Math.abs(dx) > cache.paddingX || Math.abs(dy) > cache.paddingY) {
+    return null;
+  }
+  const dpr = Math.max(viewport.dpr, 1);
+  return {
+    x: (dx - cache.paddingX) * dpr,
+    y: (dy - cache.paddingY) * dpr,
+    reused: Math.abs(dx) > VIEWPORT_EPSILON || Math.abs(dy) > VIEWPORT_EPSILON,
+  };
 }
 
 export function filterRenderNodesToViewport(

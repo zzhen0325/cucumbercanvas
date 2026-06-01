@@ -1974,6 +1974,9 @@ describe("SkiaCanvas selection snapshots", () => {
         scrollX: 40,
         scrollY: 12,
       });
+      expect(penRendererMockState.setInteractionMode).toHaveBeenLastCalledWith(
+        "viewport",
+      );
 
       act(() => {
         apiRef.current?.updateScene({
@@ -1986,6 +1989,10 @@ describe("SkiaCanvas selection snapshots", () => {
       expect(apiRef.current?.getAppState()).toMatchObject({
         zoom: { value: 2.5 },
       });
+      expect(penRendererMockState.setInteractionMode).toHaveBeenLastCalledWith(
+        "viewport",
+      );
+      expect(penRendererMockState.setInteractionMode).toHaveBeenCalledTimes(2);
 
       act(() => {
         apiRef.current?.updateScene({
@@ -1998,6 +2005,7 @@ describe("SkiaCanvas selection snapshots", () => {
       expect(apiRef.current?.getAppState()).toMatchObject({
         viewBackgroundColor: "#d3f256",
       });
+      expect(penRendererMockState.setInteractionMode).toHaveBeenCalledTimes(2);
     } finally {
       unmount?.();
       globalThis.ResizeObserver = originalResizeObserver;
