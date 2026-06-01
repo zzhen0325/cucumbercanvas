@@ -183,6 +183,24 @@ export interface IOPort {
   label?: string;
 }
 
+export type PenConnectorSide = "top" | "right" | "bottom" | "left";
+export type PenConnectorEndpointKey = "start" | "end";
+export type PenConnectorRouting = "straight" | "smooth";
+
+export interface PenConnectorEndpointBinding {
+  nodeId: string;
+  side: PenConnectorSide;
+  /** Normalized distance along the side, where 0 is top/left and 1 is bottom/right. */
+  ratio: number;
+}
+
+export interface PenConnectorBinding {
+  start?: PenConnectorEndpointBinding;
+  end?: PenConnectorEndpointBinding;
+  routing?: PenConnectorRouting;
+  arrow?: boolean;
+}
+
 export interface AgentBinding {
   agentId?: string;
   agentType?: "designer" | "critic" | "composer" | string;
@@ -329,6 +347,7 @@ export interface LineNode extends PenNodeBase {
   type: "line";
   x2?: number;
   y2?: number;
+  connector?: PenConnectorBinding;
   stroke?: PenStroke;
   effects?: PenEffect[];
 }

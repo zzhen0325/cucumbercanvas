@@ -1,11 +1,13 @@
 "use client";
 
 import {
-  Frame,
+  Cable,
   Hand,
   MousePointer2,
+  PanelTop,
   Plus,
   Redo2,
+  StickyNote,
   Trash2,
   Type,
   Undo2,
@@ -58,7 +60,7 @@ export function CanvasEditorToolbar({
   return (
     <nav
       aria-label="Canvas editor tools"
-      className="pointer-events-auto absolute left-4 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-1.5 rounded-full border border-border bg-card/75 p-1.5 py-4   backdrop-blur-lg"
+      className="pointer-events-auto absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-card/75 px-3 py-1.5 shadow-card backdrop-blur-lg"
       onClick={stopCanvasPropagation}
       onDoubleClick={stopCanvasPropagation}
       onKeyDown={stopCanvasPropagation}
@@ -68,7 +70,7 @@ export function CanvasEditorToolbar({
       onPointerUp={stopCanvasPropagation}
       onWheel={stopCanvasPropagation}
     >
-      <div className="flex flex-col items-center gap-1">
+      <div className="flex items-center gap-1">
         <EditorToolButton
           active={activeTool === "select"}
           icon={MousePointer2}
@@ -85,15 +87,29 @@ export function CanvasEditorToolbar({
         />
       </div>
 
-      <Separator className="h-px w-4 bg-border/70" />
+      <Separator orientation="vertical" className="h-6 w-px bg-border/70" />
 
-      <div className="flex flex-col items-center gap-1">
+      <div className="flex items-center gap-1">
+        <EditorToolButton
+          active={activeTool === "sticky"}
+          icon={StickyNote}
+          label="Sticky"
+          onClick={() => onToolChange("sticky")}
+          shortcut="S"
+        />
         <ShapeToolDropdown
           activeTool={activeTool}
           onInsertIcon={onInsertIcon}
           onImportImage={onImportImage}
           onImportSvg={onImportSvg}
           onToolChange={onToolChange}
+        />
+        <EditorToolButton
+          active={activeTool === "connector"}
+          icon={Cable}
+          label="Connector"
+          onClick={() => onToolChange("connector")}
+          shortcut="C"
         />
         <EditorToolButton
           active={activeTool === "text"}
@@ -103,17 +119,17 @@ export function CanvasEditorToolbar({
           shortcut="T"
         />
         <EditorToolButton
-          active={activeTool === "container"}
-          icon={Frame}
-          label="Frame"
-          onClick={() => onToolChange("container")}
+          active={activeTool === "section" || activeTool === "container"}
+          icon={PanelTop}
+          label="Section"
+          onClick={() => onToolChange("section")}
           shortcut="F"
         />
       </div>
 
-      <Separator className="h-px w-4  bg-border/70" />
+      <Separator orientation="vertical" className="h-6 w-px bg-border/70" />
 
-      <div className="flex flex-col items-center gap-1">
+      <div className="flex items-center gap-1">
         <EditorToolButton
           disabled={!canUndo}
           icon={Undo2}
@@ -128,9 +144,9 @@ export function CanvasEditorToolbar({
         />
       </div>
 
-      <Separator className="h-px w-4 bg-border/70" />
+      <Separator orientation="vertical" className="h-6 w-px bg-border/70" />
 
-      <div className="flex flex-col items-center gap-1">
+      <div className="flex items-center gap-1">
         <EditorToolButton
           icon={Plus}
           label="New container"

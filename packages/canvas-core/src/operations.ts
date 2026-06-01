@@ -1,4 +1,5 @@
 import type { GroupNode, PenDocument, PenNode } from "@cucumber/pen-types";
+import { reconcileCanvasConnectors } from "./connector-geometry.js";
 import {
   CanvasOperationError,
   isAgentContainer,
@@ -64,6 +65,7 @@ function applyCanvasOperationToMutableDoc(
   const activePageId =
     "activePageId" in operation ? operation.activePageId : undefined;
   validateOperationActivePage(next, operation, activePageId);
+  const deletedNodeIds = new Set<string>();
 
   switch (operation.type) {
     case "insertNode": {
@@ -117,6 +119,7 @@ function applyCanvasOperationToMutableDoc(
         operation.parentId ?? null,
         activePageId,
       );
+      collectNodeIds(existing, deletedNodeIds);
       removeNodeFromDoc(next, operation.nodeId, activePageId);
       break;
     }
@@ -209,6 +212,15 @@ function applyCanvasOperationToMutableDoc(
       );
     }
   }
+
+  const reconciled = reconcileCanvasConnectors(next, {
+    activePageId,
+    deletedNodeIds,
+    pruneDeleted: deletedNodeIds.size > 0,
+  });
+  next.activePageId = reconciled.activePageId;
+  next.pages = reconciled.pages;
+  next.children = reconciled.children;
 }
 
 function applyTransactionDefaults(
@@ -238,6 +250,15 @@ function applyTransactionDefaults(
 
 function createTransactionId(): string {
   return `canvas_tx_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function collectNodeIds(node: PenNode, output: Set<string>): void {
+  output.add(node.id);
+  if ("children" in node && Array.isArray(node.children)) {
+    for (const child of node.children as PenNode[]) {
+      collectNodeIds(child, output);
+    }
+  }
 }
 
 export function detachNodesOutsideParentBounds(

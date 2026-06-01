@@ -4,9 +4,12 @@ type CanvasToolShortcut =
   | "select"
   | "text"
   | "hand"
+  | "sticky"
   | "rect"
   | "ellipse"
   | "container"
+  | "section"
+  | "connector"
   | "pen"
   | "line"
   | "arrow";
@@ -167,6 +170,11 @@ export function useCanvasKeyboardShortcuts(options: {
       }
 
       if (!isMod && !event.altKey) {
+        if (key === "c" && event.shiftKey) {
+          options.setActiveTool("arrow");
+          event.preventDefault();
+          return;
+        }
         if (key === "l" && event.shiftKey) {
           options.setActiveTool("arrow");
           event.preventDefault();
@@ -176,9 +184,11 @@ export function useCanvasKeyboardShortcuts(options: {
           v: "select",
           t: "text",
           h: "hand",
+          s: "sticky",
+          c: "connector",
           r: "rect",
           o: "ellipse",
-          f: "container",
+          f: "section",
           p: "pen",
           l: "line",
         };

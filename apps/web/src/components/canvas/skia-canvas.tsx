@@ -16,8 +16,10 @@ import {
   copyCanvasSelection,
   createNodeId,
   deleteCanvasPage,
+  detachConnectorEndpoint as detachConnectorEndpointBinding,
   duplicateCanvasNodes,
   duplicateCanvasPage,
+  findConnectorSnapTarget,
   findNode,
   getActiveChildren,
   getCanvasImportBounds,
@@ -26,7 +28,9 @@ import {
   getNodeBounds,
   getNodeSceneBounds,
   getOrderedCanvasNodes,
+  getSelectionBounds,
   insertCanvasImportResult,
+  isConnectorLineNode,
   isDescendantOf,
   normalizeCanvasPages,
   parseClipboardImport,
@@ -51,7 +55,13 @@ import {
   sceneToCanvasLocal,
   screenToScene,
 } from "@cucumber/pen-renderer";
-import type { ContainerRole, PenDocument, PenNode } from "@cucumber/pen-types";
+import type {
+  ContainerRole,
+  LineNode,
+  PenConnectorEndpointBinding,
+  PenDocument,
+  PenNode,
+} from "@cucumber/pen-types";
 import type { CanvasKit } from "canvaskit-wasm";
 import type React from "react";
 import {
@@ -498,7 +508,14 @@ type PendingRendererDocumentSync = {
 };
 
 type DrawableShapeTool = "rect" | "ellipse" | "polygon";
-type DrawableCanvasTool = DrawableShapeTool | "container" | "line" | "arrow";
+type DrawableCanvasTool =
+  | DrawableShapeTool
+  | "container"
+  | "section"
+  | "sticky"
+  | "connector"
+  | "line"
+  | "arrow";
 type ResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
 
 const MIN_DRAW_SIZE = 2;
@@ -547,6 +564,17 @@ type TextEditState = {
   textAlign: React.CSSProperties["textAlign"];
   color: string;
   lineHeight: number | string;
+};
+
+type CanvasContextMenuState = {
+  x: number;
+  y: number;
+  targetId: string | null;
+  scenePoint: { x: number; y: number } | null;
+};
+
+type ConnectorLineNode = LineNode & {
+  connector: NonNullable<LineNode["connector"]>;
 };
 
 function getCanvasApiRuntimeState(
@@ -801,6 +829,11 @@ function createCanvasApiFacade(getLiveApi: () => CanvasApi): CanvasApi {
     getActiveTool: () => getLiveApi().getActiveTool(),
     setActiveTool: (tool) => getLiveApi().setActiveTool(tool),
     createContainer: (opts) => getLiveApi().createContainer(opts),
+    createSection: (opts) => getLiveApi().createSection(opts),
+    createSticky: (opts) => getLiveApi().createSticky(opts),
+    createConnector: (opts) => getLiveApi().createConnector(opts),
+    detachConnectorEndpoint: (nodeId, endpoint) =>
+      getLiveApi().detachConnectorEndpoint(nodeId, endpoint),
     insertNode: (node, containerId) =>
       getLiveApi().insertNode(node, containerId),
     updateNode: (nodeId, updates) => getLiveApi().updateNode(nodeId, updates),
@@ -950,6 +983,351 @@ function CanvasBooleanToolbarConnected({
       rejectionReason={rejectionReason}
       visible={selection.length >= 2}
     />
+  );
+}
+
+function CanvasSelectionToolbarConnected({
+  api,
+  viewport,
+}: {
+  api: Pick<
+    CanvasApi,
+    | "copySelection"
+    | "deleteSelection"
+    | "detachConnectorEndpoint"
+    | "duplicateSelection"
+    | "reorderNode"
+    | "toggleNodeLocked"
+    | "toggleNodeVisible"
+    | "updateNode"
+  >;
+  canvasRect?: DOMRect;
+  viewport: ViewportState | null;
+}) {
+  const { activePageId, document, selection } = useCanvasRuntimeShallowSelector(
+    (state) => ({
+      activePageId: state.activePageId,
+      document: state.document,
+      selection: state.selection,
+    }),
+  );
+  if (!viewport || selection.length === 0) return null;
+  const bounds = getSelectionBounds(document, selection, activePageId);
+  if (!bounds) return null;
+  const topCenter = sceneToCanvasLocal(
+    bounds.x + bounds.width / 2,
+    bounds.y,
+    viewport,
+  );
+  const selectedNode =
+    selection.length === 1
+      ? findNode(document, selection[0] ?? "", activePageId)
+      : null;
+  const connector: ConnectorLineNode | null = isConnectorLineNode(
+    selectedNode ?? undefined,
+  )
+    ? (selectedNode as ConnectorLineNode)
+    : null;
+  const isLocked = Boolean(selectedNode?.locked);
+  const isHidden = selectedNode?.visible === false;
+
+  return (
+    <div
+      className="pointer-events-auto absolute z-30 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card/90 px-2 py-1 shadow-card backdrop-blur-lg"
+      style={{
+        left: topCenter.x,
+        top: Math.max(12, topCenter.y - 44),
+      }}
+      onContextMenu={(event) => event.preventDefault()}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <ToolbarMiniButton label="Copy" onClick={() => api.copySelection()} />
+      <ToolbarMiniButton
+        label="Duplicate"
+        onClick={() => api.duplicateSelection()}
+      />
+      {selectedNode ? (
+        <ToolbarMiniButton
+          label={isLocked ? "Unlock" : "Lock"}
+          onClick={() => api.toggleNodeLocked(selectedNode.id)}
+        />
+      ) : null}
+      {selectedNode ? (
+        <ToolbarMiniButton
+          label={isHidden ? "Show" : "Hide"}
+          onClick={() => api.toggleNodeVisible(selectedNode.id)}
+        />
+      ) : null}
+      {connector ? (
+        <>
+          <ToolbarMiniButton
+            label="Detach start"
+            onClick={() => api.detachConnectorEndpoint(connector.id, "start")}
+          />
+          <ToolbarMiniButton
+            label="Detach end"
+            onClick={() => api.detachConnectorEndpoint(connector.id, "end")}
+          />
+        </>
+      ) : null}
+      {selectedNode ? (
+        <>
+          <ToolbarMiniButton
+            label="Front"
+            onClick={() => api.reorderNode(selectedNode.id, "front")}
+          />
+          <ToolbarMiniButton
+            label="Back"
+            onClick={() => api.reorderNode(selectedNode.id, "back")}
+          />
+        </>
+      ) : null}
+      <ToolbarMiniButton
+        danger
+        label="Delete"
+        onClick={() => api.deleteSelection()}
+      />
+    </div>
+  );
+}
+
+function CanvasContextMenu({
+  api,
+  menu,
+  onClose,
+}: {
+  api: Pick<
+    CanvasApi,
+    | "copySelection"
+    | "createSection"
+    | "createSticky"
+    | "deleteSelection"
+    | "detachConnectorEndpoint"
+    | "duplicateSelection"
+    | "groupSelection"
+    | "pasteClipboard"
+    | "reorderNode"
+    | "setActiveTool"
+    | "toggleNodeLocked"
+    | "toggleNodeVisible"
+    | "ungroupSelection"
+    | "updateNode"
+  >;
+  menu: CanvasContextMenuState | null;
+  onClose: () => void;
+}) {
+  const { activePageId, document, selection } = useCanvasRuntimeShallowSelector(
+    (state) => ({
+      activePageId: state.activePageId,
+      document: state.document,
+      selection: state.selection,
+    }),
+  );
+  if (!menu) return null;
+  const target = menu.targetId
+    ? findNode(document, menu.targetId, activePageId)
+    : null;
+  const selectedNode =
+    selection.length === 1
+      ? findNode(document, selection[0] ?? "", activePageId)
+      : null;
+  const connector: ConnectorLineNode | null = isConnectorLineNode(
+    selectedNode ?? undefined,
+  )
+    ? (selectedNode as ConnectorLineNode)
+    : null;
+  const connectorHasArrow =
+    connector?.stroke?.endTip !== undefined &&
+    connector.stroke.endTip !== "none";
+  const run = (action: () => void) => {
+    action();
+    onClose();
+  };
+  const place = menu.scenePoint ?? undefined;
+
+  return (
+    <div
+      className="fixed z-50 min-w-48 rounded-xl border border-border bg-card/95 p-1 shadow-float backdrop-blur-lg"
+      style={{ left: menu.x, top: menu.y }}
+      onContextMenu={(event) => event.preventDefault()}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      {!target ? (
+        <>
+          <ContextMenuItem
+            label="Paste"
+            onClick={() => run(() => api.pasteClipboard())}
+          />
+          <ContextMenuItem
+            label="Create sticky"
+            onClick={() =>
+              run(() =>
+                api.createSticky(
+                  place ? { x: place.x, y: place.y } : undefined,
+                ),
+              )
+            }
+          />
+          <ContextMenuItem
+            label="Create section"
+            onClick={() =>
+              run(() =>
+                api.createSection(
+                  place ? { x: place.x, y: place.y } : undefined,
+                ),
+              )
+            }
+          />
+          <ContextMenuItem
+            label="Connector tool"
+            onClick={() => run(() => api.setActiveTool("connector"))}
+          />
+        </>
+      ) : (
+        <>
+          <ContextMenuItem
+            label="Copy"
+            onClick={() => run(() => api.copySelection())}
+          />
+          <ContextMenuItem
+            label="Duplicate"
+            onClick={() => run(() => api.duplicateSelection())}
+          />
+          <ContextMenuItem
+            label={selectedNode?.locked ? "Unlock" : "Lock"}
+            onClick={() => {
+              if (selectedNode)
+                run(() => api.toggleNodeLocked(selectedNode.id));
+            }}
+          />
+          <ContextMenuItem
+            label={selectedNode?.visible === false ? "Show" : "Hide"}
+            onClick={() => {
+              if (selectedNode)
+                run(() => api.toggleNodeVisible(selectedNode.id));
+            }}
+          />
+          {selectedNode ? (
+            <>
+              <ContextMenuItem
+                label="Bring to front"
+                onClick={() =>
+                  run(() => api.reorderNode(selectedNode.id, "front"))
+                }
+              />
+              <ContextMenuItem
+                label="Send to back"
+                onClick={() =>
+                  run(() => api.reorderNode(selectedNode.id, "back"))
+                }
+              />
+            </>
+          ) : null}
+          {selection.length > 1 ? (
+            <ContextMenuItem
+              label="Group"
+              onClick={() => run(() => void api.groupSelection())}
+            />
+          ) : null}
+          {selectedNode?.type === "group" ? (
+            <ContextMenuItem
+              label="Ungroup"
+              onClick={() => run(() => void api.ungroupSelection())}
+            />
+          ) : null}
+          {connector ? (
+            <>
+              <ContextMenuItem
+                label="Detach start"
+                onClick={() =>
+                  run(() => api.detachConnectorEndpoint(connector.id, "start"))
+                }
+              />
+              <ContextMenuItem
+                label="Detach end"
+                onClick={() =>
+                  run(() => api.detachConnectorEndpoint(connector.id, "end"))
+                }
+              />
+              <ContextMenuItem
+                label={connectorHasArrow ? "Remove arrow" : "Add arrow"}
+                onClick={() =>
+                  run(() =>
+                    api.updateNode(connector.id, {
+                      stroke: {
+                        ...(connector.stroke ?? {}),
+                        thickness: connector.stroke?.thickness ?? 3,
+                        fill: connector.stroke?.fill ?? [
+                          { type: "solid", color: "#111827" },
+                        ],
+                        endTip: connectorHasArrow ? "none" : "line-arrow",
+                      },
+                      connector: {
+                        ...connector.connector,
+                        arrow: !connectorHasArrow,
+                      },
+                    } as Partial<PenNode>),
+                  )
+                }
+              />
+            </>
+          ) : null}
+          <ContextMenuItem
+            danger
+            label="Delete"
+            onClick={() => run(() => api.deleteSelection())}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+function ToolbarMiniButton({
+  danger,
+  label,
+  onClick,
+}: {
+  danger?: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={`h-7 rounded-lg px-2 text-xs font-medium transition-colors ${
+        danger
+          ? "text-destructive hover:bg-destructive/10"
+          : "text-foreground/75 hover:bg-foreground/[0.06] hover:text-foreground"
+      }`}
+      onClick={onClick}
+      type="button"
+    >
+      {label}
+    </button>
+  );
+}
+
+function ContextMenuItem({
+  danger,
+  label,
+  onClick,
+}: {
+  danger?: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={`flex h-8 w-full items-center rounded-lg px-2.5 text-left text-sm transition-colors ${
+        danger
+          ? "text-destructive hover:bg-destructive/10"
+          : "text-foreground/80 hover:bg-foreground/[0.06] hover:text-foreground"
+      }`}
+      onClick={onClick}
+      type="button"
+    >
+      {label}
+    </button>
   );
 }
 
@@ -1203,6 +1581,7 @@ export const SkiaCanvas = memo(
           kind: "drawShape";
           shapeType: DrawableCanvasTool;
           startPoint: { x: number; y: number };
+          startConnector?: PenConnectorEndpointBinding;
           fromCenter: boolean;
         }
       | {
@@ -1222,6 +1601,8 @@ export const SkiaCanvas = memo(
         };
     const dragRef = useRef<DragState | null>(null);
     const clipboardRef = useRef<CanvasClipboardData | null>(null);
+    const [contextMenu, setContextMenu] =
+      useState<CanvasContextMenuState | null>(null);
     const toast = useToast();
 
     const flushScheduledRendererDocumentSync = useCallback(() => {
@@ -1345,6 +1726,18 @@ export const SkiaCanvas = memo(
           renderer.getViewport(),
         );
       },
+      [],
+    );
+
+    const getConnectorSnap = useCallback(
+      (
+        point: { x: number; y: number },
+        options?: { excludeNodeIds?: Iterable<string> },
+      ) =>
+        findConnectorSnapTarget(docRef.current, point, {
+          activePageId: activePageIdRef.current,
+          excludeNodeIds: options?.excludeNodeIds,
+        }),
       [],
     );
 
@@ -1965,6 +2358,7 @@ export const SkiaCanvas = memo(
       (event: React.PointerEvent<HTMLDivElement>) => {
         const renderer = rendererRef.current;
         if (!renderer) return;
+        setContextMenu(null);
         flushRendererDocumentSyncBeforeInteraction();
         const rect = canvasContainerRef.current?.getBoundingClientRect();
         if (!rect) return;
@@ -2137,19 +2531,31 @@ export const SkiaCanvas = memo(
 
         if (isDragDrawableTool(tool)) {
           renderer.setInteractionMode("transform");
+          const startSnap = shouldAttachConnectorForTool(tool)
+            ? getConnectorSnap(scenePoint)
+            : null;
+          const drawStartPoint = startSnap?.point ?? scenePoint;
           dragRef.current = {
             kind: "drawShape",
             shapeType: tool,
-            startPoint: scenePoint,
+            startPoint: drawStartPoint,
+            ...(startSnap
+              ? {
+                  startConnector: {
+                    nodeId: startSnap.nodeId,
+                    side: startSnap.side,
+                    ratio: startSnap.ratio,
+                  },
+                }
+              : null),
             fromCenter: event.altKey,
           };
-          const lineDraft =
-            tool === "line" || tool === "arrow"
-              ? getLineDrawDraft(scenePoint, scenePoint, {
-                  constrain: event.shiftKey,
-                  fromCenter: event.altKey,
-                })
-              : null;
+          const lineDraft = isLineDrawableTool(tool)
+            ? getLineDrawDraft(drawStartPoint, drawStartPoint, {
+                constrain: event.shiftKey,
+                fromCenter: event.altKey,
+              })
+            : null;
           setEditorOverlay({
             shapePreview: getDrawableToolPreview(tool, {
               x: scenePoint.x,
@@ -2157,14 +2563,13 @@ export const SkiaCanvas = memo(
               width: 0,
               height: 0,
             }),
-            linePreview:
-              tool === "line" || tool === "arrow"
-                ? {
-                    start: lineDraft?.start ?? scenePoint,
-                    end: lineDraft?.end ?? scenePoint,
-                    arrow: tool === "arrow",
-                  }
-                : null,
+            linePreview: isLineDrawableTool(tool)
+              ? {
+                  start: lineDraft?.start ?? drawStartPoint,
+                  end: lineDraft?.end ?? drawStartPoint,
+                  arrow: tool === "arrow",
+                }
+              : null,
           });
           event.currentTarget.setPointerCapture(event.pointerId);
           return;
@@ -2196,6 +2601,7 @@ export const SkiaCanvas = memo(
       [
         effectiveTool,
         flushRendererDocumentSyncBeforeInteraction,
+        getConnectorSnap,
         getPointerScenePoint,
         penTool,
         setEditorOverlay,
@@ -2257,32 +2663,36 @@ export const SkiaCanvas = memo(
         if (drag.kind === "drawShape") {
           const scene = getPointerScenePoint(event);
           if (!scene) return;
-          const lineDraft =
-            drag.shapeType === "line" || drag.shapeType === "arrow"
-              ? getLineDrawDraft(drag.startPoint, scene, {
-                  constrain: event.shiftKey,
-                  fromCenter: drag.fromCenter || event.altKey,
-                })
-              : null;
+          const endSnap = shouldAttachConnectorForTool(drag.shapeType)
+            ? getConnectorSnap(scene, {
+                excludeNodeIds: drag.startConnector
+                  ? [drag.startConnector.nodeId]
+                  : undefined,
+              })
+            : null;
+          const drawEndPoint = endSnap?.point ?? scene;
+          const lineDraft = isLineDrawableTool(drag.shapeType)
+            ? getLineDrawDraft(drag.startPoint, drawEndPoint, {
+                constrain: event.shiftKey,
+                fromCenter: drag.fromCenter || event.altKey,
+              })
+            : null;
           setEditorOverlay({
             shapePreview: getDrawableToolPreview(
               drag.shapeType,
               normalizeDrawBounds(
                 drag.startPoint,
-                scene,
-                event.shiftKey &&
-                  drag.shapeType !== "line" &&
-                  drag.shapeType !== "arrow",
+                drawEndPoint,
+                event.shiftKey && !isLineDrawableTool(drag.shapeType),
               ),
             ),
-            linePreview:
-              drag.shapeType === "line" || drag.shapeType === "arrow"
-                ? {
-                    start: lineDraft?.start ?? drag.startPoint,
-                    end: lineDraft?.end ?? scene,
-                    arrow: drag.shapeType === "arrow",
-                  }
-                : null,
+            linePreview: isLineDrawableTool(drag.shapeType)
+              ? {
+                  start: lineDraft?.start ?? drag.startPoint,
+                  end: lineDraft?.end ?? drawEndPoint,
+                  arrow: drag.shapeType === "arrow",
+                }
+              : null,
           });
           return;
         }
@@ -2290,7 +2700,14 @@ export const SkiaCanvas = memo(
         if (drag.kind === "lineEndpoint") {
           const scene = getPointerScenePoint(event);
           if (!scene) return;
-          const next = getLineEndpointDragDraft(drag, scene, event.shiftKey);
+          const snap = getConnectorSnap(scene, {
+            excludeNodeIds: selectedIdsRef.current,
+          });
+          const next = getLineEndpointDragDraft(
+            drag,
+            snap?.point ?? scene,
+            event.shiftKey,
+          );
           const node = findNode(
             docRef.current,
             drag.nodeId,
@@ -2458,6 +2875,7 @@ export const SkiaCanvas = memo(
       },
       [
         endViewportPan,
+        getConnectorSnap,
         getPointerScenePoint,
         penTool,
         setEditorOverlay,
@@ -2473,36 +2891,61 @@ export const SkiaCanvas = memo(
         if (drag?.kind === "drawShape" && renderer) {
           const scene = getPointerScenePoint(event);
           if (scene) {
-            const lineDraft =
-              drag.shapeType === "line" || drag.shapeType === "arrow"
-                ? getLineDrawDraft(drag.startPoint, scene, {
-                    constrain: event.shiftKey,
-                    fromCenter: drag.fromCenter || event.altKey,
-                  })
-                : null;
+            const endSnap = shouldAttachConnectorForTool(drag.shapeType)
+              ? getConnectorSnap(scene, {
+                  excludeNodeIds: drag.startConnector
+                    ? [drag.startConnector.nodeId]
+                    : undefined,
+                })
+              : null;
+            const drawEndPoint = endSnap?.point ?? scene;
+            const lineDraft = isLineDrawableTool(drag.shapeType)
+              ? getLineDrawDraft(drag.startPoint, drawEndPoint, {
+                  constrain: event.shiftKey,
+                  fromCenter: drag.fromCenter || event.altKey,
+                })
+              : null;
             const bounds = normalizeDrawBounds(
               drag.startPoint,
-              scene,
-              event.shiftKey &&
-                drag.shapeType !== "line" &&
-                drag.shapeType !== "arrow",
+              drawEndPoint,
+              event.shiftKey && !isLineDrawableTool(drag.shapeType),
             );
-            const isLineTool =
-              drag.shapeType === "line" || drag.shapeType === "arrow";
+            const isLineTool = isLineDrawableTool(drag.shapeType);
             const isDrawableSize = isLineTool
               ? Math.hypot(
-                  (lineDraft?.end.x ?? scene.x) -
+                  (lineDraft?.end.x ?? drawEndPoint.x) -
                     (lineDraft?.start.x ?? drag.startPoint.x),
-                  (lineDraft?.end.y ?? scene.y) -
+                  (lineDraft?.end.y ?? drawEndPoint.y) -
                     (lineDraft?.start.y ?? drag.startPoint.y),
                 ) >= MIN_DRAW_SIZE
               : bounds.width >= MIN_DRAW_SIZE && bounds.height >= MIN_DRAW_SIZE;
             if (isDrawableSize) {
+              const connector =
+                shouldAttachConnectorForTool(drag.shapeType) &&
+                (drag.startConnector || endSnap)
+                  ? {
+                      ...(drag.startConnector
+                        ? { start: drag.startConnector }
+                        : null),
+                      ...(endSnap
+                        ? {
+                            end: {
+                              nodeId: endSnap.nodeId,
+                              side: endSnap.side,
+                              ratio: endSnap.ratio,
+                            },
+                          }
+                        : null),
+                      routing: "smooth" as const,
+                      arrow: drag.shapeType === "arrow",
+                    }
+                  : undefined;
               const node = createDrawableCanvasNode(
                 drag.shapeType,
                 bounds,
                 lineDraft?.start ?? drag.startPoint,
-                lineDraft?.end ?? scene,
+                lineDraft?.end ?? drawEndPoint,
+                connector,
               );
               const next = applyCanvasOperation(docRef.current, {
                 type: "insertNode",
@@ -2648,16 +3091,53 @@ export const SkiaCanvas = memo(
           const activePageId = activePageIdRef.current;
           const scene = getPointerScenePoint(event);
           if (scene) {
-            const draft = getLineEndpointDragDraft(drag, scene, event.shiftKey);
+            const snap = getConnectorSnap(scene, {
+              excludeNodeIds: selectedIdsRef.current,
+            });
+            const draft = getLineEndpointDragDraft(
+              drag,
+              snap?.point ?? scene,
+              event.shiftKey,
+            );
+            const node = findNode(docRef.current, drag.nodeId, activePageId);
+            let connector: NonNullable<LineNode["connector"]> =
+              node && node.type === "line" && node.connector
+                ? { ...node.connector }
+                : {};
+            if (snap) {
+              connector[drag.endpoint] = {
+                nodeId: snap.nodeId,
+                side: snap.side,
+                ratio: snap.ratio,
+              };
+              connector.routing = connector.routing ?? "smooth";
+            } else if (node?.type === "line") {
+              const detached = detachConnectorEndpointBinding(
+                node,
+                drag.endpoint,
+              );
+              connector = detached.connector ?? {};
+            }
             const next = applyCanvasOperation(docRef.current, {
               type: "updateNode",
               nodeId: drag.nodeId,
               updates:
                 drag.endpoint === "start"
-                  ? ({ x: draft.start.x, y: draft.start.y } as Partial<PenNode>)
+                  ? ({
+                      x: draft.start.x,
+                      y: draft.start.y,
+                      connector:
+                        connector.start || connector.end
+                          ? connector
+                          : undefined,
+                    } as Partial<PenNode>)
                   : ({
                       x2: draft.end.x,
                       y2: draft.end.y,
+                      connector:
+                        connector.start || connector.end
+                          ? connector
+                          : undefined,
                     } as Partial<PenNode>),
               activePageId,
             });
@@ -2808,6 +3288,7 @@ export const SkiaCanvas = memo(
         beginTextEdit,
         commitDocument,
         endViewportPan,
+        getConnectorSnap,
         getPointerScenePoint,
         penTool,
         scheduleRendererIdle,
@@ -2826,6 +3307,34 @@ export const SkiaCanvas = memo(
         endViewportPan("aux_click");
       },
       [endViewportPan],
+    );
+
+    const handleContextMenu = useCallback(
+      (event: React.MouseEvent<HTMLDivElement>) => {
+        const renderer = rendererRef.current;
+        if (!renderer) return;
+        event.preventDefault();
+        flushRendererDocumentSyncBeforeInteraction();
+        const hit = renderer.hitTest(event.clientX, event.clientY);
+        if (hit && !selectedIdsRef.current.includes(hit.id)) {
+          setSelection([hit.id]);
+        }
+        setContextMenu({
+          x: event.clientX,
+          y: event.clientY,
+          targetId: hit?.id ?? null,
+          scenePoint: getPointerScenePoint(event),
+        });
+        console.info("[skia-canvas] context-menu.opened", {
+          targetId: hit?.id ?? null,
+          selectedCount: hit ? 1 : selectedIdsRef.current.length,
+        });
+      },
+      [
+        flushRendererDocumentSyncBeforeInteraction,
+        getPointerScenePoint,
+        setSelection,
+      ],
     );
 
     const commitTextEdit = useCallback(
@@ -3036,6 +3545,140 @@ export const SkiaCanvas = memo(
         return container;
       },
       [commitDocument, getLiveViewportPlacement, setSelection],
+    );
+
+    const createSection = useCallback(
+      (opts?: {
+        name?: string;
+        x?: number;
+        y?: number;
+        width?: number;
+        height?: number;
+      }) => {
+        const id = createNodeId("section");
+        const placement = getLiveViewportPlacement();
+        const defaultB = defaultBounds(
+          docRef.current,
+          "section",
+          null,
+          placement.viewport,
+          placement.rect,
+        );
+        const bounds = {
+          x: opts?.x ?? defaultB.x,
+          y: opts?.y ?? defaultB.y,
+          width: opts?.width ?? 640,
+          height: opts?.height ?? 420,
+        };
+        const section = createSectionFrameNode(
+          id,
+          bounds,
+          opts?.name ?? "Section",
+        );
+        const next = applyCanvasOperation(docRef.current, {
+          type: "insertNode",
+          node: section,
+          activePageId: activePageIdRef.current,
+        });
+        commitDocument(next, { selection: [id] });
+        setSelection([id], { notifyScene: false });
+        console.info("[skia-canvas] section.created", { sectionId: id });
+        return section;
+      },
+      [commitDocument, getLiveViewportPlacement, setSelection],
+    );
+
+    const createSticky = useCallback(
+      (opts?: {
+        text?: string;
+        x?: number;
+        y?: number;
+        width?: number;
+        height?: number;
+      }) => {
+        const placement = getLiveViewportPlacement();
+        const defaultB = defaultBounds(
+          docRef.current,
+          "sticky",
+          null,
+          placement.viewport,
+          placement.rect,
+        );
+        const bounds = {
+          x: opts?.x ?? defaultB.x,
+          y: opts?.y ?? defaultB.y,
+          width: opts?.width ?? 220,
+          height: opts?.height ?? 200,
+        };
+        const sticky = createStickyNode(bounds, opts?.text);
+        const next = applyCanvasOperation(docRef.current, {
+          type: "insertNode",
+          node: sticky,
+          activePageId: activePageIdRef.current,
+        });
+        commitDocument(next, { selection: [sticky.id] });
+        setSelection([sticky.id], { notifyScene: false });
+        console.info("[skia-canvas] sticky.created", { stickyId: sticky.id });
+        return sticky;
+      },
+      [commitDocument, getLiveViewportPlacement, setSelection],
+    );
+
+    const createConnector = useCallback(
+      (opts: {
+        start: { x: number; y: number };
+        end: { x: number; y: number };
+        arrow?: boolean;
+      }) => {
+        const startSnap = getConnectorSnap(opts.start);
+        const endSnap = getConnectorSnap(opts.end, {
+          excludeNodeIds: startSnap ? [startSnap.nodeId] : undefined,
+        });
+        const connector =
+          startSnap || endSnap
+            ? {
+                ...(startSnap
+                  ? {
+                      start: {
+                        nodeId: startSnap.nodeId,
+                        side: startSnap.side,
+                        ratio: startSnap.ratio,
+                      },
+                    }
+                  : null),
+                ...(endSnap
+                  ? {
+                      end: {
+                        nodeId: endSnap.nodeId,
+                        side: endSnap.side,
+                        ratio: endSnap.ratio,
+                      },
+                    }
+                  : null),
+                routing: "smooth" as const,
+                arrow: opts.arrow,
+              }
+            : undefined;
+        const node = createLineNode(
+          opts.arrow ? "arrow" : "line",
+          startSnap?.point ?? opts.start,
+          endSnap?.point ?? opts.end,
+          connector,
+        );
+        const next = applyCanvasOperation(docRef.current, {
+          type: "insertNode",
+          node,
+          activePageId: activePageIdRef.current,
+        });
+        commitDocument(next, { selection: [node.id] });
+        setSelection([node.id], { notifyScene: false });
+        console.info("[skia-canvas] connector.created", {
+          connectorId: node.id,
+          attached: Boolean(connector?.start || connector?.end),
+        });
+        return node;
+      },
+      [commitDocument, getConnectorSnap, setSelection],
     );
 
     const createShapeNode = useCallback(
@@ -4036,6 +4679,29 @@ export const SkiaCanvas = memo(
         getActiveTool: () => activeToolRef.current,
         setActiveTool: (tool) => setActiveTool(tool),
         createContainer,
+        createSection,
+        createSticky,
+        createConnector,
+        detachConnectorEndpoint: (nodeId, endpoint) => {
+          const node = findNode(
+            docRef.current,
+            nodeId,
+            activePageIdRef.current,
+          );
+          if (!node || node.type !== "line") return;
+          const nextNode = detachConnectorEndpointBinding(node, endpoint);
+          const next = applyCanvasOperation(docRef.current, {
+            type: "updateNode",
+            nodeId,
+            updates: { connector: nextNode.connector } as Partial<PenNode>,
+            activePageId: activePageIdRef.current,
+          });
+          commitDocument(next, { selection: [nodeId] });
+          console.info("[skia-canvas] connector.endpoint.detached", {
+            nodeId,
+            endpoint,
+          });
+        },
         insertNode: (node, containerId) => {
           const next = applyCanvasOperation(docRef.current, {
             type: "insertNode",
@@ -4440,6 +5106,9 @@ export const SkiaCanvas = memo(
         commitDocument,
         copySelection,
         createContainer,
+        createConnector,
+        createSection,
+        createSticky,
         deletePage,
         deleteSelection,
         duplicatePage,
@@ -4710,6 +5379,7 @@ export const SkiaCanvas = memo(
           style={{ backgroundColor: "#ffffff" }}
           onAuxClick={handleAuxClick}
           onClick={handleCanvasClick}
+          onContextMenu={handleContextMenu}
           onKeyDown={() => undefined}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
@@ -4803,12 +5473,24 @@ export const SkiaCanvas = memo(
             onToolChange={setActiveTool}
           />
 
+          <CanvasSelectionToolbarConnected
+            api={api}
+            canvasRect={canvasContainerRef.current?.getBoundingClientRect()}
+            viewport={rendererRef.current?.getViewport() ?? null}
+          />
+
+          <CanvasContextMenu
+            api={api}
+            menu={contextMenu}
+            onClose={() => setContextMenu(null)}
+          />
+
           <CanvasBooleanToolbarConnected
             booleanRuntimeStatus={booleanRuntimeStatus}
             onBooleanOperation={api.applyBooleanOperation}
           />
 
-          <div className="absolute bottom-4 left-[clamp(6rem,50%,calc(100vw-6rem))] z-20 flex -translate-x-1/2 justify-center">
+          <div className="absolute bottom-16 left-[clamp(6rem,50%,calc(100vw-6rem))] z-20 flex -translate-x-1/2 justify-center">
             <CanvasPageTabsConnected api={api} />
           </div>
 
@@ -4840,9 +5522,22 @@ function isDragDrawableTool(tool: CanvasTool): tool is DrawableCanvasTool {
   return (
     isDrawableShapeTool(tool) ||
     tool === "container" ||
+    tool === "section" ||
+    tool === "sticky" ||
+    tool === "connector" ||
     tool === "line" ||
     tool === "arrow"
   );
+}
+
+function isLineDrawableTool(
+  tool: CanvasTool | DrawableCanvasTool,
+): tool is "line" | "arrow" | "connector" {
+  return tool === "line" || tool === "arrow" || tool === "connector";
+}
+
+function shouldAttachConnectorForTool(tool: CanvasTool | DrawableCanvasTool) {
+  return tool === "connector" || tool === "arrow";
 }
 
 function hasFileDataTransfer(dataTransfer: DataTransfer | null): boolean {
@@ -4909,11 +5604,21 @@ function getDrawableToolPreview(
   tool: DrawableCanvasTool,
   bounds: CanvasBounds,
 ): EditorOverlayState["shapePreview"] {
-  if (tool === "line" || tool === "arrow") return null;
+  if (tool === "line" || tool === "arrow" || tool === "connector") return null;
   return {
-    type: tool === "container" ? "rect" : tool,
+    type:
+      tool === "container" || tool === "section" || tool === "sticky"
+        ? "rect"
+        : tool,
     bounds,
-    fillColor: tool === "rect" ? DEFAULT_RECT_FILL : DEFAULT_SHAPE_FILL,
+    fillColor:
+      tool === "rect"
+        ? DEFAULT_RECT_FILL
+        : tool === "sticky"
+          ? "#FFE59A"
+          : tool === "section"
+            ? "rgba(255,242,235,0.72)"
+            : DEFAULT_SHAPE_FILL,
   };
 }
 
@@ -5098,12 +5803,24 @@ function createDrawableCanvasNode(
   bounds: CanvasBounds,
   start: { x: number; y: number },
   end: { x: number; y: number },
+  connector?: LineNode["connector"],
 ): PenNode {
   if (type === "container") {
     return createFrameNode(createNodeId("container"), bounds, "New container");
   }
-  if (type === "line" || type === "arrow") {
-    return createLineNode(type, start, end);
+  if (type === "section") {
+    return createSectionFrameNode(createNodeId("section"), bounds, "Section");
+  }
+  if (type === "sticky") {
+    return createStickyNode(bounds);
+  }
+  if (isLineDrawableTool(type)) {
+    return createLineNode(
+      type === "arrow" ? "arrow" : "line",
+      start,
+      end,
+      connector,
+    );
   }
 
   const id = createNodeId(type === "rect" ? "rectangle" : type);
@@ -5177,10 +5894,81 @@ function createFrameNode(
   } as PenNode;
 }
 
+function createSectionFrameNode(
+  id: string,
+  bounds: CanvasBounds,
+  name: string,
+): PenNode {
+  return {
+    ...createFrameNode(id, bounds, name),
+    fill: [{ type: "solid", color: "rgba(255,242,235,0.72)" }],
+    stroke: {
+      thickness: 1,
+      fill: [{ type: "solid", color: "rgba(255,128,96,0.45)" }],
+    },
+    meta: {
+      boardKind: "section",
+      showTitlePill: true,
+      lockMode: "background",
+    },
+  } as PenNode;
+}
+
+function createStickyNode(
+  bounds: CanvasBounds,
+  text = "Type anything",
+): PenNode {
+  const id = createNodeId("sticky");
+  return {
+    id,
+    type: "frame",
+    name: "Sticky",
+    x: bounds.x,
+    y: bounds.y,
+    width: Math.max(bounds.width, 160),
+    height: Math.max(bounds.height, 140),
+    fill: [{ type: "solid", color: "#FFE59A" }],
+    stroke: {
+      thickness: 1,
+      fill: [{ type: "solid", color: "rgba(143,112,35,0.18)" }],
+    },
+    cornerRadius: 4,
+    effects: [
+      {
+        type: "shadow",
+        color: "rgba(0,0,0,0.12)",
+        offsetX: 0,
+        offsetY: 8,
+        blur: 18,
+        spread: 0,
+      },
+    ],
+    meta: { boardKind: "sticky" },
+    children: [
+      {
+        id: createNodeId("sticky_text"),
+        type: "text",
+        name: "Sticky text",
+        x: 20,
+        y: 20,
+        width: Math.max(bounds.width, 160) - 40,
+        height: Math.max(bounds.height, 140) - 40,
+        content: text,
+        fontFamily: DEFAULT_TEXT_FONT_FAMILY,
+        fontSize: 24,
+        lineHeight: 1.35,
+        textGrowth: "fixed-width",
+        fill: [{ type: "solid", color: "rgba(91,72,27,0.72)" }],
+      } as PenNode,
+    ],
+  } as PenNode;
+}
+
 function createLineNode(
   type: "line" | "arrow",
   start: { x: number; y: number },
   end: { x: number; y: number },
+  connector?: LineNode["connector"],
 ): PenNode {
   const id = createNodeId(type);
   return {
@@ -5193,6 +5981,15 @@ function createLineNode(
     height: Math.max(Math.abs(end.y - start.y), 1),
     x2: end.x,
     y2: end.y,
+    ...(connector
+      ? {
+          connector: {
+            ...connector,
+            arrow: type === "arrow" || connector.arrow,
+            routing: connector.routing ?? "smooth",
+          },
+        }
+      : null),
     stroke: {
       thickness: 3,
       cap: "round",

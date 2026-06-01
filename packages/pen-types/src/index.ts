@@ -54,6 +54,11 @@ export type {
   InheritPolicy,
   ContextSlots,
   IOPort,
+  PenConnectorBinding,
+  PenConnectorEndpointBinding,
+  PenConnectorEndpointKey,
+  PenConnectorRouting,
+  PenConnectorSide,
   AgentBinding,
   ContainerPermissions,
   // Node base

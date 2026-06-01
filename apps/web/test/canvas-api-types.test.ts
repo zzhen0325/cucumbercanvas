@@ -19,7 +19,10 @@ type Expect<T extends true> = T;
 type PhaseACanvasTool =
   | "select"
   | "hand"
+  | "sticky"
   | "container"
+  | "section"
+  | "connector"
   | "rect"
   | "ellipse"
   | "polygon"
@@ -73,7 +76,10 @@ type PhaseACanvasApiContract = [
 const phaseATools = [
   "select",
   "hand",
+  "sticky",
   "container",
+  "section",
+  "connector",
   "rect",
   "ellipse",
   "polygon",

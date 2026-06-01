@@ -89,7 +89,10 @@ export type AlignMode =
 export type CanvasTool =
   | "select"
   | "hand"
+  | "sticky"
   | "container"
+  | "section"
+  | "connector"
   | "rect"
   | "ellipse"
   | "polygon"
@@ -128,6 +131,26 @@ export type CanvasApi = {
     width?: number;
     height?: number;
   }) => PenNode;
+  createSection: (opts?: {
+    name?: string;
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+  }) => PenNode;
+  createSticky: (opts?: {
+    text?: string;
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+  }) => PenNode;
+  createConnector: (opts: {
+    start: { x: number; y: number };
+    end: { x: number; y: number };
+    arrow?: boolean;
+  }) => PenNode;
+  detachConnectorEndpoint: (nodeId: string, endpoint: "start" | "end") => void;
   insertNode: (node: PenNode, containerId?: string | null) => void;
   updateNode: (nodeId: string, updates: Partial<PenNode>) => void;
   deleteNode: (nodeId: string) => void;

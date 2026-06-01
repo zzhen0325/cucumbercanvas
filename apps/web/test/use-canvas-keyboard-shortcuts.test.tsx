@@ -152,7 +152,7 @@ describe("useCanvasKeyboardShortcuts paste handling", () => {
     const options = createOptions();
     await mountHook(options);
 
-    for (const key of ["v", "t", "h", "r", "o", "f", "p", "l"]) {
+    for (const key of ["v", "t", "h", "s", "c", "r", "o", "f", "p", "l"]) {
       const event = new KeyboardEvent("keydown", {
         key,
         bubbles: true,
@@ -172,12 +172,14 @@ describe("useCanvasKeyboardShortcuts paste handling", () => {
     expect(options.setActiveTool).toHaveBeenNthCalledWith(1, "select");
     expect(options.setActiveTool).toHaveBeenNthCalledWith(2, "text");
     expect(options.setActiveTool).toHaveBeenNthCalledWith(3, "hand");
-    expect(options.setActiveTool).toHaveBeenNthCalledWith(4, "rect");
-    expect(options.setActiveTool).toHaveBeenNthCalledWith(5, "ellipse");
-    expect(options.setActiveTool).toHaveBeenNthCalledWith(6, "container");
-    expect(options.setActiveTool).toHaveBeenNthCalledWith(7, "pen");
-    expect(options.setActiveTool).toHaveBeenNthCalledWith(8, "line");
-    expect(options.setActiveTool).toHaveBeenNthCalledWith(9, "arrow");
+    expect(options.setActiveTool).toHaveBeenNthCalledWith(4, "sticky");
+    expect(options.setActiveTool).toHaveBeenNthCalledWith(5, "connector");
+    expect(options.setActiveTool).toHaveBeenNthCalledWith(6, "rect");
+    expect(options.setActiveTool).toHaveBeenNthCalledWith(7, "ellipse");
+    expect(options.setActiveTool).toHaveBeenNthCalledWith(8, "section");
+    expect(options.setActiveTool).toHaveBeenNthCalledWith(9, "pen");
+    expect(options.setActiveTool).toHaveBeenNthCalledWith(10, "line");
+    expect(options.setActiveTool).toHaveBeenNthCalledWith(11, "arrow");
   });
 
   it("handles browser-style canvas zoom shortcuts", async () => {

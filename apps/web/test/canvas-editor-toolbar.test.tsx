@@ -40,9 +40,15 @@ describe("CanvasEditorToolbar", () => {
     expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
 
     await user.click(screen.getByRole("button", { name: "Text" }));
+    await user.click(screen.getByRole("button", { name: "Sticky" }));
+    await user.click(screen.getByRole("button", { name: "Connector" }));
+    await user.click(screen.getByRole("button", { name: "Section" }));
 
     expect(props.onUndo).not.toHaveBeenCalled();
-    expect(props.onToolChange).toHaveBeenCalledWith("text");
+    expect(props.onToolChange).toHaveBeenNthCalledWith(1, "text");
+    expect(props.onToolChange).toHaveBeenNthCalledWith(2, "sticky");
+    expect(props.onToolChange).toHaveBeenNthCalledWith(3, "connector");
+    expect(props.onToolChange).toHaveBeenNthCalledWith(4, "section");
   });
 
   it("chooses shape tools and exposes insert/import actions from the shape menu", async () => {

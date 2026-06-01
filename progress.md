@@ -4,6 +4,18 @@ Last updated: 2026-06-01 CST
 
 ## 2026-06-01
 
+- Added the FigJam-like canvas editing slice: `LineNode` now supports typed connector binding metadata, canvas-core keeps attached connector endpoints reconciled across move/resize/delete operations, dangling connector references fail with readable diagnostics, pen-renderer draws smooth routed connectors with endpoint tips aligned to the curve tangent, and SkiaCanvas can create/snap/detach connector and arrow-connector endpoints against container sides.
+- Added productized canvas editing controls for this slice: the main editor toolbar is now a bottom-centered floating toolbar with sticky, connector, arrow connector, and Section tools; selection gets a viewport-following floating toolbar; right-click opens contextual canvas/node/multi-select/connector actions; keyboard shortcuts now include `S`, `C`, `Shift+C`, and `F`.
+- Passed: `pnpm --filter @cucumber/canvas-core test -- --runInBand`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm --filter @cucumber/pen-types typecheck`.
+- Passed: `pnpm --filter @cucumber/pen-renderer typecheck`.
+- Passed: `pnpm --filter @cucumber/pen-renderer test`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm --dir apps/web exec vitest run test/canvas-editor-toolbar.test.tsx test/use-canvas-keyboard-shortcuts.test.tsx test/canvas-api-types.test.ts`.
+- Passed: `pnpm lint`.
+- Failed: root `pnpm typecheck` still stops in existing unrelated `packages/pen-core/__tests__` strictness diagnostics (`Object is possibly undefined`), outside this FigJam-like canvas editing slice.
+- Note: an accidental broad `pnpm --filter @cucumber/web test -- ...` invocation still hits the existing unrelated `apps/web/test/projects.test.tsx` toast text assertion; the corrected direct Vitest command above passed.
 - Advanced the Figma-style line/arrow tool slice: line nodes now use endpoint-driven geometry helpers for local/scene bounds, reverse-drag/Shift/Option creation keeps real `x/y/x2/y2` endpoints, selected lines expose endpoint handles, line moves update both endpoints, arrows use typed stroke endpoint tips with legacy `_connectorType` render/export compatibility, and SVG export now emits real line endpoints plus marker/dash/cap data.
 - Passed: `pnpm --filter @cucumber/canvas-core test`.
 - Passed: `pnpm --filter @cucumber/pen-renderer test`.

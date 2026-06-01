@@ -2607,23 +2607,64 @@ export class SkiaNodeRenderer {
         },
       },
       (paint) => {
-        canvas.drawLine(x1, y1, x2, y2, paint);
+        const routed = this.buildConnectorLinePath(lNode, x1, y1, x2, y2);
+        if (routed) {
+          canvas.drawPath(routed.path, paint);
+        } else {
+          canvas.drawLine(x1, y1, x2, y2, paint);
+        }
         this.drawLineEndpointTip(canvas, lNode, stroke, paint, "start", {
           x: x1,
           y: y1,
-          angle: Math.atan2(y1 - y2, x1 - x2),
+          angle: routed?.startAngle ?? Math.atan2(y1 - y2, x1 - x2),
           strokeWidth,
           opacity,
         });
         this.drawLineEndpointTip(canvas, lNode, stroke, paint, "end", {
           x: x2,
           y: y2,
-          angle: Math.atan2(y2 - y1, x2 - x1),
+          angle: routed?.endAngle ?? Math.atan2(y2 - y1, x2 - x1),
           strokeWidth,
           opacity,
         });
+        routed?.path.delete();
       },
     );
+  }
+
+  private buildConnectorLinePath(
+    node: LineNode,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+  ): {
+    endAngle: number;
+    path: SkiaPath;
+    startAngle: number;
+  } | null {
+    if (node.connector?.routing !== "smooth") return null;
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    if (Math.abs(dx) < 4 || Math.abs(dy) < 4) return null;
+
+    const path = new this.ck.Path();
+    const horizontalFirst = Math.abs(dx) >= Math.abs(dy);
+    const cp1 = horizontalFirst
+      ? { x: x1 + dx * 0.5, y: y1 }
+      : { x: x1, y: y1 + dy * 0.5 };
+    const cp2 = horizontalFirst
+      ? { x: x2 - dx * 0.5, y: y2 }
+      : { x: x2, y: y2 - dy * 0.5 };
+
+    path.moveTo(x1, y1);
+    path.cubicTo(cp1.x, cp1.y, cp2.x, cp2.y, x2, y2);
+
+    return {
+      path,
+      startAngle: Math.atan2(y1 - cp1.y, x1 - cp1.x),
+      endAngle: Math.atan2(y2 - cp2.y, x2 - cp2.x),
+    };
   }
 
   private drawLineEndpointTip(
