@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  SkiaNodeRenderer,
   getAngularGradientSweepAngles,
   getClosedShapeStrokeAlignPlan,
   getDiamondGradientUniforms,
   getImageFillShaderMatrix,
   getImageObjectFitDrawRect,
   getInnerShadowStrokeWidth,
+  getLayerBlurExpandedBounds,
   getLinearGradientEndpoints,
   getRectIndependentStrokeSides,
   getRoundedRectCornerControlFactor,
@@ -19,6 +21,107 @@ import {
   shouldUseRoundLineCapFallback,
   toCanvasKitNodeTransform,
 } from "./node-renderer.js";
+
+class FakePaint {
+  deleted = false;
+
+  setAntiAlias() {}
+  setAlphaf() {}
+  setBlendMode() {}
+  setColor() {}
+  setColorFilter() {}
+  setImageFilter() {}
+  setMaskFilter() {}
+  setPathEffect() {}
+  setShader() {}
+  setStrokeCap() {}
+  setStrokeJoin() {}
+  setStrokeMiter() {}
+  setStrokeWidth() {}
+  setStyle() {}
+
+  delete() {
+    this.deleted = true;
+  }
+}
+
+type FakeCanvasCall =
+  | "save"
+  | "saveLayer"
+  | "restore"
+  | "clipRect"
+  | "drawImageRect";
+
+function createLayerBlurImageHarness() {
+  const filters: Array<{ sigmaX: number; sigmaY: number; deleted: boolean }> =
+    [];
+  const ck = {
+    ClipOp: { Intersect: "intersect" },
+    FilterMode: { Linear: "linear" },
+    ImageFilter: {
+      MakeBlur: (sigmaX: number, sigmaY: number) => {
+        const filter = {
+          sigmaX,
+          sigmaY,
+          deleted: false,
+          delete() {
+            filter.deleted = true;
+          },
+        };
+        filters.push(filter);
+        return filter;
+      },
+    },
+    LTRBRect: (left: number, top: number, right: number, bottom: number) => [
+      left,
+      top,
+      right,
+      bottom,
+    ],
+    MipmapMode: { None: "none" },
+    Paint: FakePaint,
+    TileMode: { Clamp: "clamp" },
+    TypefaceFontProvider: {
+      Make: () => ({
+        countFamilies: () => 0,
+        delete: () => {},
+        registerFont: () => null,
+      }),
+    },
+  };
+
+  const renderer = new SkiaNodeRenderer(ck as never);
+  renderer.imageLoader.getForDisplay = () =>
+    ({
+      height: () => 50,
+      width: () => 100,
+    }) as never;
+
+  const calls: FakeCanvasCall[] = [];
+  const saveLayerBounds: number[][] = [];
+  const canvas = {
+    clipRect() {
+      calls.push("clipRect");
+    },
+    drawImageRect() {
+      calls.push("drawImageRect");
+    },
+    restore() {
+      calls.push("restore");
+    },
+    save() {
+      calls.push("save");
+      return calls.length;
+    },
+    saveLayer(_paint: FakePaint, bounds: number[]) {
+      calls.push("saveLayer");
+      saveLayerBounds.push(bounds);
+      return calls.length;
+    },
+  };
+
+  return { canvas, calls, filters, renderer, saveLayerBounds };
+}
 
 describe("getVisibleBlurEffects", () => {
   it("keeps all visible blur layers in Figma effect order", () => {
@@ -97,6 +200,95 @@ describe("getVisibleBlurEffects", () => {
         radius: 6,
         blendMode: "multiply",
       },
+    ]);
+  });
+});
+
+describe("layer blur rendering", () => {
+  it("expands layer blur saveLayer bounds around the node", () => {
+    expect(
+      getLayerBlurExpandedBounds({ x: 10, y: 20, w: 100, h: 80 }, 4),
+    ).toEqual({
+      left: 2,
+      top: 12,
+      right: 118,
+      bottom: 108,
+    });
+    expect(
+      getLayerBlurExpandedBounds(
+        { x: 10, y: 20, w: 100, h: 80 },
+        Number.POSITIVE_INFINITY,
+      ),
+    ).toBeNull();
+  });
+
+  it("keeps image layer blur saveLayer and restore calls balanced", () => {
+    const { canvas, calls, filters, renderer, saveLayerBounds } =
+      createLayerBlurImageHarness();
+
+    renderer.interactionMode = "idle";
+    renderer.drawNode(
+      canvas as never,
+      {
+        absH: 80,
+        absW: 100,
+        absX: 10,
+        absY: 20,
+        node: {
+          effects: [{ type: "blur", radius: 4 }],
+          id: "image-with-blur",
+          src: "asset://photo",
+          type: "image",
+        },
+      } as never,
+    );
+
+    expect(calls.filter((call) => call === "save")).toHaveLength(1);
+    expect(calls.filter((call) => call === "saveLayer")).toHaveLength(1);
+    expect(calls.filter((call) => call === "restore")).toHaveLength(2);
+    expect(saveLayerBounds).toEqual([[2, 12, 118, 108]]);
+    expect(
+      filters.map(({ sigmaX, sigmaY, deleted }) => ({
+        deleted,
+        sigmaX,
+        sigmaY,
+      })),
+    ).toEqual([{ sigmaX: 2, sigmaY: 2, deleted: true }]);
+    expect(calls.indexOf("saveLayer")).toBeLessThan(
+      calls.indexOf("drawImageRect"),
+    );
+  });
+
+  it("nests multiple image layer blurs without adding raw canvas saves", () => {
+    const { canvas, calls, renderer, saveLayerBounds } =
+      createLayerBlurImageHarness();
+
+    renderer.interactionMode = "idle";
+    renderer.drawNode(
+      canvas as never,
+      {
+        absH: 60,
+        absW: 120,
+        absX: 30,
+        absY: 40,
+        node: {
+          effects: [
+            { type: "blur", radius: 4 },
+            { type: "blur", radius: 10 },
+          ],
+          id: "image-with-two-blurs",
+          src: "asset://photo",
+          type: "image",
+        },
+      } as never,
+    );
+
+    expect(calls.filter((call) => call === "save")).toHaveLength(1);
+    expect(calls.filter((call) => call === "saveLayer")).toHaveLength(2);
+    expect(calls.filter((call) => call === "restore")).toHaveLength(3);
+    expect(saveLayerBounds).toEqual([
+      [10, 20, 170, 120],
+      [22, 32, 158, 108],
     ]);
   });
 });

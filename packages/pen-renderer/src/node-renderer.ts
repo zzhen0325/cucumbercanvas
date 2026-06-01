@@ -451,6 +451,32 @@ export function getInnerShadowStrokeWidth(
   return Math.max(1, shadow.blur + (shadow.spread ?? 0) * 2);
 }
 
+export function getLayerBlurExpandedBounds(
+  bounds: { x: number; y: number; w: number; h: number },
+  radius: number,
+): { left: number; top: number; right: number; bottom: number } | null {
+  if (
+    !Number.isFinite(radius) ||
+    radius <= 0 ||
+    !Number.isFinite(bounds.x) ||
+    !Number.isFinite(bounds.y) ||
+    !Number.isFinite(bounds.w) ||
+    !Number.isFinite(bounds.h) ||
+    bounds.w <= 0 ||
+    bounds.h <= 0
+  ) {
+    return null;
+  }
+
+  const outset = Math.ceil(radius * 2);
+  return {
+    left: bounds.x - outset,
+    top: bounds.y - outset,
+    right: bounds.x + bounds.w + outset,
+    bottom: bounds.y + bounds.h + outset,
+  };
+}
+
 export function shouldUseRoundLineCapFallback(
   node: Pick<LineNode, "stroke" | "meta">,
 ): boolean {
@@ -1850,23 +1876,55 @@ export class SkiaNodeRenderer {
     for (let i = blurEffects.length - 1; i >= 0; i -= 1) {
       const blurEffect = blurEffects[i];
       if (!blurEffect) continue;
-      canvas.save();
-      blurLayerCount += 1;
-      const blurPaint = new ck.Paint();
-      blurPaint.setImageFilter(
-        ck.ImageFilter.MakeBlur(
-          blurEffect.radius / 2,
-          blurEffect.radius / 2,
-          ck.TileMode.Clamp,
-          null,
-        ),
+      const blurBounds = getLayerBlurExpandedBounds(
+        { x: absX, y: absY, w: absW, h: absH },
+        blurEffect.radius,
       );
+      if (!blurBounds) {
+        console.warn("[pen-renderer] layer-blur.invalid", {
+          nodeId: node.id,
+          nodeType: node.type,
+          radius: blurEffect.radius,
+          interactionMode: this.interactionMode,
+          bounds: { x: absX, y: absY, w: absW, h: absH },
+        });
+        continue;
+      }
+      const blurPaint = new ck.Paint();
+      const blurFilter = ck.ImageFilter.MakeBlur(
+        blurEffect.radius / 2,
+        blurEffect.radius / 2,
+        ck.TileMode.Clamp,
+        null,
+      );
+      blurPaint.setImageFilter(blurFilter);
       if ((blurEffect.opacity ?? 1) < 1) {
         blurPaint.setAlphaf(blurEffect.opacity ?? 1);
       }
       const blurBlendMode = this.mapBlendMode(blurEffect.blendMode);
       if (blurBlendMode) blurPaint.setBlendMode(blurBlendMode);
-      canvas.saveLayer(blurPaint, null);
+      const layerStackHeight = canvas.saveLayer(
+        blurPaint,
+        ck.LTRBRect(
+          blurBounds.left,
+          blurBounds.top,
+          blurBounds.right,
+          blurBounds.bottom,
+        ),
+      );
+      blurFilter.delete();
+      blurPaint.delete();
+      if (!Number.isFinite(layerStackHeight) || layerStackHeight <= 0) {
+        console.warn("[pen-renderer] layer-blur.save-layer-failed", {
+          nodeId: node.id,
+          nodeType: node.type,
+          radius: blurEffect.radius,
+          interactionMode: this.interactionMode,
+          bounds: { x: absX, y: absY, w: absW, h: absH },
+        });
+        continue;
+      }
+      blurLayerCount += 1;
     }
 
     switch (node.type) {

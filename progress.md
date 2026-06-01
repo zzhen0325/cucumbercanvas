@@ -1,6 +1,13 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-30 CST
+Last updated: 2026-05-31 CST
+
+## 2026-05-31
+
+- Fixed image node layer-blur rendering so the Skia renderer no longer leaves an extra canvas save on each blur layer, constrains blur saveLayer bounds to the node plus radius-based bleed, and logs invalid blur layer inputs with node/effect/render-mode context instead of producing an opaque blank canvas after viewport interactions settle.
+- Passed: `pnpm --filter @cucumber/pen-renderer test`.
+- Passed: `pnpm --filter @cucumber/pen-renderer typecheck`.
+- Note: `pnpm --filter @cucumber/web build` still fails before app compilation because Next cannot fetch Google Font `Poppins` due to `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` in the local certificate chain.
 
 ## 2026-05-30
 
