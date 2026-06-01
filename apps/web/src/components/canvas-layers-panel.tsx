@@ -17,7 +17,9 @@ import type {
   CanvasAppState,
   CanvasFileRecord,
   CanvasSceneElement,
+  PenPage,
 } from "./canvas/canvas-api";
+import { CanvasPageTabs } from "./canvas/page-tabs";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -448,6 +450,8 @@ export function CanvasLayersPanel({
   const listRef = useRef<HTMLDivElement>(null);
   const [elements, setElements] = useState<CanvasSceneElement[]>([]);
   const [files, setFiles] = useState<Record<string, CanvasFileRecord>>({});
+  const [pages, setPages] = useState<PenPage[]>([]);
+  const [activePageId, setActivePageId] = useState<string>("");
   const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
   const [collapsedIds, setCollapsedIds] = useState<Record<string, boolean>>({});
   const [actionError, setActionError] = useState<string | null>(null);
@@ -482,6 +486,39 @@ export function CanvasLayersPanel({
     [],
   );
 
+  const syncPageSnapshot = useCallback(() => {
+    if (!canvasApi) return;
+    setPages(canvasApi.getPages());
+    setActivePageId(canvasApi.getActivePageId());
+  }, [canvasApi]);
+
+  const runPageAction = useCallback(
+    (
+      actionName: string,
+      context: Record<string, unknown>,
+      action: () => void,
+    ) => {
+      try {
+        setActionError(null);
+        action();
+        syncPageSnapshot();
+      } catch (error) {
+        const message =
+          error instanceof Error && error.message.trim()
+            ? error.message
+            : `Page action failed while trying to ${actionName}.`;
+        console.error("[canvas-layers-panel] page action failed", {
+          actionName,
+          ...context,
+          error,
+          message,
+        });
+        setActionError(message);
+      }
+    },
+    [syncPageSnapshot],
+  );
+
   /* -- Refresh elements on open + subscribe to changes -- */
   const applySceneSnapshot = useCallback(
     (
@@ -505,7 +542,8 @@ export function CanvasLayersPanel({
       canvasApi.getAppState(),
       canvasApi.getFiles() ?? {},
     );
-  }, [applySceneSnapshot, canvasApi]);
+    syncPageSnapshot();
+  }, [applySceneSnapshot, canvasApi, syncPageSnapshot]);
 
   // Throttle refresh to avoid hammering React state on every drag frame.
   // 100ms gives smooth UI without excessive re-renders during drawing.
@@ -518,13 +556,14 @@ export function CanvasLayersPanel({
     const unsubscribe = canvasApi.onChange(
       (nextElements, appState, nextFiles) => {
         throttledRefresh(nextElements, appState, nextFiles);
+        syncPageSnapshot();
       },
     );
     return () => {
       throttledRefresh.cancel();
       if (typeof unsubscribe === "function") unsubscribe();
     };
-  }, [open, canvasApi, applySceneSnapshot, refreshElements]);
+  }, [open, canvasApi, applySceneSnapshot, refreshElements, syncPageSnapshot]);
 
   useEffect(() => {
     if (!open) return;
@@ -803,6 +842,54 @@ export function CanvasLayersPanel({
           {actionError}
         </div>
       ) : null}
+
+      <section className="shrink-0 px-2 py-2" aria-label="Canvas pages">
+        <div className="mb-1 flex items-center justify-between px-1">
+          <span className="text-xs font-medium text-muted-foreground">
+            页面
+          </span>
+          <span className="text-[10px] text-muted-foreground">
+            {pages.length}
+          </span>
+        </div>
+        <CanvasPageTabs
+          activePageId={activePageId}
+          layout="sidebar"
+          onAddPage={() =>
+            runPageAction("add page", {}, () => {
+              canvasApi?.addPage();
+            })
+          }
+          onDeletePage={(pageId) =>
+            runPageAction("delete page", { pageId }, () => {
+              canvasApi?.deletePage(pageId);
+            })
+          }
+          onDuplicatePage={(pageId) =>
+            runPageAction("duplicate page", { pageId }, () => {
+              canvasApi?.duplicatePage(pageId);
+            })
+          }
+          onRenamePage={(pageId, name) =>
+            runPageAction("rename page", { name, pageId }, () => {
+              canvasApi?.renamePage(pageId, name);
+            })
+          }
+          onReorderPage={(pageId, direction) =>
+            runPageAction("reorder page", { direction, pageId }, () => {
+              canvasApi?.reorderPage(pageId, direction);
+            })
+          }
+          onSetActivePage={(pageId) =>
+            runPageAction("set active page", { pageId }, () => {
+              canvasApi?.setActivePage(pageId);
+            })
+          }
+          pages={pages}
+        />
+      </section>
+
+      <div className="h-px bg-border" />
 
       {/* Layer list -- uses content-visibility for large canvas performance */}
       <div

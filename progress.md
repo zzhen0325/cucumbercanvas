@@ -4,6 +4,14 @@ Last updated: 2026-06-01 CST
 
 ## 2026-06-01
 
+- Encapsulated the sticky-note tool into a dedicated helper module: sticky nodes now carry explicit `sticky_note` container metadata, context-container defaults, and non-selectable body text metadata; SkiaCanvas remaps sticky body-text hits back to the parent sticky for click, shift-click, marquee, context-menu, and post-edit selection.
+- Added sticky-specific connector affordances: selected sticky notes now show four blue side connector dots instead of side resize handles, dragging a dot previews an arrow connector, dropping on another connector target attaches to that target, and dropping into empty canvas creates a new linked sticky container plus a smooth routed arrow.
+- Passed: `pnpm --filter @cucumber/pen-renderer typecheck`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/sticky-note-tool.test.ts`.
+- Passed: targeted `pnpm exec biome check apps/web/src/components/canvas/skia-canvas.tsx apps/web/src/components/canvas/sticky-note-tool.ts apps/web/test/sticky-note-tool.test.ts packages/pen-renderer/src/renderer.ts packages/pen-renderer/src/types.ts`.
+- Passed: local Playwright CLI smoke opened `http://localhost:3000/test/canvas-agent-output`; CanvasKit and PenRenderer initialized, with the existing Paper/acorn dev warning still present.
+- Note: an accidental broad `pnpm --filter @cucumber/web test -- test/sticky-note-tool.test.ts` invocation ran the whole web suite and still hit the existing unrelated `apps/web/test/projects.test.tsx` toast text assertion; the corrected direct Vitest command above passed.
 - Added the FigJam-like canvas editing slice: `LineNode` now supports typed connector binding metadata, canvas-core keeps attached connector endpoints reconciled across move/resize/delete operations, dangling connector references fail with readable diagnostics, pen-renderer draws smooth routed connectors with endpoint tips aligned to the curve tangent, and SkiaCanvas can create/snap/detach connector and arrow-connector endpoints against container sides.
 - Added productized canvas editing controls for this slice: the main editor toolbar is now a bottom-centered floating toolbar with sticky, connector, arrow connector, and Section tools; selection gets a viewport-following floating toolbar; right-click opens contextual canvas/node/multi-select/connector actions; keyboard shortcuts now include `S`, `C`, `Shift+C`, and `F`.
 - Passed: `pnpm --filter @cucumber/canvas-core test -- --runInBand`.

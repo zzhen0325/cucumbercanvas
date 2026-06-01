@@ -10,7 +10,11 @@ import {
   resolveNodeForCanvas,
   setRootChildrenProvider,
 } from "@cucumber/pen-core";
-import type { PenDocument, PenNode } from "@cucumber/pen-types";
+import type {
+  PenConnectorSide,
+  PenDocument,
+  PenNode,
+} from "@cucumber/pen-types";
 import type { CanvasKit, Surface } from "canvaskit-wasm";
 import {
   collectInstanceIds,
@@ -65,6 +69,13 @@ const RESIZE_HANDLES: ResizeHandleDirection[] = [
   "sw",
   "w",
   "nw",
+];
+const STICKY_RESIZE_HANDLES: ResizeHandleDirection[] = ["ne", "se", "sw", "nw"];
+const STICKY_CONNECTOR_SIDES: PenConnectorSide[] = [
+  "top",
+  "right",
+  "bottom",
+  "left",
 ];
 
 type CanvasKitImage = NonNullable<ReturnType<CanvasKit["MakeImage"]>>;
@@ -501,9 +512,38 @@ export class PenRenderer {
         }
         continue;
       }
+      if (isStickyNoteRenderNode(rn)) {
+        const connectorHit = this.hitTestStickyConnectorHandle(
+          rn,
+          scene.x,
+          scene.y,
+        );
+        if (connectorHit) {
+          return {
+            type: "sticky-connector",
+            nodeId: rn.node.id,
+            side: connectorHit,
+          };
+        }
+        const resizeHit = this.hitTestResizeHandle(
+          rn,
+          scene.x,
+          scene.y,
+          STICKY_RESIZE_HANDLES,
+        );
+        if (resizeHit)
+          return { type: "resize", nodeId: rn.node.id, handle: resizeHit };
+        continue;
+      }
+
       const rotateHit = this.hitTestRotateHandle(rn, scene.x, scene.y);
       if (rotateHit) return { type: "rotate", nodeId: rn.node.id };
-      const resizeHit = this.hitTestResizeHandle(rn, scene.x, scene.y);
+      const resizeHit = this.hitTestResizeHandle(
+        rn,
+        scene.x,
+        scene.y,
+        RESIZE_HANDLES,
+      );
       if (resizeHit)
         return { type: "resize", nodeId: rn.node.id, handle: resizeHit };
     }
@@ -1379,7 +1419,10 @@ export class PenRenderer {
     handleStroke.setStrokeWidth(1 * invZoom);
     handleStroke.setColor(parseColor(ck, color));
 
-    for (const handle of RESIZE_HANDLES) {
+    const resizeHandles = isStickyNoteRenderNode(rn)
+      ? STICKY_RESIZE_HANDLES
+      : RESIZE_HANDLES;
+    for (const handle of resizeHandles) {
       const point = getResizeHandlePoint(
         handle,
         rn.absX,
@@ -1397,21 +1440,30 @@ export class PenRenderer {
       canvas.drawRect(rect, handleStroke);
     }
 
-    const rotatePoint = getRotateHandlePoint(
-      rn.absX,
-      rn.absY,
-      rn.absW,
-      this._zoom,
-    );
-    canvas.drawLine(
-      rn.absX + rn.absW / 2,
-      rn.absY,
-      rotatePoint.x,
-      rotatePoint.y,
-      strokePaint,
-    );
-    canvas.drawCircle(rotatePoint.x, rotatePoint.y, 5 * invZoom, handleFill);
-    canvas.drawCircle(rotatePoint.x, rotatePoint.y, 5 * invZoom, handleStroke);
+    if (isStickyNoteRenderNode(rn)) {
+      this.drawStickyConnectorHandles(canvas, rn);
+    } else {
+      const rotatePoint = getRotateHandlePoint(
+        rn.absX,
+        rn.absY,
+        rn.absW,
+        this._zoom,
+      );
+      canvas.drawLine(
+        rn.absX + rn.absW / 2,
+        rn.absY,
+        rotatePoint.x,
+        rotatePoint.y,
+        strokePaint,
+      );
+      canvas.drawCircle(rotatePoint.x, rotatePoint.y, 5 * invZoom, handleFill);
+      canvas.drawCircle(
+        rotatePoint.x,
+        rotatePoint.y,
+        5 * invZoom,
+        handleStroke,
+      );
+    }
 
     strokePaint.delete();
     handleFill.delete();
@@ -1764,10 +1816,11 @@ export class PenRenderer {
     rn: RenderNode,
     sceneX: number,
     sceneY: number,
+    handles: readonly ResizeHandleDirection[] = RESIZE_HANDLES,
   ): ResizeHandleDirection | null {
     const local = this.toUnrotatedSelectionPoint(rn, sceneX, sceneY);
     const hitRadius = 8 / this._zoom;
-    for (const handle of RESIZE_HANDLES) {
+    for (const handle of handles) {
       const point = getResizeHandlePoint(
         handle,
         rn.absX,
@@ -1780,6 +1833,65 @@ export class PenRenderer {
         Math.abs(local.y - point.y) <= hitRadius
       ) {
         return handle;
+      }
+    }
+    return null;
+  }
+
+  private drawStickyConnectorHandles(
+    canvas: ReturnType<Surface["getCanvas"]>,
+    rn: RenderNode,
+  ) {
+    const ck = this.ck;
+    const color = this.editorOverlays.selectionColor ?? DEFAULT_SELECTION_COLOR;
+    const invZoom = 1 / this._zoom;
+
+    const fill = new ck.Paint();
+    fill.setStyle(ck.PaintStyle.Fill);
+    fill.setAntiAlias(true);
+    fill.setColor(parseColor(ck, color));
+
+    const stroke = new ck.Paint();
+    stroke.setStyle(ck.PaintStyle.Stroke);
+    stroke.setAntiAlias(true);
+    stroke.setStrokeWidth(2 * invZoom);
+    stroke.setColor(parseColor(ck, "#ffffff"));
+
+    for (const side of STICKY_CONNECTOR_SIDES) {
+      const point = getStickyConnectorHandlePoint(
+        side,
+        rn.absX,
+        rn.absY,
+        rn.absW,
+        rn.absH,
+        this._zoom,
+      );
+      canvas.drawCircle(point.x, point.y, 6 * invZoom, fill);
+      canvas.drawCircle(point.x, point.y, 6 * invZoom, stroke);
+    }
+
+    fill.delete();
+    stroke.delete();
+  }
+
+  private hitTestStickyConnectorHandle(
+    rn: RenderNode,
+    sceneX: number,
+    sceneY: number,
+  ): PenConnectorSide | null {
+    const local = this.toUnrotatedSelectionPoint(rn, sceneX, sceneY);
+    const hitRadius = 9 / this._zoom;
+    for (const side of STICKY_CONNECTOR_SIDES) {
+      const point = getStickyConnectorHandlePoint(
+        side,
+        rn.absX,
+        rn.absY,
+        rn.absW,
+        rn.absH,
+        this._zoom,
+      );
+      if (Math.hypot(local.x - point.x, local.y - point.y) <= hitRadius) {
+        return side;
       }
     }
     return null;
@@ -2118,6 +2230,35 @@ function getResizeHandlePoint(
     nw: { x, y },
   };
   return points[handle];
+}
+
+function getStickyConnectorHandlePoint(
+  side: PenConnectorSide,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  zoom: number,
+) {
+  const offset = 18 / zoom;
+  switch (side) {
+    case "top":
+      return { x: x + w / 2, y: y - offset };
+    case "right":
+      return { x: x + w + offset, y: y + h / 2 };
+    case "bottom":
+      return { x: x + w / 2, y: y + h + offset };
+    case "left":
+      return { x: x - offset, y: y + h / 2 };
+    default: {
+      const _exhaustive: never = side;
+      throw new Error(`Unsupported sticky connector side: ${_exhaustive}`);
+    }
+  }
+}
+
+function isStickyNoteRenderNode(rn: RenderNode): boolean {
+  return rn.node.meta?.boardKind === "sticky";
 }
 
 function getLineRenderEndpoints(rn: RenderNode): {

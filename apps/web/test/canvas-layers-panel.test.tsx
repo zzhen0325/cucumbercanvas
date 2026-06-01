@@ -49,6 +49,12 @@ const sceneElements: CanvasSceneElement[] = [
   },
 ];
 
+const pages = [
+  { children: [], id: "page-1", name: "Cover" },
+  { children: [], id: "page-2", name: "Storyboard" },
+  { children: [], id: "page-3", name: "Final" },
+];
+
 function createCanvasApi(
   overrides: Partial<CanvasApi> = {},
 ): CanvasApi & { emitChange: () => void } {
@@ -73,12 +79,12 @@ function createCanvasApi(
     },
     exportImage: vi.fn(),
     flushPendingSave: vi.fn(),
-    getActivePageId: vi.fn(),
+    getActivePageId: vi.fn(() => "page-1"),
     getActiveTool: vi.fn(),
     getAppState: vi.fn(() => appState),
     getDocument: vi.fn(),
     getFiles: vi.fn(() => ({})),
-    getPages: vi.fn(),
+    getPages: vi.fn(() => pages),
     getSceneElements: vi.fn(() => sceneElements),
     getViewportBounds: vi.fn(),
     groupSelection: vi.fn(),
@@ -132,6 +138,27 @@ function getLayerRowOrder(): string[] {
 }
 
 describe("CanvasLayersPanel", () => {
+  it("renders canvas pages inside the layers panel and wires page actions", async () => {
+    const user = userEvent.setup();
+    const api = renderLayersPanel();
+
+    await user.click(screen.getByRole("button", { name: "Open Storyboard" }));
+    await user.click(screen.getByRole("button", { name: "Add page" }));
+    await user.click(screen.getByRole("button", { name: "Duplicate Cover" }));
+    await user.click(
+      screen.getByRole("button", { name: "Move Storyboard up" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Move Storyboard down" }),
+    );
+
+    expect(api.setActivePage).toHaveBeenCalledWith("page-2");
+    expect(api.addPage).toHaveBeenCalledOnce();
+    expect(api.duplicatePage).toHaveBeenCalledWith("page-1");
+    expect(api.reorderPage).toHaveBeenCalledWith("page-2", "left");
+    expect(api.reorderPage).toHaveBeenCalledWith("page-2", "right");
+  });
+
   it("selects layers and toggles lock and visibility through CanvasApi", async () => {
     const user = userEvent.setup();
     const api = renderLayersPanel();

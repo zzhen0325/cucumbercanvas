@@ -1,4 +1,8 @@
-import type { PenNode, PenPathAnchor } from "@cucumber/pen-types";
+import type {
+  PenConnectorSide,
+  PenNode,
+  PenPathAnchor,
+} from "@cucumber/pen-types";
 
 export type { ViewportState } from "@cucumber/pen-types";
 
@@ -127,4 +131,5 @@ export interface EditorOverlayState {
 export type SelectionControlHit =
   | { type: "resize"; nodeId: string; handle: ResizeHandleDirection }
   | { type: "rotate"; nodeId: string }
-  | { type: "line-endpoint"; nodeId: string; endpoint: "start" | "end" };
+  | { type: "line-endpoint"; nodeId: string; endpoint: "start" | "end" }
+  | { type: "sticky-connector"; nodeId: string; side: PenConnectorSide };

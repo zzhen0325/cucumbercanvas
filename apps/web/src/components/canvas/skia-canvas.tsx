@@ -59,6 +59,7 @@ import type {
   ContainerRole,
   LineNode,
   PenConnectorEndpointBinding,
+  PenConnectorSide,
   PenDocument,
   PenNode,
 } from "@cucumber/pen-types";
@@ -103,7 +104,6 @@ import {
   selectCanvasBooleanInputState,
   selectCanvasCanRedo,
   selectCanvasCanUndo,
-  selectCanvasPageTabsState,
   selectCanvasSelectedNodePanelState,
   selectCanvasToolbarState,
   useCanvasRuntimeShallowSelector,
@@ -115,8 +115,19 @@ import {
 } from "./canvas-selection-helpers";
 import { CanvasEditorToolbar } from "./editor-toolbar";
 import { lookupCanvasIcon } from "./icon-library";
-import { CanvasPageTabs } from "./page-tabs";
 import { CanvasPropertyPanel } from "./property-panel/canvas-property-panel";
+import {
+  STICKY_NOTE_DEFAULT_HEIGHT,
+  STICKY_NOTE_DEFAULT_WIDTH,
+  createStickyNoteNode,
+  findStickyNoteTextNode,
+  getLinkedStickyBounds,
+  getOppositeStickyConnectorSide,
+  getSelectableStickyHitNode,
+  getStickyConnectorPoint,
+  getStickyNoteContainerForNode,
+  isStickyNoteNode,
+} from "./sticky-note-tool";
 import {
   type ClipboardImportContext,
   readClipboardImportPayload,
@@ -1331,36 +1342,6 @@ function ContextMenuItem({
   );
 }
 
-function CanvasPageTabsConnected({
-  api,
-}: {
-  api: Pick<
-    CanvasApi,
-    | "addPage"
-    | "deletePage"
-    | "duplicatePage"
-    | "renamePage"
-    | "reorderPage"
-    | "setActivePage"
-  >;
-}) {
-  const { activePageId, pages } = useCanvasRuntimeShallowSelector(
-    selectCanvasPageTabsState,
-  );
-  return (
-    <CanvasPageTabs
-      activePageId={activePageId}
-      onAddPage={() => api.addPage()}
-      onDeletePage={api.deletePage}
-      onDuplicatePage={api.duplicatePage}
-      onRenamePage={api.renamePage}
-      onReorderPage={api.reorderPage}
-      onSetActivePage={api.setActivePage}
-      pages={pages}
-    />
-  );
-}
-
 function CanvasPropertyPanelConnected({
   api,
   commitDocument,
@@ -1569,6 +1550,13 @@ export const SkiaCanvas = memo(
           startPoint: { x: number; y: number };
           originStart: { x: number; y: number };
           originEnd: { x: number; y: number };
+        }
+      | {
+          kind: "stickyConnector";
+          nodeId: string;
+          side: PenConnectorSide;
+          startPoint: { x: number; y: number };
+          sourceBounds: CanvasBounds;
         }
       | {
           kind: "rotate";
@@ -2193,7 +2181,11 @@ export const SkiaCanvas = memo(
         }
         const renderer = rendererRef.current;
         if (!renderer) return;
-        const hit = renderer.hitTest(event.clientX, event.clientY);
+        const hit = getSelectableStickyHitNode(
+          docRef.current as CucumberCanvasDocument,
+          renderer.hitTest(event.clientX, event.clientY),
+          activePageIdRef.current,
+        );
 
         if (event.shiftKey) {
           if (!hit) return;
@@ -2405,8 +2397,13 @@ export const SkiaCanvas = memo(
         if (!scenePoint) return;
 
         // Marquee selection
-        const hit = renderer.hitTest(event.clientX, event.clientY);
         const activePageId = activePageIdRef.current;
+        const rawHit = renderer.hitTest(event.clientX, event.clientY);
+        const hit = getSelectableStickyHitNode(
+          docRef.current as CucumberCanvasDocument,
+          rawHit,
+          activePageId,
+        );
 
         if (tool === "select") {
           const controlHit = renderer.hitTestSelectionControl(
@@ -2424,6 +2421,37 @@ export const SkiaCanvas = memo(
             const sceneBounds =
               getNodeSceneBounds(docRef.current, node.id, activePageId) ??
               localBounds;
+            if (
+              controlHit.type === "sticky-connector" &&
+              isStickyNoteNode(node)
+            ) {
+              const startPoint = getStickyConnectorPoint(
+                sceneBounds,
+                controlHit.side,
+              );
+              dragRef.current = {
+                kind: "stickyConnector",
+                nodeId: controlHit.nodeId,
+                side: controlHit.side,
+                startPoint,
+                sourceBounds: sceneBounds,
+              };
+              renderer.setInteractionMode("transform");
+              setEditorOverlay({
+                linePreview: {
+                  start: startPoint,
+                  end: startPoint,
+                  arrow: true,
+                },
+              });
+              suppressNextClickRef.current = true;
+              event.currentTarget.setPointerCapture(event.pointerId);
+              console.info("[skia-canvas] sticky.connector.drag.started", {
+                stickyId: controlHit.nodeId,
+                side: controlHit.side,
+              });
+              return;
+            }
             if (controlHit.type === "line-endpoint" && node.type === "line") {
               const endpoints = getLineEndpoints(node);
               dragRef.current = {
@@ -2639,7 +2667,17 @@ export const SkiaCanvas = memo(
             false,
           );
           setMarqueeDomOverlay(bounds);
-          const hitIds = renderer.hitTestRect(bounds).map((node) => node.id);
+          const hitIds = renderer
+            .hitTestRect(bounds)
+            .map(
+              (node) =>
+                getSelectableStickyHitNode(
+                  docRef.current as CucumberCanvasDocument,
+                  node,
+                  activePageIdRef.current,
+                )?.id,
+            )
+            .filter((nodeId): nodeId is string => Boolean(nodeId));
           const nextSelection = Array.from(
             new Set([...drag.originSelection, ...hitIds]),
           );
@@ -2728,6 +2766,22 @@ export const SkiaCanvas = memo(
                 node?._connectorType === "arrow" ||
                 (node?.stroke?.endTip !== undefined &&
                   node.stroke.endTip !== "none"),
+            },
+          });
+          return;
+        }
+
+        if (drag.kind === "stickyConnector") {
+          const scene = getPointerScenePoint(event);
+          if (!scene) return;
+          const snap = getConnectorSnap(scene, {
+            excludeNodeIds: [drag.nodeId],
+          });
+          setEditorOverlay({
+            linePreview: {
+              start: drag.startPoint,
+              end: snap?.point ?? scene,
+              arrow: true,
             },
           });
           return;
@@ -3153,6 +3207,115 @@ export const SkiaCanvas = memo(
           setEditorOverlay({ linePreview: null });
           renderer?.clearTransformPreview();
         }
+        if (drag?.kind === "stickyConnector") {
+          const activePageId = activePageIdRef.current;
+          const scene = getPointerScenePoint(event);
+          if (scene) {
+            const dragDistance = Math.hypot(
+              scene.x - drag.startPoint.x,
+              scene.y - drag.startPoint.y,
+            );
+            if (dragDistance >= 24) {
+              const snap = getConnectorSnap(scene, {
+                excludeNodeIds: [drag.nodeId],
+              });
+              const startConnector: PenConnectorEndpointBinding = {
+                nodeId: drag.nodeId,
+                side: drag.side,
+                ratio: 0.5,
+              };
+              let next: PenDocument = docRef.current;
+              let selection: string[];
+
+              if (!snap) {
+                const targetSide = getOppositeStickyConnectorSide(drag.side);
+                const sticky = createStickyNoteNode(
+                  getLinkedStickyBounds(drag.sourceBounds, drag.side, scene),
+                );
+                const endConnector: PenConnectorEndpointBinding = {
+                  nodeId: sticky.id,
+                  side: targetSide,
+                  ratio: 0.5,
+                };
+                const endPoint = getStickyConnectorPoint(
+                  getNodeBounds(sticky),
+                  targetSide,
+                );
+                const connector = createLineNode(
+                  "arrow",
+                  drag.startPoint,
+                  endPoint,
+                  {
+                    start: startConnector,
+                    end: endConnector,
+                    routing: "smooth",
+                    arrow: true,
+                  },
+                );
+                next = applyCanvasTransaction(
+                  docRef.current,
+                  [
+                    { type: "insertNode", node: sticky, activePageId },
+                    { type: "insertNode", node: connector, activePageId },
+                  ],
+                  { activePageId },
+                ).doc;
+                selection = [sticky.id];
+                console.info("[skia-canvas] sticky.connector.branch.created", {
+                  sourceStickyId: drag.nodeId,
+                  targetStickyId: sticky.id,
+                  connectorId: connector.id,
+                  side: drag.side,
+                });
+              } else {
+                const endConnector: PenConnectorEndpointBinding = {
+                  nodeId: snap.nodeId,
+                  side: snap.side,
+                  ratio: snap.ratio,
+                };
+                const connector = createLineNode(
+                  "arrow",
+                  drag.startPoint,
+                  snap.point,
+                  {
+                    start: startConnector,
+                    end: endConnector,
+                    routing: "smooth",
+                    arrow: true,
+                  },
+                );
+                next = applyCanvasOperation(docRef.current, {
+                  type: "insertNode",
+                  node: connector,
+                  activePageId,
+                });
+                selection = [connector.id];
+                console.info("[skia-canvas] sticky.connector.created", {
+                  sourceStickyId: drag.nodeId,
+                  targetNodeId: snap.nodeId,
+                  connectorId: connector.id,
+                  side: drag.side,
+                });
+              }
+
+              const commit = commitDocument(next, { selection });
+              syncCommittedDocumentToRenderer(
+                commit,
+                "sticky.connector.commit",
+              );
+              setSelection(selection, { notifyScene: false });
+            } else {
+              console.info("[skia-canvas] sticky.connector.cancelled", {
+                stickyId: drag.nodeId,
+                side: drag.side,
+                reason: "below_minimum_distance",
+              });
+            }
+          }
+          setEditorOverlay({ linePreview: null });
+          renderer?.clearTransformPreview();
+          suppressNextClickRef.current = true;
+        }
         if (drag?.kind === "resize") {
           const activePageId = activePageIdRef.current;
           const bounds = calculateResizeBounds(
@@ -3202,12 +3365,39 @@ export const SkiaCanvas = memo(
               textGrowth: nextTextGrowth,
             } as Partial<PenNode>;
           }
-          const next = applyCanvasOperation(docRef.current, {
-            type: "updateNode",
-            nodeId: drag.nodeId,
-            updates,
-            activePageId,
-          });
+          const operations = [
+            {
+              type: "updateNode" as const,
+              nodeId: drag.nodeId,
+              updates,
+              activePageId,
+            },
+          ];
+          if (node && isStickyNoteNode(node)) {
+            const textNode = findStickyNoteTextNode(node);
+            if (textNode) {
+              operations.push({
+                type: "updateNode",
+                nodeId: textNode.id,
+                updates: {
+                  width: Math.max(bounds.width - 40, 1),
+                  height: Math.max(bounds.height - 40, 1),
+                } as Partial<PenNode>,
+                activePageId,
+              });
+            }
+          }
+          const next =
+            operations.length > 1
+              ? applyCanvasTransaction(docRef.current, operations, {
+                  activePageId,
+                }).doc
+              : applyCanvasOperation(docRef.current, {
+                  type: "updateNode",
+                  nodeId: drag.nodeId,
+                  updates,
+                  activePageId,
+                });
           const commit = commitDocument(next, { selection: [drag.nodeId] });
           syncCommittedDocumentToRenderer(commit, "selection.resize.commit");
           renderer?.clearTransformPreview();
@@ -3315,7 +3505,11 @@ export const SkiaCanvas = memo(
         if (!renderer) return;
         event.preventDefault();
         flushRendererDocumentSyncBeforeInteraction();
-        const hit = renderer.hitTest(event.clientX, event.clientY);
+        const hit = getSelectableStickyHitNode(
+          docRef.current as CucumberCanvasDocument,
+          renderer.hitTest(event.clientX, event.clientY),
+          activePageIdRef.current,
+        );
         if (hit && !selectedIdsRef.current.includes(hit.id)) {
           setSelection([hit.id]);
         }
@@ -3397,6 +3591,14 @@ export const SkiaCanvas = memo(
           });
           return;
         }
+        const stickyContainer = getStickyNoteContainerForNode(
+          docRef.current as CucumberCanvasDocument,
+          currentEdit.nodeId,
+          activePageId,
+        );
+        const nextSelection = stickyContainer
+          ? [stickyContainer.id]
+          : [currentEdit.nodeId];
         const next = applyCanvasOperation(docRef.current, {
           type: "updateNode",
           nodeId: currentEdit.nodeId,
@@ -3408,10 +3610,11 @@ export const SkiaCanvas = memo(
           } as Partial<PenNode>,
           activePageId,
         });
-        commitDocument(next, { selection: [currentEdit.nodeId] });
-        setSelection([currentEdit.nodeId], { notifyScene: false });
+        commitDocument(next, { selection: nextSelection });
+        setSelection(nextSelection, { notifyScene: false });
         console.info("[skia-canvas] text.edit.committed", {
           nodeId: currentEdit.nodeId,
+          selectedNodeId: nextSelection[0] ?? null,
           textGrowth: currentEdit.textGrowth,
           previousLength: currentEdit.initialContent.length,
           nextLength: nextContent.length,
@@ -3458,14 +3661,22 @@ export const SkiaCanvas = memo(
         const renderer = rendererRef.current;
         if (!renderer) return;
         const hit = renderer.hitTest(event.clientX, event.clientY);
-        if (!hit || hit.type !== "text") return;
-        if (beginTextEdit(hit)) {
+        if (!hit) return;
+        const sticky = getStickyNoteContainerForNode(
+          docRef.current as CucumberCanvasDocument,
+          hit.id,
+          activePageIdRef.current,
+        );
+        const editableText = sticky ? findStickyNoteTextNode(sticky) : hit;
+        if (!editableText || editableText.type !== "text") return;
+        if (sticky) setSelection([sticky.id], { notifyScene: false });
+        if (beginTextEdit(editableText)) {
           event.preventDefault();
           event.stopPropagation();
           suppressNextClickRef.current = true;
         }
       },
-      [beginTextEdit, effectiveTool, penTool],
+      [beginTextEdit, effectiveTool, penTool, setSelection],
     );
 
     // -----------------------------------------------------------------------
@@ -3607,10 +3818,10 @@ export const SkiaCanvas = memo(
         const bounds = {
           x: opts?.x ?? defaultB.x,
           y: opts?.y ?? defaultB.y,
-          width: opts?.width ?? 220,
-          height: opts?.height ?? 200,
+          width: opts?.width ?? STICKY_NOTE_DEFAULT_WIDTH,
+          height: opts?.height ?? STICKY_NOTE_DEFAULT_HEIGHT,
         };
-        const sticky = createStickyNode(bounds, opts?.text);
+        const sticky = createStickyNoteNode(bounds, opts?.text);
         const next = applyCanvasOperation(docRef.current, {
           type: "insertNode",
           node: sticky,
@@ -5490,10 +5701,6 @@ export const SkiaCanvas = memo(
             onBooleanOperation={api.applyBooleanOperation}
           />
 
-          <div className="absolute bottom-16 left-[clamp(6rem,50%,calc(100vw-6rem))] z-20 flex -translate-x-1/2 justify-center">
-            <CanvasPageTabsConnected api={api} />
-          </div>
-
           {/* Property panel */}
           <CanvasPropertyPanelConnected
             api={api}
@@ -5812,7 +6019,7 @@ function createDrawableCanvasNode(
     return createSectionFrameNode(createNodeId("section"), bounds, "Section");
   }
   if (type === "sticky") {
-    return createStickyNode(bounds);
+    return createStickyNoteNode(bounds);
   }
   if (isLineDrawableTool(type)) {
     return createLineNode(
@@ -5911,56 +6118,6 @@ function createSectionFrameNode(
       showTitlePill: true,
       lockMode: "background",
     },
-  } as PenNode;
-}
-
-function createStickyNode(
-  bounds: CanvasBounds,
-  text = "Type anything",
-): PenNode {
-  const id = createNodeId("sticky");
-  return {
-    id,
-    type: "frame",
-    name: "Sticky",
-    x: bounds.x,
-    y: bounds.y,
-    width: Math.max(bounds.width, 160),
-    height: Math.max(bounds.height, 140),
-    fill: [{ type: "solid", color: "#FFE59A" }],
-    stroke: {
-      thickness: 1,
-      fill: [{ type: "solid", color: "rgba(143,112,35,0.18)" }],
-    },
-    cornerRadius: 4,
-    effects: [
-      {
-        type: "shadow",
-        color: "rgba(0,0,0,0.12)",
-        offsetX: 0,
-        offsetY: 8,
-        blur: 18,
-        spread: 0,
-      },
-    ],
-    meta: { boardKind: "sticky" },
-    children: [
-      {
-        id: createNodeId("sticky_text"),
-        type: "text",
-        name: "Sticky text",
-        x: 20,
-        y: 20,
-        width: Math.max(bounds.width, 160) - 40,
-        height: Math.max(bounds.height, 140) - 40,
-        content: text,
-        fontFamily: DEFAULT_TEXT_FONT_FAMILY,
-        fontSize: 24,
-        lineHeight: 1.35,
-        textGrowth: "fixed-width",
-        fill: [{ type: "solid", color: "rgba(91,72,27,0.72)" }],
-      } as PenNode,
-    ],
   } as PenNode;
 }
 
