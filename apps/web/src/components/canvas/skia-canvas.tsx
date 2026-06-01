@@ -3060,6 +3060,7 @@ export const SkiaCanvas = memo(
               isNew: true,
               bounds: getNodeBounds(node),
             });
+            setActiveTool("select");
             console.info("[skia-canvas] text.created", {
               nodeId: node.id,
               textGrowth,
@@ -3625,9 +3626,44 @@ export const SkiaCanvas = memo(
       [commitDocument, editingText, setSelection],
     );
 
-    const updateTextEditDraft = useCallback((nextContent: string) => {
-      setEditingText((current) => {
-        if (!current) return current;
+    const syncTextEditDraftToRenderer = useCallback((draft: TextEditState) => {
+      const renderer = rendererRef.current;
+      if (!renderer) return;
+      const activePageId = activePageIdRef.current;
+      const existingNode = findNode(docRef.current, draft.nodeId, activePageId);
+      if (!existingNode) {
+        console.warn("[skia-canvas] text.edit.draft.skipped", {
+          nodeId: draft.nodeId,
+          reason: "node_not_found",
+          activePageId,
+        });
+        return;
+      }
+
+      const draftDocument = applyCanvasOperation(docRef.current, {
+        type: "updateNode",
+        nodeId: draft.nodeId,
+        updates: {
+          content: draft.content,
+          width: draft.width,
+          height: draft.height,
+          textGrowth: draft.textGrowth,
+        } as Partial<PenNode>,
+        activePageId,
+      });
+
+      if (rendererDocumentSyncRafRef.current !== null) {
+        cancelAnimationFrame(rendererDocumentSyncRafRef.current);
+        rendererDocumentSyncRafRef.current = null;
+      }
+      pendingRendererDocumentSyncRef.current = null;
+      syncRendererDocument(renderer, draftDocument, activePageId);
+    }, []);
+
+    const updateTextEditDraft = useCallback(
+      (nextContent: string) => {
+        const current = editingText;
+        if (!current) return;
         const measured = measureTextLayout({
           content: nextContent,
           fontSize: current.fontSize,
@@ -3638,14 +3674,17 @@ export const SkiaCanvas = memo(
           width: current.width,
           height: current.height,
         });
-        return {
+        const nextDraft = {
           ...current,
           content: nextContent,
           width: measured.width,
           height: measured.height,
         };
-      });
-    }, []);
+        setEditingText(nextDraft);
+        syncTextEditDraftToRenderer(nextDraft);
+      },
+      [editingText, syncTextEditDraftToRenderer],
+    );
 
     const handleDoubleClick = useCallback(
       (event: React.MouseEvent<HTMLDivElement>) => {
@@ -5620,10 +5659,13 @@ export const SkiaCanvas = memo(
               aria-label="Edit canvas text"
               // biome-ignore lint/a11y/noAutofocus: text editing opens from an explicit double-click and should focus the in-place editor immediately.
               autoFocus
-              className="absolute z-30 box-border m-0 resize-none overflow-hidden rounded-sm border-2 border-sky-400 bg-white/95 px-px py-0 outline-none"
+              className="absolute z-30 box-border m-0 resize-none overflow-hidden border-0 bg-transparent p-0 outline-none ring-0 focus:outline-none focus:ring-0"
               value={editingText.content}
               wrap={editingText.textGrowth === "auto" ? "off" : "soft"}
               style={{
+                backgroundColor: "transparent",
+                border: 0,
+                boxShadow: "none",
                 left: textEditOverlay.left,
                 top: textEditOverlay.top,
                 width: textEditOverlay.width,
@@ -5632,12 +5674,14 @@ export const SkiaCanvas = memo(
                 fontFamily: editingText.fontFamily,
                 fontWeight: editingText.fontWeight,
                 textAlign: editingText.textAlign,
-                color: editingText.color,
+                caretColor: editingText.color,
+                color: "transparent",
                 lineHeight: editingText.lineHeight,
                 whiteSpace:
                   editingText.textGrowth === "auto" ? "pre" : "pre-wrap",
                 overflowWrap:
                   editingText.textGrowth === "auto" ? "normal" : "break-word",
+                WebkitTextFillColor: "transparent",
               }}
               onBlur={(event) => commitTextEdit(event.currentTarget.value)}
               onChange={(event) =>

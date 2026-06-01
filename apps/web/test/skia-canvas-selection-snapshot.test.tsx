@@ -1036,9 +1036,30 @@ describe("SkiaCanvas selection snapshots", () => {
 
       const editor = getByLabelText("Edit canvas text") as HTMLTextAreaElement;
       expect(editor.value).toBe("Draft title");
+      expect(editor).toHaveClass("border-0", "bg-transparent");
+      expect(editor).not.toHaveClass("border-sky-400", "bg-white/95");
+      expect(editor.style.color).toBe("transparent");
 
       await act(async () => {
-        fireEvent.blur(editor, { target: { value: "Final title" } });
+        fireEvent.change(editor, { target: { value: "Live title" } });
+      });
+
+      const liveTextNode = penRendererMockState.currentDocument?.pages?.[0]
+        ?.children[0] as (TestPenNode & { content?: string }) | undefined;
+      expect(liveTextNode).toMatchObject({
+        id: "text-1",
+        content: "Live title",
+      });
+      expect(
+        apiRef.current?.getDocument().pages?.[0]?.children[0],
+      ).toMatchObject({
+        id: "text-1",
+        content: "Draft title",
+      });
+
+      await act(async () => {
+        fireEvent.change(editor, { target: { value: "Final title" } });
+        fireEvent.blur(editor);
       });
 
       const savedTextNode =
@@ -1133,7 +1154,7 @@ describe("SkiaCanvas selection snapshots", () => {
       });
       expect(savedTextBounds?.width).toBeGreaterThan(initialWidth);
       expect(savedTextBounds?.height).toBeGreaterThan(50);
-      expect(apiRef.current?.getActiveTool()).toBe("text");
+      expect(apiRef.current?.getActiveTool()).toBe("select");
     } finally {
       globalThis.ResizeObserver = originalResizeObserver;
       HTMLElement.prototype.setPointerCapture = originalSetPointerCapture;
@@ -1218,6 +1239,7 @@ describe("SkiaCanvas selection snapshots", () => {
       });
       expect(Math.round(Number(savedTextBounds?.width))).toBe(120);
       expect(savedTextBounds?.height).toBeGreaterThan(50);
+      expect(apiRef.current?.getActiveTool()).toBe("select");
     } finally {
       globalThis.ResizeObserver = originalResizeObserver;
       HTMLElement.prototype.setPointerCapture = originalSetPointerCapture;
