@@ -38,6 +38,9 @@ export function useCanvasKeyboardShortcuts(options: {
   nudgeSelection: (dx: number, dy: number) => void;
   reorderSelection: (direction: "forward" | "backward") => void;
   editSelectedText?: () => boolean;
+  zoomIn?: () => void;
+  zoomOut?: () => void;
+  resetZoom?: () => void;
   setActiveTool: (tool: CanvasToolShortcut) => void;
 }) {
   const optionsRef = useRef(options);
@@ -101,6 +104,24 @@ export function useCanvasKeyboardShortcuts(options: {
         event.preventDefault();
         if (event.shiftKey) options.ungroupSelection();
         else options.groupSelection();
+        return;
+      }
+
+      if (isMod && (key === "=" || key === "+" || key === "add")) {
+        event.preventDefault();
+        options.zoomIn?.();
+        return;
+      }
+
+      if (isMod && (key === "-" || key === "_" || key === "subtract")) {
+        event.preventDefault();
+        options.zoomOut?.();
+        return;
+      }
+
+      if (isMod && key === "0") {
+        event.preventDefault();
+        options.resetZoom?.();
         return;
       }
 

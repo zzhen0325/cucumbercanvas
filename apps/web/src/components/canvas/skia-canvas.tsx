@@ -327,6 +327,15 @@ function syncRendererDocument(
   renderer.setDocument(doc, activePageId);
 }
 
+type PendingRendererDocumentSync = {
+  activePageId: string;
+  coalescedCount: number;
+  deferredForDrag: boolean;
+  document: PenDocument;
+  source: string;
+  version: number;
+};
+
 type DrawableShapeTool = "rect" | "ellipse" | "polygon";
 type DrawableCanvasTool = DrawableShapeTool | "container" | "line" | "arrow";
 type ResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
@@ -342,6 +351,9 @@ const DEFAULT_TEXT_LINE_HEIGHT = 1.4;
 const DEFAULT_TEXT_FONT_FAMILY =
   'Inter, -apple-system, "Noto Sans SC", "PingFang SC", system-ui, sans-serif';
 const MIN_TEXT_BOX_SIZE = 8;
+const KEYBOARD_ZOOM_STEP = 1.1;
+const KEYBOARD_ZOOM_MIN = 0.1;
+const KEYBOARD_ZOOM_MAX = 30;
 
 type TextEditState = {
   nodeId: string;
@@ -889,6 +901,9 @@ export const SkiaCanvas = memo(
       null,
     );
     const marqueeRafRef = useRef<number | null>(null);
+    const rendererDocumentSyncRafRef = useRef<number | null>(null);
+    const pendingRendererDocumentSyncRef =
+      useRef<PendingRendererDocumentSync | null>(null);
     const marqueeSelectionRef = useRef<string[]>([]);
     const editorOverlayRef = useRef<EditorOverlayState>({
       selectedIds: [],
@@ -992,6 +1007,76 @@ export const SkiaCanvas = memo(
     const dragRef = useRef<DragState | null>(null);
     const clipboardRef = useRef<CanvasClipboardData | null>(null);
     const toast = useToast();
+
+    const flushScheduledRendererDocumentSync = useCallback(() => {
+      rendererDocumentSyncRafRef.current = null;
+      const pending = pendingRendererDocumentSyncRef.current;
+      if (!pending) return;
+
+      if (dragRef.current) {
+        if (!pending.deferredForDrag) {
+          pending.deferredForDrag = true;
+          console.info("[skia-canvas] renderer.document-sync.deferred", {
+            activePageId: pending.activePageId,
+            reason: "active_drag",
+            source: pending.source,
+            version: pending.version,
+          });
+        }
+        rendererDocumentSyncRafRef.current = requestAnimationFrame(
+          flushScheduledRendererDocumentSync,
+        );
+        return;
+      }
+
+      pendingRendererDocumentSyncRef.current = null;
+      syncRendererDocument(
+        rendererRef.current,
+        pending.document,
+        pending.activePageId,
+      );
+      if (pending.deferredForDrag || pending.coalescedCount > 1) {
+        console.info("[skia-canvas] renderer.document-sync.flushed", {
+          activePageId: pending.activePageId,
+          coalescedCount: pending.coalescedCount,
+          deferredForDrag: pending.deferredForDrag,
+          source: pending.source,
+          version: pending.version,
+        });
+      }
+    }, []);
+
+    const scheduleRendererDocumentSync = useCallback(
+      (
+        document: PenDocument,
+        activePageId: string,
+        version: number,
+        source: string,
+      ) => {
+        const previous = pendingRendererDocumentSyncRef.current;
+        pendingRendererDocumentSyncRef.current = {
+          activePageId,
+          coalescedCount: (previous?.coalescedCount ?? 0) + 1,
+          deferredForDrag: previous?.deferredForDrag ?? false,
+          document,
+          source,
+          version,
+        };
+        if (rendererDocumentSyncRafRef.current !== null) return;
+        rendererDocumentSyncRafRef.current = requestAnimationFrame(
+          flushScheduledRendererDocumentSync,
+        );
+      },
+      [flushScheduledRendererDocumentSync],
+    );
+
+    const flushRendererDocumentSyncBeforeInteraction = useCallback(() => {
+      if (!pendingRendererDocumentSyncRef.current || dragRef.current) return;
+      if (rendererDocumentSyncRafRef.current !== null) {
+        cancelAnimationFrame(rendererDocumentSyncRafRef.current);
+      }
+      flushScheduledRendererDocumentSync();
+    }, [flushScheduledRendererDocumentSync]);
 
     const setEditorOverlay = useCallback(
       (overlay: Partial<EditorOverlayState>) => {
@@ -1098,7 +1183,8 @@ export const SkiaCanvas = memo(
       const renderer = new PenRenderer(ckRef.current, {
         fontBasePath: "/fonts/",
         iconLookup: lookupCanvasIcon,
-        backgroundColor: "#ffffff",
+        backgroundColor:
+          runtimeStore.getState().viewport.backgroundColor ?? "#ffffff",
       });
       renderer.init(canvas);
       syncRendererDocument(renderer, docRef.current, activePageIdRef.current);
@@ -1134,6 +1220,11 @@ export const SkiaCanvas = memo(
           cancelAnimationFrame(marqueeRafRef.current);
           marqueeRafRef.current = null;
         }
+        if (rendererDocumentSyncRafRef.current !== null) {
+          cancelAnimationFrame(rendererDocumentSyncRafRef.current);
+          rendererDocumentSyncRafRef.current = null;
+        }
+        pendingRendererDocumentSyncRef.current = null;
         renderer.dispose();
         if (canvas.parentElement) canvas.parentElement.removeChild(canvas);
         rendererRef.current = null;
@@ -1191,10 +1282,11 @@ export const SkiaCanvas = memo(
             selectedIdsRef.current = state.selection;
             documentVersionRef.current = state.version;
             setEditorOverlay({ selectedIds: state.selection });
-            syncRendererDocument(
-              rendererRef.current,
+            scheduleRendererDocumentSync(
               committed,
               state.activePageId,
+              state.version,
+              state.lastDocumentCommit?.source ?? "document.commit",
             );
             if (state.lastDocumentCommit?.notifyDocumentChange) {
               onDocumentChange?.(committed as CucumberCanvasDocument);
@@ -1206,7 +1298,13 @@ export const SkiaCanvas = memo(
             );
           },
         ),
-      [notifySceneListeners, onDocumentChange, runtimeStore, setEditorOverlay],
+      [
+        notifySceneListeners,
+        onDocumentChange,
+        runtimeStore,
+        scheduleRendererDocumentSync,
+        setEditorOverlay,
+      ],
     );
 
     useEffect(
@@ -1242,6 +1340,25 @@ export const SkiaCanvas = memo(
           },
         ),
       [notifySceneListeners, onSelectionChange, runtimeStore, setEditorOverlay],
+    );
+
+    useEffect(
+      () =>
+        runtimeStore.subscribe(
+          (state) => state.viewport,
+          (viewport, previousViewport) => {
+            if (viewport === previousViewport) return;
+            const state = runtimeStore.getState();
+            const currentDocument = getCanvasApiDocument(state);
+            docRef.current = currentDocument;
+            notifySceneListeners(
+              currentDocument,
+              state.activePageId,
+              state.selection,
+            );
+          },
+        ),
+      [notifySceneListeners, runtimeStore],
     );
 
     const commitDocument = useCallback(
@@ -1455,6 +1572,7 @@ export const SkiaCanvas = memo(
       (event: React.PointerEvent<HTMLDivElement>) => {
         const renderer = rendererRef.current;
         if (!renderer) return;
+        flushRendererDocumentSyncBeforeInteraction();
         const rect = canvasContainerRef.current?.getBoundingClientRect();
         if (!rect) return;
         const pointerButton = event.button ?? 0;
@@ -1657,6 +1775,7 @@ export const SkiaCanvas = memo(
       },
       [
         effectiveTool,
+        flushRendererDocumentSyncBeforeInteraction,
         getPointerScenePoint,
         penTool,
         setEditorOverlay,
@@ -3282,7 +3401,7 @@ export const SkiaCanvas = memo(
 
     const api = useMemo<CanvasApi>(
       () => ({
-        getDocument: () => docRef.current as CanvasApiDocument,
+        getDocument: () => getCanvasApiDocument(runtimeStore.getState()),
         getDocumentVersion: () => documentVersionRef.current,
         applyDocumentPatch,
         setDocument: (raw: unknown) => {
@@ -3353,8 +3472,8 @@ export const SkiaCanvas = memo(
             { ...opts, activePageId: activePageIdRef.current },
             {
               backgroundColor:
-                getCanvasApiRuntimeState(docRef.current).viewport
-                  .backgroundColor ?? "#ffffff",
+                getCanvasApiDocument(runtimeStore.getState()).viewport
+                  ?.backgroundColor ?? "#ffffff",
             },
           ),
         getViewportBounds: () => {
@@ -3374,35 +3493,84 @@ export const SkiaCanvas = memo(
         getSceneElements: () =>
           toSceneElements(docRef.current, activePageIdRef.current),
         getFiles: () => toFiles(docRef.current),
-        getAppState: () =>
-          toAppState(
-            docRef.current,
+        getAppState: () => {
+          const currentDocument = getCanvasApiDocument(runtimeStore.getState());
+          return toAppState(
+            currentDocument,
             filterSelectionForActivePage(
-              docRef.current,
-              getDocumentSelection(docRef.current, selectedIdsRef.current),
+              currentDocument,
+              getDocumentSelection(currentDocument, selectedIdsRef.current),
               activePageIdRef.current,
             ),
             rendererRef.current?.getViewport(),
-          ),
+          );
+        },
         updateScene: (scene) => {
           if (scene.appState) {
             const state = scene.appState;
-            const vp = rendererRef.current?.getViewport();
-            if (
-              vp &&
-              state.zoom &&
-              state.scrollX !== undefined &&
-              state.scrollY !== undefined
-            ) {
-              rendererRef.current?.setViewport(
-                state.zoom.value,
-                state.scrollX,
-                state.scrollY,
+            const renderer = rendererRef.current;
+            const viewportPatch: {
+              x?: number;
+              y?: number;
+              zoom?: number;
+              backgroundColor?: string;
+            } = {};
+
+            if (renderer && state.zoom) {
+              const vp = renderer.getViewport();
+              const nextZoom = Math.min(
+                KEYBOARD_ZOOM_MAX,
+                Math.max(KEYBOARD_ZOOM_MIN, state.zoom.value),
               );
-              runtimeStore.getState().setViewportSnapshot({
-                x: state.scrollX,
-                y: state.scrollY,
-                zoom: state.zoom.value,
+              let nextPanX = state.scrollX ?? vp.panX;
+              let nextPanY = state.scrollY ?? vp.panY;
+
+              if (state.scrollX === undefined || state.scrollY === undefined) {
+                const rect =
+                  canvasContainerRef.current?.getBoundingClientRect();
+                if (rect) {
+                  const centerSceneX = (rect.width / 2 - vp.panX) / vp.zoom;
+                  const centerSceneY = (rect.height / 2 - vp.panY) / vp.zoom;
+                  if (state.scrollX === undefined) {
+                    nextPanX = rect.width / 2 - centerSceneX * nextZoom;
+                  }
+                  if (state.scrollY === undefined) {
+                    nextPanY = rect.height / 2 - centerSceneY * nextZoom;
+                  }
+                }
+              }
+
+              renderer.setViewport(nextZoom, nextPanX, nextPanY);
+              viewportPatch.x = nextPanX;
+              viewportPatch.y = nextPanY;
+              viewportPatch.zoom = nextZoom;
+            } else if (
+              renderer &&
+              (state.scrollX !== undefined || state.scrollY !== undefined)
+            ) {
+              const vp = renderer.getViewport();
+              const nextPanX = state.scrollX ?? vp.panX;
+              const nextPanY = state.scrollY ?? vp.panY;
+              renderer.setViewport(vp.zoom, nextPanX, nextPanY);
+              viewportPatch.x = nextPanX;
+              viewportPatch.y = nextPanY;
+              viewportPatch.zoom = vp.zoom;
+            }
+
+            if (typeof state.viewBackgroundColor === "string") {
+              renderer?.setBackgroundColor(state.viewBackgroundColor);
+              viewportPatch.backgroundColor = state.viewBackgroundColor;
+            }
+
+            if (Object.keys(viewportPatch).length > 0) {
+              runtimeStore.getState().setViewportSnapshot(viewportPatch);
+              console.info("[skia-canvas] app-state.updated", {
+                hasBackgroundColor:
+                  typeof state.viewBackgroundColor === "string",
+                hasScroll:
+                  state.scrollX !== undefined || state.scrollY !== undefined,
+                hasZoom: Boolean(state.zoom),
+                zoom: viewportPatch.zoom,
               });
             }
           }
@@ -3763,6 +3931,35 @@ export const SkiaCanvas = memo(
         );
         if (!node || node.type !== "text") return false;
         return beginTextEdit(node);
+      },
+      zoomIn: () => {
+        const currentZoom = api.getAppState().zoom.value;
+        api.updateScene({
+          appState: {
+            zoom: {
+              value: Math.min(
+                currentZoom * KEYBOARD_ZOOM_STEP,
+                KEYBOARD_ZOOM_MAX,
+              ),
+            },
+          },
+        });
+      },
+      zoomOut: () => {
+        const currentZoom = api.getAppState().zoom.value;
+        api.updateScene({
+          appState: {
+            zoom: {
+              value: Math.max(
+                currentZoom / KEYBOARD_ZOOM_STEP,
+                KEYBOARD_ZOOM_MIN,
+              ),
+            },
+          },
+        });
+      },
+      resetZoom: () => {
+        api.updateScene({ appState: { zoom: { value: 1 } } });
       },
       setActiveTool: (tool) => {
         setActiveTool(tool === "pen" ? "path" : tool);

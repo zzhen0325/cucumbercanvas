@@ -1,6 +1,13 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-05-31 CST
+Last updated: 2026-06-01 CST
+
+## 2026-06-01
+
+- Added the Skia canvas document-sync scheduler: runtime document commits now coalesce renderer `setDocument` work into the next animation frame, defer renderer tree rebuilds while pointer drags are active, flush the latest pending document before a new pointer interaction needs hit-testing, and log deferred/coalesced sync flushes with source/version/page context.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/skia-canvas-selection-snapshot.test.tsx`.
+- Passed: `pnpm exec biome check --write apps/web/src/components/canvas/skia-canvas.tsx apps/web/test/skia-canvas-selection-snapshot.test.tsx`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
 
 ## 2026-05-31
 

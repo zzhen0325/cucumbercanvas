@@ -16,6 +16,14 @@ const penRendererMockState = vi.hoisted(() => ({
     pages?: Array<{ id: string; children: TestPenNode[] }>;
   } | null,
   currentPageId: null as string | null,
+  setDocumentCalls: [] as Array<{
+    activePageId?: string | null;
+    doc: {
+      activePageId?: string | null;
+      children?: TestPenNode[];
+      pages?: Array<{ id: string; children: TestPenNode[] }>;
+    };
+  }>,
   getNodeBounds: vi.fn<
     () => { x: number; y: number; w: number; h: number } | null
   >(() => null),
@@ -32,7 +40,12 @@ const penRendererMockState = vi.hoisted(() => ({
   setInteractionMode: vi.fn(),
   setTransformPreview: vi.fn(),
   clearTransformPreview: vi.fn(),
-  viewport: { zoom: 1, panX: 0, panY: 0 },
+  viewport: { zoom: 1, panX: 0, panY: 0 } as {
+    zoom: number;
+    panX: number;
+    panY: number;
+    backgroundColor?: string;
+  },
   screenToScene: vi.fn(
     (
       clientX: number,
@@ -100,9 +113,11 @@ vi.mock("@cucumber/pen-renderer", () => ({
     resize = vi.fn();
     dispose = vi.fn();
     zoomToFit = vi.fn();
-    setDocument = vi.fn((doc) => {
+    setDocument = vi.fn((doc, activePageId?: string | null) => {
+      penRendererMockState.setDocumentCalls.push({ activePageId, doc });
       penRendererMockState.currentDocument = doc;
-      penRendererMockState.currentPageId = doc.activePageId ?? null;
+      penRendererMockState.currentPageId =
+        activePageId ?? doc.activePageId ?? null;
     });
     setPage = vi.fn((pageId: string) => {
       penRendererMockState.currentPageId = pageId;
@@ -112,6 +127,12 @@ vi.mock("@cucumber/pen-renderer", () => ({
     getNodeBounds = penRendererMockState.getNodeBounds;
     setViewport = vi.fn((zoom: number, panX: number, panY: number) => {
       penRendererMockState.viewport = { zoom, panX, panY };
+    });
+    setBackgroundColor = vi.fn((backgroundColor: string) => {
+      penRendererMockState.viewport = {
+        ...penRendererMockState.viewport,
+        backgroundColor,
+      };
     });
     hitTest = vi.fn((screenX: number, screenY: number) => {
       const override = penRendererMockState.hitTest(screenX, screenY);
@@ -177,6 +198,7 @@ describe("SkiaCanvas selection snapshots", () => {
   beforeEach(() => {
     penRendererMockState.currentDocument = null;
     penRendererMockState.currentPageId = null;
+    penRendererMockState.setDocumentCalls = [];
     penRendererMockState.hitTest.mockReset();
     penRendererMockState.hitTest.mockReturnValue(undefined);
     penRendererMockState.hitTestSelectionControl.mockReset();
@@ -321,6 +343,247 @@ describe("SkiaCanvas selection snapshots", () => {
       });
     } finally {
       globalThis.ResizeObserver = originalResizeObserver;
+    }
+  });
+
+  it("coalesces renderer document syncs into the next animation frame", async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+    globalThis.ResizeObserver =
+      MockResizeObserver as unknown as typeof ResizeObserver;
+    const rafCallbacks: FrameRequestCallback[] = [];
+    globalThis.requestAnimationFrame = vi.fn(
+      (callback: FrameRequestCallback) => {
+        rafCallbacks.push(callback);
+        return rafCallbacks.length;
+      },
+    );
+    globalThis.cancelAnimationFrame = vi.fn();
+    const apiRef: { current: CanvasApi | null } = { current: null };
+
+    try {
+      const { container } = render(
+        <SkiaCanvas
+          initialContent={initialDocument}
+          onApiReady={(readyApi) => {
+            apiRef.current = readyApi;
+          }}
+        />,
+      );
+
+      await waitFor(() => expect(apiRef.current).not.toBeNull());
+      await waitFor(() =>
+        expect(container.querySelector("canvas")).not.toBeNull(),
+      );
+      act(() => {
+        while (rafCallbacks.length > 0) {
+          const callback = rafCallbacks.shift();
+          callback?.(0);
+        }
+      });
+      penRendererMockState.setDocumentCalls = [];
+
+      const readyApi = apiRef.current;
+      if (!readyApi) throw new Error("Canvas API was not initialized.");
+
+      act(() => {
+        readyApi.setDocument({
+          ...initialDocument,
+          pages: [
+            {
+              id: "page-default",
+              name: "Page 1",
+              children: [
+                {
+                  id: "first-doc-rect",
+                  type: "rectangle",
+                  x: 10,
+                  y: 10,
+                  width: 40,
+                  height: 40,
+                } as PenNode,
+              ],
+            },
+          ],
+        });
+        readyApi.setDocument({
+          ...initialDocument,
+          pages: [
+            {
+              id: "page-default",
+              name: "Page 1",
+              children: [
+                {
+                  id: "latest-doc-rect",
+                  type: "rectangle",
+                  x: 20,
+                  y: 20,
+                  width: 50,
+                  height: 50,
+                } as PenNode,
+              ],
+            },
+          ],
+        });
+      });
+
+      expect(penRendererMockState.setDocumentCalls).toHaveLength(0);
+      expect(rafCallbacks).toHaveLength(1);
+
+      act(() => {
+        const callback = rafCallbacks.shift();
+        if (!callback) throw new Error("Expected a renderer sync frame.");
+        callback(16);
+      });
+
+      expect(penRendererMockState.setDocumentCalls).toHaveLength(1);
+      expect(
+        penRendererMockState.currentDocument?.pages?.[0]?.children?.[0]?.id,
+      ).toBe("latest-doc-rect");
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver;
+      globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+      globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+    }
+  });
+
+  it("defers scheduled renderer document sync while a selection drag is active", async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+    const originalSetPointerCapture = HTMLElement.prototype.setPointerCapture;
+    const originalReleasePointerCapture =
+      HTMLElement.prototype.releasePointerCapture;
+    const originalHasPointerCapture = HTMLElement.prototype.hasPointerCapture;
+    globalThis.ResizeObserver =
+      MockResizeObserver as unknown as typeof ResizeObserver;
+    const rafCallbacks: FrameRequestCallback[] = [];
+    globalThis.requestAnimationFrame = vi.fn(
+      (callback: FrameRequestCallback) => {
+        rafCallbacks.push(callback);
+        return rafCallbacks.length;
+      },
+    );
+    globalThis.cancelAnimationFrame = vi.fn();
+    HTMLElement.prototype.setPointerCapture = vi.fn();
+    HTMLElement.prototype.releasePointerCapture = vi.fn();
+    HTMLElement.prototype.hasPointerCapture = vi.fn(() => true);
+    const apiRef: { current: CanvasApi | null } = { current: null };
+    const docWithRect: CucumberCanvasDocument = {
+      ...initialDocument,
+      pages: [
+        {
+          id: "page-default",
+          name: "Page 1",
+          children: [
+            {
+              id: "drag-rect",
+              type: "rectangle",
+              x: 10,
+              y: 10,
+              width: 100,
+              height: 80,
+            } as PenNode,
+          ],
+        },
+      ],
+    };
+
+    try {
+      const { container } = render(
+        <SkiaCanvas
+          initialContent={docWithRect}
+          onApiReady={(readyApi) => {
+            apiRef.current = readyApi;
+          }}
+        />,
+      );
+
+      await waitFor(() => expect(apiRef.current).not.toBeNull());
+      const canvas = await waitFor(() => {
+        const node = container.querySelector("canvas");
+        if (!node) throw new Error("Expected canvas to be mounted.");
+        return node;
+      });
+      act(() => {
+        while (rafCallbacks.length > 0) {
+          const callback = rafCallbacks.shift();
+          callback?.(0);
+        }
+      });
+      penRendererMockState.setDocumentCalls = [];
+
+      fireCanvasPointerEvent(canvas, "pointerdown", {
+        clientX: 20,
+        clientY: 20,
+        pointerId: 1,
+      });
+      fireCanvasPointerEvent(canvas, "pointermove", {
+        clientX: 50,
+        clientY: 50,
+        pointerId: 1,
+      });
+
+      const readyApi = apiRef.current;
+      if (!readyApi) throw new Error("Canvas API was not initialized.");
+
+      act(() => {
+        readyApi.setDocument({
+          ...initialDocument,
+          pages: [
+            {
+              id: "page-default",
+              name: "Page 1",
+              children: [
+                {
+                  id: "external-rect",
+                  type: "rectangle",
+                  x: 30,
+                  y: 30,
+                  width: 60,
+                  height: 60,
+                } as PenNode,
+              ],
+            },
+          ],
+        });
+      });
+
+      expect(rafCallbacks).toHaveLength(1);
+      act(() => {
+        const callback = rafCallbacks.shift();
+        if (!callback) throw new Error("Expected a deferred sync frame.");
+        callback(16);
+      });
+
+      expect(penRendererMockState.setDocumentCalls).toHaveLength(0);
+      expect(rafCallbacks).toHaveLength(1);
+
+      fireCanvasPointerEvent(canvas, "pointerup", {
+        clientX: 50,
+        clientY: 50,
+        pointerId: 1,
+      });
+
+      act(() => {
+        const callback = rafCallbacks.shift();
+        if (!callback) throw new Error("Expected a post-drag sync frame.");
+        callback(32);
+      });
+
+      expect(penRendererMockState.setDocumentCalls).toHaveLength(1);
+      expect(
+        penRendererMockState.currentDocument?.pages?.[0]?.children?.[0]?.id,
+      ).toBe("external-rect");
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver;
+      globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+      globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+      HTMLElement.prototype.setPointerCapture = originalSetPointerCapture;
+      HTMLElement.prototype.releasePointerCapture =
+        originalReleasePointerCapture;
+      HTMLElement.prototype.hasPointerCapture = originalHasPointerCapture;
     }
   });
 
@@ -1710,6 +1973,30 @@ describe("SkiaCanvas selection snapshots", () => {
         zoom: { value: 2 },
         scrollX: 40,
         scrollY: 12,
+      });
+
+      act(() => {
+        apiRef.current?.updateScene({
+          appState: {
+            zoom: { value: 2.5 },
+          },
+        });
+      });
+
+      expect(apiRef.current?.getAppState()).toMatchObject({
+        zoom: { value: 2.5 },
+      });
+
+      act(() => {
+        apiRef.current?.updateScene({
+          appState: {
+            viewBackgroundColor: "#d3f256",
+          },
+        });
+      });
+
+      expect(apiRef.current?.getAppState()).toMatchObject({
+        viewBackgroundColor: "#d3f256",
       });
     } finally {
       unmount?.();

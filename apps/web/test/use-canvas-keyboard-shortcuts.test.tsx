@@ -21,6 +21,9 @@ function createOptions(
     ungroupSelection: vi.fn().mockReturnValue([]),
     nudgeSelection: vi.fn(),
     reorderSelection: vi.fn(),
+    zoomIn: vi.fn(),
+    zoomOut: vi.fn(),
+    resetZoom: vi.fn(),
     setActiveTool: vi.fn(),
     ...overrides,
   };
@@ -165,5 +168,25 @@ describe("useCanvasKeyboardShortcuts paste handling", () => {
     expect(options.setActiveTool).toHaveBeenNthCalledWith(5, "ellipse");
     expect(options.setActiveTool).toHaveBeenNthCalledWith(6, "container");
     expect(options.setActiveTool).toHaveBeenNthCalledWith(7, "pen");
+  });
+
+  it("handles browser-style canvas zoom shortcuts", async () => {
+    const options = createOptions();
+    await mountHook(options);
+
+    for (const key of ["=", "-", "0"]) {
+      const event = new KeyboardEvent("keydown", {
+        key,
+        metaKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      document.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+    }
+
+    expect(options.zoomIn).toHaveBeenCalledOnce();
+    expect(options.zoomOut).toHaveBeenCalledOnce();
+    expect(options.resetZoom).toHaveBeenCalledOnce();
   });
 });

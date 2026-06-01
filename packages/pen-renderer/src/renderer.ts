@@ -306,6 +306,11 @@ export class PenRenderer {
     return { zoom: this._zoom, panX: this._panX, panY: this._panY };
   }
 
+  setBackgroundColor(color: string) {
+    this.options.backgroundColor = color;
+    this.markDirty();
+  }
+
   zoomToFit(padding = 64) {
     if (!this.canvasEl || this.renderNodes.length === 0) return;
     let minX = Number.POSITIVE_INFINITY;
