@@ -3,7 +3,6 @@ import {
   FRAME_LABEL_COLOR,
   FRAME_LABEL_FONT_SIZE,
   FRAME_LABEL_OFFSET_Y,
-  MAX_ZOOM,
   MIN_ZOOM,
   getActivePageChildren,
   getAllChildren,
@@ -54,6 +53,8 @@ const SLOW_SYNC_THRESHOLD_MS = 18;
 const SLOW_FRAME_THRESHOLD_MS = 24;
 const FRAME_LABEL_CACHE_MAX = 256;
 const VIEWPORT_INTERACTION_CACHE_PADDING_PX = 256;
+const VIEWPORT_CACHE_MIN_NODE_COUNT = 64;
+const VIEWPORT_CACHE_MIN_IMAGE_COUNT = 8;
 const VIEWPORT_EPSILON = 0.001;
 const RESIZE_HANDLES: ResizeHandleDirection[] = [
   "n",
@@ -129,6 +130,7 @@ export class PenRenderer {
   private interactionBackgroundCache: InteractionBackgroundCacheEntry | null =
     null;
   private viewportInteractionCache: ViewportInteractionCacheEntry | null = null;
+  private viewportInteractionCacheSkipKey: string | null = null;
   private sceneSerial = 0;
 
   // Component/instance IDs for colored frame labels
@@ -332,8 +334,9 @@ export class PenRenderer {
   // ---------------------------------------------------------------------------
 
   setViewport(zoom: number, panX: number, panY: number) {
+    assertPositiveFiniteZoom(zoom);
     const previousZoom = this._zoom;
-    this._zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
+    this._zoom = zoom;
     this._panX = panX;
     this._panY = panY;
     if (Math.abs(previousZoom - this._zoom) > VIEWPORT_EPSILON) {
@@ -854,6 +857,7 @@ export class PenRenderer {
   }
 
   private clearViewportInteractionCache(reason: string) {
+    this.viewportInteractionCacheSkipKey = null;
     if (!this.viewportInteractionCache) return;
     this.viewportInteractionCache.image.delete();
     this.viewportInteractionCache = null;
@@ -928,21 +932,10 @@ export class PenRenderer {
 
     this.clearViewportInteractionCache("cache_miss");
 
-    const startedAt =
-      typeof performance !== "undefined" ? performance.now() : Date.now();
     const paddingX = Math.ceil(VIEWPORT_INTERACTION_CACHE_PADDING_PX * dpr);
     const paddingY = Math.ceil(VIEWPORT_INTERACTION_CACHE_PADDING_PX * dpr);
     const surfaceWidth = canvas.width + paddingX * 2;
     const surfaceHeight = canvas.height + paddingY * 2;
-    const surface = this.ck.MakeSurface(surfaceWidth, surfaceHeight);
-    if (!surface) {
-      console.warn("[pen-renderer] renderer.viewport-cache.failed", {
-        reason: "surface_unavailable",
-        width: surfaceWidth,
-        height: surfaceHeight,
-      });
-      return null;
-    }
 
     const cacheViewport = {
       zoom: this._zoom,
@@ -955,6 +948,61 @@ export class PenRenderer {
       cacheViewport,
       RENDER_CULL_MARGIN_PX + Math.max(paddingCssX, paddingCssY),
     );
+    const imageUrls = collectImageUrls(cacheNodes);
+    const initialDecision = getViewportInteractionCacheBuildDecision({
+      imageCount: imageUrls.length,
+      nodeCount: cacheNodes.length,
+      pendingImageCount: 0,
+    });
+    if (!initialDecision.shouldBuild) {
+      this.logViewportCacheSkipped({
+        reason: initialDecision.reason,
+        imageCount: imageUrls.length,
+        nodeCount: cacheNodes.length,
+        width: surfaceWidth,
+        height: surfaceHeight,
+      });
+      return null;
+    }
+
+    const pendingImageCount = countImagesNotReadyForDisplay(
+      this.nodeRenderer,
+      imageUrls,
+      {
+        devicePixelRatio: dpr,
+        interactionMode: this.interactionMode,
+        zoom: this._zoom,
+      },
+    );
+    const finalDecision = getViewportInteractionCacheBuildDecision({
+      imageCount: imageUrls.length,
+      nodeCount: cacheNodes.length,
+      pendingImageCount,
+    });
+    if (!finalDecision.shouldBuild) {
+      this.logViewportCacheSkipped({
+        reason: finalDecision.reason,
+        imageCount: imageUrls.length,
+        nodeCount: cacheNodes.length,
+        pendingImageCount,
+        width: surfaceWidth,
+        height: surfaceHeight,
+      });
+      return null;
+    }
+
+    const startedAt =
+      typeof performance !== "undefined" ? performance.now() : Date.now();
+    const surface = this.ck.MakeSurface(surfaceWidth, surfaceHeight);
+    if (!surface) {
+      console.warn("[pen-renderer] renderer.viewport-cache.failed", {
+        reason: "surface_unavailable",
+        width: surfaceWidth,
+        height: surfaceHeight,
+      });
+      return null;
+    }
+
     const offscreen = surface.getCanvas();
     offscreen.clear(this.ck.TRANSPARENT);
     offscreen.save();
@@ -987,6 +1035,7 @@ export class PenRenderer {
       startedAt;
     console.info("[pen-renderer] renderer.viewport-cache.built", {
       durationMs: Math.round(elapsed),
+      imageCount: imageUrls.length,
       nodeCount: cacheNodes.length,
       width: entry.width,
       height: entry.height,
@@ -995,6 +1044,30 @@ export class PenRenderer {
       zoom: Number(this._zoom.toFixed(3)),
     });
     return entry;
+  }
+
+  private logViewportCacheSkipped(details: {
+    reason: "below_threshold" | "lod_pending";
+    imageCount: number;
+    nodeCount: number;
+    pendingImageCount?: number;
+    width: number;
+    height: number;
+  }) {
+    const key = [
+      details.reason,
+      details.nodeCount,
+      details.imageCount,
+      details.pendingImageCount ?? 0,
+      Number(this._zoom.toFixed(3)),
+    ].join("|");
+    if (this.viewportInteractionCacheSkipKey === key) return;
+    this.viewportInteractionCacheSkipKey = key;
+    console.info("[pen-renderer] renderer.viewport-cache.skipped", {
+      ...details,
+      interactionMode: this.interactionMode,
+      zoom: Number(this._zoom.toFixed(3)),
+    });
   }
 
   private getInteractionBackgroundCacheKey(dpr: number) {
@@ -1840,6 +1913,36 @@ export function filterRenderNodesToViewportWithTransformPreview(
   return visible;
 }
 
+function assertPositiveFiniteZoom(zoom: number) {
+  if (!Number.isFinite(zoom) || zoom <= 0) {
+    throw new Error(
+      `Viewport zoom must be a positive finite number, received ${zoom}.`,
+    );
+  }
+}
+
+export function getViewportInteractionCacheBuildDecision(input: {
+  imageCount: number;
+  nodeCount: number;
+  pendingImageCount: number;
+}):
+  | { reason: "below_threshold" | "lod_pending"; shouldBuild: false }
+  | {
+      reason: "ready";
+      shouldBuild: true;
+    } {
+  const aboveThreshold =
+    input.nodeCount >= VIEWPORT_CACHE_MIN_NODE_COUNT ||
+    input.imageCount >= VIEWPORT_CACHE_MIN_IMAGE_COUNT;
+  if (!aboveThreshold) {
+    return { reason: "below_threshold", shouldBuild: false };
+  }
+  if (input.pendingImageCount > 0) {
+    return { reason: "lod_pending", shouldBuild: false };
+  }
+  return { reason: "ready", shouldBuild: true };
+}
+
 function isRenderNodeInBounds(
   rn: RenderNode,
   bounds: { left: number; top: number; right: number; bottom: number },
@@ -1862,11 +1965,55 @@ function isRenderNodeInBounds(
 }
 
 function countImageRenderNodes(renderNodes: RenderNode[]): number {
-  let count = 0;
+  return collectImageUrls(renderNodes).length;
+}
+
+function collectImageUrls(renderNodes: RenderNode[]): string[] {
+  const urls: string[] = [];
   for (const rn of renderNodes) {
-    if (rn.node.type === "image") count += 1;
+    const nodeRecord = rn.node as unknown as Record<string, unknown>;
+    if (rn.node.type === "image" && typeof nodeRecord.src === "string") {
+      urls.push(nodeRecord.src);
+    }
     const fills = "fill" in rn.node ? rn.node.fill : undefined;
-    if (Array.isArray(fills) && fills.some((fill) => fill.type === "image")) {
+    if (Array.isArray(fills)) {
+      for (const fill of fills) {
+        if (
+          fill &&
+          typeof fill === "object" &&
+          "type" in fill &&
+          fill.type === "image" &&
+          "url" in fill &&
+          typeof fill.url === "string"
+        ) {
+          urls.push(fill.url);
+        }
+      }
+    }
+  }
+  return urls;
+}
+
+function countImagesNotReadyForDisplay(
+  nodeRenderer: SkiaNodeRenderer,
+  urls: string[],
+  request: {
+    devicePixelRatio: number;
+    interactionMode: RendererInteractionMode;
+    zoom: number;
+  },
+): number {
+  let count = 0;
+  for (const url of urls) {
+    if (
+      !nodeRenderer.isImageReadyForDisplay(url, {
+        devicePixelRatio: request.devicePixelRatio,
+        interactionMode: request.interactionMode,
+        targetHeight: 1,
+        targetWidth: 1,
+        zoom: request.zoom,
+      })
+    ) {
       count += 1;
     }
   }

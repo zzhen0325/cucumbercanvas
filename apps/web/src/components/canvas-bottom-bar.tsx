@@ -20,9 +20,13 @@ const BG_PRESETS = [
 ] as const;
 
 const ZOOM_PRESETS = [0.25, 0.5, 0.75, 1, 1.5, 2] as const;
-const ZOOM_MIN = 0.1;
-const ZOOM_MAX = 30;
 const ZOOM_STEP = 1.1;
+
+function assertPositiveFiniteZoom(zoom: number) {
+  if (!Number.isFinite(zoom) || zoom <= 0) {
+    throw new Error(`画布缩放比例必须是大于 0 的有限数字，当前值为 ${zoom}。`);
+  }
+}
 
 /* ── Types ── */
 interface CanvasBottomBarProps {
@@ -248,6 +252,7 @@ export function CanvasBottomBar({
   /* ── Zoom helpers ── */
   const applyZoom = useCallback(
     (value: number) => {
+      assertPositiveFiniteZoom(value);
       canvasApi?.updateScene({ appState: { zoom: { value } } });
     },
     [canvasApi],
@@ -255,16 +260,12 @@ export function CanvasBottomBar({
 
   const handleZoomIn = useCallback(() => {
     if (!canvasApi) return;
-    applyZoom(
-      Math.min(canvasApi.getAppState().zoom.value * ZOOM_STEP, ZOOM_MAX),
-    );
+    applyZoom(canvasApi.getAppState().zoom.value * ZOOM_STEP);
   }, [canvasApi, applyZoom]);
 
   const handleZoomOut = useCallback(() => {
     if (!canvasApi) return;
-    applyZoom(
-      Math.max(canvasApi.getAppState().zoom.value / ZOOM_STEP, ZOOM_MIN),
-    );
+    applyZoom(canvasApi.getAppState().zoom.value / ZOOM_STEP);
   }, [canvasApi, applyZoom]);
 
   const handleZoomTo = useCallback(

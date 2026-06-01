@@ -102,7 +102,14 @@ export type CanvasApi = {
   getDocument: () => CanvasApiDocument;
   getDocumentVersion: () => number;
   applyDocumentPatch: (patch: CanvasDocumentPatch) => number;
-  setDocument: (doc: unknown) => void;
+  setDocument: (
+    doc: unknown,
+    opts?: {
+      captureHistory?: boolean;
+      notify?: boolean;
+      preserveViewport?: boolean;
+    },
+  ) => void;
   getActivePageId: () => string;
   setActivePage: (pageId: string) => void;
   getPages: () => PenPage[];

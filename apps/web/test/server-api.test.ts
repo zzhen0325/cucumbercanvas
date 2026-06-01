@@ -215,6 +215,24 @@ describe("authenticated server API", () => {
     }
   });
 
+  it("saveCanvas returns the normalized content from the server", async () => {
+    const content = {
+      version: "1.0.0",
+      children: [],
+      pages: [{ id: "page-default", name: "Page 1", children: [] }],
+      activePageId: "page-default",
+    };
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, content }),
+    });
+
+    await expect(saveCanvas("token_abc", "canvas-1", content)).resolves.toEqual(
+      { ok: true, content },
+    );
+  });
+
   it("fetchViewer throws ApiAuthError on 401", async () => {
     mockFetch.mockResolvedValue({
       ok: false,

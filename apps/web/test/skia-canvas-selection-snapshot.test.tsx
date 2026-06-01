@@ -16,6 +16,7 @@ const penRendererMockState = vi.hoisted(() => ({
     pages?: Array<{ id: string; children: TestPenNode[] }>;
   } | null,
   currentPageId: null as string | null,
+  callLog: [] as string[],
   setDocumentCalls: [] as Array<{
     activePageId?: string | null;
     doc: {
@@ -114,6 +115,10 @@ vi.mock("@cucumber/pen-renderer", () => ({
     dispose = vi.fn();
     zoomToFit = vi.fn();
     setDocument = vi.fn((doc, activePageId?: string | null) => {
+      const firstNode = doc.pages?.[0]?.children?.[0] ?? doc.children?.[0];
+      penRendererMockState.callLog.push(
+        `setDocument:${firstNode?.id ?? "empty"}:${firstNode?.x ?? "none"}:${firstNode?.y ?? "none"}`,
+      );
       penRendererMockState.setDocumentCalls.push({ activePageId, doc });
       penRendererMockState.currentDocument = doc;
       penRendererMockState.currentPageId =
@@ -142,8 +147,16 @@ vi.mock("@cucumber/pen-renderer", () => ({
     hitTestSelectionControl = penRendererMockState.hitTestSelectionControl;
     hitTestRect = penRendererMockState.hitTestRect;
     setInteractionMode = penRendererMockState.setInteractionMode;
-    setTransformPreview = penRendererMockState.setTransformPreview;
-    clearTransformPreview = penRendererMockState.clearTransformPreview;
+    setTransformPreview = vi.fn((preview) => {
+      penRendererMockState.setTransformPreview(preview);
+      penRendererMockState.callLog.push(
+        `setPreview:${preview?.kind ?? "null"}`,
+      );
+    });
+    clearTransformPreview = vi.fn(() => {
+      penRendererMockState.clearTransformPreview();
+      penRendererMockState.callLog.push("clearPreview");
+    });
   },
   loadCanvasKit: vi.fn(async () => ({})),
   screenToScene: penRendererMockState.screenToScene,
@@ -198,6 +211,7 @@ describe("SkiaCanvas selection snapshots", () => {
   beforeEach(() => {
     penRendererMockState.currentDocument = null;
     penRendererMockState.currentPageId = null;
+    penRendererMockState.callLog = [];
     penRendererMockState.setDocumentCalls = [];
     penRendererMockState.hitTest.mockReset();
     penRendererMockState.hitTest.mockReturnValue(undefined);
@@ -576,6 +590,103 @@ describe("SkiaCanvas selection snapshots", () => {
       expect(
         penRendererMockState.currentDocument?.pages?.[0]?.children?.[0]?.id,
       ).toBe("external-rect");
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver;
+      globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+      globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+      HTMLElement.prototype.setPointerCapture = originalSetPointerCapture;
+      HTMLElement.prototype.releasePointerCapture =
+        originalReleasePointerCapture;
+      HTMLElement.prototype.hasPointerCapture = originalHasPointerCapture;
+    }
+  });
+
+  it("syncs the committed image position before clearing the drag preview", async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+    const originalSetPointerCapture = HTMLElement.prototype.setPointerCapture;
+    const originalReleasePointerCapture =
+      HTMLElement.prototype.releasePointerCapture;
+    const originalHasPointerCapture = HTMLElement.prototype.hasPointerCapture;
+    globalThis.ResizeObserver =
+      MockResizeObserver as unknown as typeof ResizeObserver;
+    const rafCallbacks: FrameRequestCallback[] = [];
+    globalThis.requestAnimationFrame = vi.fn(
+      (callback: FrameRequestCallback) => {
+        rafCallbacks.push(callback);
+        return rafCallbacks.length;
+      },
+    );
+    globalThis.cancelAnimationFrame = vi.fn();
+    HTMLElement.prototype.setPointerCapture = vi.fn();
+    HTMLElement.prototype.releasePointerCapture = vi.fn();
+    HTMLElement.prototype.hasPointerCapture = vi.fn(() => true);
+    const imageDocument: CucumberCanvasDocument = {
+      ...initialDocument,
+      pages: [
+        {
+          id: "page-default",
+          name: "Page 1",
+          children: [
+            {
+              id: "drag-image",
+              type: "image",
+              src: "data:image/png;base64,iVBORw0KGgo=",
+              x: 10,
+              y: 10,
+              width: 100,
+              height: 80,
+            } as PenNode,
+          ],
+        },
+      ],
+    };
+
+    try {
+      const { container } = render(
+        <SkiaCanvas initialContent={imageDocument} />,
+      );
+      await waitFor(() =>
+        expect(container.querySelector("canvas")).not.toBeNull(),
+      );
+      act(() => {
+        while (rafCallbacks.length > 0) {
+          const callback = rafCallbacks.shift();
+          callback?.(0);
+        }
+      });
+      penRendererMockState.setDocumentCalls = [];
+      penRendererMockState.callLog = [];
+
+      const canvas = container.querySelector("canvas");
+      if (!canvas) throw new Error("Expected canvas to be mounted.");
+
+      fireCanvasPointerEvent(canvas, "pointerdown", {
+        clientX: 20,
+        clientY: 20,
+        pointerId: 3,
+      });
+      fireCanvasPointerEvent(canvas, "pointermove", {
+        clientX: 60,
+        clientY: 70,
+        pointerId: 3,
+      });
+      fireCanvasPointerEvent(canvas, "pointerup", {
+        clientX: 60,
+        clientY: 70,
+        pointerId: 3,
+      });
+
+      const committedSyncIndex = penRendererMockState.callLog.indexOf(
+        "setDocument:drag-image:50:60",
+      );
+      const clearPreviewIndex =
+        penRendererMockState.callLog.indexOf("clearPreview");
+      expect(committedSyncIndex).toBeGreaterThanOrEqual(0);
+      expect(clearPreviewIndex).toBeGreaterThan(committedSyncIndex);
+      expect(penRendererMockState.setDocumentCalls).toHaveLength(1);
+      expect(globalThis.cancelAnimationFrame).toHaveBeenCalled();
     } finally {
       globalThis.ResizeObserver = originalResizeObserver;
       globalThis.requestAnimationFrame = originalRequestAnimationFrame;

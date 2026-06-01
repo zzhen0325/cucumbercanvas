@@ -1,4 +1,3 @@
-import { MAX_ZOOM, MIN_ZOOM } from "@cucumber/pen-core";
 import type { ViewportState } from "./types.js";
 
 export type { ViewportState } from "./types.js";
@@ -58,6 +57,14 @@ export function clientDeltaToSceneDelta(
   };
 }
 
+function assertPositiveFiniteZoom(zoom: number) {
+  if (!Number.isFinite(zoom) || zoom <= 0) {
+    throw new Error(
+      `Viewport zoom must be a positive finite number, received ${zoom}.`,
+    );
+  }
+}
+
 /**
  * Convert screen (client) coordinates to scene coordinates.
  */
@@ -97,7 +104,7 @@ export function zoomToPoint(
   canvasRect: DOMRect,
   newZoom: number,
 ): ViewportState {
-  const clampedZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
+  assertPositiveFiniteZoom(newZoom);
   const sx = screenX - canvasRect.left;
   const sy = screenY - canvasRect.top;
 
@@ -105,9 +112,9 @@ export function zoomToPoint(
   const scene = canvasLocalToScene(sx, sy, vp);
 
   return {
-    zoom: clampedZoom,
-    panX: sx - scene.x * clampedZoom,
-    panY: sy - scene.y * clampedZoom,
+    zoom: newZoom,
+    panX: sx - scene.x * newZoom,
+    panY: sy - scene.y * newZoom,
   };
 }
 

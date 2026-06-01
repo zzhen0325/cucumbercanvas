@@ -161,8 +161,17 @@ export function CanvasEditor({
   const flushPendingSave = useCallback(async () => {
     const payload = pendingContentRef.current;
     if (!payload) return;
-    await saveCanvas(accessTokenRef.current, canvasIdRef.current, payload);
+    const result = await saveCanvas(
+      accessTokenRef.current,
+      canvasIdRef.current,
+      payload,
+    );
     if (pendingContentRef.current === payload) {
+      apiRef.current?.setDocument(result.content, {
+        captureHistory: false,
+        notify: false,
+        preserveViewport: true,
+      });
       pendingContentRef.current = null;
     }
     console.info("[canvas-editor] pending document flushed", {
@@ -232,8 +241,13 @@ export function CanvasEditor({
         const payload = pendingContentRef.current;
         if (!payload) return;
         saveCanvas(accessTokenRef.current, canvasIdRef.current, payload)
-          .then(() => {
+          .then((result) => {
             if (pendingContentRef.current === payload) {
+              apiRef.current?.setDocument(result.content, {
+                captureHistory: false,
+                notify: false,
+                preserveViewport: true,
+              });
               pendingContentRef.current = null;
             }
           })
@@ -400,11 +414,13 @@ export function CanvasEditor({
     >
       <div className="h-full w-full relative">
         <SkiaCanvas
+          accessToken={accessToken}
           initialContent={initialContent}
           onApiReady={handleApiReady}
           onDocumentChange={handleDocumentChange}
           onInsertIcon={onInsertIcon}
           onSelectionChange={handleSelectionChange}
+          projectId={projectId}
         />
       </div>
     </ErrorBoundary>

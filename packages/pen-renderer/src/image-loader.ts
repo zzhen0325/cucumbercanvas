@@ -1,7 +1,7 @@
 import type { CanvasKit, Image as SkImage } from "canvaskit-wasm";
 
 const MAX_IMAGE_DIMENSION = 2048;
-const IMAGE_LOD_SIZES = [512, 1024, 2048] as const;
+const INTERACTION_IMAGE_LOD_SIZE = 512;
 const DATA_URL_CACHE_KEY_PREFIX = "data-url:";
 const DATA_URL_HASH_SEED = 0x811c9dc5;
 
@@ -79,7 +79,18 @@ export class SkiaImageLoader {
     const cached = this.cache.get(resolved.cacheKey);
     if (cached === undefined || cached === null) return cached;
     const lodSize = chooseImageLodSize(request);
-    return this.lodCache.get(resolved.cacheKey)?.get(lodSize) ?? cached;
+    const lodImage = this.lodCache.get(resolved.cacheKey)?.get(lodSize);
+    if (lodImage) return lodImage;
+
+    // During pointer interactions, drawing the 2048px base image while the
+    // 512px LOD is still being prepared can stall the renderer for hundreds of
+    // milliseconds on image-heavy canvases. Prefer a temporary fallback frame
+    // until the interaction-sized raster is ready.
+    if (request.interactionMode && request.interactionMode !== "idle") {
+      return undefined;
+    }
+
+    return cached;
   }
 
   getStatus(src: string): ImageLoadStatus | undefined {
@@ -275,15 +286,13 @@ export class SkiaImageLoader {
     const variants = new Map<number, SkImage>();
     const baseMax = Math.max(baseImage.width(), baseImage.height());
 
-    for (const lodSize of IMAGE_LOD_SIZES) {
-      if (lodSize >= baseMax) {
-        variants.set(lodSize, baseImage);
-        continue;
-      }
+    if (INTERACTION_IMAGE_LOD_SIZE >= baseMax) {
+      variants.set(INTERACTION_IMAGE_LOD_SIZE, baseImage);
+    } else {
       this.lodQueue.push({
         cacheKey,
         htmlImg,
-        lodSize,
+        lodSize: INTERACTION_IMAGE_LOD_SIZE,
         sourceHeight: sourceH,
         sourceWidth: sourceW,
       });

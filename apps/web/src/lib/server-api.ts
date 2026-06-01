@@ -1,6 +1,7 @@
 import type {
   AssetSignedUrlResponse,
   CanvasDetail,
+  CanvasSaveResponse,
   ChatMessageCreateRequest,
   JobResponse,
   MarketplaceDetail,
@@ -243,7 +244,7 @@ export async function saveCanvas(
   accessToken: string,
   canvasId: string,
   content: unknown,
-): Promise<void> {
+): Promise<CanvasSaveResponse> {
   const response = await fetch(
     `${getServerBaseUrl()}/api/canvases/${canvasId}`,
     {
@@ -253,6 +254,7 @@ export async function saveCanvas(
     },
   );
   if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as CanvasSaveResponse;
 }
 
 export async function uploadThumbnail(
@@ -261,7 +263,7 @@ export async function uploadThumbnail(
   blob: Blob,
 ): Promise<void> {
   const formData = new FormData();
-  formData.append("file", blob, "thumbnail.webp");
+  formData.append("file", blob, getThumbnailFileName(blob.type));
   const response = await fetch(
     `${getServerBaseUrl()}/api/projects/${projectId}/thumbnail`,
     {
@@ -271,6 +273,19 @@ export async function uploadThumbnail(
     },
   );
   if (!response.ok) return handleErrorResponse(response);
+}
+
+function getThumbnailFileName(mimeType: string): string {
+  switch (mimeType) {
+    case "image/svg+xml":
+      return "thumbnail.svg";
+    case "image/png":
+      return "thumbnail.png";
+    case "image/webp":
+      return "thumbnail.webp";
+    default:
+      return "thumbnail.bin";
+  }
 }
 
 // --- Settings API ---

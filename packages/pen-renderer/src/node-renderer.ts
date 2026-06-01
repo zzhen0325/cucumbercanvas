@@ -634,6 +634,19 @@ export class SkiaNodeRenderer {
     this.imageLoader.setSourceResolver(resolver);
   }
 
+  isImageReadyForDisplay(
+    src: string,
+    request: {
+      targetWidth: number;
+      targetHeight: number;
+      zoom: number;
+      devicePixelRatio?: number;
+      interactionMode?: RendererInteractionMode;
+    },
+  ): boolean {
+    return Boolean(this.imageLoader.getForDisplay(src, request));
+  }
+
   dispose() {
     this.defaultFont?.delete();
     this.defaultFont = null;

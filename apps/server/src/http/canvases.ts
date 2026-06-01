@@ -47,7 +47,7 @@ export async function registerCanvasRoutes(
         const user = await options.auth.authenticate(request);
         if (!user) return sendUnauthorized(reply);
         const payload = canvasSaveRequestSchema.parse(request.body);
-        await options.canvasService.saveCanvasContent(
+        const content = await options.canvasService.saveCanvasContent(
           user,
           request.params.canvasId,
           payload.content,
@@ -59,7 +59,7 @@ export async function registerCanvasRoutes(
         );
         return reply
           .code(200)
-          .send(canvasSaveResponseSchema.parse({ ok: true }));
+          .send(canvasSaveResponseSchema.parse({ content, ok: true }));
       } catch (error) {
         request.log.error(
           { canvasId: request.params.canvasId, err: error },

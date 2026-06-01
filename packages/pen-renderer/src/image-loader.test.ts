@@ -73,6 +73,38 @@ describe("chooseImageLodSize", () => {
       }),
     ).toBe(2048);
   });
+
+  it("does not fall back to the base image during interactions while LOD is pending", () => {
+    const loader = new SkiaImageLoader({} as never);
+    const base = {
+      delete: vi.fn(),
+      height: () => 2048,
+      width: () => 2048,
+    };
+    const internals = loader as unknown as {
+      cache: Map<string, typeof base>;
+      lodCache: Map<string, Map<number, typeof base>>;
+    };
+    internals.cache.set("image", base);
+    internals.lodCache.set("image", new Map());
+
+    expect(
+      loader.getForDisplay("image", {
+        targetWidth: 1600,
+        targetHeight: 1200,
+        zoom: 1,
+        interactionMode: "viewport",
+      }),
+    ).toBeUndefined();
+    expect(
+      loader.getForDisplay("image", {
+        targetWidth: 1600,
+        targetHeight: 1200,
+        zoom: 1,
+        interactionMode: "idle",
+      }),
+    ).toBe(base);
+  });
 });
 
 describe("SkiaImageLoader LOD scheduling", () => {
@@ -116,9 +148,9 @@ describe("SkiaImageLoader LOD scheduling", () => {
       vi.advanceTimersByTime(16);
       expect(internals.htmlImageToSkia).toHaveBeenCalledTimes(1);
       vi.advanceTimersByTime(16);
-      expect(internals.htmlImageToSkia).toHaveBeenCalledTimes(2);
+      expect(internals.htmlImageToSkia).toHaveBeenCalledTimes(1);
       expect(internals.lodCache.get("image")?.has(512)).toBe(true);
-      expect(internals.lodCache.get("image")?.has(1024)).toBe(true);
+      expect(internals.lodCache.get("image")?.has(1024)).toBe(false);
     } finally {
       vi.useRealTimers();
     }

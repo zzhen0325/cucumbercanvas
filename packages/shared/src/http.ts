@@ -118,6 +118,7 @@ export const canvasSaveRequestSchema = z.object({
 });
 
 export const canvasSaveResponseSchema = z.object({
+  content: canvasContentSchema,
   ok: z.literal(true),
 });
 

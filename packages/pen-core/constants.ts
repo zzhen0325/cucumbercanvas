@@ -1,5 +1,5 @@
 export const MIN_ZOOM = 0.02;
-export const MAX_ZOOM = 256;
+export const MAX_ZOOM = Number.POSITIVE_INFINITY;
 export const ZOOM_STEP = 0.1;
 export const SNAP_THRESHOLD = 5;
 export const DEFAULT_FILL = "#d1d5db";

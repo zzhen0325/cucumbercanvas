@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-06-01T15:38:00+08:00",
+  "updatedAt": "2026-06-01T16:52:45+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -107,7 +107,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "product-engineering",
-      "summary": "Cucumber canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit with unified scene-space viewport interaction, transient transform previews, viewport render culling through a render-node viewport index, single-pass scene snapshot indexing, image LOD/mipmap sampling with sliced variant generation, Skia interaction background snapshots, viewport pan snapshot reuse, path geometry caches, single-pass renderer document sync, animation-frame coalesced document-store renderer/scene sync with drag deferral, capped history snapshots, render hot-path caches, transaction-batched mutations, patch-first live canvas protocol scaffolding, fully migrated selector-driven Zustand/Immer SkiaCanvas core runtime state, connected toolbar/page/property-panel/panel subscriptions, stable keyboard event callbacks, corrected history undo/redo semantics, and a standalone CanvasApi contract, PenDocument.pages is the only supported durable shape, legacy flat-map/root-children data fails fast, and paste/batch drag-drop import, text-tool Auto Width/Auto Height editing, and export flows produce editable PenNode trees with high-fidelity Figma layer ordering/fill/stroke cap/effect spread/style/PostScript-aware text/layout stretch/transform/shape/mask/component override-path metadata plus matching property-panel controls for layered fills and strokes, image crop matrices, gradient stops, blend modes, ordered effects, transforms, text fidelity, layout constraints, masks, editable style refs, editable variable refs, structured component refs/overrides, vector/path diagnostics, validated path editing, clipping, shape details, visible validation errors, and root/nested layer-ordering verification, with explicit degradation warnings.",
+      "summary": "Cucumber canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit with unified scene-space viewport interaction, transient transform previews, viewport render culling through a render-node viewport index, single-pass scene snapshot indexing, image mipmap sampling with a single sliced 512px interaction variant plus base-image idle rendering, interaction draws avoid 2048px fallback while LODs are pending, Skia interaction background snapshots, threshold-gated viewport pan snapshot reuse, URL-backed canvas asset persistence that extracts inline base64 to project-assets, path geometry caches, single-pass renderer document sync, animation-frame coalesced document-store renderer/scene sync with drag deferral, capped history snapshots, render hot-path caches, transaction-batched mutations, patch-first live canvas protocol scaffolding, fully migrated selector-driven Zustand/Immer SkiaCanvas core runtime state, connected toolbar/page/property-panel/panel subscriptions, stable keyboard event callbacks, corrected history undo/redo semantics, and a standalone CanvasApi contract, PenDocument.pages is the only supported durable shape, legacy flat-map/root-children data fails fast, and paste/batch drag-drop import, text-tool Auto Width/Auto Height editing, and export flows produce editable PenNode trees with high-fidelity Figma layer ordering/fill/stroke cap/effect spread/style/PostScript-aware text/layout stretch/transform/shape/mask/component override-path metadata plus matching property-panel controls for layered fills and strokes, image crop matrices, gradient stops, blend modes, ordered effects, transforms, text fidelity, layout constraints, masks, editable style refs, editable variable refs, structured component refs/overrides, vector/path diagnostics, validated path editing, clipping, shape details, visible validation errors, and root/nested layer-ordering verification, with explicit degradation warnings.",
       "artifacts": [
         "packages/canvas-core",
         "packages/pen-figma",
@@ -124,6 +124,7 @@
         "packages/canvas-core/src/__tests__/canvas-core.test.ts",
         "packages/canvas-core/src/__tests__/figma-native-adapter.test.ts",
         "apps/web/src/components/canvas/canvas-api.ts",
+        "apps/web/src/lib/server-api.ts",
         "apps/web/src/components/canvas/canvas-runtime-store.ts",
         "apps/web/src/components/canvas/skia-canvas.tsx",
         "apps/web/src/components/canvas/canvas-export.ts",
@@ -166,8 +167,10 @@
         "apps/server/src/agent/tools/manipulate-canvas.ts",
         "apps/server/src/agent/tools/screenshot-canvas.ts",
         "apps/server/src/features/canvas/canvas-element-writer.ts",
+        "apps/server/src/features/canvas/canvas-service.ts",
         "apps/server/src/agent/tools/inspect-canvas.ts",
         "packages/shared/src/contracts.ts",
+        "packages/shared/src/http.ts",
         "packages/shared/src/events.ts",
         "packages/shared/src/ws-protocol.ts",
         "supabase/migrations/20260522000001_cucumber_canvas_only.sql",

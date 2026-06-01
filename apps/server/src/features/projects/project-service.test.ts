@@ -86,4 +86,55 @@ describe("createProjectService", () => {
     expect(isCucumberCanvasDocument(payload.content)).toBe(true);
     expect((payload.content as { name?: string }).name).toBe("Main Canvas");
   });
+
+  it("stores SVG thumbnails with a matching extension and content type", async () => {
+    const upload = vi.fn(async () => ({ error: null }));
+    const update = vi.fn(() => ({
+      eq: async () => ({ error: null }),
+    }));
+    const service = createProjectService({
+      createUserClient: () =>
+        ({
+          from: () => ({
+            select: () => ({
+              eq: () => ({
+                single: async () => ({
+                  data: { workspace_id: "workspace-1" },
+                  error: null,
+                }),
+              }),
+            }),
+            update,
+          }),
+          storage: {
+            from: () => ({
+              getPublicUrl: (path: string) => ({
+                data: { publicUrl: `https://cdn.example.test/${path}` },
+              }),
+              upload,
+            }),
+          },
+        }) as never,
+      viewerService: {
+        ensureViewer: vi.fn(async () => undefined),
+      } as never,
+    });
+
+    await expect(
+      service.saveThumbnail(
+        user,
+        "project-1",
+        Buffer.from("<svg></svg>"),
+        "image/svg+xml",
+      ),
+    ).resolves.toEqual({
+      thumbnailUrl:
+        "https://cdn.example.test/workspace-1/project-1/thumbnail.svg",
+    });
+    expect(upload).toHaveBeenCalledWith(
+      "workspace-1/project-1/thumbnail.svg",
+      expect.any(Buffer),
+      { contentType: "image/svg+xml", upsert: true },
+    );
+  });
 });

@@ -32,10 +32,7 @@ type CanvasQuery = {
 };
 
 type StorageDownloadQuery = {
-  download: (path: string) => Promise<{
-    data: { arrayBuffer: () => Promise<ArrayBuffer> } | null;
-    error: { message?: string } | null;
-  }>;
+  getPublicUrl: (path: string) => { data: { publicUrl: string } };
 };
 
 type CanvasElementWriterClient = {
@@ -245,28 +242,18 @@ async function writeCanvasContent(
  * with auto-placement (or explicit placement), writes it back.
  *
  * The image file is already in Supabase Storage (uploaded by worker executor).
- * We download it and register a base64 dataURL asset so the Skia canvas can
- * render it consistently with frontend-inserted images.
+ * Register its public URL directly so canvas persistence stays small and does
+ * not serialize generated rasters into the canvases.content JSONB column.
  */
 export async function insertImageElement(
   client: CanvasElementWriterClient,
   opts: ImageInsertOpts,
   explicitPlacement?: Placement,
 ): Promise<InsertResult> {
-  // 1. Download image from storage and convert to base64 dataURL
-  const { data: blob, error: dlError } = await (
+  const { data: urlData } = (
     client.storage.from(CANVAS_FILES_BUCKET) as StorageDownloadQuery
-  ).download(opts.objectPath);
-
-  if (dlError || !blob) {
-    throw new Error(
-      `Failed to download image from storage: ${dlError?.message ?? "no data"}`,
-    );
-  }
-
-  const buffer = Buffer.from(await blob.arrayBuffer());
-  const base64 = buffer.toString("base64");
-  const dataURL = `data:${opts.mimeType};base64,${base64}`;
+  ).getPublicUrl(opts.objectPath);
+  const imageUrl = urlData.publicUrl;
 
   const content = await readCanvasContent(client, opts.canvasId);
   const sizedPlacement = explicitPlacement
@@ -286,7 +273,7 @@ export async function insertImageElement(
       ...content.assets,
       [assetId]: {
         id: assetId,
-        url: dataURL,
+        url: imageUrl,
         mimeType: opts.mimeType,
         name: opts.title,
         width: opts.width,
@@ -306,7 +293,7 @@ export async function insertImageElement(
       height: placement.height,
       name: opts.title ?? "Generated image",
       assetId,
-      src: dataURL,
+      src: imageUrl,
       meta: { source: "generated" },
     } as PenNode,
     ...(containerId ? { parentId: containerId } : {}),

@@ -2,6 +2,7 @@ import {
   CanvasPageOperationError,
   normalizeCanvasDocument,
 } from "@cucumber/canvas-core";
+import type { PenDocument, PenNode } from "@cucumber/pen-types";
 import type { CanvasContent, CanvasDetail, Json } from "@cucumber/shared";
 
 import type {
@@ -33,7 +34,7 @@ export type CanvasService = {
     user: AuthenticatedUser,
     canvasId: string,
     content: CanvasContent,
-  ): Promise<void>;
+  ): Promise<CanvasContent>;
 };
 
 /**
@@ -42,6 +43,7 @@ export type CanvasService = {
  */
 const OSS_MARKER_PREFIX = "oss://";
 const CANVAS_FILES_BUCKET = "project-assets";
+const DATA_URL_RE = /^data:([^;]+);base64,(.+)$/s;
 
 export function createCanvasService(options: {
   createUserClient: (accessToken: string) => UserSupabaseClient;
@@ -78,10 +80,15 @@ export function createCanvasService(options: {
         content,
         canvasId,
       );
+      const storagePreparedContent = await extractCanvasAssetsToStorage(
+        client,
+        canvasId,
+        normalizedContent,
+      );
 
       const { error } = await client
         .from("canvases")
-        .update({ content: normalizedContent as unknown as Json })
+        .update({ content: storagePreparedContent as unknown as Json })
         .eq("id", canvasId);
 
       if (error) {
@@ -91,6 +98,8 @@ export function createCanvasService(options: {
           500,
         );
       }
+
+      return storagePreparedContent as unknown as CanvasContent;
     },
   };
 }
@@ -117,7 +126,7 @@ function normalizePersistedCanvasDocument(raw: unknown, canvasId: string) {
 function normalizeIncomingCanvasDocument(
   content: CanvasContent,
   canvasId: string,
-) {
+): PenDocument {
   try {
     return normalizeCanvasDocument(content);
   } catch (error) {
@@ -134,6 +143,176 @@ function normalizeIncomingCanvasDocument(
     }
     throw error;
   }
+}
+
+async function extractCanvasAssetsToStorage(
+  client: UserSupabaseClient,
+  canvasId: string,
+  document: PenDocument,
+): Promise<PenDocument> {
+  const dataUrls = collectCanvasDataUrls(document);
+  if (dataUrls.length === 0) return document;
+
+  const { projectId, workspaceId } = await getCanvasStorageContext(
+    client,
+    canvasId,
+  );
+  const replacements = new Map<string, string>();
+
+  for (const dataUrl of dataUrls) {
+    if (replacements.has(dataUrl.value)) continue;
+    const { buffer, mimeType } = parseDataURL(dataUrl.value);
+    const ext = mimeToExt(mimeType);
+    const objectPath = `${workspaceId}/${projectId}/canvas-assets/${canvasId}/${dataUrl.id}.${ext}`;
+    const { error: uploadError } = await client.storage
+      .from(CANVAS_FILES_BUCKET)
+      .upload(objectPath, buffer, {
+        cacheControl: "31536000",
+        contentType: mimeType,
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.warn("[canvas-service] canvas asset upload failed", {
+        assetId: dataUrl.id,
+        canvasId,
+        mimeType,
+        objectPath,
+        reason: uploadError.message,
+        byteSize: buffer.length,
+      });
+      throw new CanvasServiceError(
+        "canvas_save_failed",
+        `Unable to save canvas image asset ${dataUrl.id}: ${uploadError.message}`,
+        500,
+      );
+    }
+
+    const { data: urlData } = client.storage
+      .from(CANVAS_FILES_BUCKET)
+      .getPublicUrl(objectPath);
+    replacements.set(dataUrl.value, urlData.publicUrl);
+    console.info("[canvas-service] canvas asset extracted", {
+      assetId: dataUrl.id,
+      canvasId,
+      mimeType,
+      objectPath,
+      byteSize: buffer.length,
+    });
+  }
+
+  return replaceCanvasDataUrls(document, replacements);
+}
+
+type CanvasDataUrlRef = {
+  id: string;
+  value: string;
+};
+
+function collectCanvasDataUrls(document: PenDocument): CanvasDataUrlRef[] {
+  const refs: CanvasDataUrlRef[] = [];
+  for (const [assetId, asset] of Object.entries(document.assets ?? {})) {
+    if (isBase64DataUrl(asset.url)) {
+      refs.push({ id: assetId, value: asset.url });
+    }
+  }
+  for (const node of walkNodes(document)) {
+    const nodeRecord = node as unknown as Record<string, unknown>;
+    if (typeof nodeRecord.src === "string" && isBase64DataUrl(nodeRecord.src)) {
+      refs.push({ id: node.id, value: nodeRecord.src });
+    }
+    for (const fill of getImageFills(node)) {
+      if (isBase64DataUrl(fill.url)) {
+        refs.push({ id: node.id, value: fill.url });
+      }
+    }
+  }
+  return refs;
+}
+
+function replaceCanvasDataUrls(
+  document: PenDocument,
+  replacements: ReadonlyMap<string, string>,
+): PenDocument {
+  if (replacements.size === 0) return document;
+  const next = structuredClone(document) as PenDocument;
+  for (const asset of Object.values(next.assets ?? {})) {
+    const replacement = replacements.get(asset.url);
+    if (replacement) asset.url = replacement;
+  }
+  for (const node of walkNodes(next)) {
+    const nodeRecord = node as unknown as Record<string, unknown>;
+    if (typeof nodeRecord.src === "string") {
+      const replacement = replacements.get(nodeRecord.src);
+      if (replacement) nodeRecord.src = replacement;
+    }
+    for (const fill of getImageFills(node)) {
+      const replacement = replacements.get(fill.url);
+      if (replacement) fill.url = replacement;
+    }
+  }
+  return next;
+}
+
+async function getCanvasStorageContext(
+  client: UserSupabaseClient,
+  canvasId: string,
+): Promise<{ projectId: string; workspaceId: string }> {
+  const { data, error } = await client
+    .from("canvases")
+    .select("project_id, projects(workspace_id)")
+    .eq("id", canvasId)
+    .single();
+  const row = data as
+    | {
+        project_id?: string;
+        projects?: { workspace_id?: string } | { workspace_id?: string }[];
+      }
+    | null
+    | undefined;
+  const project = Array.isArray(row?.projects)
+    ? row?.projects[0]
+    : row?.projects;
+  if (error || !row?.project_id || !project?.workspace_id) {
+    throw new CanvasServiceError(
+      "canvas_save_failed",
+      "Unable to resolve canvas storage workspace.",
+      500,
+    );
+  }
+  return { projectId: row.project_id, workspaceId: project.workspace_id };
+}
+
+function* walkNodes(document: PenDocument): Generator<PenNode> {
+  const roots = document.pages?.length
+    ? document.pages.flatMap((page) => page.children)
+    : document.children;
+  for (const node of roots) yield* walkNode(node);
+}
+
+function* walkNode(node: PenNode): Generator<PenNode> {
+  yield node;
+  const children = (node as PenNode & { children?: PenNode[] }).children;
+  if (!Array.isArray(children)) return;
+  for (const child of children) yield* walkNode(child);
+}
+
+type MutableImageFill = { type: "image"; url: string };
+
+function getImageFills(node: PenNode): MutableImageFill[] {
+  const fills = (node as unknown as { fill?: unknown }).fill;
+  if (!Array.isArray(fills)) return [];
+  return fills.filter(
+    (fill): fill is MutableImageFill =>
+      Boolean(fill) &&
+      typeof fill === "object" &&
+      (fill as { type?: unknown }).type === "image" &&
+      typeof (fill as { url?: unknown }).url === "string",
+  );
+}
+
+function isBase64DataUrl(value: string): boolean {
+  return DATA_URL_RE.test(value);
 }
 
 // ---------------------------------------------------------------------------
@@ -281,7 +460,7 @@ async function resolveFilesFromStorage(
 
 function parseDataURL(dataURL: string): { buffer: Buffer; mimeType: string } {
   // Format: data:[<mediatype>][;base64],<data>
-  const match = dataURL.match(/^data:([^;]+);base64,(.+)$/s);
+  const match = dataURL.match(DATA_URL_RE);
   if (!match) {
     throw new Error("Invalid data URL");
   }

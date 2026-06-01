@@ -4,10 +4,24 @@ Last updated: 2026-06-01 CST
 
 ## 2026-06-01
 
+- Closed the next multi-image canvas performance slice: viewport pan cache construction is now gated by node/image thresholds and pending interaction LOD readiness, interactive image draws avoid falling back to 2048px base rasters while 512px LODs are pending, and viewport-cache skip/build logs now report image counts, pending LODs, dimensions, zoom, and interaction mode.
+- Moved canvas image persistence off inline base64 for the current PenDocument model: canvas saves extract base64 `assets`, image node `src`, and image-fill URLs into `project-assets`, return the normalized slim document to the Web client, and the editor applies that save response without history pollution, save loops, or viewport reset.
+- Kept generated and imported images on URL-backed assets: server-side generated image insertion now writes Storage public URLs directly, raster paste/drop uploads through the existing uploads API before committing to the canvas, and thumbnail uploads now preserve SVG/PNG/WebP MIME extensions with clearer upload diagnostics.
+- Passed: `pnpm --filter @cucumber/pen-renderer test -- renderer-performance.test.ts image-loader.test.ts`.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/features/canvas/canvas-service.test.ts src/features/canvas/canvas-element-writer.test.ts src/features/projects/project-service.test.ts`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/server-api.test.ts test/canvas-runtime-store.test.ts`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/use-canvas-clipboard-import.test.tsx test/skia-canvas-selection-snapshot.test.tsx`.
+- Passed: `pnpm --filter @cucumber/pen-renderer typecheck`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm lint`.
+- Failed: root `pnpm typecheck` and `pnpm check:quick` still stop in existing unrelated `packages/pen-core/__tests__` strictness diagnostics (`Object is possibly undefined`), outside this canvas persistence/rendering slice.
+- Note: broad package test scripts with `-- <paths>` still run wider suites because of script argument parsing; the unrelated existing failures remain in web legacy export fixtures/projects toast matching and server integration/MCP registry tests, while the corrected direct Vitest commands above passed.
 - Advanced the canvas hot-path performance pass: SkiaCanvas scene summaries now build a single DFS scene index with node/parent/bounds maps and coalesce scene listener snapshots per frame, selection notifications reuse the index instead of repeated `findNode` / parent-bound scans, document-change callbacks skip empty RAF work when no listener exists, and slow snapshot logs include node/visible/file/selection context.
 - Added renderer viewport indexing: render culling now uses a dedicated render-node R-tree that preserves paint order and keeps locked-but-rendered nodes queryable, while transform previews only merge preview nodes that move into view.
 - Added Skia path geometry caching: path nodes cache parsed CanvasKit paths and geometry bounds with LRU eviction/dispose cleanup, renderer slow-frame logs now include path-cache stats, and tests cover cache hits plus path-data invalidation.
 - Moved image LOD generation off the image load completion task: base images become drawable first, 512/1024 variants are generated in timed slices with duration logs and redraw callbacks, and dispose clears queued LOD work.
+- Narrowed image LOD generation to the agreed lightweight path: the loader now keeps only the base image plus a single 512px interaction variant, so pan/zoom/transform still avoid full-resolution sampling while 1024/2048 derived variants are no longer generated or retained.
 - Reduced canvas-side React/panel churn: layers precompute parent/move-target maps and render a fixed-row window, files consume the shared scene/files snapshot passed through `onChange`, design-system refresh is throttled and skipped while the icon tab is active, canvas history is capped, and the canvas page ignores selection updates whose summary did not change.
 - Passed: `pnpm --filter @cucumber/pen-renderer test`.
 - Passed: `pnpm --filter @cucumber/pen-renderer typecheck`.

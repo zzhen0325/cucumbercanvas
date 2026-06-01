@@ -52,4 +52,18 @@ describe("viewport coordinate transforms", () => {
     expect(after.y).toBeCloseTo(before.y);
     expect(zoomed).toEqual({ zoom: 4, panX: -10, panY: -70 });
   });
+
+  it("does not clamp positive finite zoom requests", () => {
+    expect(zoomToPoint(viewport, 170, 100, rect, 0.005).zoom).toBe(0.005);
+    expect(zoomToPoint(viewport, 170, 100, rect, 1000).zoom).toBe(1000);
+  });
+
+  it("rejects invalid zoom requests", () => {
+    expect(() => zoomToPoint(viewport, 170, 100, rect, 0)).toThrow(
+      "Viewport zoom must be a positive finite number",
+    );
+    expect(() =>
+      zoomToPoint(viewport, 170, 100, rect, Number.POSITIVE_INFINITY),
+    ).toThrow("Viewport zoom must be a positive finite number");
+  });
 });

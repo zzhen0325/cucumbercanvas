@@ -191,6 +191,14 @@ export async function registerProjectRoutes(
 
         const buffer = await file.toBuffer();
         const mimeType = file.mimetype || "image/webp";
+        request.log.info(
+          {
+            byteSize: buffer.length,
+            mimeType,
+            projectId: request.params.projectId,
+          },
+          "thumbnail upload received",
+        );
 
         const result = await options.projectService.saveThumbnail(
           user,
@@ -201,7 +209,10 @@ export async function registerProjectRoutes(
 
         return reply.code(200).send(result);
       } catch (error) {
-        request.log.error({ err: error }, "thumbnail upload error");
+        request.log.error(
+          { err: error, projectId: request.params.projectId },
+          "thumbnail upload error",
+        );
         return sendProjectError(error, reply, "project_create_failed");
       }
     },

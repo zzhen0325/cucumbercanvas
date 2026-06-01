@@ -326,7 +326,7 @@ export function createProjectService(options: {
         );
       }
 
-      const ext = mimeType === "image/webp" ? "webp" : "png";
+      const ext = thumbnailExtensionForMimeType(mimeType);
       const objectPath = `${proj.workspace_id}/${projectId}/thumbnail.${ext}`;
 
       const { error: uploadError } = await client.storage
@@ -467,6 +467,23 @@ function mapProjectCreateError(error: { code?: string; message?: string }) {
     PROJECT_CREATE_FAILED_MESSAGE,
     500,
   );
+}
+
+function thumbnailExtensionForMimeType(mimeType: string): string {
+  switch (mimeType) {
+    case "image/svg+xml":
+      return "svg";
+    case "image/png":
+      return "png";
+    case "image/webp":
+      return "webp";
+    default:
+      throw new ProjectServiceError(
+        "project_create_failed",
+        `Unsupported thumbnail MIME type: ${mimeType}`,
+        400,
+      );
+  }
 }
 
 function mapProjectSummary(options: {

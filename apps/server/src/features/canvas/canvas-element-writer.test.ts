@@ -34,9 +34,8 @@ function createClient(content: CanvasContentForTest) {
     from: () => query,
     storage: {
       from: () => ({
-        download: async () => ({
-          data: new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }),
-          error: null,
+        getPublicUrl: (path: string) => ({
+          data: { publicUrl: `https://cdn.example.test/${path}` },
         }),
       }),
     },
@@ -108,9 +107,13 @@ describe("canvas-element-writer generated asset insertion", () => {
       typeof createEmptyDocument
     >;
     expect(findNode(nextDoc, result.elementId)).toMatchObject({
+      src: "https://cdn.example.test/workspace/generated/job_4.png",
       type: "image",
       name: "Generated hero image",
     });
     expect(Object.keys(nextDoc.assets ?? {})).toHaveLength(1);
+    expect(Object.values(nextDoc.assets ?? {})[0]?.url).toBe(
+      "https://cdn.example.test/workspace/generated/job_4.png",
+    );
   });
 });

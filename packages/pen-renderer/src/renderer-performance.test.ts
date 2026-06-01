@@ -4,6 +4,7 @@ import {
   applyTransformPreviewToRenderNodes,
   filterRenderNodesToViewport,
   filterRenderNodesToViewportWithTransformPreview,
+  getViewportInteractionCacheBuildDecision,
   getViewportInteractionCacheDrawOffset,
   isViewportInteractionCacheReusable,
 } from "./renderer.js";
@@ -164,5 +165,29 @@ describe("renderer performance helpers", () => {
         dpr: 2,
       }),
     ).toBeNull();
+  });
+
+  it("skips building viewport interaction cache for small image sets or pending LODs", () => {
+    expect(
+      getViewportInteractionCacheBuildDecision({
+        imageCount: 3,
+        nodeCount: 13,
+        pendingImageCount: 0,
+      }),
+    ).toEqual({ reason: "below_threshold", shouldBuild: false });
+    expect(
+      getViewportInteractionCacheBuildDecision({
+        imageCount: 8,
+        nodeCount: 13,
+        pendingImageCount: 1,
+      }),
+    ).toEqual({ reason: "lod_pending", shouldBuild: false });
+    expect(
+      getViewportInteractionCacheBuildDecision({
+        imageCount: 8,
+        nodeCount: 13,
+        pendingImageCount: 0,
+      }),
+    ).toEqual({ reason: "ready", shouldBuild: true });
   });
 });

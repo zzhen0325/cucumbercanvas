@@ -6,6 +6,7 @@ import {
   type CanvasBounds,
   type CanvasClipboardData,
   type CanvasImportResult,
+  type ClipboardImportFile,
   type ClipboardImportPayload,
   type CucumberCanvasDocument,
   type ImportNode,
@@ -65,6 +66,7 @@ import {
 import { useStore } from "zustand";
 
 import { useToast } from "@/components/toast";
+import { uploadFile } from "@/lib/server-api";
 import { CanvasBooleanToolbar } from "./boolean-toolbar";
 import type {
   AlignMode,
@@ -81,6 +83,7 @@ import type {
 import { exportDocumentImage } from "./canvas-export";
 import { bakePenAnchorsToPathData, usePenTool } from "./canvas-pen-tool";
 import {
+  type CanvasRuntimeCommitResult,
   type CanvasRuntimeStore,
   CanvasRuntimeStoreProvider,
   createCanvasRuntimeStore,
@@ -395,6 +398,86 @@ function normalizeRuntimeDocumentForCanvasSet(raw: unknown): PenDocument {
   return normalizeRuntimeDocument(raw);
 }
 
+async function uploadRasterFilesInPayload(
+  payload: ClipboardImportPayload,
+  options: { accessToken?: string; projectId?: string },
+): Promise<ClipboardImportPayload> {
+  const files = payload.files ?? [];
+  const rasterFiles = files.filter(shouldUploadClipboardRasterFile);
+  if (rasterFiles.length === 0) return payload;
+  if (!options.accessToken || !options.projectId) {
+    throw new Error(
+      "图片导入需要有效的项目和登录上下文，无法将本地图片上传到画布资产库。",
+    );
+  }
+
+  const uploadedFiles = await Promise.all(
+    files.map(async (file) => {
+      if (!shouldUploadClipboardRasterFile(file)) return file;
+      const upload = await uploadFile(
+        options.accessToken as string,
+        dataUrlToFile(file),
+        options.projectId as string,
+      );
+      console.info("[skia-canvas] clipboard.raster-uploaded", {
+        assetId: upload.asset.id,
+        mimeType: file.type,
+        name: file.name,
+        projectId: options.projectId,
+      });
+      return { ...file, dataUrl: upload.url };
+    }),
+  );
+
+  return { ...payload, files: uploadedFiles };
+}
+
+function shouldUploadClipboardRasterFile(file: ClipboardImportFile): boolean {
+  return (
+    typeof file.dataUrl === "string" &&
+    file.dataUrl.startsWith("data:") &&
+    file.type.startsWith("image/") &&
+    file.type !== "image/svg+xml"
+  );
+}
+
+function dataUrlToFile(file: ClipboardImportFile): File {
+  if (!file.dataUrl) {
+    throw new Error(`图片 ${file.name ?? file.type} 缺少可上传的数据内容。`);
+  }
+  const match = file.dataUrl.match(/^data:([^;]+);base64,(.+)$/s);
+  if (!match?.[1] || !match[2]) {
+    throw new Error(`图片 ${file.name ?? file.type} 的 data URL 格式无效。`);
+  }
+  const binary = atob(match[2]);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new File(
+    [bytes],
+    file.name ?? `canvas-import.${mimeToExt(match[1])}`,
+    {
+      type: match[1],
+    },
+  );
+}
+
+function mimeToExt(mimeType: string): string {
+  switch (mimeType) {
+    case "image/png":
+      return "png";
+    case "image/jpeg":
+      return "jpg";
+    case "image/webp":
+      return "webp";
+    case "image/gif":
+      return "gif";
+    default:
+      return "bin";
+  }
+}
+
 function syncRendererDocument(
   renderer: PenRenderer | null,
   doc: PenDocument,
@@ -429,8 +512,23 @@ const DEFAULT_TEXT_FONT_FAMILY =
   'Inter, -apple-system, "Noto Sans SC", "PingFang SC", system-ui, sans-serif';
 const MIN_TEXT_BOX_SIZE = 8;
 const KEYBOARD_ZOOM_STEP = 1.1;
-const KEYBOARD_ZOOM_MIN = 0.1;
-const KEYBOARD_ZOOM_MAX = 30;
+const WHEEL_ZOOM_SENSITIVITY = 0.002;
+
+function assertPositiveFiniteZoom(zoom: number) {
+  if (!Number.isFinite(zoom) || zoom <= 0) {
+    throw new Error(`画布缩放比例必须是大于 0 的有限数字，当前值为 ${zoom}。`);
+  }
+}
+
+function normalizeWheelDeltaY(event: WheelEvent): number {
+  if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+    return event.deltaY * 16;
+  }
+  if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+    return event.deltaY * window.innerHeight;
+  }
+  return event.deltaY;
+}
 
 type TextEditState = {
   nodeId: string;
@@ -687,7 +785,7 @@ function createCanvasApiFacade(getLiveApi: () => CanvasApi): CanvasApi {
     getDocument: () => getLiveApi().getDocument(),
     getDocumentVersion: () => getLiveApi().getDocumentVersion(),
     applyDocumentPatch: (patch) => getLiveApi().applyDocumentPatch(patch),
-    setDocument: (doc) => getLiveApi().setDocument(doc),
+    setDocument: (doc, opts) => getLiveApi().setDocument(doc, opts),
     getActivePageId: () => getLiveApi().getActivePageId(),
     setActivePage: (pageId) => getLiveApi().setActivePage(pageId),
     getPages: () => getLiveApi().getPages(),
@@ -928,21 +1026,25 @@ function CanvasPropertyPanelConnected({
 // ---------------------------------------------------------------------------
 
 type SkiaCanvasProps = {
+  accessToken?: string;
   initialContent: unknown;
   onDocumentChange?: (doc: CucumberCanvasDocument) => void;
   onInsertIcon?: () => void;
   onApiReady?: (api: CanvasApi) => void;
   onSelectionChange?: (elements: CanvasSceneElement[]) => void;
+  projectId?: string;
 };
 
 export const SkiaCanvas = memo(
   forwardRef<CanvasApi, SkiaCanvasProps>(function SkiaCanvas(
     {
+      accessToken,
       initialContent,
       onDocumentChange,
       onInsertIcon,
       onApiReady,
       onSelectionChange,
+      projectId,
     },
     ref,
   ) {
@@ -1057,6 +1159,8 @@ export const SkiaCanvas = memo(
     type DragState =
       | {
           kind: "pan";
+          button: number;
+          pointerId: number;
           startX: number;
           startY: number;
           originX: number;
@@ -1558,14 +1662,43 @@ export const SkiaCanvas = memo(
           notify?: boolean;
           selection?: string[];
         },
-      ) => {
+      ): CanvasRuntimeCommitResult => {
         const result = runtimeStore.getState().commitDocument(next, opts);
         docRef.current = result.document;
         activePageIdRef.current = result.activePageId;
         selectedIdsRef.current = result.selection;
         documentVersionRef.current = result.version;
+        return result;
       },
       [runtimeStore],
+    );
+
+    const syncCommittedDocumentToRenderer = useCallback(
+      (commit: CanvasRuntimeCommitResult, reason: string) => {
+        const renderer = rendererRef.current;
+        if (!renderer) return;
+
+        if (rendererDocumentSyncRafRef.current !== null) {
+          cancelAnimationFrame(rendererDocumentSyncRafRef.current);
+          rendererDocumentSyncRafRef.current = null;
+        }
+        const pending = pendingRendererDocumentSyncRef.current;
+        if (!pending || pending.version <= commit.version) {
+          pendingRendererDocumentSyncRef.current = null;
+        } else {
+          rendererDocumentSyncRafRef.current = requestAnimationFrame(
+            flushScheduledRendererDocumentSync,
+          );
+        }
+
+        syncRendererDocument(renderer, commit.document, commit.activePageId);
+        console.info("[skia-canvas] renderer.document-sync.immediate", {
+          activePageId: commit.activePageId,
+          reason,
+          version: commit.version,
+        });
+      },
+      [flushScheduledRendererDocumentSync],
     );
 
     // -----------------------------------------------------------------------
@@ -1684,25 +1817,38 @@ export const SkiaCanvas = memo(
         const renderer = rendererRef.current;
         if (!renderer) return;
         const vp = renderer.getViewport();
-        const newZoom = Math.min(
-          3,
-          Math.max(0.25, vp.zoom - event.deltaY * 0.001),
-        );
+        const normalizedDeltaY = normalizeWheelDeltaY(event);
+        if (normalizedDeltaY === 0) return;
+        const newZoom =
+          vp.zoom * Math.exp(-normalizedDeltaY * WHEEL_ZOOM_SENSITIVITY);
+        assertPositiveFiniteZoom(newZoom);
         renderer.setInteractionMode("viewport");
         renderer.zoomToPoint(event.clientX, event.clientY, newZoom);
+        const viewport = renderer.getViewport();
+        runtimeStore.getState().setViewportSnapshot({
+          x: viewport.panX,
+          y: viewport.panY,
+          zoom: viewport.zoom,
+        });
+        console.debug("[skia-canvas] viewport.zoom.shortcut", {
+          deltaY: Math.round(normalizedDeltaY),
+          modifier: event.metaKey ? "meta" : "ctrl",
+          zoom: Number(viewport.zoom.toFixed(4)),
+        });
         scheduleRendererIdle();
       },
-      [scheduleRendererIdle],
+      [runtimeStore, scheduleRendererIdle],
     );
 
     useEffect(() => {
+      if (!ckReady) return;
       const root = canvasRootRef.current;
       if (!root) return;
       root.addEventListener("wheel", handleWheel, { passive: false });
       return () => {
         root.removeEventListener("wheel", handleWheel);
       };
-    }, [handleWheel]);
+    }, [ckReady, handleWheel]);
 
     const beginTextEdit = useCallback(
       (node: PenNode, opts?: { isNew?: boolean; bounds?: CanvasBounds }) => {
@@ -1753,6 +1899,54 @@ export const SkiaCanvas = memo(
       [setSelection],
     );
 
+    const endViewportPan = useCallback(
+      (reason: string) => {
+        const drag = dragRef.current;
+        if (drag?.kind !== "pan") return false;
+        dragRef.current = null;
+        const root = canvasRootRef.current;
+        if (root?.hasPointerCapture(drag.pointerId)) {
+          root.releasePointerCapture(drag.pointerId);
+        }
+        scheduleRendererIdle();
+        const viewport = rendererRef.current?.getViewport();
+        console.info("[skia-canvas] viewport.pan.ended", {
+          reason,
+          button: drag.button,
+          zoom: viewport?.zoom,
+        });
+        return true;
+      },
+      [scheduleRendererIdle],
+    );
+
+    useEffect(() => {
+      const handlePointerRelease = (event: PointerEvent) => {
+        const drag = dragRef.current;
+        if (drag?.kind !== "pan" || drag.pointerId !== event.pointerId) return;
+        endViewportPan("window_pointer_release");
+      };
+      const handleMouseRelease = (event: MouseEvent) => {
+        const drag = dragRef.current;
+        if (drag?.kind !== "pan" || drag.button !== event.button) return;
+        endViewportPan("window_mouse_release");
+      };
+      const handleBlur = () => {
+        endViewportPan("window_blur");
+      };
+
+      window.addEventListener("pointerup", handlePointerRelease, true);
+      window.addEventListener("pointercancel", handlePointerRelease, true);
+      window.addEventListener("mouseup", handleMouseRelease, true);
+      window.addEventListener("blur", handleBlur);
+      return () => {
+        window.removeEventListener("pointerup", handlePointerRelease, true);
+        window.removeEventListener("pointercancel", handlePointerRelease, true);
+        window.removeEventListener("mouseup", handleMouseRelease, true);
+        window.removeEventListener("blur", handleBlur);
+      };
+    }, [endViewportPan]);
+
     // -----------------------------------------------------------------------
     // Pointer events (pan, marquee, move)
     // -----------------------------------------------------------------------
@@ -1773,6 +1967,8 @@ export const SkiaCanvas = memo(
           renderer.setInteractionMode("viewport");
           dragRef.current = {
             kind: "pan",
+            button: pointerButton,
+            pointerId: event.pointerId,
             startX: event.clientX,
             startY: event.clientY,
             originX: vp.panX,
@@ -1790,6 +1986,8 @@ export const SkiaCanvas = memo(
           renderer.setInteractionMode("viewport");
           dragRef.current = {
             kind: "pan",
+            button: pointerButton,
+            pointerId: event.pointerId,
             startX: event.clientX,
             startY: event.clientY,
             originX: vp.panX,
@@ -1984,6 +2182,12 @@ export const SkiaCanvas = memo(
         if (!drag || !renderer) return;
 
         if (drag.kind === "pan") {
+          const expectedButtonMask =
+            drag.button === 1 ? 4 : 1 << Math.max(drag.button, 0);
+          if ((event.buttons & expectedButtonMask) === 0) {
+            endViewportPan("pointer_move_without_button");
+            return;
+          }
           const dx = event.clientX - drag.startX;
           const dy = event.clientY - drag.startY;
           const vp = renderer.getViewport();
@@ -2188,6 +2392,7 @@ export const SkiaCanvas = memo(
         }
       },
       [
+        endViewportPan,
         getPointerScenePoint,
         penTool,
         setEditorOverlay,
@@ -2326,7 +2531,6 @@ export const SkiaCanvas = memo(
                   activePageId,
                 }).doc
               : docRef.current;
-          renderer?.clearTransformPreview();
           const dropPoint = getPointerScenePoint(event);
           if (renderer && dropPoint) {
             const reparented = reparentNodesByDropPoint(
@@ -2346,7 +2550,9 @@ export const SkiaCanvas = memo(
               });
             }
           }
-          commitDocument(next, { selection: drag.nodeIds });
+          const commit = commitDocument(next, { selection: drag.nodeIds });
+          syncCommittedDocumentToRenderer(commit, "selection.move.commit");
+          renderer?.clearTransformPreview();
         }
         if (drag?.kind === "resize") {
           const activePageId = activePageIdRef.current;
@@ -2397,14 +2603,15 @@ export const SkiaCanvas = memo(
               textGrowth: nextTextGrowth,
             } as Partial<PenNode>;
           }
-          renderer?.clearTransformPreview();
           const next = applyCanvasOperation(docRef.current, {
             type: "updateNode",
             nodeId: drag.nodeId,
             updates,
             activePageId,
           });
-          commitDocument(next, { selection: [drag.nodeId] });
+          const commit = commitDocument(next, { selection: [drag.nodeId] });
+          syncCommittedDocumentToRenderer(commit, "selection.resize.commit");
+          renderer?.clearTransformPreview();
         }
         if (drag?.kind === "rotate") {
           const activePageId = activePageIdRef.current;
@@ -2414,14 +2621,15 @@ export const SkiaCanvas = memo(
               drag.originRotation +
               pointToAngle(drag.center, point) -
               drag.startAngle;
-            renderer?.clearTransformPreview();
             const next = applyCanvasOperation(docRef.current, {
               type: "updateNode",
               nodeId: drag.nodeId,
               updates: { rotation: Math.round(rotation) } as Partial<PenNode>,
               activePageId,
             });
-            commitDocument(next, { selection: [drag.nodeId] });
+            const commit = commitDocument(next, { selection: [drag.nodeId] });
+            syncCommittedDocumentToRenderer(commit, "selection.rotate.commit");
+            renderer?.clearTransformPreview();
           }
         }
         if (
@@ -2469,7 +2677,8 @@ export const SkiaCanvas = memo(
           });
         }
         if (drag?.kind === "pan") {
-          scheduleRendererIdle();
+          endViewportPan("react_pointer_release");
+          return;
         }
         dragRef.current = null;
         if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -2479,6 +2688,7 @@ export const SkiaCanvas = memo(
       [
         beginTextEdit,
         commitDocument,
+        endViewportPan,
         getPointerScenePoint,
         penTool,
         scheduleRendererIdle,
@@ -2486,7 +2696,17 @@ export const SkiaCanvas = memo(
         setMarqueeDomOverlay,
         setActiveTool,
         setSelection,
+        syncCommittedDocumentToRenderer,
       ],
+    );
+
+    const handleAuxClick = useCallback(
+      (event: React.MouseEvent<HTMLDivElement>) => {
+        if (event.button !== 1) return;
+        event.preventDefault();
+        endViewportPan("aux_click");
+      },
+      [endViewportPan],
     );
 
     const commitTextEdit = useCallback(
@@ -2964,14 +3184,23 @@ export const SkiaCanvas = memo(
     );
 
     const importDropPayloadsInGrid = useCallback(
-      (
+      async (
         results: Array<{
           payload: ClipboardImportPayload;
           context: ClipboardImportContext;
         }>,
         scenePoint?: { x: number; y: number },
       ) => {
-        const parsedEntries = results.flatMap((result) => {
+        const preparedResults = await Promise.all(
+          results.map(async (result) => ({
+            ...result,
+            payload: await uploadRasterFilesInPayload(result.payload, {
+              accessToken,
+              projectId,
+            }),
+          })),
+        );
+        const parsedEntries = preparedResults.flatMap((result) => {
           const parsed = parseClipboardImport(result.payload);
           if (!parsed) return [];
           return [
@@ -3067,9 +3296,11 @@ export const SkiaCanvas = memo(
         return insertedIds;
       },
       [
+        accessToken,
         commitDocument,
         getLiveViewportPlacement,
         notifySelectionForDoc,
+        projectId,
         setSelection,
         toast,
       ],
@@ -3135,9 +3366,12 @@ export const SkiaCanvas = memo(
         });
 
         void readDataTransferImportPayloads(dataTransfer).then(
-          (results) => {
+          async (results) => {
             try {
-              const importedIds = importDropPayloadsInGrid(results, scenePoint);
+              const importedIds = await importDropPayloadsInGrid(
+                results,
+                scenePoint,
+              );
               if (importedIds.length > 0) return;
               console.info("[skia-canvas] file-drop.import.ignored", {
                 activePageId: activePageIdRef.current,
@@ -3193,7 +3427,11 @@ export const SkiaCanvas = memo(
         return [];
       }
       try {
-        return importFromPayload(payload, context);
+        const preparedPayload = await uploadRasterFilesInPayload(payload, {
+          accessToken,
+          projectId,
+        });
+        return importFromPayload(preparedPayload, context);
       } catch (error) {
         console.warn("[skia-canvas] clipboard.import.failed", {
           trigger: context.trigger,
@@ -3205,7 +3443,7 @@ export const SkiaCanvas = memo(
         );
         return [];
       }
-    }, [importFromPayload, toast]);
+    }, [accessToken, importFromPayload, projectId, toast]);
 
     const importSvgMarkup = useCallback(
       (svgMarkup: string) => {
@@ -3639,17 +3877,29 @@ export const SkiaCanvas = memo(
         getDocument: () => getCanvasApiDocument(runtimeStore.getState()),
         getDocumentVersion: () => documentVersionRef.current,
         applyDocumentPatch,
-        setDocument: (raw: unknown) => {
+        setDocument: (
+          raw: unknown,
+          opts?: {
+            captureHistory?: boolean;
+            notify?: boolean;
+            preserveViewport?: boolean;
+          },
+        ) => {
           const next = normalizeRuntimeDocumentForCanvasSet(raw);
-          commitDocument(next, { captureHistory: false });
-          rendererRef.current?.zoomToFit(64);
-          const viewport = rendererRef.current?.getViewport();
-          if (viewport) {
-            runtimeStore.getState().setViewportSnapshot({
-              x: viewport.panX,
-              y: viewport.panY,
-              zoom: viewport.zoom,
-            });
+          commitDocument(next, {
+            captureHistory: opts?.captureHistory ?? false,
+            notify: opts?.notify,
+          });
+          if (!opts?.preserveViewport) {
+            rendererRef.current?.zoomToFit(64);
+            const viewport = rendererRef.current?.getViewport();
+            if (viewport) {
+              runtimeStore.getState().setViewportSnapshot({
+                x: viewport.panX,
+                y: viewport.panY,
+                zoom: viewport.zoom,
+              });
+            }
           }
         },
         getActivePageId,
@@ -3753,10 +4003,8 @@ export const SkiaCanvas = memo(
 
             if (renderer && state.zoom) {
               const vp = renderer.getViewport();
-              const nextZoom = Math.min(
-                KEYBOARD_ZOOM_MAX,
-                Math.max(KEYBOARD_ZOOM_MIN, state.zoom.value),
-              );
+              const nextZoom = state.zoom.value;
+              assertPositiveFiniteZoom(nextZoom);
               let nextPanX = state.scrollX ?? vp.panX;
               let nextPanY = state.scrollY ?? vp.panY;
 
@@ -3777,10 +4025,11 @@ export const SkiaCanvas = memo(
 
               renderer.setInteractionMode("viewport");
               renderer.setViewport(nextZoom, nextPanX, nextPanY);
+              const viewport = renderer.getViewport();
               viewportChanged = true;
-              viewportPatch.x = nextPanX;
-              viewportPatch.y = nextPanY;
-              viewportPatch.zoom = nextZoom;
+              viewportPatch.x = viewport.panX;
+              viewportPatch.y = viewport.panY;
+              viewportPatch.zoom = viewport.zoom;
             } else if (
               renderer &&
               (state.scrollX !== undefined || state.scrollY !== undefined)
@@ -4179,26 +4428,24 @@ export const SkiaCanvas = memo(
       },
       zoomIn: () => {
         const currentZoom = api.getAppState().zoom.value;
+        const nextZoom = currentZoom * KEYBOARD_ZOOM_STEP;
+        assertPositiveFiniteZoom(nextZoom);
         api.updateScene({
           appState: {
             zoom: {
-              value: Math.min(
-                currentZoom * KEYBOARD_ZOOM_STEP,
-                KEYBOARD_ZOOM_MAX,
-              ),
+              value: nextZoom,
             },
           },
         });
       },
       zoomOut: () => {
         const currentZoom = api.getAppState().zoom.value;
+        const nextZoom = currentZoom / KEYBOARD_ZOOM_STEP;
+        assertPositiveFiniteZoom(nextZoom);
         api.updateScene({
           appState: {
             zoom: {
-              value: Math.max(
-                currentZoom / KEYBOARD_ZOOM_STEP,
-                KEYBOARD_ZOOM_MIN,
-              ),
+              value: nextZoom,
             },
           },
         });
@@ -4213,6 +4460,28 @@ export const SkiaCanvas = memo(
 
     useCanvasClipboardImport({
       onImportPayload: (payload, context) => {
+        if (payload.files?.some(shouldUploadClipboardRasterFile)) {
+          void uploadRasterFilesInPayload(payload, {
+            accessToken,
+            projectId,
+          })
+            .then((preparedPayload) => {
+              importFromPayload(preparedPayload, context);
+            })
+            .catch((error) => {
+              console.warn("[skia-canvas] clipboard.import.failed", {
+                trigger: context.trigger,
+                mimeTypes: context.mimeTypes,
+                error,
+              });
+              toast.error(
+                error instanceof Error
+                  ? error.message
+                  : "剪贴板导入失败，请重试。",
+              );
+            });
+          return true;
+        }
         try {
           return importFromPayload(payload, context).length > 0;
         } catch (error) {
@@ -4317,6 +4586,7 @@ export const SkiaCanvas = memo(
           ref={canvasRootRef}
           className={`relative h-full w-full overflow-hidden ${cursorClass}`}
           style={{ backgroundColor: "#ffffff" }}
+          onAuxClick={handleAuxClick}
           onClick={handleCanvasClick}
           onKeyDown={() => undefined}
           onPointerDown={handlePointerDown}
