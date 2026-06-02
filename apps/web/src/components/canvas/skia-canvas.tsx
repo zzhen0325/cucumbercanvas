@@ -64,6 +64,7 @@ import type {
   PenNode,
 } from "@cucumber/pen-types";
 import type { CanvasKit } from "canvaskit-wasm";
+import { Check, ChevronDown } from "lucide-react";
 import type React from "react";
 import {
   forwardRef,
@@ -78,6 +79,13 @@ import {
 import { useStore } from "zustand";
 
 import { useToast } from "@/components/toast";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { uploadFile } from "@/lib/server-api";
 import { CanvasBooleanToolbar } from "./boolean-toolbar";
 import type {
@@ -542,6 +550,39 @@ const DEFAULT_TEXT_FONT_FAMILY =
 const MIN_TEXT_BOX_SIZE = 8;
 const KEYBOARD_ZOOM_STEP = 1.1;
 const WHEEL_ZOOM_SENSITIVITY = 0.002;
+const STICKY_BACKGROUND_SWATCHES = [
+  "#FFFFFF",
+  "#F3F4F6",
+  "#FFB4A8",
+  "#FFD9A8",
+  "#FFE59A",
+  "#B8F2C4",
+  "#B2EEE8",
+  "#B8E3FA",
+  "#D8C3FA",
+  "#F5A3D7",
+];
+const STICKY_TEXT_SWATCHES = [
+  "#111827",
+  "#5B481B",
+  "#7F1D1D",
+  "#7C2D12",
+  "#14532D",
+  "#134E4A",
+  "#075985",
+  "#581C87",
+];
+const STICKY_FONT_SIZE_OPTIONS = [16, 20, 24, 28, 32, 40];
+type StickyLocalFontStatus = "idle" | "loading" | "loaded" | "failed";
+type BrowserLocalFontData = {
+  family: string;
+  fullName?: string;
+  postscriptName?: string;
+  style?: string;
+};
+type WindowWithLocalFonts = Window & {
+  queryLocalFonts?: () => Promise<BrowserLocalFontData[]>;
+};
 
 function assertPositiveFiniteZoom(zoom: number) {
   if (!Number.isFinite(zoom) || zoom <= 0) {
@@ -575,6 +616,7 @@ type TextEditState = {
   textAlign: React.CSSProperties["textAlign"];
   color: string;
   lineHeight: number | string;
+  commitSelection: string[];
 };
 
 type CanvasContextMenuState = {
@@ -601,7 +643,7 @@ function getCanvasApiRuntimeState(
       x: 0,
       y: 0,
       zoom: 1,
-      backgroundColor: "#ffffff",
+      backgroundColor: "#F0F0F0",
     },
   };
 }
@@ -820,6 +862,18 @@ function getFirstSolidFillColor(node: PenNode, fallback = "#111827"): string {
     : fallback;
 }
 
+function getFontFamilyDisplayName(fontFamily: string): string {
+  const firstFamily = fontFamily.split(",")[0]?.trim();
+  if (!firstFamily) return "字体";
+  return firstFamily.replace(/^["']|["']$/g, "");
+}
+
+function sortLocalFontFamilies(families: Iterable<string>): string[] {
+  return Array.from(new Set(families))
+    .filter((family) => family.trim().length > 0)
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+}
+
 function createCanvasApiFacade(getLiveApi: () => CanvasApi): CanvasApi {
   return {
     getDocument: () => getLiveApi().getDocument(),
@@ -1022,6 +1076,59 @@ function CanvasSelectionToolbarConnected({
       selection: state.selection,
     }),
   );
+  const [openStickyColorMenu, setOpenStickyColorMenu] = useState<{
+    kind: "background" | "text";
+    nodeId: string;
+  } | null>(null);
+  const [localFontFamilies, setLocalFontFamilies] = useState<string[]>([]);
+  const [localFontStatus, setLocalFontStatus] =
+    useState<StickyLocalFontStatus>("idle");
+  const [localFontError, setLocalFontError] = useState<string | null>(null);
+  const loadLocalFonts = useCallback(async () => {
+    if (localFontStatus === "loading" || localFontStatus === "loaded") return;
+    if (typeof window === "undefined") {
+      setLocalFontStatus("failed");
+      setLocalFontError("当前环境无法读取本机字体。");
+      console.warn("[skia-canvas] sticky.toolbar.local-fonts.unavailable", {
+        reason: "window_unavailable",
+      });
+      return;
+    }
+    const localWindow = window as WindowWithLocalFonts;
+    if (typeof localWindow.queryLocalFonts !== "function") {
+      setLocalFontStatus("failed");
+      setLocalFontError("当前浏览器不支持读取本机字体。");
+      console.warn("[skia-canvas] sticky.toolbar.local-fonts.unavailable", {
+        reason: "api_unavailable",
+      });
+      return;
+    }
+
+    setLocalFontStatus("loading");
+    setLocalFontError(null);
+    try {
+      const fonts = await localWindow.queryLocalFonts();
+      const families = sortLocalFontFamilies(fonts.map((font) => font.family));
+      setLocalFontFamilies(families);
+      setLocalFontStatus("loaded");
+      console.info("[skia-canvas] sticky.toolbar.local-fonts.loaded", {
+        familyCount: families.length,
+      });
+    } catch (error) {
+      const message =
+        error instanceof DOMException && error.name === "NotAllowedError"
+          ? "未获得读取本机字体权限，无法展示本机字体。"
+          : `读取本机字体失败：${
+              error instanceof Error ? error.message : String(error)
+            }`;
+      setLocalFontStatus("failed");
+      setLocalFontError(message);
+      console.warn("[skia-canvas] sticky.toolbar.local-fonts.failed", {
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }, [localFontStatus]);
+  const selectedNodeId = selection.length === 1 ? (selection[0] ?? null) : null;
   if (!viewport || selection.length === 0) return null;
   const bounds = getSelectionBounds(document, selection, activePageId);
   if (!bounds) return null;
@@ -1030,10 +1137,9 @@ function CanvasSelectionToolbarConnected({
     bounds.y,
     viewport,
   );
-  const selectedNode =
-    selection.length === 1
-      ? findNode(document, selection[0] ?? "", activePageId)
-      : null;
+  const selectedNode = selectedNodeId
+    ? findNode(document, selectedNodeId, activePageId)
+    : null;
   const connector: ConnectorLineNode | null = isConnectorLineNode(
     selectedNode ?? undefined,
   )
@@ -1041,10 +1147,56 @@ function CanvasSelectionToolbarConnected({
     : null;
   const isLocked = Boolean(selectedNode?.locked);
   const isHidden = selectedNode?.visible === false;
+  const stickyTextNode =
+    selectedNode && isStickyNoteNode(selectedNode)
+      ? findStickyNoteTextNode(selectedNode)
+      : null;
+  const stickyTextWeight = String(
+    (stickyTextNode as { fontWeight?: string | number } | null)?.fontWeight ??
+      "400",
+  );
+  const stickyBackgroundColor = selectedNode
+    ? getFirstSolidFillColor(selectedNode, "#FFE59A")
+    : "#FFE59A";
+  const stickyTextColor = stickyTextNode
+    ? getFirstSolidFillColor(stickyTextNode, "#111827")
+    : "#111827";
+  const stickyFontFamily =
+    (stickyTextNode as { fontFamily?: string } | null)?.fontFamily ??
+    DEFAULT_TEXT_FONT_FAMILY;
+  const stickyFontName = getFontFamilyDisplayName(stickyFontFamily);
+  const stickyFontSize =
+    (stickyTextNode as { fontSize?: number } | null)?.fontSize ?? 24;
+  const isStickyBackgroundMenuOpen =
+    openStickyColorMenu?.kind === "background" &&
+    openStickyColorMenu.nodeId === selectedNode?.id;
+  const isStickyTextMenuOpen =
+    openStickyColorMenu?.kind === "text" &&
+    openStickyColorMenu.nodeId === selectedNode?.id;
+  const updateStickyBackground = (color: string) => {
+    if (!selectedNode) return;
+    api.updateNode(selectedNode.id, {
+      fill: [{ type: "solid", color }],
+    } as Partial<PenNode>);
+    console.info("[skia-canvas] sticky.toolbar.background.updated", {
+      stickyId: selectedNode.id,
+      color,
+    });
+  };
+  const updateStickyText = (updates: Partial<PenNode>) => {
+    if (!selectedNode || !stickyTextNode) return;
+    api.updateNode(stickyTextNode.id, updates);
+    console.info("[skia-canvas] sticky.toolbar.text.updated", {
+      stickyId: selectedNode.id,
+      textNodeId: stickyTextNode.id,
+      fields: Object.keys(updates),
+    });
+  };
 
   return (
     <div
-      className="pointer-events-auto absolute z-30 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card/90 px-2 py-1 shadow-card backdrop-blur-lg"
+      data-canvas-overlay="selection-toolbar"
+      className="pointer-events-auto absolute z-30 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-border bg-card/90 px-2 py-1 shadow-card backdrop-blur-lg"
       style={{
         left: topCenter.x,
         top: Math.max(12, topCenter.y - 44),
@@ -1052,6 +1204,177 @@ function CanvasSelectionToolbarConnected({
       onContextMenu={(event) => event.preventDefault()}
       onPointerDown={(event) => event.stopPropagation()}
     >
+      {selectedNode && stickyTextNode ? (
+        <>
+          <ToolbarColorDropdown
+            colors={STICKY_BACKGROUND_SWATCHES}
+            currentColor={stickyBackgroundColor}
+            label="Sticky background"
+            open={isStickyBackgroundMenuOpen}
+            shortLabel="Bg"
+            onSelect={(color) => {
+              updateStickyBackground(color);
+              setOpenStickyColorMenu(null);
+            }}
+            onToggle={() =>
+              setOpenStickyColorMenu(
+                isStickyBackgroundMenuOpen
+                  ? null
+                  : { kind: "background", nodeId: selectedNode.id },
+              )
+            }
+          />
+          <ToolbarColorDropdown
+            colors={STICKY_TEXT_SWATCHES}
+            currentColor={stickyTextColor}
+            label="Sticky text"
+            open={isStickyTextMenuOpen}
+            shortLabel="T"
+            onSelect={(color) => {
+              updateStickyText({
+                fill: [{ type: "solid", color }],
+              } as Partial<PenNode>);
+              setOpenStickyColorMenu(null);
+            }}
+            onToggle={() =>
+              setOpenStickyColorMenu(
+                isStickyTextMenuOpen
+                  ? null
+                  : { kind: "text", nodeId: selectedNode.id },
+              )
+            }
+          />
+          <div className="h-5 w-px bg-border" />
+          <DropdownMenu
+            modal={false}
+            onOpenChange={(open) => {
+              if (open) void loadLocalFonts();
+            }}
+          >
+            <DropdownMenuTrigger
+              aria-label="Sticky text font"
+              className="flex h-7 min-w-24 max-w-40 items-center justify-between gap-2 rounded-lg px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+              title="Sticky text font"
+            >
+              <span className="truncate">{stickyFontName}</span>
+              <ChevronDown className="size-3 shrink-0" aria-hidden="true" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              className="w-64 max-h-72"
+              data-canvas-overlay="selection-toolbar"
+              sideOffset={8}
+            >
+              <DropdownMenuGroup>
+                {localFontStatus === "loading" ? (
+                  <DropdownMenuItem disabled>
+                    正在读取本机字体...
+                  </DropdownMenuItem>
+                ) : null}
+                {localFontStatus === "failed" && localFontError ? (
+                  <DropdownMenuItem disabled>{localFontError}</DropdownMenuItem>
+                ) : null}
+                {localFontStatus === "loaded" &&
+                localFontFamilies.length === 0 ? (
+                  <DropdownMenuItem disabled>
+                    未从当前设备读取到可用字体。
+                  </DropdownMenuItem>
+                ) : null}
+                {localFontFamilies.map((family) => (
+                  <DropdownMenuItem
+                    key={family}
+                    className="justify-between"
+                    onClick={() =>
+                      updateStickyText({
+                        fontFamily: family,
+                      } as Partial<PenNode>)
+                    }
+                  >
+                    <span className="truncate" style={{ fontFamily: family }}>
+                      {family}
+                    </span>
+                    {stickyFontName === family ? (
+                      <Check className="size-3.5 shrink-0" aria-hidden="true" />
+                    ) : null}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger
+              aria-label="Sticky text size"
+              className="flex h-7 min-w-16 items-center justify-between gap-2 rounded-lg px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+              title="Sticky text size"
+            >
+              <span>{stickyFontSize}</span>
+              <ChevronDown className="size-3 shrink-0" aria-hidden="true" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              className="min-w-20"
+              data-canvas-overlay="selection-toolbar"
+              sideOffset={8}
+            >
+              <DropdownMenuGroup>
+                {STICKY_FONT_SIZE_OPTIONS.map((size) => (
+                  <DropdownMenuItem
+                    key={size}
+                    className="justify-between"
+                    onClick={() =>
+                      updateStickyText({
+                        fontSize: size,
+                      } as Partial<PenNode>)
+                    }
+                  >
+                    <span>{size}</span>
+                    {stickyFontSize === size ? (
+                      <Check className="size-3.5 shrink-0" aria-hidden="true" />
+                    ) : null}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <ToolbarMiniButton
+            active={
+              Number(stickyTextWeight) >= 600 || stickyTextWeight === "bold"
+            }
+            label="B"
+            onClick={() =>
+              updateStickyText({
+                fontWeight:
+                  Number(stickyTextWeight) >= 600 || stickyTextWeight === "bold"
+                    ? "400"
+                    : "700",
+              } as Partial<PenNode>)
+            }
+          />
+          <ToolbarMiniButton
+            active={
+              (
+                stickyTextNode as {
+                  listStyle?: "none" | "ordered" | "unordered";
+                }
+              ).listStyle === "unordered"
+            }
+            label="•"
+            onClick={() =>
+              updateStickyText({
+                listStyle:
+                  (
+                    stickyTextNode as {
+                      listStyle?: "none" | "ordered" | "unordered";
+                    }
+                  ).listStyle === "unordered"
+                    ? "none"
+                    : "unordered",
+              } as Partial<PenNode>)
+            }
+          />
+          <div className="h-5 w-px bg-border" />
+        </>
+      ) : null}
       <ToolbarMiniButton label="Copy" onClick={() => api.copySelection()} />
       <ToolbarMiniButton
         label="Duplicate"
@@ -1294,11 +1617,68 @@ function CanvasContextMenu({
   );
 }
 
+function ToolbarColorDropdown({
+  colors,
+  currentColor,
+  label,
+  open,
+  shortLabel,
+  onSelect,
+  onToggle,
+}: {
+  colors: string[];
+  currentColor: string;
+  label: string;
+  open: boolean;
+  shortLabel: string;
+  onSelect: (color: string) => void;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="relative">
+      <button
+        aria-expanded={open}
+        aria-label={label}
+        className={`flex h-7 items-center gap-1 rounded-lg px-2 text-xs font-medium transition-colors ${
+          open
+            ? "bg-foreground/[0.08] text-foreground"
+            : "text-foreground/75 hover:bg-foreground/[0.06] hover:text-foreground"
+        }`}
+        onClick={onToggle}
+        title={label}
+        type="button"
+      >
+        <span>{shortLabel}</span>
+        <span
+          className="size-4 rounded-full border border-foreground/15"
+          style={{ backgroundColor: currentColor }}
+        />
+        <ChevronDown className="size-3" aria-hidden="true" />
+      </button>
+      {open ? (
+        <div className="absolute top-8 left-0 z-40 flex w-max max-w-[calc(100vw-24px)] gap-1 overflow-x-auto rounded-xl border border-border bg-card/95 p-1 shadow-float backdrop-blur-lg">
+          {colors.map((color) => (
+            <ToolbarColorSwatch
+              key={color}
+              active={currentColor === color}
+              color={color}
+              label={`${label} ${color}`}
+              onClick={() => onSelect(color)}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ToolbarMiniButton({
+  active,
   danger,
   label,
   onClick,
 }: {
+  active?: boolean;
   danger?: boolean;
   label: string;
   onClick: () => void;
@@ -1308,12 +1688,43 @@ function ToolbarMiniButton({
       className={`h-7 rounded-lg px-2 text-xs font-medium transition-colors ${
         danger
           ? "text-destructive hover:bg-destructive/10"
-          : "text-foreground/75 hover:bg-foreground/[0.06] hover:text-foreground"
+          : active
+            ? "bg-foreground/[0.08] text-foreground"
+            : "text-foreground/75 hover:bg-foreground/[0.06] hover:text-foreground"
       }`}
       onClick={onClick}
       type="button"
     >
       {label}
+    </button>
+  );
+}
+
+function ToolbarColorSwatch({
+  active,
+  color,
+  label,
+  onClick,
+}: {
+  active?: boolean;
+  color: string;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      aria-label={label}
+      className={`grid size-7 shrink-0 place-items-center rounded-lg transition-colors hover:bg-foreground/[0.06] ${
+        active ? "bg-foreground/[0.08]" : ""
+      }`}
+      onClick={onClick}
+      title={label}
+      type="button"
+    >
+      <span
+        className="size-4 rounded-full border border-foreground/15"
+        style={{ backgroundColor: color }}
+      />
     </button>
   );
 }
@@ -1806,7 +2217,7 @@ export const SkiaCanvas = memo(
         fontBasePath: "/fonts/",
         iconLookup: lookupCanvasIcon,
         backgroundColor:
-          runtimeStore.getState().viewport.backgroundColor ?? "#ffffff",
+          runtimeStore.getState().viewport.backgroundColor ?? "#F0F0F0",
       });
       renderer.init(canvas);
       syncRendererDocument(renderer, docRef.current, activePageIdRef.current);
@@ -2179,6 +2590,10 @@ export const SkiaCanvas = memo(
           suppressNextClickRef.current = false;
           return;
         }
+        const target = event.target as HTMLElement;
+        if (target.closest('[data-canvas-overlay="selection-toolbar"]')) {
+          return;
+        }
         const renderer = rendererRef.current;
         if (!renderer) return;
         const hit = getSelectableStickyHitNode(
@@ -2246,7 +2661,15 @@ export const SkiaCanvas = memo(
     }, [ckReady, handleWheel]);
 
     const beginTextEdit = useCallback(
-      (node: PenNode, opts?: { isNew?: boolean; bounds?: CanvasBounds }) => {
+      (
+        node: PenNode,
+        opts?: {
+          isNew?: boolean;
+          bounds?: CanvasBounds;
+          selectionDuringEdit?: string[];
+          commitSelection?: string[];
+        },
+      ) => {
         const renderer = rendererRef.current;
         if (!renderer || node.type !== "text") return false;
         const rendererBounds = renderer.getNodeBounds(node.id);
@@ -2266,7 +2689,8 @@ export const SkiaCanvas = memo(
           textGrowth?: "auto" | "fixed-width" | "fixed-width-height";
         };
         const content = getTextContent(node);
-        setSelection([node.id]);
+        const commitSelection = opts?.commitSelection ?? [node.id];
+        setSelection(opts?.selectionDuringEdit ?? commitSelection);
         setEditingText({
           nodeId: node.id,
           isNew: opts?.isNew ?? false,
@@ -2283,11 +2707,14 @@ export const SkiaCanvas = memo(
           textAlign: textNode.textAlign ?? "left",
           color: getFirstSolidFillColor(node),
           lineHeight: textNode.lineHeight ?? DEFAULT_TEXT_LINE_HEIGHT,
+          commitSelection,
         });
         console.info("[skia-canvas] text.edit.started", {
           nodeId: node.id,
           isNew: opts?.isNew ?? false,
           textGrowth: textNode.textGrowth ?? "fixed-width-height",
+          selectionDuringEditCount:
+            opts?.selectionDuringEdit?.length ?? commitSelection.length,
         });
         return true;
       },
@@ -3575,9 +4002,11 @@ export const SkiaCanvas = memo(
           Math.round(measured.width) === Math.round(currentEdit.width) &&
           Math.round(measured.height) === Math.round(currentEdit.height)
         ) {
+          setSelection(currentEdit.commitSelection, { notifyScene: false });
           console.info("[skia-canvas] text.edit.cancelled", {
             nodeId: currentEdit.nodeId,
             reason: "unchanged",
+            restoredSelectionCount: currentEdit.commitSelection.length,
           });
           return;
         }
@@ -3599,9 +4028,12 @@ export const SkiaCanvas = memo(
           currentEdit.nodeId,
           activePageId,
         );
-        const nextSelection = stickyContainer
-          ? [stickyContainer.id]
-          : [currentEdit.nodeId];
+        const nextSelection =
+          currentEdit.commitSelection.length > 0
+            ? currentEdit.commitSelection
+            : stickyContainer
+              ? [stickyContainer.id]
+              : [currentEdit.nodeId];
         const next = applyCanvasOperation(docRef.current, {
           type: "updateNode",
           nodeId: currentEdit.nodeId,
@@ -3711,7 +4143,17 @@ export const SkiaCanvas = memo(
         const editableText = sticky ? findStickyNoteTextNode(sticky) : hit;
         if (!editableText || editableText.type !== "text") return;
         if (sticky) setSelection([sticky.id], { notifyScene: false });
-        if (beginTextEdit(editableText)) {
+        if (
+          beginTextEdit(
+            editableText,
+            sticky
+              ? {
+                  commitSelection: [sticky.id],
+                  selectionDuringEdit: [],
+                }
+              : undefined,
+          )
+        ) {
           event.preventDefault();
           event.stopPropagation();
           suppressNextClickRef.current = true;
@@ -5004,7 +5446,7 @@ export const SkiaCanvas = memo(
             {
               backgroundColor:
                 getCanvasApiDocument(runtimeStore.getState()).viewport
-                  ?.backgroundColor ?? "#ffffff",
+                  ?.backgroundColor ?? "#F0F0F0",
             },
           ),
         getViewportBounds: () => {
@@ -5472,7 +5914,16 @@ export const SkiaCanvas = memo(
           currentSelection[0] ?? "",
           activePageIdRef.current,
         );
-        if (!node || node.type !== "text") return false;
+        if (!node) return false;
+        if (isStickyNoteNode(node)) {
+          const stickyText = findStickyNoteTextNode(node);
+          if (!stickyText) return false;
+          return beginTextEdit(stickyText, {
+            commitSelection: [node.id],
+            selectionDuringEdit: [],
+          });
+        }
+        if (node.type !== "text") return false;
         return beginTextEdit(node);
       },
       zoomIn: () => {

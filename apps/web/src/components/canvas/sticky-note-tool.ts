@@ -41,7 +41,12 @@ export function getSelectableStickyHitNode(
   activePageId?: string | null,
 ): PenNode | null {
   if (!hit) return null;
-  return getStickyNoteContainerForNode(doc, hit.id, activePageId) ?? hit;
+  const sticky = getStickyNoteContainerForNode(doc, hit.id, activePageId);
+  if (!sticky) return hit;
+  if (hit.id === sticky.id) return sticky;
+  const bodyText = findStickyNoteTextNode(sticky);
+  if (bodyText?.id === hit.id) return sticky;
+  return hit;
 }
 
 export function findStickyNoteTextNode(sticky: PenNode): PenNode | null {
@@ -148,7 +153,7 @@ export function createStickyNoteNode(
     y: bounds.y,
     width,
     height,
-    clipContent: true,
+    clipContent: false,
     fill: [{ type: "solid", color: "#FFE59A" }],
     stroke: {
       thickness: 1,

@@ -258,7 +258,7 @@ export function isCucumberCanvasDocument(
 // ---------------------------------------------------------------------------
 
 export function defaultViewport(): CanvasViewport {
-  return { x: 0, y: 0, zoom: 1, backgroundColor: "#ffffff" };
+  return { x: 0, y: 0, zoom: 1, backgroundColor: "#F0F0F0" };
 }
 
 function requireCanvasPages(doc: PenDocument): PenPage[] {
