@@ -362,6 +362,24 @@ export class SkiaTextRenderer {
 
   private getTextContent(tNode: TextNode): string {
     if (typeof tNode.content === "string") {
+      if (tNode.content.length === 0) {
+        const meta = (tNode as { meta?: Record<string, unknown> }).meta;
+        const placeholder =
+          typeof meta?.placeholder === "string" ? meta.placeholder : "";
+        if (placeholder.length > 0) {
+          return applyTextParagraphLayout(
+            this.applyTextCase(placeholder, tNode.textCase),
+            {
+              listStyle: tNode.listStyle,
+              indent: tNode.indent,
+              hangingIndent: tNode.hangingIndent,
+              fontSize: tNode.fontSize,
+              lineHeight: tNode.lineHeight,
+              paragraphSpacing: tNode.paragraphSpacing,
+            },
+          );
+        }
+      }
       return applyTextParagraphLayout(
         this.applyTextCase(tNode.content, tNode.textCase),
         {

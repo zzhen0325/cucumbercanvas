@@ -61,6 +61,10 @@ const VIEWPORT_INTERACTION_CACHE_PADDING_PX = 256;
 const VIEWPORT_CACHE_MIN_NODE_COUNT = 64;
 const VIEWPORT_CACHE_MIN_IMAGE_COUNT = 8;
 const VIEWPORT_EPSILON = 0.001;
+const STICKY_LABEL_BACKGROUND_COLOR = "rgba(255,255,255,0.78)";
+const STICKY_LABEL_BACKGROUND_STROKE = "rgba(148,163,184,0.26)";
+const STICKY_LABEL_PADDING_X = 6;
+const STICKY_LABEL_PADDING_Y = 3;
 const RESIZE_HANDLES: ResizeHandleDirection[] = [
   "n",
   "ne",
@@ -469,6 +473,17 @@ export class PenRenderer {
     return hits[0]?.node ?? null;
   }
 
+  hitTestNodeLabel(screenX: number, screenY: number): PenNode | null {
+    if (!this.canvasEl) return null;
+    const rect = this.canvasEl.getBoundingClientRect();
+    const scene = screenToScene(screenX, screenY, rect, {
+      zoom: this._zoom,
+      panX: this._panX,
+      panY: this._panY,
+    });
+    return this.hitTestFrameLabel(scene.x, scene.y);
+  }
+
   getNodeBounds(
     nodeId: string,
   ): { x: number; y: number; w: number; h: number } | null {
@@ -762,10 +777,35 @@ export class PenRenderer {
     x: number,
     y: number,
     selected: boolean,
+    roundedBackground = false,
   ) {
     const ck = this.ck;
     const dpr = this.options.devicePixelRatio ?? window.devicePixelRatio ?? 1;
     const bounds = getFrameLabelBounds(name, x, y, this._zoom, dpr);
+    if (roundedBackground) {
+      const invZoom = 1 / this._zoom;
+      const bgRect = ck.LTRBRect(
+        bounds.left - STICKY_LABEL_PADDING_X * invZoom,
+        bounds.top - STICKY_LABEL_PADDING_Y * invZoom,
+        bounds.right + STICKY_LABEL_PADDING_X * invZoom,
+        bounds.bottom + STICKY_LABEL_PADDING_Y * invZoom,
+      );
+      const radius = 7 * invZoom;
+      const bgPaint = new ck.Paint();
+      bgPaint.setStyle(ck.PaintStyle.Fill);
+      bgPaint.setAntiAlias(true);
+      bgPaint.setColor(parseColor(ck, STICKY_LABEL_BACKGROUND_COLOR));
+      const borderPaint = new ck.Paint();
+      borderPaint.setStyle(ck.PaintStyle.Stroke);
+      borderPaint.setAntiAlias(true);
+      borderPaint.setStrokeWidth(1 * invZoom);
+      borderPaint.setColor(parseColor(ck, STICKY_LABEL_BACKGROUND_STROKE));
+      const rrect = ck.RRectXY(bgRect, radius, radius);
+      canvas.drawRRect(rrect, bgPaint);
+      canvas.drawRRect(rrect, borderPaint);
+      bgPaint.delete();
+      borderPaint.delete();
+    }
     const cacheEntry = this.getFrameLabelCacheEntry(name, selected, dpr);
     if (cacheEntry) {
       const paint = new ck.Paint();
@@ -879,6 +919,7 @@ export class PenRenderer {
         rn.absX,
         rn.absY,
         this.editorOverlays.selectedIds.includes(rn.node.id),
+        isStickyNoteRenderNode(rn),
       );
     }
   }

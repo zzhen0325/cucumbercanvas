@@ -4,6 +4,14 @@ Last updated: 2026-06-02 CST
 
 ## 2026-06-02
 
+- Tightened sticky-note interaction semantics: sticky body text now stores empty content with `Type anything` only as placeholder metadata, old default placeholder text is normalized at canvas ingress, all sticky descendants select the sticky as one object, sticky frames are excluded from paste/import/drop parent resolution, sticky background updates also derive the stroke color, the selection toolbar follows live viewport panning, sticky labels have a rounded background, and double-clicking the label edits `sticky.name`.
+- Passed: `pnpm --filter @cucumber/canvas-core test`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm --filter @cucumber/pen-renderer test`.
+- Passed: `pnpm --filter @cucumber/pen-renderer typecheck`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/sticky-note-tool.test.ts test/canvas-selection-helpers.test.ts test/skia-canvas-selection-snapshot.test.tsx`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: targeted `pnpm exec biome check` for touched sticky/canvas-core/pen-renderer files.
 - Updated sticky-note editing ergonomics: new sticky notes no longer clip nested canvas content, sticky body text still selects/edits through the parent sticky, arbitrary nested child elements remain directly selectable so they can be dragged back out, and sticky body editing temporarily hides selection chrome while restoring the sticky selection after commit/cancel.
 - Added sticky-specific selection toolbar controls for background color, text color, font family, bold, font size, and unordered bullets, with structured logs for sticky background/text updates; color controls now stay compact as current-color buttons and expand their palettes through a chevron menu with all color options in one row, while font family and font size now use the shared DropdownMenu UI and the font menu reads locally available device font families when opened.
 - Removed sticky-note mask editing from the property panel so sticky containers no longer expose a control that writes `mask`, while regular node mask controls remain available.

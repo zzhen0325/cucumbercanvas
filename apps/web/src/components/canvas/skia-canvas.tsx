@@ -127,10 +127,12 @@ import {
 import { CanvasEditorToolbar } from "./editor-toolbar";
 import { lookupCanvasIcon } from "./icon-library";
 import { CanvasPropertyPanel } from "./property-panel/canvas-property-panel";
+import { StickyNameEditOverlay } from "./sticky-name-edit-overlay";
 import {
   STICKY_NOTE_DEFAULT_HEIGHT,
   STICKY_NOTE_DEFAULT_WIDTH,
   createStickyNoteNode,
+  deriveStickyStrokeColor,
   findStickyNoteTextNode,
   getLinkedStickyBounds,
   getOppositeStickyConnectorSide,
@@ -138,6 +140,7 @@ import {
   getStickyConnectorPoint,
   getStickyNoteContainerForNode,
   isStickyNoteNode,
+  normalizeStickyNotesInDocument,
 } from "./sticky-note-tool";
 import {
   type ClipboardImportContext,
@@ -424,7 +427,9 @@ function normalizePenDocument(raw: unknown): PenDocument {
 }
 
 function normalizeRuntimeDocument(raw: unknown): PenDocument {
-  return normalizeCanvasPages(normalizePenDocument(raw));
+  return normalizeStickyNotesInDocument(
+    normalizeCanvasPages(normalizePenDocument(raw)),
+  );
 }
 
 function normalizeRuntimeDocumentForCanvasSet(raw: unknown): PenDocument {
@@ -1056,7 +1061,6 @@ function CanvasBooleanToolbarConnected({
 
 function CanvasSelectionToolbarConnected({
   api,
-  viewport,
 }: {
   api: Pick<
     CanvasApi,
@@ -1070,15 +1074,18 @@ function CanvasSelectionToolbarConnected({
     | "updateNode"
   >;
   canvasRect?: DOMRect;
-  viewport: ViewportState | null;
 }) {
-  const { activePageId, document, selection } = useCanvasRuntimeShallowSelector(
-    (state) => ({
-      activePageId: state.activePageId,
-      document: state.document,
-      selection: state.selection,
-    }),
-  );
+  const {
+    activePageId,
+    document,
+    selection,
+    viewport: runtimeViewport,
+  } = useCanvasRuntimeShallowSelector((state) => ({
+    activePageId: state.activePageId,
+    document: state.document,
+    selection: state.selection,
+    viewport: state.viewport,
+  }));
   const [openStickyColorMenu, setOpenStickyColorMenu] = useState<{
     kind: "background" | "text";
     nodeId: string;
@@ -1184,7 +1191,12 @@ function CanvasSelectionToolbarConnected({
     }
     return [...currentFontFamilies, ...otherFontFamilies];
   }, [fontSearchQuery, localFontFamilies, stickyFontFamily, stickyFontName]);
-  if (!viewport || selection.length === 0) return null;
+  const viewport = {
+    panX: runtimeViewport.x ?? 0,
+    panY: runtimeViewport.y ?? 0,
+    zoom: runtimeViewport.zoom ?? 1,
+  };
+  if (selection.length === 0) return null;
   const bounds = getSelectionBounds(document, selection, activePageId);
   if (!bounds) return null;
   const topCenter = sceneToCanvasLocal(
@@ -1202,6 +1214,12 @@ function CanvasSelectionToolbarConnected({
     if (!selectedNode) return;
     api.updateNode(selectedNode.id, {
       fill: [{ type: "solid", color }],
+      stroke: {
+        ...("stroke" in selectedNode && selectedNode.stroke
+          ? selectedNode.stroke
+          : { thickness: 1 }),
+        fill: [{ type: "solid", color: deriveStickyStrokeColor(color) }],
+      },
     } as Partial<PenNode>);
     console.info("[skia-canvas] sticky.toolbar.background.updated", {
       stickyId: selectedNode.id,
@@ -1935,12 +1953,22 @@ export const SkiaCanvas = memo(
 
     const listenersRef = useRef(new Set<CanvasChangeListener>());
     const [editingText, setEditingText] = useState<TextEditState | null>(null);
+    const [editingStickyNameId, setEditingStickyNameId] = useState<
+      string | null
+    >(null);
+    const textEditTextareaRef = useRef<HTMLTextAreaElement | null>(null);
     const [isFileDragActive, setIsFileDragActive] = useState(false);
     const fileDragDepthRef = useRef(0);
     const rendererIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
       null,
     );
     const marqueeRafRef = useRef<number | null>(null);
+    const viewportPanRafRef = useRef<number | null>(null);
+    const pendingViewportPanRef = useRef<{
+      x: number;
+      y: number;
+      zoom: number;
+    } | null>(null);
     const rendererDocumentSyncRafRef = useRef<number | null>(null);
     const pendingRendererDocumentSyncRef =
       useRef<PendingRendererDocumentSync | null>(null);
@@ -1967,6 +1995,16 @@ export const SkiaCanvas = memo(
     const [booleanRuntimeStatus, setBooleanRuntimeStatus] = useState<
       "loading" | "ready" | "failed"
     >("loading");
+
+    useEffect(
+      () => () => {
+        if (viewportPanRafRef.current !== null) {
+          cancelAnimationFrame(viewportPanRafRef.current);
+          viewportPanRafRef.current = null;
+        }
+      },
+      [],
+    );
 
     useEffect(() => {
       let cancelled = false;
@@ -2796,6 +2834,36 @@ export const SkiaCanvas = memo(
       [setSelection],
     );
 
+    const textEditCaretNodeId = editingText?.nodeId ?? null;
+    const textEditInitialCaretOffset = editingText?.initialContent.length ?? 0;
+    useEffect(() => {
+      const textarea = textEditTextareaRef.current;
+      if (!textarea || !textEditCaretNodeId) return;
+      textarea.setSelectionRange(
+        textEditInitialCaretOffset,
+        textEditInitialCaretOffset,
+      );
+    }, [textEditCaretNodeId, textEditInitialCaretOffset]);
+
+    const scheduleViewportPanSnapshot = useCallback(
+      (viewport: { panX: number; panY: number; zoom: number }) => {
+        pendingViewportPanRef.current = {
+          x: viewport.panX,
+          y: viewport.panY,
+          zoom: viewport.zoom,
+        };
+        if (viewportPanRafRef.current !== null) return;
+        viewportPanRafRef.current = requestAnimationFrame(() => {
+          viewportPanRafRef.current = null;
+          const pending = pendingViewportPanRef.current;
+          pendingViewportPanRef.current = null;
+          if (!pending) return;
+          runtimeStore.getState().setViewportSnapshot(pending);
+        });
+      },
+      [runtimeStore],
+    );
+
     const endViewportPan = useCallback(
       (reason: string) => {
         const drag = dragRef.current;
@@ -2807,6 +2875,18 @@ export const SkiaCanvas = memo(
         }
         scheduleRendererIdle();
         const viewport = rendererRef.current?.getViewport();
+        if (viewportPanRafRef.current !== null) {
+          cancelAnimationFrame(viewportPanRafRef.current);
+          viewportPanRafRef.current = null;
+        }
+        pendingViewportPanRef.current = null;
+        if (viewport) {
+          runtimeStore.getState().setViewportSnapshot({
+            x: viewport.panX,
+            y: viewport.panY,
+            zoom: viewport.zoom,
+          });
+        }
         console.info("[skia-canvas] viewport.pan.ended", {
           reason,
           button: drag.button,
@@ -2814,7 +2894,7 @@ export const SkiaCanvas = memo(
         });
         return true;
       },
-      [scheduleRendererIdle],
+      [runtimeStore, scheduleRendererIdle],
     );
 
     useEffect(() => {
@@ -3158,6 +3238,7 @@ export const SkiaCanvas = memo(
           const dy = event.clientY - drag.startY;
           const vp = renderer.getViewport();
           renderer.setViewport(vp.zoom, drag.originX + dx, drag.originY + dy);
+          scheduleViewportPanSnapshot(renderer.getViewport());
           return;
         }
 
@@ -3438,6 +3519,7 @@ export const SkiaCanvas = memo(
         setEditorOverlay,
         setMarqueeDomOverlay,
         setSelection,
+        scheduleViewportPanSnapshot,
       ],
     );
 
@@ -4208,6 +4290,21 @@ export const SkiaCanvas = memo(
         if (target.closest("input, textarea, [contenteditable]")) return;
         const renderer = rendererRef.current;
         if (!renderer) return;
+        const labelHit = renderer.hitTestNodeLabel(
+          event.clientX,
+          event.clientY,
+        );
+        if (labelHit && isStickyNoteNode(labelHit)) {
+          setSelection([labelHit.id], { notifyScene: false });
+          setEditingStickyNameId(labelHit.id);
+          event.preventDefault();
+          event.stopPropagation();
+          suppressNextClickRef.current = true;
+          console.info("[skia-canvas] sticky.name.edit.started", {
+            stickyId: labelHit.id,
+          });
+          return;
+        }
         const hit = renderer.hitTest(event.clientX, event.clientY);
         if (!hit) return;
         const sticky = getStickyNoteContainerForNode(
@@ -6154,6 +6251,19 @@ export const SkiaCanvas = memo(
             rendererRef.current.getViewport(),
           )
         : null;
+    const editingStickyNameNode = editingStickyNameId
+      ? findNode(docRef.current, editingStickyNameId, activePageIdRef.current)
+      : null;
+    const editingStickyNameBounds =
+      editingStickyNameNode && isStickyNoteNode(editingStickyNameNode)
+        ? getNodeSceneBounds(
+            docRef.current,
+            editingStickyNameNode.id,
+            activePageIdRef.current,
+          )
+        : null;
+    const editingStickyNameViewport =
+      rendererRef.current?.getViewport() ?? null;
 
     return (
       <CanvasRuntimeStoreProvider store={runtimeStore}>
@@ -6190,6 +6300,7 @@ export const SkiaCanvas = memo(
 
           {editingText && textEditOverlay ? (
             <textarea
+              ref={textEditTextareaRef}
               aria-label="Edit canvas text"
               // biome-ignore lint/a11y/noAutofocus: text editing opens from an explicit double-click and should focus the in-place editor immediately.
               autoFocus
@@ -6245,6 +6356,35 @@ export const SkiaCanvas = memo(
             />
           ) : null}
 
+          {editingStickyNameNode &&
+          editingStickyNameBounds &&
+          editingStickyNameViewport ? (
+            <StickyNameEditOverlay
+              bounds={editingStickyNameBounds}
+              name={editingStickyNameNode.name ?? "Sticky"}
+              nodeId={editingStickyNameNode.id}
+              viewport={editingStickyNameViewport}
+              onCancel={() => {
+                console.info("[skia-canvas] sticky.name.edit.cancelled", {
+                  stickyId: editingStickyNameNode.id,
+                });
+                setEditingStickyNameId(null);
+              }}
+              onCommit={(name) => {
+                const nextName = name.trim() || "Sticky";
+                api.updateNode(editingStickyNameNode.id, {
+                  name: nextName,
+                } as Partial<PenNode>);
+                console.info("[skia-canvas] sticky.name.edit.committed", {
+                  stickyId: editingStickyNameNode.id,
+                  emptyInput: name.trim().length === 0,
+                  nameLength: nextName.length,
+                });
+                setEditingStickyNameId(null);
+              }}
+            />
+          ) : null}
+
           <div
             ref={marqueeOverlayElRef}
             aria-hidden="true"
@@ -6265,7 +6405,6 @@ export const SkiaCanvas = memo(
           <CanvasSelectionToolbarConnected
             api={api}
             canvasRect={canvasContainerRef.current?.getBoundingClientRect()}
-            viewport={rendererRef.current?.getViewport() ?? null}
           />
 
           <CanvasContextMenu

@@ -31,6 +31,7 @@ const penRendererMockState = vi.hoisted(() => ({
   hitTest: vi.fn<(screenX: number, screenY: number) => unknown | undefined>(
     () => undefined,
   ),
+  labelHit: null as unknown,
   hitTestSelectionControl: vi.fn<
     () =>
       | { type: "resize"; nodeId: string; handle: "e" | "s" | "se" }
@@ -145,6 +146,7 @@ vi.mock("@cucumber/pen-renderer", () => ({
       if (override !== undefined) return override;
       return findTopMockHit(getMockActiveChildren(), screenX, screenY);
     });
+    hitTestNodeLabel = vi.fn(() => penRendererMockState.labelHit);
     hitTestSelectionControl = penRendererMockState.hitTestSelectionControl;
     hitTestRect = penRendererMockState.hitTestRect;
     setInteractionMode = penRendererMockState.setInteractionMode;
@@ -216,6 +218,7 @@ describe("SkiaCanvas selection snapshots", () => {
     penRendererMockState.setDocumentCalls = [];
     penRendererMockState.hitTest.mockReset();
     penRendererMockState.hitTest.mockReturnValue(undefined);
+    penRendererMockState.labelHit = null;
     penRendererMockState.hitTestSelectionControl.mockReset();
     penRendererMockState.hitTestSelectionControl.mockReturnValue(null);
     penRendererMockState.hitTestRect.mockReset();
@@ -1133,6 +1136,84 @@ describe("SkiaCanvas selection snapshots", () => {
       expect(savedTextNode).toMatchObject({
         id: "text-1",
         content: "Final title",
+      });
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver;
+    }
+  });
+
+  it("edits a sticky name from a double-click on the sticky label", async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    globalThis.ResizeObserver =
+      MockResizeObserver as unknown as typeof ResizeObserver;
+    const apiRef: { current: CanvasApi | null } = { current: null };
+    const stickyNode = {
+      id: "sticky-1",
+      type: "frame",
+      name: "Sticky",
+      x: 32,
+      y: 40,
+      width: 220,
+      height: 200,
+      meta: { boardKind: "sticky" },
+      children: [
+        {
+          id: "sticky-text-1",
+          type: "text",
+          name: "Sticky text",
+          x: 20,
+          y: 20,
+          width: 180,
+          height: 160,
+          content: "",
+          meta: { stickyRole: "body", selectable: false },
+        },
+      ],
+    } as PenNode;
+    penRendererMockState.labelHit = stickyNode;
+
+    try {
+      const { container, getByLabelText, queryByLabelText } = render(
+        <SkiaCanvas
+          initialContent={{
+            version: "cucumber-canvas-v1",
+            activePageId: "page-default",
+            pages: [
+              { id: "page-default", name: "Page 1", children: [stickyNode] },
+            ],
+            children: [],
+            viewport: { x: 0, y: 0, zoom: 1, backgroundColor: "#ffffff" },
+          }}
+          onApiReady={(readyApi) => {
+            apiRef.current = readyApi;
+          }}
+        />,
+      );
+
+      await waitFor(() => expect(apiRef.current).not.toBeNull());
+      await waitFor(() =>
+        expect(container.querySelector("canvas")).not.toBeNull(),
+      );
+      const canvasElement = container.querySelector("canvas") as HTMLElement;
+
+      await act(async () => {
+        fireEvent.dblClick(canvasElement, { clientX: 34, clientY: 30 });
+      });
+
+      expect(queryByLabelText("Edit canvas text")).toBeNull();
+      const editor = getByLabelText("Rename sticky") as HTMLInputElement;
+      expect(editor.value).toBe("Sticky");
+
+      await act(async () => {
+        fireEvent.change(editor, { target: { value: "Plan A" } });
+        fireEvent.blur(editor);
+      });
+
+      expect(
+        apiRef.current?.getDocument().pages?.[0]?.children[0],
+      ).toMatchObject({
+        id: "sticky-1",
+        name: "Plan A",
       });
     } finally {
       globalThis.ResizeObserver = originalResizeObserver;

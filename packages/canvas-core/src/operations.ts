@@ -412,6 +412,7 @@ function findFrameAtScenePoint(
     for (const node of nodes) {
       if (
         node.type === "frame" &&
+        node.meta?.boardKind !== "sticky" &&
         !isNodeOrAncestorExcluded(doc, node.id, excludedNodeIds, activePageId)
       ) {
         const bounds = getSceneBounds(doc, node.id, activePageId);

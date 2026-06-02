@@ -775,6 +775,51 @@ describe("cucumber canvas core", () => {
     });
   });
 
+  it("does not reparent dragged nodes into sticky note frames", () => {
+    let doc = createEmptyDocument();
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: {
+        id: "sticky",
+        type: "frame",
+        x: 100,
+        y: 50,
+        width: 160,
+        height: 120,
+        clipContent: false,
+        meta: { boardKind: "sticky" },
+        children: [],
+      } as PenNode,
+    });
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: {
+        id: "rect",
+        type: "rectangle",
+        x: 140,
+        y: 80,
+        width: 40,
+        height: 40,
+      } as PenNode,
+    });
+
+    const reparented = reparentNodesByDropPoint(doc, ["rect"], {
+      x: 130,
+      y: 70,
+    });
+
+    expect(reparented.movedIds).toEqual([]);
+    expect(reparented.targetParentId).toBeNull();
+    expect(findParent(reparented.doc, "rect")).toBeUndefined();
+    expect(findNode(reparented.doc, "sticky")).toMatchObject({
+      clipContent: false,
+    });
+    expect(findNode(reparented.doc, "rect")).toMatchObject({
+      x: 140,
+      y: 80,
+    });
+  });
+
   it("preserves scene line endpoints when reparenting into a frame", () => {
     let doc = createEmptyDocument();
     doc = applyCanvasOperation(doc, {
