@@ -1133,14 +1133,6 @@ function CanvasSelectionToolbarConnected({
     }
   }, [localFontStatus]);
   const selectedNodeId = selection.length === 1 ? (selection[0] ?? null) : null;
-  if (!viewport || selection.length === 0) return null;
-  const bounds = getSelectionBounds(document, selection, activePageId);
-  if (!bounds) return null;
-  const topCenter = sceneToCanvasLocal(
-    bounds.x + bounds.width / 2,
-    bounds.y,
-    viewport,
-  );
   const selectedNode = selectedNodeId
     ? findNode(document, selectedNodeId, activePageId)
     : null;
@@ -1192,6 +1184,14 @@ function CanvasSelectionToolbarConnected({
     }
     return [...currentFontFamilies, ...otherFontFamilies];
   }, [fontSearchQuery, localFontFamilies, stickyFontFamily, stickyFontName]);
+  if (!viewport || selection.length === 0) return null;
+  const bounds = getSelectionBounds(document, selection, activePageId);
+  if (!bounds) return null;
+  const topCenter = sceneToCanvasLocal(
+    bounds.x + bounds.width / 2,
+    bounds.y,
+    viewport,
+  );
   const isStickyBackgroundMenuOpen =
     openStickyColorMenu?.kind === "background" &&
     openStickyColorMenu.nodeId === selectedNode?.id;
@@ -1224,7 +1224,7 @@ function CanvasSelectionToolbarConnected({
       className="pointer-events-auto absolute z-30 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-border bg-card/90 px-2 py-1 shadow-card backdrop-blur-lg"
       style={{
         left: topCenter.x,
-        top: Math.max(12, topCenter.y - 44),
+        top: Math.max(12, topCenter.y - 80),
       }}
       onContextMenu={(event) => event.preventDefault()}
       onPointerDown={(event) => event.stopPropagation()}

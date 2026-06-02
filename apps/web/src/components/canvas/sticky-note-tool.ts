@@ -161,14 +161,14 @@ export function createStickyNoteNode(
     },
     cornerRadius: 4,
     effects: [
-      {
-        type: "shadow",
-        color: "rgba(0,0,0,0.12)",
-        offsetX: 0,
-        offsetY: 8,
-        blur: 18,
-        spread: 0,
-      },
+      // {
+      //   type: "shadow",
+      //   color: "rgba(0,0,0,0.02)",
+      //   offsetX: 0,
+      //   offsetY: 8,
+      //   blur: 18,
+      //   spread: 0,
+      // },
     ],
     meta: {
       boardKind: "sticky",

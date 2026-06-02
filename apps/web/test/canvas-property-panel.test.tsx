@@ -6,6 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { CanvasPropertyPanel } from "@/components/canvas/property-panel/canvas-property-panel";
+import { createStickyNoteNode } from "@/components/canvas/sticky-note-tool";
 
 const rectangleNode: PenNode = {
   fill: [{ type: "solid", color: "#3366ff", opacity: 0.75 }],
@@ -1132,6 +1133,35 @@ describe("CanvasPropertyPanel", () => {
         source: "figma",
       }),
     });
+  });
+
+  it("does not expose mask controls for sticky notes", () => {
+    const sticky = createStickyNoteNode({
+      x: 24,
+      y: 36,
+      width: 220,
+      height: 200,
+    });
+    const { onUpdate } = renderPropertyPanel({
+      ...sticky,
+      mask: { enabled: true, sourceNodeId: "legacy-mask", type: "alpha" },
+    } as PenNode);
+
+    expect(
+      screen.queryByRole("heading", { name: "遮罩" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", { name: "启用遮罩" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("名称"), {
+      target: { value: "Workshop note" },
+    });
+
+    expect(onUpdate).toHaveBeenCalledWith({ name: "Workshop note" });
+    for (const [update] of onUpdate.mock.calls) {
+      expect(update).not.toHaveProperty("mask");
+    }
   });
 
   it("shows and updates resolved style and variable tokens without overwriting node refs", () => {

@@ -59,6 +59,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { HexColorPicker } from "react-colorful";
 
 import { cn } from "../../../lib/utils";
+import { isStickyNoteNode } from "../sticky-note-tool";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -5035,7 +5036,9 @@ export function CanvasPropertyPanel({
           <AutoLayoutSection node={node} onUpdate={onUpdate} />
         ) : null}
         <AppearanceSection node={node} onUpdate={onUpdate} />
-        <MaskSection node={node} onUpdate={onUpdate} />
+        {isStickyNoteNode(node) ? null : (
+          <MaskSection node={node} onUpdate={onUpdate} />
+        )}
         <ShapeSection node={node} onUpdate={onUpdate} />
         {node.type === "text" ? (
           <TypographySection node={node} onUpdate={onUpdate} />

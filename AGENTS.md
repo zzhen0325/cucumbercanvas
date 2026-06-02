@@ -98,6 +98,35 @@ A task is done only when:
 - New product behavior is documented when it changes workflow, contracts, persistence, or agent/tool behavior.
 - `progress.md` and `feature_list.json` are updated when the work changes project status or a tracked feature.
 
+## File Size And Module Growth Discipline
+
+- 修改前先检查目标文件职责和体积。若文件已经明显承载多个职责，不允许继续把新业务逻辑、状态管理、复杂 UI 分支或协议处理直接追加进去。
+- 单个文件超过约 500 行时，新增功能前必须评估是否应拆分为：
+  - 纯展示组件
+  - 状态/交互 hook
+  - 数据转换/normalize 工具
+  - 类型与常量
+  - 测试辅助或 fixtures
+- 单个文件超过约 800 行时，除非只是非常小的修复，不应继续扩写主文件；应优先抽出局部模块，并保持原有对外 API 稳定。
+- 不允许为了“快”把以下内容混在同一个文件：
+  - UI 渲染
+  - 业务状态
+  - 数据迁移/兼容
+  - 网络请求
+  - 持久化
+  - 日志/诊断解析
+  - 测试 mock 数据
+- 拆分文件时必须按现有项目模式命名和放置，不创建无意义的 `utils.ts` 或 `helpers.ts`。模块名要体现唯一职责。
+- 拆分必须是小步、低风险的：优先抽出无副作用纯函数、常量、子组件或 hook，不借机重写架构。
+- 如果因为需求紧急暂时不能拆分，必须在总结中说明该文件继续增长的风险，并给出后续可执行拆分点。
+- 若本次改动让单个文件明显变大，必须说明为什么没有拆分；如果文件已超过 500/800 行阈值，应优先完成局部拆分或记录明确后续拆分点。
+
+<br />
+
+<br />
+
+<br />
+
 ## How to Work
 
 For complex tasks:

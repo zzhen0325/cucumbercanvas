@@ -6,9 +6,12 @@ Last updated: 2026-06-02 CST
 
 - Updated sticky-note editing ergonomics: new sticky notes no longer clip nested canvas content, sticky body text still selects/edits through the parent sticky, arbitrary nested child elements remain directly selectable so they can be dragged back out, and sticky body editing temporarily hides selection chrome while restoring the sticky selection after commit/cancel.
 - Added sticky-specific selection toolbar controls for background color, text color, font family, bold, font size, and unordered bullets, with structured logs for sticky background/text updates; color controls now stay compact as current-color buttons and expand their palettes through a chevron menu with all color options in one row, while font family and font size now use the shared DropdownMenu UI and the font menu reads locally available device font families when opened.
+- Removed sticky-note mask editing from the property panel so sticky containers no longer expose a control that writes `mask`, while regular node mask controls remain available.
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/sticky-note-tool.test.ts`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-property-panel.test.tsx test/sticky-note-tool.test.ts`.
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/skia-canvas-selection-snapshot.test.tsx`.
 - Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: targeted `pnpm exec biome check apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx apps/web/test/canvas-property-panel.test.tsx`.
 - Passed: targeted `pnpm exec biome check apps/web/src/components/canvas/skia-canvas.tsx progress.md feature_list.json`.
 
 ## 2026-06-01
