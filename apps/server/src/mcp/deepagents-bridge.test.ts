@@ -16,7 +16,7 @@ const availableModels: AvailableModel[] = [
 ];
 
 describe("createCucumberMcpServer", () => {
-  it("registers the Phase 3 MCP tools", () => {
+  it("registers the Cucumber MCP tools", () => {
     const server = createCucumberMcpServer({} as BackendProtocol, {
       createUserClient: () => ({}),
     });
@@ -25,6 +25,32 @@ describe("createCucumberMcpServer", () => {
       "project_search",
       "inspect_canvas",
       "manipulate_canvas",
+      "batch_design",
+      "batch_get",
+      "snapshot_layout",
+      "find_empty_space",
+      "add_page",
+      "remove_page",
+      "rename_page",
+      "reorder_page",
+      "duplicate_page",
+      "design_skeleton",
+      "design_content",
+      "design_refine",
+      "import_figma_clipboard",
+      "read_nodes",
+      "search_all_unique_properties",
+      "replace_all_matching_properties",
+      "get_variables",
+      "set_variables",
+      "set_themes",
+      "prompt_canvas_plan",
+      "prompt_canvas_execute",
+      "codegen_plan",
+      "codegen_submit_chunk",
+      "codegen_assemble",
+      "codegen_export",
+      "codegen_clean",
       "generate_image",
       "generate_video",
       "persist_sandbox_file",

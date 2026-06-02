@@ -4,6 +4,19 @@ Last updated: 2026-06-02 CST
 
 ## 2026-06-02
 
+- Added `docs/tech/canvas-tooling-capability-map.md` as the current inventory for canvas runtime truth, Web editor tools, property inspector fields, `CanvasApi` functions, core operations, and Agent/MCP callability.
+- Added `docs/tech/ai-native-canvas-agent-capability-plan.md` as the implementation plan for the next Agent-callable canvas capabilities, including semantic inspect, selection context, diff preview, transactional apply, validation, MCP screenshot, layout/fit, asset replacement, critique, export, and run trace.
+- Fixed the `inspect_canvas` MCP wrapper to receive `liveCanvasService`, keeping the documented MCP capability aligned with the live-editor read path.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/schema.test.ts src/mcp/deepagents-bridge.test.ts`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: targeted `pnpm exec biome check` for touched MCP TS files, `feature_list.json`, `progress.md`, and canvas capability docs.
+- Split the 6k+ line `SkiaCanvas` implementation into focused canvas modules for API facade forwarding, document normalization/renderer sync, draw geometry/node factories, scene snapshots, runtime selection utilities, import diagnostics/placement/raster upload, import actions, text measurement, text edit overlay, and connected canvas overlays while keeping `SkiaCanvas` as the public composition root.
+- Kept the canvas runtime truth unchanged: `CanvasRuntimeStore` still owns document, active page, selection, viewport, and version state; import/normalization compatibility remains at boundary modules, and core pointer/API behavior continues through the existing CanvasApi contract.
+- Passed: `pnpm exec tsc -p apps/web/tsconfig.json --noEmit --pretty false`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/skia-canvas-selection-snapshot.test.tsx`.
+- Passed: targeted `pnpm exec biome check` for `apps/web/src/components/canvas/skia-canvas.tsx` and the new extracted canvas modules.
+- Failed: `pnpm --filter @cucumber/web typecheck` after `next typegen` completed; `tsc` reported missing generated `.next/types/app/**` route files and the existing Next workspace-root warning selected `/Users/bytedance/package-lock.json`.
+- Failed: `pnpm --filter @cucumber/web build`; compilation reached Next prerendering with existing `paper` optional-module warnings for `acorn`/`canvas`, then `/404` prerender failed because `.next/server/webpack-runtime.js` could not load `./891.js`.
 - Tightened sticky-note interaction semantics: sticky body text now stores empty content with `Type anything` only as placeholder metadata, old default placeholder text is normalized at canvas ingress, all sticky descendants select the sticky as one object, sticky frames are excluded from paste/import/drop parent resolution, sticky background updates also derive the stroke color, the selection toolbar follows live viewport panning, sticky labels have a rounded background, and double-clicking the label edits `sticky.name`.
 - Passed: `pnpm --filter @cucumber/canvas-core test`.
 - Passed: `pnpm --filter @cucumber/canvas-core typecheck`.

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
+import { createCanvasDocument } from "@cucumber/canvas-core";
 import { createCucumberMcpServer } from "./server.js";
 import { schemaToJsonSchema, unwrapMcpToolResult } from "./utils.js";
 
@@ -56,6 +57,34 @@ describe("createCucumberMcpServer", () => {
       structuredContent: {
         error: "tool_not_found",
         message: "Tool not found: missing_tool",
+      },
+    });
+  });
+
+  it("passes live canvas service through to inspect_canvas", async () => {
+    const server = createCucumberMcpServer({} as never, {
+      createUserClient: () => ({}),
+      liveCanvasService: {
+        getDocument: async () => createCanvasDocument("Inspectable"),
+      } as never,
+    });
+
+    await expect(
+      server.callTool(
+        "inspect_canvas",
+        { detail_level: "summary" },
+        {
+          configurable: {
+            access_token: "token",
+            canvas_id: "canvas-1",
+            user_id: "user-1",
+          },
+        },
+      ),
+    ).resolves.toMatchObject({
+      structuredContent: {
+        canvasId: "canvas-1",
+        nodeCount: 0,
       },
     });
   });

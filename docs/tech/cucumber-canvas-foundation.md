@@ -25,6 +25,13 @@ Agent canvas operations must use the live editor state:
 3. `LiveCanvasService` reads and writes the current editor document.
 4. Agent tools call `inspect_canvas`, `manipulate_canvas`, or the Cucumber structured canvas MCP tools.
 
+For the current inventory of Web canvas tools, editable properties,
+`CanvasApi` functions, and Agent/MCP callability, see
+[`canvas-tooling-capability-map.md`](./canvas-tooling-capability-map.md).
+For the implementation plan that turns the current canvas into a fuller
+AI-native Agent-operated canvas, see
+[`ai-native-canvas-agent-capability-plan.md`](./ai-native-canvas-agent-capability-plan.md).
+
 ## Development Order
 
 1. Stabilize the base canvas: pages, selection, rendering, persistence, import/export, and performance.

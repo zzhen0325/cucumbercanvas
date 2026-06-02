@@ -53,7 +53,12 @@ export function createCucumberMcpServer(
   ) => UserSupabaseClient;
   return createInMemoryMcpServer([
     createProjectSearchMcpTool(backend),
-    createInspectCanvasMcpTool({ createUserClient }),
+    createInspectCanvasMcpTool({
+      createUserClient,
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
     createManipulateCanvasMcpTool({
       createUserClient,
       ...(deps.liveCanvasService

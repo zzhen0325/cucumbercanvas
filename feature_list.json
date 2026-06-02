@@ -129,6 +129,18 @@
         "apps/web/src/lib/server-api.ts",
         "apps/web/src/components/canvas/canvas-runtime-store.ts",
         "apps/web/src/components/canvas/skia-canvas.tsx",
+        "apps/web/src/components/canvas/canvas-api-facade.ts",
+        "apps/web/src/components/canvas/canvas-document-boundary.ts",
+        "apps/web/src/components/canvas/canvas-draw-geometry.ts",
+        "apps/web/src/components/canvas/canvas-import-diagnostics.ts",
+        "apps/web/src/components/canvas/canvas-import-placement.ts",
+        "apps/web/src/components/canvas/canvas-overlays.tsx",
+        "apps/web/src/components/canvas/canvas-raster-upload.ts",
+        "apps/web/src/components/canvas/canvas-runtime-utils.ts",
+        "apps/web/src/components/canvas/canvas-scene-snapshot.ts",
+        "apps/web/src/components/canvas/canvas-text-edit-overlay.tsx",
+        "apps/web/src/components/canvas/canvas-text-measure.ts",
+        "apps/web/src/components/canvas/use-canvas-import-actions.ts",
         "apps/web/src/components/canvas/sticky-note-tool.ts",
         "apps/web/src/components/canvas/canvas-export.ts",
         "apps/web/src/components/canvas/use-canvas-keyboard-shortcuts.ts",
@@ -178,7 +190,9 @@
         "packages/shared/src/events.ts",
         "packages/shared/src/ws-protocol.ts",
         "supabase/migrations/20260522000001_cucumber_canvas_only.sql",
-        "docs/tech/cucumber-canvas-foundation.md"
+        "docs/tech/cucumber-canvas-foundation.md",
+        "docs/tech/canvas-tooling-capability-map.md",
+        "docs/tech/ai-native-canvas-agent-capability-plan.md"
       ]
     },
     {
@@ -195,7 +209,8 @@
         "apps/web/src/components/canvas/editor-toolbar.tsx",
         "apps/web/src/components/canvas/boolean-toolbar.tsx",
         "apps/web/src/components/canvas/canvas-api.ts",
-        "docs/tech/canvas-design-integration.md"
+        "docs/tech/canvas-design-integration.md",
+        "docs/tech/canvas-tooling-capability-map.md"
       ]
     },
     {
@@ -212,7 +227,8 @@
         "apps/web/src/components/canvas-bottom-bar.tsx",
         "apps/web/src/components/canvas/skia-canvas.tsx",
         "apps/web/test/canvas-design-system-panel.test.tsx",
-        "docs/tech/canvas-design-integration.md"
+        "docs/tech/canvas-design-integration.md",
+        "docs/tech/ai-native-canvas-agent-capability-plan.md"
       ]
     },
     {

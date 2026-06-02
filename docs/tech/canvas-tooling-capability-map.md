@@ -1,0 +1,272 @@
+# Canvas Tooling Capability Map
+
+Last audited: 2026-06-02 CST
+
+This document maps the current Cucumber canvas surface area to its runtime truth, UI entry points, `CanvasApi` functions, and Agent/MCP access. It is intended to answer two questions:
+
+1. What canvas tools, editable properties, and functions exist today?
+2. Which of them can the Agent call through MCP-compatible tools?
+
+For the forward development plan, use [`ai-native-canvas-agent-capability-plan.md`](./ai-native-canvas-agent-capability-plan.md).
+
+## Runtime Truth
+
+The durable canvas truth is `PenDocument.pages` plus a valid `activePageId`.
+
+- `PenDocument.pages[]`: page list. Each page owns its `children`.
+- `PenDocument.activePageId`: active durable page. It must point to an existing page.
+- `PenDocument.children`: intentionally empty in current durable documents.
+- `PenNode`: the runtime truth for node geometry, style, hierarchy, layout, agent binding, imports, and renderable content.
+- `PenDocument.variables` and `PenDocument.themes`: document-level design variable and theme truth.
+- `PenDocument.styleDefinitions`: external style definitions preserved from design tools.
+- `PenDocument.assets`: canvas-scoped image and video asset records.
+
+Old flat root-children canvas shapes are not a runtime compatibility source. If encountered in core Agent context paths, they fail fast with a clear error. Any real legacy repair belongs at a data-fix or import boundary.
+
+Migration and diagnostic fields:
+
+- `layoutRef`: deprecated external auto-layout metadata. It is migration/input metadata, not the core runtime layout truth.
+- `meta.importedAutoLayout`, Figma/SVG import diagnostics, degradation hints, origin IDs, and warning counts: diagnostic/import provenance only.
+- `variableRefs`: preserved external variable binding references for reconciliation. Runtime style should use resolved values or `$variableName` values backed by `PenDocument.variables`.
+- `styleRefs` and `componentRef`: preserved editability/reference identity. They are visible/editable in the inspector but do not replace the inlined runtime render fields.
+
+## Node Types And Key Properties
+
+| Node type | Runtime role | Key editable/runtime fields |
+| --- | --- | --- |
+| `frame` | Container, section, component source, Agent output unit | `children`, `width`, `height`, `layout`, `gap`, `padding`, `justifyContent`, `alignItems`, `clipContent`, `cornerRadius`, `cornerSmoothing`, `fill`, `stroke`, `effects`, `reusable`, `slot`, container/agent fields |
+| `group` | Hierarchical grouping | `children`, layout fields, `isolated`, `fill`, `stroke`, `effects`, container/agent fields |
+| `rectangle` | Shape or framed visual block | `width`, `height`, `cornerRadius`, layout fields, `fill`, `stroke`, `effects` |
+| `ellipse` | Ellipse or arc | `width`, `height`, `innerRadius`, `startAngle`, `sweepAngle`, `fill`, `stroke`, `effects` |
+| `line` | Line, arrow, connector | `x`, `y`, `x2`, `y2`, `connector`, `stroke`, `effects` |
+| `polygon` | Polygon or star | `polygonCount`, `polygonKind`, `innerRadius`, `startAngle`, `width`, `height`, `cornerRadius`, `fill`, `stroke`, `effects` |
+| `path` | Vector path or icon path | `d`, `anchors`, `closed`, `fillRule`, `width`, `height`, `fill`, `stroke`, `effects`, vector diagnostics |
+| `text` | Text or rich text | `content`, `fontFamily`, `fontPostScriptName`, `fontSize`, `fontWeight`, `fontStyle`, `letterSpacing`, `lineHeight`, `paragraphSpacing`, `listStyle`, `indent`, `hangingIndent`, `baselineShift`, `textCase`, `openTypeFeatures`, `fontFallback`, `textAlign`, `textAlignVertical`, `textGrowth`, `underline`, `strikethrough`, `fill`, `effects` |
+| `image` | Raster asset | `src`, `objectFit`, `width`, `height`, `cornerRadius`, `effects`, image adjustment fields, `imagePrompt`, `imageSearchQuery` |
+| `icon_font` | Icon glyph/path lookup node | `iconFontName`, `iconFontFamily`, `width`, `height`, `fill`, `stroke` |
+| `ref` | Component instance | `ref`, `descendants`, `children`, `componentRef` |
+| `videoEmbed` | Video asset | `src`, `poster`, `mimeType`, `durationSeconds` |
+
+Shared node fields include `id`, `name`, `role`, `explain`, `x`, `y`, `rotation`, affine `transform`, `scaleX`, `scaleY`, `skewX`, `skewY`, `blendMode`, `opacity`, `visible`, `locked`, `flipX`, `flipY`, `mask`, `styleRefs`, `componentRef`, `layoutConstraints`, `theme`, `contextSlots`, `inheritPolicy`, `agentBinding`, `permissions`, `ioPorts`, `createdByAgentId`, `runId`, and `sessionId`.
+
+## Web Editor Tools
+
+The bottom editor toolbar currently exposes these tools:
+
+| Tool | Shortcut | Primary runtime effect | MCP equivalent |
+| --- | --- | --- | --- |
+| Select | `V` | Select, drag, resize, inspect, context actions | Not a canvas write tool. Agent reads selection through document/context, not by selecting UI. |
+| Hand | `H`, hold Space | Pan viewport | No direct MCP. Agent can reason from viewport via `inspect_canvas` or screenshots but does not drive the hand tool. |
+| Sticky | `S` | Creates a sticky-note container frame with sticky metadata and body text child | `manipulate_canvas.add_container` plus child text, or structured `batch_design`; sticky-specific UI metadata is currently Web-tool specific. |
+| Section | `F` | Creates a section/container frame | `manipulate_canvas.add_container`, `design_skeleton`, or `batch_design` frame insertion. |
+| Connector | `C` | Creates bound smooth connector lines between side anchors | `manipulate_canvas.add_line` with `start_element_id`/`end_element_id`, or structured line node writes. |
+| Text | `T` | Creates/edits text nodes | `manipulate_canvas.add_text`, `manipulate_canvas.update_text`, or `batch_design` text nodes. |
+| Rectangle | `R` | Draws rectangle node | `manipulate_canvas.add_shape` with `shape: "rectangle"` or `batch_design`. |
+| Ellipse | `O` | Draws ellipse node | `manipulate_canvas.add_shape` with `shape: "ellipse"` or `batch_design`. |
+| Polygon | none in toolbar | Draws polygon node | `batch_design` polygon node. Basic `manipulate_canvas.add_shape` does not expose polygon. |
+| Line | `L` | Draws endpoint-based line | `manipulate_canvas.add_line` with `line_type: "line"`. |
+| Arrow | `Shift+L` or `Shift+C` | Draws arrow line, preferably bound to elements | `manipulate_canvas.add_line` with `line_type: "arrow"` and element binding. |
+| Path | `P` | Draws/edits vector path | `manipulate_canvas.add_path`, `manipulate_canvas.edit_path`, or `batch_design` path nodes. |
+
+Toolbar commands:
+
+- Undo and redo: Web runtime history only. No direct MCP operation.
+- New container: Web command for `createContainer`. Agent equivalent is `manipulate_canvas.add_container` or structured frame insertion.
+- Delete: Web command for selected nodes. Agent equivalent is `manipulate_canvas.delete` or `batch_design` `D(...)`.
+- Import image: Web file/drop/upload path. Agent can insert generated image/video artifacts through generation tools, but cannot open the user's file picker through MCP.
+- Import SVG: Web system/file import path. Agent can use `batch_design` path/shape nodes or `import_figma_clipboard` when given clipboard HTML; it does not read the user's clipboard implicitly.
+- Insert icon: Web icon library inserts `icon_font` nodes. Agent can insert `icon_font` nodes with `batch_design` when it knows the icon name.
+
+Additional editor functions:
+
+- Page tabs: add, rename, duplicate, delete, reorder, set active page.
+- Selection floating toolbar and context menu: lock/unlock, show/hide, group/ungroup, duplicate, delete, align, reorder, connector endpoint detach, sticky formatting.
+- Boolean toolbar: vector/shape boolean operations for compatible selections.
+- Layers panel: tree selection, visibility/lock toggles, reordering, moving nodes in hierarchy.
+- Design-system panel: component marking/instances, variables, themes, icon insertion.
+- Files panel and bottom bar: canvas asset visibility and panel navigation.
+- Export: image export for full canvas, viewport, or explicit bounds.
+
+## Property Inspector
+
+The property panel writes `PenNode` and document fields. It should only expose controls whose values are consumed by renderer/layout/import/editability paths.
+
+| Inspector section | Applies to | Runtime fields |
+| --- | --- | --- |
+| Selection header | selected node | `name`, type label, lock/visibility actions |
+| Position | nodes with coordinates | `x`, `y` |
+| Dimensions | nodes with size | `width`, `height` |
+| Layout constraints | children of auto-layout parents | `layoutConstraints.widthMode`, `layoutConstraints.heightMode`, `layoutConstraints.alignSelf`, `layoutConstraints.positioning`, `layoutConstraints.grow` |
+| Transform | all visual nodes | `rotation`, `scaleX`, `scaleY`, `skewX`, `skewY`, affine `transform` matrix |
+| Appearance | visual nodes | `opacity`, `blendMode`, `visible`, `locked`, `clipContent`, `cornerRadius`, `cornerSmoothing`, `isolated` |
+| Fill | nodes supporting fill | ordered `fill[]` layers: solid, linear/radial/angular/diamond gradient, image fill, per-layer visibility, opacity, blend mode, stops, transform/crop/original size |
+| Stroke | nodes supporting stroke | `stroke.fill[]`, `stroke.thickness`, `align`, `join`, `cap`, endpoint tips, dash pattern, dash offset, miter limit |
+| Effects | nodes supporting effects | ordered `effects[]`: shadow, inner shadow, blur, background blur, visibility, opacity, blend mode, shadow color/offset/blur/spread, blur radius |
+| Text content | `text` nodes | `content`, rich text segments |
+| Typography | `text` nodes | font family, PostScript name, size, weight, style, alignment, vertical alignment, growth mode, letter/line/paragraph spacing, list style, indents, baseline shift, case, OpenType features, fallback, underline, strikethrough |
+| Auto layout | containers | `layout`, `gap`, `padding`, `justifyContent`, `alignItems`, sizing fields, `clipContent` |
+| Agent binding | containers | `agentBinding` with name, role/type/status/permissions metadata |
+| Import layout | imported nodes | import auto-layout diagnostics from `meta`, not runtime truth |
+| Variables | nodes and document variables | `$variableName` references and `PenDocument.variables` |
+| Style references | imported/editable design references | `styleRefs`, `styleDefinitions` |
+| Component | component sources and refs | `reusable`, `slot`, `ref`, `componentRef`, `descendants`, component property assignments and overrides |
+| Mask | non-sticky regular nodes | `mask.enabled`, `mask.type`, `mask.sourceNodeId`, `mask.shouldBreakMaskChain` |
+| Path/vector | `path` nodes | `d`, `fillRule`, `closed`, anchors, vector import diagnostics |
+| Shape details | ellipse, polygon, line | ellipse arc fields, polygon/star fields, line endpoints |
+| Selected colors | selected node | derived display of current fill/stroke/text colors |
+
+Sticky-note exception: sticky containers intentionally do not expose mask editing. Sticky-specific controls live in the selection toolbar.
+
+## CanvasApi Functions
+
+The Web editor exposes a stable `CanvasApi`. It is the local UI/runtime contract, not itself an MCP protocol.
+
+Document and live sync:
+
+- `getDocument`, `setDocument`, `getDocumentVersion`, `applyDocumentPatch`, `flushPendingSave`
+- RPC methods registered by `CanvasEditor`: `canvas.document.get`, `canvas.document.set`, `canvas.document.patch`, `canvas.screenshot`
+
+Pages:
+
+- `getActivePageId`, `setActivePage`, `getPages`, `addPage`, `renamePage`, `duplicatePage`, `deletePage`, `reorderPage`
+
+Tools and creation:
+
+- `getActiveTool`, `setActiveTool`
+- `createContainer`, `createSection`, `createSticky`, `createConnector`, `detachConnectorEndpoint`
+- `insertNode`, `updateNode`, `deleteNode`, `bindAgentToContainer`
+
+Selection, history, hierarchy:
+
+- `setSelection`, `undo`, `redo`, `canUndo`, `canRedo`
+- `copySelection`, `pasteClipboard`, `duplicateSelection`, `deleteSelection`
+- `groupSelection`, `ungroupSelection`, `alignSelection`
+- `reorderNode`, `moveNodeToIndex`, `toggleNodeLocked`, `toggleNodeVisible`
+
+Import/export/assets:
+
+- `pasteFromSystemClipboard`, `importSvgMarkup`
+- `insertImageArtifact`, `insertVideoArtifact`
+- `exportImage`, `addFiles`, `getFiles`
+
+Viewport and scene:
+
+- `getViewportBounds`, `getSceneElements`, `getAppState`, `updateScene`, `onChange`, `scrollToContent`
+
+## Canvas Core Operations
+
+`packages/canvas-core/src/operations.ts` applies page-aware transactions over the current `PenDocument`.
+
+Supported operation types:
+
+- `insertNode`
+- `updateNode`
+- `deleteNode`
+- `setSelection`
+- `moveNode`
+- `groupNodes`
+- `ungroupNode`
+- `alignNodes`
+- `reorderNode`
+- `bindAgent`
+- `createDataFlowEdge`
+- `removeDataFlowEdge`
+
+The core operation truth is intentionally smaller than the full UI. Complex Agent actions are expressed as node inserts/updates or structured canvas DSL operations, then reconciled through the same document model.
+
+## Agent And MCP Access
+
+The main Agent receives tools from `createMainAgentTools`. That function creates the Cucumber MCP-compatible in-memory server and bridges its listed tools into Deep Agents/LangChain via `bridgeMcpServerToolsToDeepAgent`.
+
+Required live canvas chain:
+
+1. Web editor opens a canvas.
+2. Browser WebSocket sends `canvas.bind` with `canvasId`.
+3. `CanvasEditor` registers `canvas.document.get`, `canvas.document.set`, `canvas.document.patch`, and `canvas.screenshot`.
+4. `LiveCanvasService` checks canvas access, then RPCs to the bound browser editor.
+5. MCP-compatible tools read or write the live document.
+
+If the canvas page is not open, live canvas writes fail with `live_canvas_unavailable` instead of silently falling back to stale persistence.
+
+### MCP-Compatible Canvas Tools
+
+| Tool | Agent can call through MCP? | What it does |
+| --- | --- | --- |
+| `inspect_canvas` | Yes | Reads live document summaries, full node details, type filters, and region filters. |
+| `manipulate_canvas` | Yes | Applies common canvas operations in batches. |
+| `batch_get` | Yes | Reads/searches live canvas nodes by IDs, patterns, parent, depth, and page. |
+| `batch_design` | Yes | Applies structured DSL operations `I/C/U/R/M/D` against the live canvas. |
+| `snapshot_layout` | Yes | Reads hierarchy, bounds, and optional layout problems. |
+| `find_empty_space` | Yes | Finds open placement space around a node or canvas content. |
+| `add_page` | Yes | Adds a live canvas page. |
+| `remove_page` | Yes | Removes a page, except the last page. |
+| `rename_page` | Yes | Renames a page. |
+| `reorder_page` | Yes | Moves a page to an index. |
+| `duplicate_page` | Yes | Duplicates a page and regenerates node IDs. |
+| `design_skeleton` | Yes | Creates a root frame and section frames for layered design output. |
+| `design_content` | Yes | Inserts content nodes into a section frame. |
+| `design_refine` | Yes | Validates/refines/snapshots layered design tree. |
+| `import_figma_clipboard` | Yes, with provided HTML | Imports Figma clipboard HTML into editable Pen nodes. |
+| `read_nodes` | Yes | Reads nodes for codegen, optionally including variables/themes. |
+| `search_all_unique_properties` | Yes | Recursively collects unique style values under parent nodes. |
+| `replace_all_matching_properties` | Yes | Recursively replaces matching style values under parent nodes. |
+| `get_variables` | Yes | Reads document variables and themes. |
+| `set_variables` | Yes | Merges or replaces document variables. |
+| `set_themes` | Yes | Merges or replaces theme axes. |
+| `prompt_canvas_plan` | Yes | Creates a deterministic prompt-to-canvas plan without writing the canvas. |
+| `prompt_canvas_execute` | Yes | Materializes a stored prompt plan into the live canvas. |
+| `codegen_plan` | Yes | Validates and stores a design-to-code plan. |
+| `codegen_submit_chunk` | Yes | Submits codegen chunk results. |
+| `codegen_assemble` | Yes | Assembles generated code for a framework. |
+| `codegen_export` | Yes | Exports selected or explicit nodes to React, HTML, or Vue. |
+| `codegen_clean` | Yes | Clears stored codegen plan state. |
+
+Adjacent MCP-compatible non-canvas tools registered in the same server include `project_search`, `generate_image`, `generate_video`, and `persist_sandbox_file`. They can produce or persist canvas-adjacent assets, but they are not general canvas editor controls.
+
+### `manipulate_canvas` Actions
+
+`manipulate_canvas` supports these actions:
+
+- Geometry and lifecycle: `move`, `resize`, `delete`, `duplicate`, `rotate`, `flip`
+- Creation: `add_container`, `add_text`, `add_shape`, `add_line`, `add_path`
+- Text/style: `update_text`, `update_style`, `gradient_fill`, `effects`
+- Layout: `auto_layout`
+- Hierarchy: `group`, `ungroup`, `reorder`
+- Multi-node layout: `align`, `distribute`
+- Vector: `edit_path`, `boolean_ops`
+- State: `lock`, `unlock`
+
+Same-batch operations can reference earlier created IDs as `op_0`, `op_1`, and so on.
+
+### Direct Agent Tools That Are Not MCP
+
+`screenshot_canvas` is injected as a direct LangChain tool when a `connectionManager` exists. It calls browser RPC `canvas.screenshot`, supports `full`, `region`, and `viewport`, and can persist the screenshot to a short URL. It is Agent-callable, but not registered in `apps/server/src/mcp/server.ts`.
+
+The Deep Agents filesystem tools (`ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `execute`, `task`, `write_todos`) are provided by middleware and are also not Cucumber canvas MCP tools.
+
+### Not Directly MCP-Callable
+
+These are UI/runtime functions, not exposed as MCP tools:
+
+- Switching the active Web toolbar tool with `setActiveTool`
+- Opening native file pickers or reading the user's clipboard without explicit payload
+- Undo/redo of Web runtime history
+- Panning with the hand tool
+- Hover state, marquee state, transient drag/resize previews
+- Local panel tab navigation
+- Local keyboard shortcuts
+- Sticky-specific floating toolbar affordances as UI gestures
+
+The Agent can usually achieve the durable outcome by writing the underlying `PenDocument`, but it cannot perform those UI gestures through MCP.
+
+## Responsibility Checklist For Future Changes
+
+When adding canvas tools, properties, or Agent operations, update this document and answer:
+
+1. What is the single runtime truth field?
+2. Is any old field only migration input or diagnostic provenance?
+3. Which Web UI control writes it?
+4. Which renderer/layout/import/persistence path consumes it?
+5. Is there an MCP-compatible Agent tool for it?
+6. If not MCP-callable, is the durable outcome still achievable through structured node writes?
+7. What happens when the live editor is not open?
