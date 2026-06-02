@@ -569,15 +569,16 @@ describe("convertNode", () => {
 
     const result = convertNode(treeNode as any, undefined, ctx) as any;
 
-    expect(result.layoutRef).toMatchObject({
-      source: "figma",
+    expect(result).toMatchObject({
       layout: "horizontal",
       padding: 16,
       justifyContent: "space_between",
       alignItems: "baseline",
+      clipContent: true,
+    });
+    expect(result.layoutConstraints).toMatchObject({
       widthMode: "fixed",
       heightMode: "fit_content",
-      clipContent: true,
     });
     expect(result.meta?.autoLayout).toMatchObject({
       layout: "horizontal",
@@ -590,16 +591,14 @@ describe("convertNode", () => {
     const absoluteChild = result.children.find(
       (child: any) => child.name === "Absolute child",
     );
-    expect(fillChild.layoutRef).toMatchObject({
-      source: "figma",
+    expect(fillChild.layoutConstraints).toMatchObject({
       widthMode: "fill_container",
       heightMode: "fill_container",
       alignSelf: "stretch",
       positioning: "auto",
       grow: 1,
     });
-    expect(absoluteChild.layoutRef).toMatchObject({
-      source: "figma",
+    expect(absoluteChild.layoutConstraints).toMatchObject({
       positioning: "absolute",
     });
     expect(absoluteChild.meta?.autoLayout).toMatchObject({

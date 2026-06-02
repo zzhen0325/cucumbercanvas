@@ -109,6 +109,21 @@ describe("layout-engine", () => {
     it("returns undefined when no layout hints", () => {
       expect(inferLayout(frame({ children: [rect("a")] }))).toBeUndefined();
     });
+
+    it("does not infer parent layout from legacy child sizing strings", () => {
+      expect(
+        inferLayout(
+          frame({
+            children: [
+              {
+                ...rect("fill"),
+                width: "fill_container" as unknown as number,
+              } as PenNode,
+            ],
+          }),
+        ),
+      ).toBeUndefined();
+    });
   });
 
   describe("getNodeWidth / getNodeHeight", () => {
@@ -144,9 +159,8 @@ describe("layout-engine", () => {
         parent,
         (parent as PenNode & { children: PenNode[] }).children,
       );
-      expect(result[0].x).toBe(0);
-      expect(result[0].y).toBe(0);
-      expect(result[1].x).toBe(60); // 50 + 10 gap
+      expect(result[0]).toMatchObject({ x: 0, y: 0 });
+      expect(result[1]).toMatchObject({ x: 60 }); // 50 + 10 gap
     });
 
     it("positions children vertically", () => {
@@ -161,9 +175,8 @@ describe("layout-engine", () => {
         parent,
         (parent as PenNode & { children: PenNode[] }).children,
       );
-      expect(result[0].x).toBe(0);
-      expect(result[0].y).toBe(0);
-      expect(result[1].y).toBe(40); // 30 + 10 gap
+      expect(result[0]).toMatchObject({ x: 0, y: 0 });
+      expect(result[1]).toMatchObject({ y: 40 }); // 30 + 10 gap
     });
 
     it("applies padding", () => {
@@ -178,8 +191,7 @@ describe("layout-engine", () => {
         parent,
         (parent as PenNode & { children: PenNode[] }).children,
       );
-      expect(result[0].x).toBe(20);
-      expect(result[0].y).toBe(20);
+      expect(result[0]).toMatchObject({ x: 20, y: 20 });
     });
 
     it("centers children on cross axis", () => {
@@ -194,7 +206,7 @@ describe("layout-engine", () => {
         parent,
         (parent as PenNode & { children: PenNode[] }).children,
       );
-      expect(result[0].y).toBe(35); // (100 - 30) / 2
+      expect(result[0]).toMatchObject({ y: 35 }); // (100 - 30) / 2
     });
 
     it('maps alignItems="baseline" to end-alignment (engine has no baseline metric)', () => {
@@ -219,8 +231,8 @@ describe("layout-engine", () => {
         parent,
         (parent as PenNode & { children: PenNode[] }).children,
       );
-      expect(result[0].y).toBe(20); // 100 - 80 (big pinned to bottom)
-      expect(result[1].y).toBe(80); // 100 - 20 (unit pinned to bottom)
+      expect(result[0]).toMatchObject({ y: 20 }); // 100 - 80 (big pinned to bottom)
+      expect(result[1]).toMatchObject({ y: 80 }); // 100 - 20 (unit pinned to bottom)
     });
 
     it('maps alignItems="flex-end" and "bottom" to end (CSS/alias passthrough)', () => {
@@ -238,7 +250,125 @@ describe("layout-engine", () => {
         parent,
         (parent as PenNode & { children: PenNode[] }).children,
       );
-      expect(result[0].y).toBe(70); // 100 - 30
+      expect(result[0]).toMatchObject({ y: 70 }); // 100 - 30
+    });
+
+    it("distributes remaining main-axis space by layoutConstraints grow weights", () => {
+      const parent = frame({
+        width: 300,
+        height: 80,
+        layout: "horizontal",
+        gap: 0,
+        children: [
+          rect("fixed", 50, 30),
+          {
+            ...rect("grow-1", 50, 30),
+            layoutConstraints: { grow: 1 },
+          },
+          {
+            ...rect("grow-2", 50, 30),
+            layoutConstraints: { grow: 2 },
+          },
+        ],
+      });
+
+      const result = computeLayoutPositions(
+        parent,
+        (parent as PenNode & { children: PenNode[] }).children,
+      );
+
+      expect(result[0]).toMatchObject({ width: 50 });
+      expect(result[1]).toMatchObject({ width: 100 });
+      expect(result[2]).toMatchObject({ width: 150, x: 150 });
+    });
+
+    it("resolves fixed, fit_content, and fill_container constraints by axis", () => {
+      const parent = frame({
+        width: 260,
+        height: 120,
+        layout: "horizontal",
+        gap: 10,
+        padding: 10,
+        children: [
+          rect("fixed", 40, 20),
+          {
+            ...rect("fit", 80, 20),
+            layoutConstraints: { widthMode: "fit_content" },
+          },
+          {
+            ...rect("fill", 20, 20),
+            layoutConstraints: {
+              heightMode: "fill_container",
+              widthMode: "fill_container",
+            },
+          },
+        ],
+      });
+
+      const result = computeLayoutPositions(
+        parent,
+        (parent as PenNode & { children: PenNode[] }).children,
+      );
+
+      expect(result[0]).toMatchObject({ x: 10, width: 40, height: 20 });
+      expect(result[1]).toMatchObject({ x: 60, width: 80, height: 20 });
+      expect(result[2]).toMatchObject({ x: 150, width: 100, height: 100 });
+    });
+
+    it("lets alignSelf override parent alignItems and maps baseline to end", () => {
+      const parent = frame({
+        width: 200,
+        height: 100,
+        layout: "horizontal",
+        alignItems: "start",
+        children: [
+          {
+            ...rect("center", 40, 20),
+            layoutConstraints: { alignSelf: "center" },
+          },
+          {
+            ...rect("baseline", 40, 20),
+            layoutConstraints: { alignSelf: "baseline" },
+          },
+        ],
+      });
+
+      const result = computeLayoutPositions(
+        parent,
+        (parent as PenNode & { children: PenNode[] }).children,
+      );
+
+      expect(result[0]).toMatchObject({ y: 40 });
+      expect(result[1]).toMatchObject({ y: 80 });
+    });
+
+    it("keeps absolute children out of flow while preserving layer order", () => {
+      const parent = frame({
+        width: 200,
+        height: 80,
+        layout: "horizontal",
+        gap: 10,
+        children: [
+          rect("a", 40, 20),
+          {
+            ...rect("absolute", 30, 30),
+            x: 77,
+            y: 33,
+            layoutConstraints: { positioning: "absolute" },
+          },
+          rect("b", 40, 20),
+        ],
+      });
+
+      const result = computeLayoutPositions(
+        parent,
+        (parent as PenNode & { children: PenNode[] }).children,
+      );
+
+      expect(result.map((node) => node.id)).toEqual(["a", "absolute", "b"]);
+      expect(result[0]).toMatchObject({ x: 0, y: 0 });
+      expect(result[1]).toMatchObject({ x: 77, y: 33 });
+      expect(result[2]).toMatchObject({ x: 50, y: 0 });
     });
 
     it("filters invisible children", () => {
@@ -267,7 +397,7 @@ describe("layout-engine", () => {
         (parent as PenNode & { children: PenNode[] }).children,
       );
       expect(result).toHaveLength(1);
-      expect(result[0].id).toBe("a");
+      expect(result[0]).toMatchObject({ id: "a" });
     });
   });
 });

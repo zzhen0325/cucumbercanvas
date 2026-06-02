@@ -161,6 +161,14 @@ export interface PenAutoLayoutRef {
   clipContent?: boolean;
 }
 
+export interface PenLayoutConstraints {
+  widthMode?: "fixed" | "fit_content" | "fill_container";
+  heightMode?: "fixed" | "fit_content" | "fill_container";
+  alignSelf?: "auto" | "start" | "center" | "end" | "stretch" | "baseline";
+  positioning?: "auto" | "absolute";
+  grow?: number;
+}
+
 // ---------------------------------------------------------------------------
 // Cucumber Container / Agent Types (stored as PenNode metadata)
 // ---------------------------------------------------------------------------
@@ -256,7 +264,9 @@ export interface PenNodeBase {
   styleRefs?: PenNodeStyleRefs;
   /** External component/instance identity preserved for editable imports. */
   componentRef?: PenComponentRef;
-  /** External auto-layout metadata preserved for editable imports and reflow. */
+  /** Runtime child constraints interpreted by the parent ContainerProps layout. */
+  layoutConstraints?: PenLayoutConstraints;
+  /** @deprecated External auto-layout metadata preserved only as migration input. */
   layoutRef?: PenAutoLayoutRef;
   /** Raw variable binding references from design tools, kept for later token reconciliation. */
   variableRefs?: Record<string, unknown>;
@@ -303,7 +313,7 @@ export interface ContainerProps {
     | "end"
     | "space_between"
     | "space_around";
-  alignItems?: "start" | "center" | "end" | "stretch";
+  alignItems?: "start" | "center" | "end" | "stretch" | "baseline";
   clipContent?: boolean;
   cornerSmoothing?: number;
   isolated?: boolean;

@@ -18,7 +18,7 @@ describe("normalizePenDocument", () => {
     };
     const result = normalizePenDocument(doc);
     const fill = (result.children[0] as { fill: Array<{ type: string }> }).fill;
-    expect(fill[0].type).toBe("solid");
+    expect(fill[0]?.type).toBe("solid");
   });
 
   it("normalizes string fill shorthand to solid fill array", () => {
@@ -106,9 +106,60 @@ describe("normalizePenDocument", () => {
     };
     const result = normalizePenDocument(doc);
     const fill = (
-      result.pages?.[0].children[0] as { fill: Array<{ type: string }> }
+      result.pages?.[0]?.children[0] as { fill: Array<{ type: string }> }
     ).fill;
-    expect(fill[0].type).toBe("solid");
+    expect(fill[0]?.type).toBe("solid");
+  });
+
+  it("migrates legacy layoutRef into ContainerProps and layoutConstraints", () => {
+    const doc = {
+      version: "1.0.0",
+      children: [
+        {
+          id: "frame",
+          type: "frame",
+          x: 0,
+          y: 0,
+          width: 200,
+          height: 120,
+          layoutRef: {
+            source: "figma",
+            layout: "horizontal",
+            gap: 12,
+            padding: [8, 16],
+            justifyContent: "center",
+            alignItems: "stretch",
+            clipContent: true,
+            widthMode: "fit_content",
+            heightMode: "fixed",
+            alignSelf: "center",
+            positioning: "auto",
+            grow: 2,
+          },
+          children: [],
+        },
+      ],
+    } as unknown as PenDocument;
+
+    const result = normalizePenDocument(doc);
+    const node = result.children[0] as unknown as Record<string, unknown>;
+
+    expect(node).toMatchObject({
+      layout: "horizontal",
+      gap: 12,
+      padding: [8, 16],
+      justifyContent: "center",
+      alignItems: "stretch",
+      clipContent: true,
+      layoutConstraints: {
+        widthMode: "fit_content",
+        heightMode: "fixed",
+        alignSelf: "center",
+        positioning: "auto",
+        grow: 2,
+      },
+    });
+    expect(node.layoutRef).toBeUndefined();
   });
 
   it("normalizes string elements inside fill array", () => {
@@ -155,7 +206,7 @@ describe("normalizePenDocument", () => {
       fill: Array<{ color: string }>;
       opacity: unknown;
     };
-    expect(node.fill[0].color).toBe("$primary");
+    expect(node.fill[0]?.color).toBe("$primary");
     expect(node.opacity).toBe("$opacity");
   });
 });

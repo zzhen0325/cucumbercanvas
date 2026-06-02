@@ -3,6 +3,7 @@ import type {
   BlendMode,
   PenComponentOverrideRef,
   PenComponentRef,
+  PenLayoutConstraints,
   PenNode,
   PenNodeStyleRefs,
   PenStyleDefinition,
@@ -824,6 +825,7 @@ function convertFigmaGroupLike(
     mask: getFigmaMask(figma),
     effects: convertFigmaEffects(figma.effects),
     ...layoutProps,
+    layoutConstraints: getFigmaLayoutConstraints(figma, parentStackMode),
     meta: createFigmaMeta(figma, { parentStackMode }),
   });
   return groupId;
@@ -1111,6 +1113,7 @@ function convertFigmaRectangle(
     visible: figma.visible,
     mask: getFigmaMask(figma),
     effects: convertFigmaEffects(figma.effects),
+    layoutConstraints: getFigmaLayoutConstraints(figma, parentStackMode),
     meta: createFigmaMeta(figma, { parentStackMode }),
   });
   return nodeId;
@@ -1158,6 +1161,7 @@ function convertFigmaEllipse(
     visible: figma.visible,
     mask: getFigmaMask(figma),
     effects: convertFigmaEffects(figma.effects),
+    layoutConstraints: getFigmaLayoutConstraints(figma, parentStackMode),
     meta: createFigmaMeta(figma, { parentStackMode }),
   });
   return nodeId;
@@ -1236,6 +1240,7 @@ function convertFigmaLine(
     visible: figma.visible,
     mask: getFigmaMask(figma),
     effects: convertFigmaEffects(figma.effects),
+    layoutConstraints: getFigmaLayoutConstraints(figma, parentStackMode),
     meta: createFigmaMeta(figma, { parentStackMode }),
   });
   return nodeId;
@@ -1288,6 +1293,7 @@ function convertFigmaText(
     visible: figma.visible,
     mask: getFigmaMask(figma),
     effects: convertFigmaEffects(figma.effects),
+    layoutConstraints: getFigmaLayoutConstraints(figma, parentStackMode),
     meta: createFigmaMeta(figma, { parentStackMode }),
   });
   return nodeId;
@@ -1322,6 +1328,7 @@ function convertFigmaVector(
       visible: figma.visible,
       mask: getFigmaMask(figma),
       effects: convertFigmaEffects(figma.effects),
+      layoutConstraints: getFigmaLayoutConstraints(figma, parentStackMode),
       meta: createFigmaMeta(figma, {
         degradationHints: ["partial_fidelity"],
         parentStackMode,
@@ -1346,6 +1353,7 @@ function convertFigmaVector(
     visible: figma.visible,
     mask: getFigmaMask(figma),
     effects: convertFigmaEffects(figma.effects),
+    layoutConstraints: getFigmaLayoutConstraints(figma, parentStackMode),
     meta: createFigmaMeta(figma, { parentStackMode }),
   });
   return pathId;
@@ -2093,6 +2101,30 @@ export function getFigmaAutoLayoutMeta(
 
   return Object.values(meta).some((value) => value !== undefined)
     ? meta
+    : undefined;
+}
+
+function getFigmaLayoutConstraints(
+  figma: FigmaNodeChange,
+  parentStackMode?: FigmaNodeChange["stackMode"],
+): PenLayoutConstraints | undefined {
+  const constraints: PenLayoutConstraints = {
+    widthMode: mapFigmaWidthSizing(figma, parentStackMode),
+    heightMode: mapFigmaHeightSizing(figma, parentStackMode),
+    alignSelf: mapFigmaAlignSelf(figma.stackChildAlignSelf),
+    positioning: figma.stackPositioning
+      ? figma.stackPositioning === "ABSOLUTE"
+        ? "absolute"
+        : "auto"
+      : undefined,
+    grow:
+      figma.stackChildPrimaryGrow !== undefined &&
+      figma.stackChildPrimaryGrow > 0
+        ? figma.stackChildPrimaryGrow
+        : undefined,
+  };
+  return Object.values(constraints).some((value) => value !== undefined)
+    ? constraints
     : undefined;
 }
 

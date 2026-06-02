@@ -1275,7 +1275,7 @@ describe("cucumber canvas core", () => {
               ?.originNodeId as string | undefined) === "42:2" &&
             node.type === "group",
         ) as
-        | (PenNode & { role?: string; meta?: Record<string, unknown> })
+        | (PenNode & { layoutConstraints?: PenNode["layoutConstraints"] })
         | undefined;
       expect(findNode(inserted.doc, rootId ?? "")).toMatchObject({
         componentRef: {
@@ -1289,11 +1289,8 @@ describe("cucumber canvas core", () => {
         },
       });
       expect(importedAbsoluteChild).toMatchObject({
-        role: "overlay",
-        meta: {
-          autoLayout: {
-            positioning: "absolute",
-          },
+        layoutConstraints: {
+          positioning: "absolute",
         },
       });
     },
@@ -2081,22 +2078,35 @@ describe("cucumber canvas core", () => {
 
     const inserted = insertCanvasImportResult(createEmptyDocument(), result);
     const frame = findNode(inserted.doc, "frame-fit") as
-      | (PenNode & { width?: string; layout?: string })
+      | (PenNode & {
+          layout?: string;
+          layoutConstraints?: PenNode["layoutConstraints"];
+        })
       | undefined;
     const childFill = findNode(inserted.doc, "child-fill") as
-      | (PenNode & { width?: string })
+      | (PenNode & { layoutConstraints?: PenNode["layoutConstraints"] })
       | undefined;
     const childAbsolute = findNode(inserted.doc, "child-absolute") as
-      | (PenNode & { role?: string })
+      | (PenNode & { layoutConstraints?: PenNode["layoutConstraints"] })
       | undefined;
 
     expect(frame).toMatchObject({
       type: "frame",
-      width: "fit_content",
       layout: "horizontal",
+      layoutConstraints: {
+        widthMode: "fit_content",
+      },
     });
-    expect(childFill?.width).toBe("fill_container");
-    expect(childAbsolute?.role).toBe("overlay");
+    expect(childFill).toMatchObject({
+      layoutConstraints: {
+        widthMode: "fill_container",
+      },
+    });
+    expect(childAbsolute).toMatchObject({
+      layoutConstraints: {
+        positioning: "absolute",
+      },
+    });
   });
 
   it("merges missing symbol props into an instance node", () => {
@@ -2178,15 +2188,12 @@ describe("cucumber canvas core", () => {
     asTestNode(root, "root").y = 20;
     asTestNode(root, "root").width = 300;
     asTestNode(root, "root").height = 200;
-    asTestNode(root, "root").meta = {
-      source: "figma-paste",
-      autoLayout: {
-        layout: "vertical",
-        gap: 10,
-        padding: [12, 16],
-        justifyContent: "center",
-      },
-    };
+    Object.assign(asTestNode(root, "root"), {
+      layout: "vertical",
+      gap: 10,
+      padding: [12, 16],
+      justifyContent: "center",
+    });
 
     const titleNode = {
       id: "title",
@@ -2197,11 +2204,8 @@ describe("cucumber canvas core", () => {
       height: 20,
       content: "Title",
       fontSize: 16,
-      meta: {
-        source: "figma-paste",
-        autoLayout: {
-          widthMode: "fill_container",
-        },
+      layoutConstraints: {
+        widthMode: "fill_container",
       },
     } as unknown as PenNode;
     const nested = makeContainer("nested", "root");
@@ -2209,16 +2213,15 @@ describe("cucumber canvas core", () => {
     asTestNode(nested, "nested").y = 0;
     asTestNode(nested, "nested").width = 100;
     asTestNode(nested, "nested").height = 40;
-    asTestNode(nested, "nested").meta = {
-      source: "figma-paste",
-      autoLayout: {
-        layout: "horizontal",
-        gap: 8,
-        padding: 8,
+    Object.assign(asTestNode(nested, "nested"), {
+      layout: "horizontal",
+      gap: 8,
+      padding: 8,
+      alignItems: "center",
+      layoutConstraints: {
         widthMode: "fill_container",
-        alignItems: "center",
       },
-    };
+    });
 
     const nestedLabel: PenNode = {
       id: "nested-label",
@@ -2239,12 +2242,9 @@ describe("cucumber canvas core", () => {
       height: 20,
       content: "Value",
       fontSize: 14,
-      meta: {
-        source: "figma-paste",
-        autoLayout: {
-          grow: 1,
-          heightMode: "fill_container",
-        },
+      layoutConstraints: {
+        grow: 1,
+        heightMode: "fill_container",
       },
     } as unknown as PenNode;
 
@@ -2313,14 +2313,11 @@ describe("cucumber canvas core", () => {
     asTestNode(root, "root").y = 0;
     asTestNode(root, "root").width = 200;
     asTestNode(root, "root").height = 120;
-    asTestNode(root, "root").meta = {
-      source: "figma-paste",
-      autoLayout: {
-        layout: "horizontal",
-        gap: 12,
-        padding: 10,
-      },
-    };
+    Object.assign(asTestNode(root, "root"), {
+      layout: "horizontal",
+      gap: 12,
+      padding: 10,
+    });
 
     const flowNode: PenNode = {
       id: "flow",
@@ -2339,11 +2336,8 @@ describe("cucumber canvas core", () => {
       width: 30,
       height: 30,
       fill: [{ type: "solid", color: "#ffffff" }] as PenFill[],
-      meta: {
-        source: "figma-paste",
-        autoLayout: {
-          positioning: "absolute",
-        },
+      layoutConstraints: {
+        positioning: "absolute",
       },
     } as unknown as PenNode;
 
@@ -2387,16 +2381,11 @@ describe("cucumber canvas core", () => {
       y: 0,
       width: 260,
       height: 80,
-      meta: {
-        source: "figma-paste",
-        autoLayout: {
-          layout: "horizontal",
-          gap: 8,
-          padding: 10,
-          alignItems: "baseline",
-        },
-      },
-    } as PenNode & { meta: Record<string, unknown> };
+      layout: "horizontal",
+      gap: 8,
+      padding: 10,
+      alignItems: "baseline",
+    } as PenNode;
     const title: PenNode = {
       id: "baseline-title",
       type: "text",
@@ -2480,16 +2469,11 @@ describe("cucumber canvas core", () => {
       y: 0,
       width: 220,
       height: 90,
-      meta: {
-        source: "figma-paste",
-        autoLayout: {
-          layout: "horizontal",
-          gap: 10,
-          padding: [12, 20],
-          alignItems: "stretch",
-        },
-      },
-    } as PenNode & { meta: Record<string, unknown> };
+      layout: "horizontal",
+      gap: 10,
+      padding: [12, 20],
+      alignItems: "stretch",
+    } as PenNode;
     const left: PenNode = {
       id: "stretch-left",
       type: "rectangle",
@@ -2550,15 +2534,10 @@ describe("cucumber canvas core", () => {
       y: 0,
       width: 300,
       height: 80,
-      meta: {
-        source: "figma-paste",
-        autoLayout: {
-          layout: "horizontal",
-          gap: 10,
-          padding: 20,
-        },
-      },
-    } as PenNode & { meta: Record<string, unknown> };
+      layout: "horizontal",
+      gap: 10,
+      padding: 20,
+    } as PenNode;
 
     const fixedNode: PenNode = {
       id: "fixed",
@@ -2577,13 +2556,10 @@ describe("cucumber canvas core", () => {
       width: 30,
       height: 20,
       fill: [{ type: "solid", color: "#ffffff" }] as PenFill[],
-      meta: {
-        source: "figma-paste",
-        autoLayout: {
-          widthMode: "fill_container",
-        },
+      layoutConstraints: {
+        widthMode: "fill_container",
       },
-    } as PenNode & { meta: Record<string, unknown> };
+    } as PenNode;
     const fillNodeB = {
       id: "fill-b",
       type: "rectangle",
@@ -2592,13 +2568,10 @@ describe("cucumber canvas core", () => {
       width: 30,
       height: 20,
       fill: [{ type: "solid", color: "#ffffff" }] as PenFill[],
-      meta: {
-        source: "figma-paste",
-        autoLayout: {
-          widthMode: "fill_container",
-        },
+      layoutConstraints: {
+        widthMode: "fill_container",
       },
-    } as PenNode & { meta: Record<string, unknown> };
+    } as PenNode;
 
     doc = applyCanvasOperation(doc, { type: "insertNode", node: root });
     doc = applyCanvasOperation(doc, {
@@ -2654,18 +2627,15 @@ describe("cucumber canvas core", () => {
       y: 0,
       width: 300,
       height: 100,
-      meta: {
-        source: "figma-paste",
-        autoLayout: {
-          layout: "horizontal",
-          gap: 10,
-          padding: [8, 12],
-          justifyContent: "center",
-          widthMode: "fit_content",
-          heightMode: "fit_content",
-        },
+      layout: "horizontal",
+      gap: 10,
+      padding: [8, 12],
+      justifyContent: "center",
+      layoutConstraints: {
+        widthMode: "fit_content",
+        heightMode: "fit_content",
       },
-    } as PenNode & { meta: Record<string, unknown> };
+    } as PenNode;
     const left: PenNode = {
       id: "hug-left",
       type: "rectangle",
@@ -2731,33 +2701,27 @@ describe("cucumber canvas core", () => {
       y: 0,
       width: 260,
       height: 140,
-      meta: {
-        source: "figma-paste",
-        autoLayout: {
-          layout: "horizontal",
-          padding: 10,
-          widthMode: "fit_content",
-          heightMode: "fit_content",
-        },
+      layout: "horizontal",
+      padding: 10,
+      layoutConstraints: {
+        widthMode: "fit_content",
+        heightMode: "fit_content",
       },
-    } as PenNode & { meta: Record<string, unknown> };
+    } as PenNode;
     const inner = {
       ...makeContainer("hug-inner"),
       x: 0,
       y: 0,
       width: 220,
       height: 100,
-      meta: {
-        source: "figma-paste",
-        autoLayout: {
-          layout: "horizontal",
-          gap: 4,
-          padding: 5,
-          widthMode: "fit_content",
-          heightMode: "fit_content",
-        },
+      layout: "horizontal",
+      gap: 4,
+      padding: 5,
+      layoutConstraints: {
+        widthMode: "fit_content",
+        heightMode: "fit_content",
       },
-    } as PenNode & { meta: Record<string, unknown> };
+    } as PenNode;
     const left: PenNode = {
       id: "nested-hug-left",
       type: "rectangle",

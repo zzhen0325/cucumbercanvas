@@ -203,12 +203,11 @@ const figmaReferenceNode: PenNode = {
     type: "instance",
     variantProperties: { Size: "Large" },
   },
-  layoutRef: {
+  layoutConstraints: {
     alignSelf: "auto",
     grow: 0,
     heightMode: "fixed",
     positioning: "auto",
-    source: "figma",
     widthMode: "fixed",
   },
   mask: {
@@ -295,9 +294,10 @@ describe("CanvasPropertyPanel", () => {
     });
   });
 
-  it("updates layout sizing, child positioning, grow, and layout clip refs", async () => {
-    const user = userEvent.setup();
-    const { onUpdate } = renderPropertyPanel(figmaReferenceNode);
+  it("updates layout sizing, child positioning, and grow constraints when parent uses auto-layout", () => {
+    const { onUpdate } = renderPropertyPanel(figmaReferenceNode, {
+      parentNode: frameNode,
+    });
 
     fireEvent.change(screen.getByLabelText("宽度模式"), {
       target: { value: "fill_container" },
@@ -314,43 +314,42 @@ describe("CanvasPropertyPanel", () => {
     fireEvent.change(screen.getByRole("spinbutton", { name: "布局 Grow" }), {
       target: { value: "2" },
     });
-    await user.click(screen.getByRole("checkbox", { name: "布局裁剪" }));
 
     expect(onUpdate).toHaveBeenCalledWith({
-      width: "fill_container",
-      layoutRef: expect.objectContaining({
-        source: "figma",
+      layoutConstraints: expect.objectContaining({
         widthMode: "fill_container",
       }),
     });
     expect(onUpdate).toHaveBeenCalledWith({
-      height: "fit_content",
-      layoutRef: expect.objectContaining({
+      layoutConstraints: expect.objectContaining({
         heightMode: "fit_content",
-        source: "figma",
       }),
     });
     expect(onUpdate).toHaveBeenCalledWith({
-      layoutRef: expect.objectContaining({
+      layoutConstraints: expect.objectContaining({
         positioning: "absolute",
-        source: "figma",
       }),
     });
     expect(onUpdate).toHaveBeenCalledWith({
-      layoutRef: expect.objectContaining({
+      layoutConstraints: expect.objectContaining({
         alignSelf: "stretch",
-        source: "figma",
       }),
     });
     expect(onUpdate).toHaveBeenCalledWith({
-      layoutRef: expect.objectContaining({ grow: 2, source: "figma" }),
+      layoutConstraints: expect.objectContaining({ grow: 2 }),
     });
-    expect(onUpdate).toHaveBeenCalledWith({
-      layoutRef: expect.objectContaining({
-        clipContent: true,
-        source: "figma",
-      }),
+  });
+
+  it("collapses layout constraints when the parent is not auto-layout", () => {
+    renderPropertyPanel(figmaReferenceNode, {
+      parentNode: { ...frameNode, layout: "none" },
     });
+
+    expect(
+      screen.getByText("父级未启用自动布局，布局约束暂不可用"),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("宽度模式")).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "布局裁剪" })).toBeNull();
   });
 
   it("updates lock and visibility without rendering raw empty values", async () => {
@@ -1241,13 +1240,11 @@ describe("CanvasPropertyPanel", () => {
           },
         },
       ],
-      layoutRef: {
+      layoutConstraints: {
         alignSelf: "stretch",
-        clipContent: true,
         grow: 1,
         heightMode: "fit_content",
         positioning: "auto",
-        source: "figma",
         widthMode: "fill_container",
       },
       mask: {
@@ -1284,6 +1281,7 @@ describe("CanvasPropertyPanel", () => {
       variableRefs: figmaReferenceNode.variableRefs,
     };
     const { container, rerender } = renderPropertyPanel(complexFigmaFrame, {
+      parentNode: frameNode,
       onStyleDefinitionsChange: vi.fn(),
       onVariablesChange: vi.fn(),
       styleDefinitions: {

@@ -665,3 +665,19 @@ Status:
 - Passed: `pnpm --filter @cucumber/pen-renderer typecheck`.
 - Passed: `pnpm exec biome check packages/pen-renderer/src/text-renderer.ts packages/pen-renderer/src/text-renderer.test.ts progress.md feature_list.json`.
 - Passed: `git diff --check -- packages/pen-renderer/src/text-renderer.ts packages/pen-renderer/src/text-renderer.test.ts progress.md feature_list.json`.
+
+2026-06-02 - Layout constraints runtime boundary
+
+- Added `layoutConstraints` to Pen node contracts as the child runtime constraint truth for sizing mode, flow positioning, self alignment, and grow.
+- Migrated legacy `layoutRef` during normalization so parent container layout fields land on `ContainerProps`, child runtime constraints land on `layoutConstraints`, and `layoutRef` is removed from normalized nodes.
+- Switched pen-core layout computation to read parent layout from `ContainerProps` and child sizing/flow/align/grow from `layoutConstraints`, with absolute children excluded from flow and fit-content non-content shapes falling back to their fixed size.
+- Switched canvas-core imported auto-layout reflow to use `ContainerProps + layoutConstraints` instead of `meta.autoLayout`; Figma/HTML import paths now write runtime fields directly while keeping `meta.autoLayout` as diagnostics.
+- Updated the property panel so “布局约束” only becomes editable when the selected node has a horizontal/vertical auto-layout parent; otherwise it shows the gray unavailable hint, and clipping remains under appearance via `clipContent`.
+- Passed: `pnpm --filter @cucumber/pen-core exec vitest run __tests__/layout-engine.test.ts __tests__/normalize.test.ts`.
+- Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/canvas-core.test.ts --testNamePattern "layout|auto-layout|figma"`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-property-panel.test.tsx`.
+- Passed: `pnpm --filter @cucumber/pen-figma exec vitest run src/converters/__tests__/converters.test.ts`.
+- Passed: `pnpm --filter @cucumber/pen-types typecheck`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm --filter @cucumber/web typecheck`.
+- Note: `pnpm --filter @cucumber/pen-core typecheck` remains blocked by existing strict indexed-access diagnostics in untouched pen-core test files such as `__tests__/node-diff.test.ts`, `__tests__/node-merge.test.ts`, `__tests__/normalize-tree-layout.test.ts`, and `__tests__/tree-utils.test.ts`; touched pen-core files no longer appear in that failure list.

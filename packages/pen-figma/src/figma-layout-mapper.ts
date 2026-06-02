@@ -2,6 +2,7 @@
 import type {
   ContainerProps,
   PenAutoLayoutRef,
+  PenLayoutConstraints,
   SizingBehavior,
 } from "@cucumber/pen-types";
 import type { FigmaNodeChange } from "./figma-types.js";
@@ -89,6 +90,30 @@ export function mapFigmaAutoLayoutRef(
   return hasAutoLayoutRefValue(ref) ? ref : undefined;
 }
 
+export function mapFigmaLayoutConstraints(
+  node: FigmaNodeChange,
+  parentStackMode?: string,
+): PenLayoutConstraints | undefined {
+  const constraints: PenLayoutConstraints = {
+    widthMode: mapWidthSizingMode(node, parentStackMode),
+    heightMode: mapHeightSizingMode(node, parentStackMode),
+    alignSelf: mapAlignSelf(node.stackChildAlignSelf),
+    positioning: node.stackPositioning
+      ? node.stackPositioning === "ABSOLUTE"
+        ? "absolute"
+        : "auto"
+      : undefined,
+    grow:
+      node.stackChildPrimaryGrow !== undefined && node.stackChildPrimaryGrow > 0
+        ? node.stackChildPrimaryGrow
+        : undefined,
+  };
+
+  return Object.values(constraints).some((value) => value !== undefined)
+    ? constraints
+    : undefined;
+}
+
 function mapAutoLayoutAlignItems(
   align?: string,
 ): PenAutoLayoutRef["alignItems"] {
@@ -153,6 +178,8 @@ function mapAlignItems(align: string): ContainerProps["alignItems"] {
       return "center";
     case "MAX":
       return "end";
+    case "BASELINE":
+      return "baseline";
     default:
       return undefined;
   }

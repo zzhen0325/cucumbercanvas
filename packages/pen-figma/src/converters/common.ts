@@ -1,14 +1,18 @@
 // @ts-nocheck
 import type {
-  PenAutoLayoutRef,
   PenComponentRef,
   PenComponentOverrideRef,
+  PenLayoutConstraints,
   PenNode,
   PenNodeStyleRefs,
   SizingBehavior,
 } from "@cucumber/pen-types";
-import { mapHeightSizing, mapWidthSizing } from "../figma-layout-mapper.js";
-import { mapFigmaAutoLayoutRef } from "../figma-layout-mapper.js";
+import {
+  mapFigmaLayout,
+  mapFigmaLayoutConstraints,
+  mapHeightSizing,
+  mapWidthSizing,
+} from "../figma-layout-mapper.js";
 import { mapFigmaBlendMode } from "../figma-blend-mode.js";
 import type { TreeNode } from "../figma-tree-builder.js";
 import type {
@@ -199,7 +203,7 @@ export function commonProps(
   blendMode?: ReturnType<typeof mapFigmaBlendMode>;
   styleRefs?: PenNodeStyleRefs;
   componentRef?: PenComponentRef;
-  layoutRef?: PenAutoLayoutRef;
+  layoutConstraints?: PenLayoutConstraints;
   variableRefs?: Record<string, unknown>;
   meta?: Record<string, unknown>;
   mask?: {
@@ -211,7 +215,11 @@ export function commonProps(
   const { x, y } = extractPosition(figma);
   const flip = extractFlip(figma.transform);
   const transformParts = decomposeTransform(figma.transform);
-  const layoutRef = mapFigmaAutoLayoutRef(figma, parentStackMode);
+  const layoutConstraints = mapFigmaLayoutConstraints(figma, parentStackMode);
+  const autoLayoutMeta = getFigmaAutoLayoutDiagnostics(
+    figma,
+    layoutConstraints,
+  );
   return {
     id,
     name: figma.name || undefined,
@@ -229,19 +237,23 @@ export function commonProps(
     blendMode: mapFigmaBlendMode(figma.blendMode),
     styleRefs: mapFigmaStyleRefs(figma),
     componentRef: mapFigmaComponentRef(figma),
-    layoutRef,
-    meta: layoutRef ? { autoLayout: stripAutoLayoutSource(layoutRef) } : undefined,
+    layoutConstraints,
+    meta: autoLayoutMeta ? { autoLayout: autoLayoutMeta } : undefined,
     variableRefs: mapFigmaVariableRefs(figma),
     mask: mapFigmaMask(figma),
     ...flip,
   };
 }
 
-function stripAutoLayoutSource(
-  layoutRef: PenAutoLayoutRef,
-): Omit<PenAutoLayoutRef, "source"> {
-  const { source: _source, ...autoLayout } = layoutRef;
-  return autoLayout;
+function getFigmaAutoLayoutDiagnostics(
+  figma: FigmaNodeChange,
+  layoutConstraints: PenLayoutConstraints | undefined,
+): Record<string, unknown> | undefined {
+  const layout = mapFigmaLayout(figma);
+  const autoLayout = { ...layout, ...layoutConstraints };
+  return Object.values(autoLayout).some((value) => value !== undefined)
+    ? autoLayout
+    : undefined;
 }
 
 function mapFigmaComponentRef(

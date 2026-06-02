@@ -6,8 +6,10 @@ import {
 } from "@cucumber/pen-figma";
 import type {
   BlendMode,
+  ContainerProps,
   PenComponentRef,
   PenDocument,
+  PenLayoutConstraints,
   PenNode,
   PenNodeStyleRefs,
   PenPage,
@@ -101,6 +103,7 @@ export interface ImportNode {
   textCase?: "original" | "upper" | "lower" | "title";
   textGrowth?: "auto" | "fixed-width" | "fixed-width-height";
   layout?: "none" | "vertical" | "horizontal";
+  layoutConstraints?: PenLayoutConstraints;
   gap?: number;
   padding?: number | [number, number] | [number, number, number, number];
   justifyContent?:
@@ -1399,9 +1402,16 @@ function importNodeToPenNode(
   }
 
   const bounds = getImportNodeBounds(imported);
-  const executableLayout = getExecutableAutoLayoutProps(
-    importedMeta.autoLayout as CanvasImportedAutoLayoutMeta | undefined,
+  const importedAutoLayout = importedMeta.autoLayout as
+    | CanvasImportedAutoLayoutMeta
+    | undefined;
+  const runtimeLayout = getRuntimeContainerLayoutProps(
+    imported,
+    importedAutoLayout,
   );
+  const layoutConstraints =
+    imported.layoutConstraints ??
+    getLayoutConstraintsFromImportedAutoLayout(importedAutoLayout);
   const base = {
     id: imported.id,
     type: normalizeImportedNodeType(imported.type) as PenNode["type"],
@@ -1417,9 +1427,9 @@ function importNodeToPenNode(
     blendMode: imported.blendMode,
     flipX: imported.flipX,
     flipY: imported.flipY,
-    width: executableLayout.width ?? bounds.width,
-    height: executableLayout.height ?? bounds.height,
-    role: executableLayout.role,
+    width: bounds.width,
+    height: bounds.height,
+    layoutConstraints,
     opacity: imported.opacity,
     visible: imported.visible,
     locked: imported.locked,
@@ -1472,24 +1482,24 @@ function importNodeToPenNode(
       return {
         ...base,
         type: "frame" as const,
-        layout: imported.layout ?? executableLayout.layout,
-        gap: imported.gap,
-        padding: imported.padding,
-        justifyContent: imported.justifyContent,
-        alignItems: imported.alignItems,
-        clipContent: imported.clipContent,
+        layout: runtimeLayout.layout,
+        gap: runtimeLayout.gap,
+        padding: runtimeLayout.padding,
+        justifyContent: runtimeLayout.justifyContent,
+        alignItems: runtimeLayout.alignItems,
+        clipContent: runtimeLayout.clipContent,
         children: [],
       } as unknown as PenNode;
     case "group":
       return {
         ...base,
         type: "group" as const,
-        layout: imported.layout ?? executableLayout.layout,
-        gap: imported.gap,
-        padding: imported.padding,
-        justifyContent: imported.justifyContent,
-        alignItems: imported.alignItems,
-        clipContent: imported.clipContent,
+        layout: runtimeLayout.layout,
+        gap: runtimeLayout.gap,
+        padding: runtimeLayout.padding,
+        justifyContent: runtimeLayout.justifyContent,
+        alignItems: runtimeLayout.alignItems,
+        clipContent: runtimeLayout.clipContent,
         children: [],
       } as unknown as PenNode;
     case "rect":
@@ -1541,31 +1551,71 @@ function importNodeToPenNode(
   }
 }
 
-function getExecutableAutoLayoutProps(
+function getRuntimeContainerLayoutProps(
+  imported: ImportNode,
   autoLayout: CanvasImportedAutoLayoutMeta | undefined,
-): {
-  width?: "fit_content" | "fill_container";
-  height?: "fit_content" | "fill_container";
-  layout?: "vertical" | "horizontal";
-  role?: "overlay";
-} {
-  if (!autoLayout) {
-    return {};
-  }
+): Pick<
+  ContainerProps,
+  "layout" | "gap" | "padding" | "justifyContent" | "alignItems" | "clipContent"
+> {
   return {
-    width:
-      autoLayout.widthMode === "fit_content" ||
-      autoLayout.widthMode === "fill_container"
-        ? autoLayout.widthMode
-        : undefined,
-    height:
-      autoLayout.heightMode === "fit_content" ||
-      autoLayout.heightMode === "fill_container"
-        ? autoLayout.heightMode
-        : undefined,
-    layout: autoLayout.layout,
-    role: autoLayout.positioning === "absolute" ? "overlay" : undefined,
+    layout: imported.layout ?? autoLayout?.layout,
+    gap: imported.gap ?? autoLayout?.gap,
+    padding: imported.padding ?? autoLayout?.padding,
+    justifyContent: normalizeRuntimeJustifyContent(
+      imported.justifyContent ?? autoLayout?.justifyContent,
+    ),
+    alignItems: normalizeRuntimeAlignItems(
+      imported.alignItems ?? autoLayout?.alignItems,
+    ),
+    clipContent: imported.clipContent ?? autoLayout?.clipContent,
   };
+}
+
+function normalizeRuntimeJustifyContent(
+  value: unknown,
+): ContainerProps["justifyContent"] | undefined {
+  if (
+    value === "start" ||
+    value === "center" ||
+    value === "end" ||
+    value === "space_between" ||
+    value === "space_around"
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
+function normalizeRuntimeAlignItems(
+  value: unknown,
+): ContainerProps["alignItems"] | undefined {
+  if (
+    value === "start" ||
+    value === "center" ||
+    value === "end" ||
+    value === "stretch" ||
+    value === "baseline"
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
+function getLayoutConstraintsFromImportedAutoLayout(
+  autoLayout: CanvasImportedAutoLayoutMeta | undefined,
+): PenLayoutConstraints | undefined {
+  if (!autoLayout) return undefined;
+  const constraints: PenLayoutConstraints = {
+    widthMode: autoLayout.widthMode,
+    heightMode: autoLayout.heightMode,
+    alignSelf: autoLayout.alignSelf,
+    positioning: autoLayout.positioning,
+    grow: autoLayout.grow,
+  };
+  return Object.values(constraints).some((value) => value !== undefined)
+    ? constraints
+    : undefined;
 }
 
 function normalizeImportedNodeType(type: string): string {

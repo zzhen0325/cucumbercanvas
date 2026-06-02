@@ -1,6 +1,7 @@
 import type {
   ContainerProps,
   Padding,
+  PenLayoutConstraints,
   PenNode,
   SizingBehavior,
 } from "@cucumber/pen-types";
@@ -118,14 +119,6 @@ export function inferLayout(node: PenNode): "horizontal" | undefined {
   const c = node as PenNode & ContainerProps;
   if (c.gap != null || c.justifyContent || c.alignItems) return "horizontal";
   if (c.padding != null) return "horizontal";
-  if ("children" in node && node.children?.length) {
-    for (const child of node.children) {
-      if ("width" in child && child.width === "fill_container")
-        return "horizontal";
-      if ("height" in child && child.height === "fill_container")
-        return "horizontal";
-    }
-  }
   return undefined;
 }
 
@@ -136,7 +129,7 @@ export function inferLayout(node: PenNode): "horizontal" | undefined {
 export function fitContentWidth(node: PenNode, parentAvail?: number): number {
   if (!("children" in node) || !node.children?.length) return 0;
   const visibleChildren = node.children.filter(
-    (child) => isNodeVisible(child) && !isOverlayNode(child),
+    (child) => isNodeVisible(child) && !isFlowDetached(child),
   );
   if (visibleChildren.length === 0) return 0;
   const c = node as PenNode & ContainerProps;
@@ -169,7 +162,7 @@ export function fitContentWidth(node: PenNode, parentAvail?: number): number {
 export function fitContentHeight(node: PenNode, parentAvailW?: number): number {
   if (!("children" in node) || !node.children?.length) return 0;
   const visibleChildren = node.children.filter(
-    (child) => isNodeVisible(child) && !isOverlayNode(child),
+    (child) => isNodeVisible(child) && !isFlowDetached(child),
   );
   if (visibleChildren.length === 0) return 0;
   const c = node as PenNode & ContainerProps;
@@ -288,8 +281,7 @@ export function computeLayoutPositions(
   const layout = c.layout || inferLayout(parent);
   if (!layout || layout === "none") return visibleChildren;
 
-  const overlayNodes = visibleChildren.filter(isOverlayNode);
-  const layoutChildren = visibleChildren.filter((ch) => !isOverlayNode(ch));
+  const layoutChildren = visibleChildren.filter((ch) => !isFlowDetached(ch));
   if (layoutChildren.length === 0) return visibleChildren;
 
   const pW = parseSizing(c.width);
@@ -309,32 +301,26 @@ export function computeLayoutPositions(
   const availMain = isVertical ? availH : availW;
   const totalGapSpace = gap * Math.max(0, layoutChildren.length - 1);
 
-  const mainSizing = layoutChildren.map((ch) => {
-    const prop = isVertical ? "height" : "width";
-    if (prop in ch) {
-      const s = parseSizing(
-        (ch as PenNode & { width?: SizingBehavior; height?: SizingBehavior })[
-          prop
-        ],
-      );
-      if (s === "fill") return "fill" as const;
-    }
-    return isVertical
-      ? getNodeHeight(ch, availH, availW)
-      : getNodeWidth(ch, availW);
-  });
-  const fixedTotal = mainSizing.reduce<number>(
-    (sum, s) => sum + (typeof s === "number" ? s : 0),
-    0,
+  const mainSizing = layoutChildren.map((ch) =>
+    getMainAxisPlan(ch, isVertical, availW, availH),
   );
-  const fillCount = mainSizing.filter((s) => s === "fill").length;
+  const fixedTotal = mainSizing.reduce((sum, plan) => sum + plan.base, 0);
+  const totalGrow = mainSizing.reduce((sum, plan) => sum + plan.grow, 0);
   const remainingMain = Math.max(0, availMain - fixedTotal - totalGapSpace);
-  const fillSize = fillCount > 0 ? remainingMain / fillCount : 0;
 
   const sizes = layoutChildren.map((ch, i) => {
+    const mainPlan = mainSizing[i];
+    if (!mainPlan) {
+      throw new Error(
+        `Missing computed layout main-axis plan for child ${ch.id}`,
+      );
+    }
     let mainSize =
-      mainSizing[i] === "fill" ? fillSize : (mainSizing[i] as number);
-    if (isVertical && ch.type === "text" && mainSizing[i] !== "fill") {
+      mainPlan.base +
+      (mainPlan.grow > 0 && totalGrow > 0
+        ? (remainingMain * mainPlan.grow) / totalGrow
+        : 0);
+    if (isVertical && ch.type === "text" && mainPlan.grow <= 0) {
       const content = resolveTextContent(ch);
       if (countExplicitTextLines(content) <= 1) {
         const fontSize = ch.fontSize ?? 16;
@@ -346,11 +332,28 @@ export function computeLayoutPositions(
         }
       }
     }
+    const constraints = getLayoutConstraints(ch);
+    const crossAlign = normalizeChildAlignSelf(constraints?.alignSelf) ?? align;
     return {
-      w: isVertical ? getNodeWidth(ch, availW) : mainSize,
+      w: isVertical
+        ? getCrossAxisSizeForChild(
+            ch,
+            "width",
+            constraints?.widthMode,
+            crossAlign,
+            availW,
+          )
+        : mainSize,
       h: isVertical
         ? mainSize
-        : getNodeHeight(ch, availH, isVertical ? availW : mainSize),
+        : getCrossAxisSizeForChild(
+            ch,
+            "height",
+            constraints?.heightMode,
+            crossAlign,
+            availH,
+            mainSize,
+          ),
     };
   });
 
@@ -394,9 +397,11 @@ export function computeLayoutPositions(
     const crossAvail = isVertical ? availW : availH;
     const childCross = isVertical ? size.w : size.h;
     let crossPos = 0;
+    const childAlign =
+      normalizeChildAlignSelf(getLayoutConstraints(child)?.alignSelf) ?? align;
 
     let effectiveChildCross = childCross;
-    if (align === "center" && !isVertical && child.type === "text") {
+    if (childAlign === "center" && !isVertical && child.type === "text") {
       const fontSize = child.fontSize ?? 16;
       const lineHeight = child.lineHeight ?? defaultLineHeight(fontSize);
       const content = resolveTextContent(child);
@@ -406,7 +411,7 @@ export function computeLayoutPositions(
       }
     }
 
-    switch (align) {
+    switch (childAlign) {
       case "center":
         crossPos = (crossAvail - effectiveChildCross) / 2;
         break;
@@ -418,7 +423,7 @@ export function computeLayoutPositions(
     }
 
     const clampCrossSize =
-      !isVertical && align === "center" && child.type === "text"
+      !isVertical && childAlign === "center" && child.type === "text"
         ? effectiveChildCross
         : childCross;
     if (crossAvail >= clampCrossSize) {
@@ -455,10 +460,100 @@ export function computeLayoutPositions(
     return out as unknown as PenNode;
   });
 
-  if (overlayNodes.length > 0) {
-    return [...overlayNodes, ...positioned];
+  const positionedById = new Map(positioned.map((child) => [child.id, child]));
+  return visibleChildren.map((child) => positionedById.get(child.id) ?? child);
+}
+
+function isFlowDetached(node: PenNode): boolean {
+  return (
+    isOverlayNode(node) ||
+    getLayoutConstraints(node)?.positioning === "absolute"
+  );
+}
+
+function getLayoutConstraints(node: PenNode): PenLayoutConstraints | undefined {
+  return node.layoutConstraints;
+}
+
+function getMainAxisPlan(
+  node: PenNode,
+  isVertical: boolean,
+  availW: number,
+  availH: number,
+): { base: number; grow: number } {
+  const constraints = getLayoutConstraints(node);
+  const mode = isVertical ? constraints?.heightMode : constraints?.widthMode;
+  const explicitGrow = Math.max(constraints?.grow ?? 0, 0);
+  if (mode === "fill_container") {
+    return { base: 0, grow: explicitGrow > 0 ? explicitGrow : 1 };
   }
-  return positioned;
+  const base =
+    mode === "fit_content"
+      ? getFitContentMainAxisSize(node, isVertical, availW, availH)
+      : getFixedMainAxisSize(node, isVertical, availW, availH);
+  return { base, grow: explicitGrow };
+}
+
+function getFixedMainAxisSize(
+  node: PenNode,
+  isVertical: boolean,
+  availW: number,
+  availH: number,
+): number {
+  if (!isVertical) {
+    return getNodeWidth(node, availW);
+  }
+  return getNodeHeight(node, availH, availW);
+}
+
+function getFitContentMainAxisSize(
+  node: PenNode,
+  isVertical: boolean,
+  availW: number,
+  availH: number,
+): number {
+  const sizingKey = isVertical ? "height" : "width";
+  const fitNode = { ...node, [sizingKey]: "fit_content" } as PenNode;
+  const fitSize = isVertical
+    ? getNodeHeight(fitNode, undefined, availW)
+    : getNodeWidth(fitNode, availW);
+  return fitSize > 0
+    ? fitSize
+    : getFixedMainAxisSize(node, isVertical, availW, availH);
+}
+
+function getCrossAxisSizeForChild(
+  node: PenNode,
+  axis: "width" | "height",
+  mode: PenLayoutConstraints["widthMode"] | PenLayoutConstraints["heightMode"],
+  align: "start" | "center" | "end" | "stretch",
+  available: number,
+  parentAvailW?: number,
+): number {
+  if (mode === "fill_container" || align === "stretch") return available;
+  if (mode === "fit_content") {
+    const fitNode = { ...node, [axis]: "fit_content" } as PenNode;
+    const fitSize =
+      axis === "width"
+        ? getNodeWidth(fitNode, available)
+        : getNodeHeight(fitNode, available, parentAvailW);
+    return fitSize > 0
+      ? fitSize
+      : axis === "width"
+        ? getNodeWidth(node, available)
+        : getNodeHeight(node, available, parentAvailW);
+  }
+  return axis === "width"
+    ? getNodeWidth(node, available)
+    : getNodeHeight(node, available, parentAvailW);
+}
+
+function normalizeChildAlignSelf(
+  value: PenLayoutConstraints["alignSelf"] | undefined,
+): "start" | "center" | "end" | "stretch" | undefined {
+  if (!value || value === "auto") return undefined;
+  if (value === "baseline") return "end";
+  return value;
 }
 
 function normalizeJustifyContent(
@@ -512,7 +607,9 @@ function normalizeJustifyContent(
  *   through to `start` (the old behavior) would top-align the unit,
  *   which is visually wrong.
  */
-function normalizeAlignItems(value: unknown): "start" | "center" | "end" {
+function normalizeAlignItems(
+  value: unknown,
+): "start" | "center" | "end" | "stretch" {
   if (typeof value !== "string") return "start";
   const v = value.trim().toLowerCase();
   switch (v) {
@@ -532,6 +629,8 @@ function normalizeAlignItems(value: unknown): "start" | "center" | "end" {
     case "last baseline":
     case "first baseline":
       return "end";
+    case "stretch":
+      return "stretch";
     default:
       return "start";
   }

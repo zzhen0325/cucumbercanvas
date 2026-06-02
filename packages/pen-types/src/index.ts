@@ -41,6 +41,7 @@ export type {
   PenDocument,
   PenNodeType,
   SizingBehavior,
+  PenLayoutConstraints,
   PenTransformMatrix,
   PenAutoLayoutRef,
   PenComponentOverrideRef,

@@ -21,6 +21,7 @@ import {
   duplicateCanvasPage,
   findConnectorSnapTarget,
   findNode,
+  findParent,
   getActiveChildren,
   getCanvasImportBounds,
   getCanvasPages,
@@ -64,7 +65,7 @@ import type {
   PenNode,
 } from "@cucumber/pen-types";
 import type { CanvasKit } from "canvaskit-wasm";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, Search } from "lucide-react";
 import type React from "react";
 import {
   forwardRef,
@@ -86,7 +87,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { uploadFile } from "@/lib/server-api";
+import { cn } from "@/lib/utils";
 import { CanvasBooleanToolbar } from "./boolean-toolbar";
 import type {
   AlignMode,
@@ -1084,6 +1087,7 @@ function CanvasSelectionToolbarConnected({
   const [localFontStatus, setLocalFontStatus] =
     useState<StickyLocalFontStatus>("idle");
   const [localFontError, setLocalFontError] = useState<string | null>(null);
+  const [fontSearchQuery, setFontSearchQuery] = useState("");
   const loadLocalFonts = useCallback(async () => {
     if (localFontStatus === "loading" || localFontStatus === "loaded") return;
     if (typeof window === "undefined") {
@@ -1167,6 +1171,27 @@ function CanvasSelectionToolbarConnected({
   const stickyFontName = getFontFamilyDisplayName(stickyFontFamily);
   const stickyFontSize =
     (stickyTextNode as { fontSize?: number } | null)?.fontSize ?? 24;
+  const filteredLocalFontFamilies = useMemo(() => {
+    const normalizedQuery = fontSearchQuery.trim().toLowerCase();
+    const currentFontFamilies: string[] = [];
+    const otherFontFamilies: string[] = [];
+    for (const family of localFontFamilies) {
+      const displayName = getFontFamilyDisplayName(family);
+      const matchesQuery =
+        normalizedQuery.length === 0 ||
+        family.toLowerCase().includes(normalizedQuery) ||
+        displayName.toLowerCase().includes(normalizedQuery);
+      if (!matchesQuery) continue;
+      const isCurrentFamily =
+        family === stickyFontFamily || displayName === stickyFontName;
+      if (isCurrentFamily) {
+        currentFontFamilies.push(family);
+      } else {
+        otherFontFamilies.push(family);
+      }
+    }
+    return [...currentFontFamilies, ...otherFontFamilies];
+  }, [fontSearchQuery, localFontFamilies, stickyFontFamily, stickyFontName]);
   const isStickyBackgroundMenuOpen =
     openStickyColorMenu?.kind === "background" &&
     openStickyColorMenu.nodeId === selectedNode?.id;
@@ -1248,6 +1273,7 @@ function CanvasSelectionToolbarConnected({
           <DropdownMenu
             modal={false}
             onOpenChange={(open) => {
+              setFontSearchQuery("");
               if (open) void loadLocalFonts();
             }}
           >
@@ -1261,44 +1287,82 @@ function CanvasSelectionToolbarConnected({
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="start"
-              className="w-64 max-h-72"
+              className="w-64 p-0"
               data-canvas-overlay="selection-toolbar"
               sideOffset={8}
             >
-              <DropdownMenuGroup>
-                {localFontStatus === "loading" ? (
-                  <DropdownMenuItem disabled>
-                    正在读取本机字体...
-                  </DropdownMenuItem>
-                ) : null}
-                {localFontStatus === "failed" && localFontError ? (
-                  <DropdownMenuItem disabled>{localFontError}</DropdownMenuItem>
-                ) : null}
-                {localFontStatus === "loaded" &&
-                localFontFamilies.length === 0 ? (
-                  <DropdownMenuItem disabled>
-                    未从当前设备读取到可用字体。
-                  </DropdownMenuItem>
-                ) : null}
-                {localFontFamilies.map((family) => (
-                  <DropdownMenuItem
-                    key={family}
-                    className="justify-between"
-                    onClick={() =>
-                      updateStickyText({
-                        fontFamily: family,
-                      } as Partial<PenNode>)
-                    }
-                  >
-                    <span className="truncate" style={{ fontFamily: family }}>
-                      {family}
-                    </span>
-                    {stickyFontName === family ? (
-                      <Check className="size-3.5 shrink-0" aria-hidden="true" />
-                    ) : null}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuGroup>
+              <div className="border-b border-border p-2">
+                <div className="relative">
+                  <Search
+                    className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <Input
+                    autoFocus
+                    aria-label="搜索本机字体"
+                    className="h-8 border-0 bg-muted/60 pr-2 pl-7 text-xs shadow-none ring-0"
+                    onChange={(event) => setFontSearchQuery(event.target.value)}
+                    onKeyDown={(event) => event.stopPropagation()}
+                    placeholder="搜索字体"
+                    value={fontSearchQuery}
+                  />
+                </div>
+              </div>
+              <div className="max-h-72 overflow-y-auto p-1">
+                <DropdownMenuGroup>
+                  {localFontStatus === "loading" ? (
+                    <DropdownMenuItem disabled>
+                      正在读取本机字体...
+                    </DropdownMenuItem>
+                  ) : null}
+                  {localFontStatus === "failed" && localFontError ? (
+                    <DropdownMenuItem disabled>
+                      {localFontError}
+                    </DropdownMenuItem>
+                  ) : null}
+                  {localFontStatus === "loaded" &&
+                  localFontFamilies.length === 0 ? (
+                    <DropdownMenuItem disabled>
+                      未从当前设备读取到可用字体。
+                    </DropdownMenuItem>
+                  ) : null}
+                  {localFontStatus === "loaded" &&
+                  localFontFamilies.length > 0 &&
+                  filteredLocalFontFamilies.length === 0 ? (
+                    <DropdownMenuItem disabled>
+                      未找到匹配“{fontSearchQuery.trim()}”的字体。
+                    </DropdownMenuItem>
+                  ) : null}
+                  {filteredLocalFontFamilies.map((family) => (
+                    <DropdownMenuItem
+                      key={family}
+                      className={cn(
+                        "justify-between",
+                        family === stickyFontFamily ||
+                          getFontFamilyDisplayName(family) === stickyFontName
+                          ? "bg-accent/60 text-accent-foreground"
+                          : undefined,
+                      )}
+                      onClick={() =>
+                        updateStickyText({
+                          fontFamily: family,
+                        } as Partial<PenNode>)
+                      }
+                    >
+                      <span className="truncate" style={{ fontFamily: family }}>
+                        {family}
+                      </span>
+                      {family === stickyFontFamily ||
+                      getFontFamilyDisplayName(family) === stickyFontName ? (
+                        <Check
+                          className="size-3.5 shrink-0"
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuGroup>
+              </div>
             </DropdownMenuContent>
           </DropdownMenu>
           <DropdownMenu modal={false}>
@@ -1764,10 +1828,21 @@ function CanvasPropertyPanelConnected({
   const { node, styleDefinitions, variables } = useCanvasRuntimeShallowSelector(
     selectCanvasSelectedNodePanelState,
   );
+  const parentNode = useStore(
+    store,
+    useCallback(
+      (state) =>
+        node
+          ? (findParent(state.document, node.id, state.activePageId) ?? null)
+          : null,
+      [node],
+    ),
+  );
   if (!node) return null;
   return (
     <CanvasPropertyPanel
       node={node}
+      parentNode={parentNode}
       onBindAgent={(binding: AgentBinding) => {
         api.bindAgentToContainer(node.id, binding);
       }}

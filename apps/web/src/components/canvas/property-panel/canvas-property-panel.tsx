@@ -138,10 +138,6 @@ type GradientPaint = Extract<CanvasFill, { stops: Array<unknown> }>;
 type PaintTransformOwner = Extract<CanvasFill, { transform?: unknown }>;
 type PathEditableNode = Extract<PenNode, { type: "path" }>;
 
-type LayoutRefEditableNode = PenNode & {
-  layoutRef?: NonNullable<PenNode["layoutRef"]>;
-};
-
 type MaskEditableNode = PenNode & {
   mask?: NonNullable<PenNode["mask"]>;
 };
@@ -4227,35 +4223,30 @@ function LayoutSizeSection({
 
 function LayoutConstraintsSection({
   node,
+  parentNode,
   bounds,
   onUpdate,
 }: {
   node: PenNode;
+  parentNode?: PenNode | null;
   bounds: CanvasBounds;
   onUpdate: (updates: Partial<PenNode>) => void;
 }) {
-  const layoutNode = node as LayoutRefEditableNode;
-  const measuredNode = node as PenNode & { width?: unknown; height?: unknown };
-  const layoutRef = layoutNode.layoutRef ?? { source: "figma" };
-  const widthMode =
-    measuredNode.width === "fit_content" ||
-    measuredNode.width === "fill_container"
-      ? measuredNode.width
-      : (layoutRef.widthMode ?? "fixed");
-  const heightMode =
-    measuredNode.height === "fit_content" ||
-    measuredNode.height === "fill_container"
-      ? measuredNode.height
-      : (layoutRef.heightMode ?? "fixed");
+  const parentLayout =
+    parentNode && "layout" in parentNode ? parentNode.layout : undefined;
+  const isParentAutoLayout =
+    parentLayout === "horizontal" || parentLayout === "vertical";
+  const layoutConstraints = node.layoutConstraints ?? {};
+  const widthMode = layoutConstraints.widthMode ?? "fixed";
+  const heightMode = layoutConstraints.heightMode ?? "fixed";
 
-  const updateLayoutRef = (
-    nextLayoutRef: Partial<NonNullable<PenNode["layoutRef"]>>,
+  const updateLayoutConstraints = (
+    nextConstraints: Partial<NonNullable<PenNode["layoutConstraints"]>>,
   ) => {
     onUpdate({
-      layoutRef: {
-        ...layoutRef,
-        ...nextLayoutRef,
-        source: layoutRef.source ?? "figma",
+      layoutConstraints: {
+        ...layoutConstraints,
+        ...nextConstraints,
       },
     } as Partial<PenNode>);
   };
@@ -4265,12 +4256,10 @@ function LayoutConstraintsSection({
     mode: LayoutSizingMode,
   ) => {
     const sizeValue = axis === "width" ? bounds.width : bounds.height;
-    const nodeSize = mode === "fixed" ? sizeValue : mode;
     onUpdate({
-      [axis]: nodeSize,
-      layoutRef: {
-        ...layoutRef,
-        source: layoutRef.source ?? "figma",
+      ...(mode === "fixed" ? { [axis]: sizeValue } : {}),
+      layoutConstraints: {
+        ...layoutConstraints,
         [`${axis}Mode`]: mode,
       },
     } as Partial<PenNode>);
@@ -4281,93 +4270,89 @@ function LayoutConstraintsSection({
       title="布局约束"
       actions={<InspectorIconButton icon={Grid2X2} label="布局约束" disabled />}
     >
-      <div className="space-y-2">
-        <div className="grid grid-cols-2 gap-2">
-          <select
-            aria-label="宽度模式"
-            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
-            value={widthMode}
-            onChange={(event) =>
-              updateSizingMode(
-                "width",
-                event.currentTarget.value as LayoutSizingMode,
-              )
-            }
-          >
-            <option value="fixed">宽度 固定</option>
-            <option value="fit_content">宽度 Hug</option>
-            <option value="fill_container">宽度 Fill</option>
-          </select>
-          <select
-            aria-label="高度模式"
-            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
-            value={heightMode}
-            onChange={(event) =>
-              updateSizingMode(
-                "height",
-                event.currentTarget.value as LayoutSizingMode,
-              )
-            }
-          >
-            <option value="fixed">高度 固定</option>
-            <option value="fit_content">高度 Hug</option>
-            <option value="fill_container">高度 Fill</option>
-          </select>
-          <select
-            aria-label="子项定位"
-            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
-            value={layoutRef.positioning ?? "auto"}
-            onChange={(event) =>
-              updateLayoutRef({
-                positioning: event.currentTarget.value as "auto" | "absolute",
-              })
-            }
-          >
-            <option value="auto">自动流</option>
-            <option value="absolute">绝对定位</option>
-          </select>
-          <select
-            aria-label="自身对齐"
-            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
-            value={layoutRef.alignSelf ?? "auto"}
-            onChange={(event) =>
-              updateLayoutRef({
-                alignSelf: event.currentTarget.value as NonNullable<
-                  PenNode["layoutRef"]
-                >["alignSelf"],
-              })
-            }
-          >
-            <option value="auto">自身 自动</option>
-            <option value="start">自身 起始</option>
-            <option value="center">自身 居中</option>
-            <option value="end">自身 结束</option>
-            <option value="stretch">自身 拉伸</option>
-            <option value="baseline">自身 基线</option>
-          </select>
+      {!isParentAutoLayout ? (
+        <div className="rounded-lg border border-border/60 bg-muted/60 px-3 py-2 text-xs font-medium text-muted-foreground shadow-subtle">
+          父级未启用自动布局，布局约束暂不可用
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          <NumberField
-            label="Grow"
-            ariaLabel="布局 Grow"
-            value={layoutRef.grow ?? 0}
-            min={0}
-            step={0.1}
-            onChange={(grow) => updateLayoutRef({ grow })}
-          />
-          <label className="flex h-9 items-center gap-2 rounded-lg border border-border/60 bg-muted/70 px-3 text-sm text-muted-foreground shadow-subtle">
-            <input
-              type="checkbox"
-              checked={layoutRef.clipContent === true}
+      ) : (
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <select
+              aria-label="宽度模式"
+              className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+              value={widthMode}
               onChange={(event) =>
-                updateLayoutRef({ clipContent: event.currentTarget.checked })
+                updateSizingMode(
+                  "width",
+                  event.currentTarget.value as LayoutSizingMode,
+                )
               }
+            >
+              <option value="fixed">宽度 固定</option>
+              <option value="fit_content">宽度 Hug</option>
+              <option value="fill_container">宽度 Fill</option>
+            </select>
+            <select
+              aria-label="高度模式"
+              className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+              value={heightMode}
+              onChange={(event) =>
+                updateSizingMode(
+                  "height",
+                  event.currentTarget.value as LayoutSizingMode,
+                )
+              }
+            >
+              <option value="fixed">高度 固定</option>
+              <option value="fit_content">高度 Hug</option>
+              <option value="fill_container">高度 Fill</option>
+            </select>
+            <select
+              aria-label="子项定位"
+              className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+              value={layoutConstraints.positioning ?? "auto"}
+              onChange={(event) =>
+                updateLayoutConstraints({
+                  positioning: event.currentTarget.value as "auto" | "absolute",
+                })
+              }
+            >
+              <option value="auto">自动流</option>
+              <option value="absolute">绝对定位</option>
+            </select>
+            <select
+              aria-label="自身对齐"
+              className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-medium outline-none transition-colors focus:ring-2 focus:ring-ring/20"
+              value={layoutConstraints.alignSelf ?? "auto"}
+              onChange={(event) =>
+                updateLayoutConstraints({
+                  alignSelf: event.currentTarget.value as NonNullable<
+                    PenNode["layoutConstraints"]
+                  >["alignSelf"],
+                })
+              }
+            >
+              <option value="auto">自身 自动</option>
+              <option value="start">自身 起始</option>
+              <option value="center">自身 居中</option>
+              <option value="end">自身 结束</option>
+              <option value="stretch">自身 拉伸</option>
+              <option value="baseline">自身 基线</option>
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <NumberField
+              label="Grow"
+              ariaLabel="布局 Grow"
+              value={layoutConstraints.grow ?? 0}
+              min={0}
+              step={0.1}
+              onChange={(grow) => updateLayoutConstraints({ grow })}
             />
-            <Scissors className="h-4 w-4" />
-            <span className="font-medium">布局裁剪</span>
-          </label>
+            <div aria-hidden="true" />
+          </div>
         </div>
-      </div>
+      )}
     </InspectorSection>
   );
 }
@@ -4949,6 +4934,7 @@ function SelectedColorsSection({ node }: { node: PenNode }) {
 
 export function CanvasPropertyPanel({
   node,
+  parentNode,
   variables,
   styleDefinitions,
   onVariablesChange,
@@ -4958,6 +4944,7 @@ export function CanvasPropertyPanel({
   onBindAgent,
 }: {
   node: PenNode;
+  parentNode?: PenNode | null;
   variables?: CanvasVariableMap;
   styleDefinitions?: CanvasStyleDefinitionMap;
   onVariablesChange?: (variables: CanvasVariableMap) => void;
@@ -5039,6 +5026,7 @@ export function CanvasPropertyPanel({
         <LayoutSizeSection bounds={bounds} onBoundsChange={updateBounds} />
         <LayoutConstraintsSection
           node={node}
+          parentNode={parentNode}
           bounds={bounds}
           onUpdate={onUpdate}
         />

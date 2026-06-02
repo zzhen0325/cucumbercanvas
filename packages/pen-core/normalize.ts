@@ -13,7 +13,12 @@
  * canvas render time, preserving $variable bindings in the document.
  */
 
-import type { PenDocument, PenNode } from "@cucumber/pen-types";
+import type {
+  PenAutoLayoutRef,
+  PenDocument,
+  PenLayoutConstraints,
+  PenNode,
+} from "@cucumber/pen-types";
 import type { GradientStop, PenFill, PenStroke } from "@cucumber/pen-types";
 
 // ---------------------------------------------------------------------------
@@ -63,6 +68,35 @@ function normalizeNode(node: PenNode): PenNode {
   // padding — normalize array format only (not variable resolution)
   if ("padding" in out) out.padding = normalizePadding(out.padding);
 
+  const migratedConstraints = normalizeLayoutConstraints(
+    out.layoutConstraints,
+    out.layoutRef,
+  );
+  if (migratedConstraints) {
+    out.layoutConstraints = migratedConstraints;
+  } else {
+    out.layoutConstraints = undefined;
+  }
+  if (out.layoutRef) {
+    const ref = out.layoutRef as PenAutoLayoutRef;
+    if (out.layout === undefined && ref.layout !== undefined)
+      out.layout = ref.layout;
+    if (out.gap === undefined && ref.gap !== undefined) out.gap = ref.gap;
+    if (out.padding === undefined && ref.padding !== undefined) {
+      out.padding = normalizePadding(ref.padding);
+    }
+    if (out.justifyContent === undefined && ref.justifyContent !== undefined) {
+      out.justifyContent = ref.justifyContent;
+    }
+    if (out.alignItems === undefined && ref.alignItems !== undefined) {
+      out.alignItems = ref.alignItems;
+    }
+    if (out.clipContent === undefined && ref.clipContent !== undefined) {
+      out.clipContent = ref.clipContent;
+    }
+    out.layoutRef = undefined;
+  }
+
   // opacity — pass through ($variable strings preserved)
 
   // text nodes: normalize `text` field to `content` (MCP/CLI use `text`, renderer expects `content`)
@@ -86,6 +120,96 @@ function normalizeNode(node: PenNode): PenNode {
   }
 
   return out as unknown as PenNode;
+}
+
+function normalizeLayoutConstraints(
+  rawConstraints: unknown,
+  rawLayoutRef: unknown,
+): PenLayoutConstraints | undefined {
+  const constraints = isRecord(rawConstraints)
+    ? ({ ...rawConstraints } as PenLayoutConstraints)
+    : {};
+  const layoutRef = isRecord(rawLayoutRef)
+    ? (rawLayoutRef as unknown as PenAutoLayoutRef)
+    : undefined;
+
+  if (
+    constraints.widthMode === undefined &&
+    layoutRef?.widthMode !== undefined
+  ) {
+    constraints.widthMode = layoutRef.widthMode;
+  }
+  if (
+    constraints.heightMode === undefined &&
+    layoutRef?.heightMode !== undefined
+  ) {
+    constraints.heightMode = layoutRef.heightMode;
+  }
+  if (
+    constraints.alignSelf === undefined &&
+    layoutRef?.alignSelf !== undefined
+  ) {
+    constraints.alignSelf = layoutRef.alignSelf;
+  }
+  if (
+    constraints.positioning === undefined &&
+    layoutRef?.positioning !== undefined
+  ) {
+    constraints.positioning = layoutRef.positioning;
+  }
+  if (constraints.grow === undefined && layoutRef?.grow !== undefined) {
+    constraints.grow = layoutRef.grow;
+  }
+
+  const normalized: PenLayoutConstraints = {};
+  if (isSizingMode(constraints.widthMode)) {
+    normalized.widthMode = constraints.widthMode;
+  }
+  if (isSizingMode(constraints.heightMode)) {
+    normalized.heightMode = constraints.heightMode;
+  }
+  if (isAlignSelf(constraints.alignSelf)) {
+    normalized.alignSelf = constraints.alignSelf;
+  }
+  if (
+    constraints.positioning === "auto" ||
+    constraints.positioning === "absolute"
+  ) {
+    normalized.positioning = constraints.positioning;
+  }
+  if (
+    typeof constraints.grow === "number" &&
+    Number.isFinite(constraints.grow)
+  ) {
+    normalized.grow = Math.max(0, constraints.grow);
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function isSizingMode(
+  value: unknown,
+): value is NonNullable<PenLayoutConstraints["widthMode"]> {
+  return (
+    value === "fixed" || value === "fit_content" || value === "fill_container"
+  );
+}
+
+function isAlignSelf(
+  value: unknown,
+): value is NonNullable<PenLayoutConstraints["alignSelf"]> {
+  return (
+    value === "auto" ||
+    value === "start" ||
+    value === "center" ||
+    value === "end" ||
+    value === "stretch" ||
+    value === "baseline"
+  );
 }
 
 // ---------------------------------------------------------------------------
