@@ -218,6 +218,7 @@ export const SkiaCanvas = memo(
     const liveApiRef = useRef<CanvasApi | null>(null);
     const apiReadyNotifiedRef = useRef(false);
     const { ckError, ckReady, ckRef } = useCanvasKitRuntime();
+    const [rendererReady, setRendererReady] = useState(false);
     const canvasKit = ckRef.current;
 
     const runtimeStoreRef = useRef<CanvasRuntimeStore | null>(null);
@@ -468,6 +469,7 @@ export const SkiaCanvas = memo(
       docRef,
       editorOverlayRef,
       marqueeRafRef,
+      onRendererReadyChange: setRendererReady,
       pendingDocumentChangeRef,
       pendingRendererDocumentSyncRef,
       pendingSceneNotificationRef,
@@ -1121,7 +1123,7 @@ export const SkiaCanvas = memo(
           />
 
           {/* Loading indicator while CK initializes */}
-          {!rendererRef.current && ckReady ? (
+          {!rendererReady && ckReady ? (
             <div className="absolute inset-0 flex items-center justify-center bg-white/50">
               <p className="text-sm text-muted-foreground">
                 Initializing renderer...

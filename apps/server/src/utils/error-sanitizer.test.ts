@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { sanitizeErrorForClient } from "./error-sanitizer.js";
+import { AgentPersistenceInitializationError } from "../agent/persistence/index.js";
+import {
+  describeErrorForClient,
+  sanitizeErrorForClient,
+} from "./error-sanitizer.js";
 
 describe("sanitizeErrorForClient", () => {
   it("maps nested provider billing failures to a concrete client message", () => {
@@ -46,6 +50,36 @@ describe("sanitizeErrorForClient", () => {
 
       expect(sanitizeErrorForClient(error)).toBe(
         "Agent 工具执行失败：某个画布或生成工具返回错误，本次运行已停止，请根据工具输出修正输入后重试。",
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("maps agent persistence connection timeouts to a data service message", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const error = new AgentPersistenceInitializationError({
+        cause: new Error("Connection terminated due to connection timeout", {
+          cause: new Error("Connection terminated unexpectedly"),
+        }),
+        component: "store",
+        target:
+          "postgres@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres",
+      });
+      const description = describeErrorForClient(error);
+
+      expect(description).toMatchObject({
+        details: {
+          reason: "data_service",
+          retryable: true,
+        },
+        message:
+          "Agent 数据服务连接失败：无法初始化会话持久化，请检查服务端数据库连接配置、网络连通性和 Supabase 连接池状态后重试。",
+      });
+      expect(description.details.diagnosticSummary).toContain(
+        "AgentPersistenceInitializationError",
       );
     } finally {
       errorSpy.mockRestore();

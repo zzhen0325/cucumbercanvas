@@ -330,7 +330,7 @@ export function CanvasEditor({
     const unregisterSet = ws.registerRPC(
       "canvas.document.set",
       async (params) => {
-        api.setDocument(params.document);
+        api.setDocument(params.document, { syncRenderer: "immediate" });
         await api.flushPendingSave();
         return { ok: true };
       },

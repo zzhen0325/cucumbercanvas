@@ -4,8 +4,15 @@ import type {
 } from "@langchain/langgraph-checkpoint";
 
 import type { ServerEnv } from "../../config/env.js";
+import {
+  type AgentPersistenceComponent,
+  AgentPersistenceInitializationError,
+  wrapAgentPersistenceInitializationError,
+} from "./errors.js";
 import { createSupabaseCheckpointer } from "./supabase-checkpointer.js";
 import { createSupabaseStore } from "./supabase-store.js";
+
+export { AgentPersistenceInitializationError };
 
 export type AgentPersistence = {
   checkpointer: BaseCheckpointSaver;
@@ -30,15 +37,35 @@ export function createAgentPersistenceService(
       if (!env.supabaseDbUrl) {
         return null;
       }
+      const connectionString = env.supabaseDbUrl;
 
       if (!pendingPersistence) {
+        const initialize = async <T>(
+          component: AgentPersistenceComponent,
+          factory: () => Promise<T>,
+        ): Promise<T> => {
+          try {
+            return await factory();
+          } catch (error) {
+            throw wrapAgentPersistenceInitializationError({
+              cause: error,
+              component,
+              connectionString,
+            });
+          }
+        };
+
         pendingPersistence = Promise.all([
-          (overrides?.createCheckpointer ?? createSupabaseCheckpointer)({
-            connectionString: env.supabaseDbUrl,
-          }),
-          (overrides?.createStore ?? createSupabaseStore)({
-            connectionString: env.supabaseDbUrl,
-          }),
+          initialize("checkpointer", () =>
+            (overrides?.createCheckpointer ?? createSupabaseCheckpointer)({
+              connectionString,
+            }),
+          ),
+          initialize("store", () =>
+            (overrides?.createStore ?? createSupabaseStore)({
+              connectionString,
+            }),
+          ),
         ])
           .then(([checkpointer, store]) => ({ checkpointer, store }))
           .catch((error) => {

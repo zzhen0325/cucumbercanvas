@@ -856,7 +856,8 @@ export function useSkiaCanvasApi({
         activePageId,
         transactionId: patch.transactionId,
       });
-      commitDocument(result.doc, { selection: patch.selection });
+      const commit = commitDocument(result.doc, { selection: patch.selection });
+      syncCommittedDocumentToRenderer(commit, "rpc.document.patch");
       console.info("[skia-canvas] document.patch.applied", {
         activePageId,
         nextVersion: documentVersionRef.current,
@@ -865,7 +866,7 @@ export function useSkiaCanvasApi({
       });
       return documentVersionRef.current;
     },
-    [commitDocument],
+    [commitDocument, syncCommittedDocumentToRenderer],
   );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: handler reads live canvas refs as synchronous runtime mirrors; `.current` values are not React dependencies.
@@ -903,13 +904,17 @@ export function useSkiaCanvasApi({
           captureHistory?: boolean;
           notify?: boolean;
           preserveViewport?: boolean;
+          syncRenderer?: "immediate";
         },
       ) => {
         const next = normalizeRuntimeDocumentForCanvasSet(raw);
-        commitDocument(next, {
+        const commit = commitDocument(next, {
           captureHistory: opts?.captureHistory ?? false,
           notify: opts?.notify,
         });
+        if (opts?.syncRenderer === "immediate") {
+          syncCommittedDocumentToRenderer(commit, "rpc.document.set");
+        }
         if (!opts?.preserveViewport) {
           rendererRef.current?.zoomToFit(64);
           const viewport = rendererRef.current?.getViewport();
@@ -1376,6 +1381,7 @@ export function useSkiaCanvasApi({
       setActiveTool,
       setSelection,
       scheduleRendererIdle,
+      syncCommittedDocumentToRenderer,
     ],
   );
 

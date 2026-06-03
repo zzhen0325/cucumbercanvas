@@ -269,6 +269,7 @@ Status:
 - Available as MCP tool `apply_canvas_transaction` as of 2026-06-02 CST.
 - Current slice supports page-aware `CanvasOperation[]`, `dryRun`, optional selection updates, live `baseVersion` protection, shared affected/high-risk reporting with `canvas_diff_preview`, and commits through `LiveCanvasService.patchDocument`.
 - The Web live document state now exposes version through `LiveCanvasService.getDocumentState`; existing `getDocument` behavior remains available for read-only tools.
+- As of 2026-06-03 CST, live browser RPC writes for `canvas.document.patch` and `canvas.document.set` flush the Skia renderer immediately after committing to the runtime store, so Agent execution-chain edits become visible during the run rather than waiting for final artifact insertion or a later canvas refresh.
 
 Single source of truth:
 

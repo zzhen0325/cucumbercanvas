@@ -1,6 +1,6 @@
 # Canvas Tooling Capability Map
 
-Last audited: 2026-06-02 CST
+Last audited: 2026-06-03 CST
 
 This document maps the current Cucumber canvas surface area to its runtime truth, UI entry points, `CanvasApi` functions, and Agent/MCP access. It is intended to answer two questions:
 
@@ -125,6 +125,7 @@ Document and live sync:
 
 - `getDocument`, `setDocument`, `getDocumentVersion`, `applyDocumentPatch`, `flushPendingSave`
 - RPC methods registered by `CanvasEditor`: `canvas.document.get`, `canvas.document.set`, `canvas.document.patch`, `canvas.screenshot`
+- Live Agent RPC writes through `canvas.document.set` and `canvas.document.patch` commit to the same runtime `PenDocument.pages` state and immediately flush the Skia renderer, while normal UI document commits still use the animation-frame coalesced renderer sync path.
 
 Pages:
 

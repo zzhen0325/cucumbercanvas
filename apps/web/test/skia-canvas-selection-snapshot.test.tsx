@@ -243,6 +243,27 @@ describe("SkiaCanvas selection snapshots", () => {
     );
   });
 
+  it("clears the renderer initialization overlay after PenRenderer mounts", async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    globalThis.ResizeObserver =
+      MockResizeObserver as unknown as typeof ResizeObserver;
+
+    try {
+      const { container, queryByText } = render(
+        <SkiaCanvas initialContent={initialDocument} />,
+      );
+
+      await waitFor(() =>
+        expect(container.querySelector("canvas")).not.toBeNull(),
+      );
+      await waitFor(() =>
+        expect(queryByText("Initializing renderer...")).not.toBeInTheDocument(),
+      );
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver;
+    }
+  });
+
   it("notifies onApiReady once while the stable API reads latest state", async () => {
     const originalResizeObserver = globalThis.ResizeObserver;
     globalThis.ResizeObserver =
@@ -524,6 +545,114 @@ describe("SkiaCanvas selection snapshots", () => {
       expect(
         penRendererMockState.currentDocument?.pages?.[0]?.children?.[0]?.id,
       ).toBe("latest-doc-rect");
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver;
+      globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+      globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+    }
+  });
+
+  it("syncs live RPC document writes to the renderer immediately", async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+    globalThis.ResizeObserver =
+      MockResizeObserver as unknown as typeof ResizeObserver;
+    const rafCallbacks: FrameRequestCallback[] = [];
+    globalThis.requestAnimationFrame = vi.fn(
+      (callback: FrameRequestCallback) => {
+        rafCallbacks.push(callback);
+        return rafCallbacks.length;
+      },
+    );
+    globalThis.cancelAnimationFrame = vi.fn();
+    const apiRef: { current: CanvasApi | null } = { current: null };
+
+    try {
+      const { container } = render(
+        <SkiaCanvas
+          initialContent={initialDocument}
+          onApiReady={(readyApi) => {
+            apiRef.current = readyApi;
+          }}
+        />,
+      );
+
+      await waitFor(() => expect(apiRef.current).not.toBeNull());
+      await waitFor(() =>
+        expect(container.querySelector("canvas")).not.toBeNull(),
+      );
+      act(() => {
+        while (rafCallbacks.length > 0) {
+          const callback = rafCallbacks.shift();
+          callback?.(0);
+        }
+      });
+      penRendererMockState.setDocumentCalls = [];
+
+      const readyApi = apiRef.current;
+      if (!readyApi) throw new Error("Canvas API was not initialized.");
+
+      act(() => {
+        readyApi.setDocument(
+          {
+            ...initialDocument,
+            pages: [
+              {
+                id: "page-default",
+                name: "Page 1",
+                children: [
+                  {
+                    id: "rpc-set-rect",
+                    type: "rectangle",
+                    x: 10,
+                    y: 10,
+                    width: 40,
+                    height: 40,
+                  } as PenNode,
+                ],
+              },
+            ],
+          },
+          { syncRenderer: "immediate" },
+        );
+      });
+
+      expect(penRendererMockState.setDocumentCalls).toHaveLength(1);
+      expect(
+        penRendererMockState.currentDocument?.pages?.[0]?.children?.[0]?.id,
+      ).toBe("rpc-set-rect");
+
+      penRendererMockState.setDocumentCalls = [];
+
+      act(() => {
+        readyApi.applyDocumentPatch({
+          baseVersion: readyApi.getDocumentVersion(),
+          operations: [
+            {
+              type: "insertNode",
+              node: {
+                id: "rpc-patch-rect",
+                type: "rectangle",
+                x: 80,
+                y: 10,
+                width: 40,
+                height: 40,
+              } as PenNode,
+              activePageId: "page-default",
+            },
+          ],
+          selection: ["rpc-patch-rect"],
+          transactionId: "tx-live-rpc",
+        });
+      });
+
+      expect(penRendererMockState.setDocumentCalls).toHaveLength(1);
+      expect(
+        penRendererMockState.currentDocument?.pages?.[0]?.children?.map(
+          (node) => node.id,
+        ),
+      ).toContain("rpc-patch-rect");
     } finally {
       globalThis.ResizeObserver = originalResizeObserver;
       globalThis.requestAnimationFrame = originalRequestAnimationFrame;

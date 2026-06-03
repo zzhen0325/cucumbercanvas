@@ -25,6 +25,7 @@ type UsePenRendererLifecycleOptions = {
   docRef: MutableRef<PenDocument>;
   editorOverlayRef: MutableRef<EditorOverlayState>;
   marqueeRafRef: MutableRef<number | null>;
+  onRendererReadyChange?: (ready: boolean) => void;
   pendingDocumentChangeRef: MutableRef<CucumberCanvasDocument | null>;
   pendingRendererDocumentSyncRef: MutableRef<PendingRendererDocumentSync | null>;
   pendingSceneNotificationRef: MutableRef<{
@@ -49,6 +50,7 @@ export function usePenRendererLifecycle({
   docRef,
   editorOverlayRef,
   marqueeRafRef,
+  onRendererReadyChange,
   pendingDocumentChangeRef,
   pendingRendererDocumentSyncRef,
   pendingSceneNotificationRef,
@@ -62,6 +64,7 @@ export function usePenRendererLifecycle({
     if (!ckReady || !canvasKit) return;
     const container = canvasContainerRef.current;
     if (!container) return;
+    onRendererReadyChange?.(false);
 
     const canvas = document.createElement("canvas");
     canvas.style.width = "100%";
@@ -89,8 +92,13 @@ export function usePenRendererLifecycle({
     }
     rendererRef.current = renderer;
     renderer.setEditorOverlays(editorOverlayRef.current);
+    onRendererReadyChange?.(true);
 
-    console.info("[skia-canvas] PenRenderer initialized");
+    console.info("[skia-canvas] PenRenderer initialized", {
+      activePageId: activePageIdRef.current,
+      height: container.clientHeight,
+      width: container.clientWidth,
+    });
 
     const ro = new ResizeObserver(() => {
       const w = container.clientWidth;
@@ -128,6 +136,10 @@ export function usePenRendererLifecycle({
       if (canvas.parentElement) canvas.parentElement.removeChild(canvas);
       rendererRef.current = null;
       canvasElRef.current = null;
+      onRendererReadyChange?.(false);
+      console.info("[skia-canvas] PenRenderer disposed", {
+        activePageId: activePageIdRef.current,
+      });
     };
   }, [
     activePageIdRef,
@@ -139,6 +151,7 @@ export function usePenRendererLifecycle({
     docRef,
     editorOverlayRef,
     marqueeRafRef,
+    onRendererReadyChange,
     pendingDocumentChangeRef,
     pendingRendererDocumentSyncRef,
     pendingSceneNotificationRef,

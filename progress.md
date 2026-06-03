@@ -4,6 +4,10 @@ Last updated: 2026-06-03 CST
 
 ## 2026-06-03
 
+- Fixed live Agent canvas writes so browser RPC `canvas.document.set` and `canvas.document.patch` update the Skia renderer immediately after committing to the live `PenDocument.pages` runtime state, preventing Agent-created execution chains and patch transactions from only becoming visible after final artifact insertion or a later refresh.
+- Kept normal UI `setDocument` calls on the existing animation-frame coalesced renderer sync path, and added regression coverage for the live RPC immediate path plus the coalesced UI path.
+- Passed: `pnpm --filter @cucumber/web test -- --run test/skia-canvas-selection-snapshot.test.tsx test/canvas-api-types.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
 - Reworked the project test harness into faster, more precise layers: added root Vitest `test.projects`, changed-aware package validation via `pnpm test:changed`, and a deterministic canvas regression matrix via `pnpm test:canvas`.
 - Wired `packages/pen-core` tests into the default package test surface, split its source typecheck away from test fixture strictness, and fixed `normalizeTreeLayout` to truly delete stale child `x/y` fields for active-layout parents.
 - Kept default server package tests unit/contract-only by excluding `.integration.test.ts` from the server Vitest project; real Supabase/Postgres integration tests remain explicit instead of blocking local quick validation.

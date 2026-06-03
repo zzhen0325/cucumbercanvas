@@ -111,6 +111,7 @@ export type CanvasApi = {
       captureHistory?: boolean;
       notify?: boolean;
       preserveViewport?: boolean;
+      syncRenderer?: "immediate";
     },
   ) => void;
   getActivePageId: () => string;

@@ -5,6 +5,8 @@
 
 const PROVIDER_PATTERN =
   /google|vertex|openai|deepseek|seedream|volcengine|langchain|gaxios|undici|fetch failed/i;
+const DB_CONNECTION_PATTERN =
+  /agent_persistence|agentpersistenceinitializationerror|agent 持久化|supabase postgres/i;
 const DB_PATTERN = /supabase|postgres|database|relation|column|constraint/i;
 const AUTH_PATTERN =
   /jwt|token|unauthorized|forbidden|credential|service.account/i;
@@ -140,6 +142,17 @@ export function describeErrorForClient(
       },
       message:
         "AI 服务暂时不可用：上游模型或工具调用失败，请稍后重试或切换模型。",
+    };
+  }
+  if (DB_CONNECTION_PATTERN.test(diagnostics)) {
+    return {
+      details: {
+        diagnosticSummary,
+        reason: "data_service",
+        retryable: true,
+      },
+      message:
+        "Agent 数据服务连接失败：无法初始化会话持久化，请检查服务端数据库连接配置、网络连通性和 Supabase 连接池状态后重试。",
     };
   }
   if (DB_PATTERN.test(diagnostics)) {
