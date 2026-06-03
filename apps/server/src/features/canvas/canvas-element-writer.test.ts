@@ -129,7 +129,29 @@ describe("canvas-element-writer generated asset insertion", () => {
         y: -20,
         width: 600,
         height: 640,
-        children: [],
+        children: [
+          {
+            id: "loading_panel",
+            type: "rectangle",
+            name: "生成图片加载区域",
+            x: 44,
+            y: 88,
+            width: 512,
+            height: 512,
+            meta: { agentCanvasRole: "image_generation_loading" },
+          } as PenNode,
+          {
+            id: "loading_text",
+            type: "text",
+            name: "生成图片状态",
+            x: 80,
+            y: 310,
+            width: 440,
+            height: 72,
+            content: "图片生成中...",
+            meta: { agentCanvasRole: "image_generation_loading" },
+          } as PenNode,
+        ],
       } as PenNode,
     });
     const client = createClient(doc);
@@ -157,6 +179,8 @@ describe("canvas-element-writer generated asset insertion", () => {
     expect(resultContainer?.children?.map((node) => node.id)).toEqual([
       result.elementId,
     ]);
+    expect(findNode(nextDoc, "loading_panel")).toBeUndefined();
+    expect(findNode(nextDoc, "loading_text")).toBeUndefined();
     expect(findNode(nextDoc, result.elementId)).toMatchObject({
       height: 512,
       src: "https://cdn.example.test/workspace/generated/job_5.png",

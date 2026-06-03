@@ -1,10 +1,12 @@
 // apps/server/src/features/canvas/canvas-element-writer.ts
 
 import {
+  type CanvasOperation,
   type CucumberCanvasDocument,
   type PenDocument,
   type PenNode,
   applyCanvasOperation,
+  applyCanvasTransaction,
   createNodeId,
   findNode,
   flattenNodes,
@@ -40,7 +42,7 @@ type CanvasElementWriterClient = {
   storage: { from: (bucket: string) => unknown };
 };
 
-type ImageInsertOpts = {
+export type ImageInsertOpts = {
   canvasId: string;
   objectPath: string; // Storage path for oss:// marker (already uploaded by worker)
   width: number;
@@ -63,7 +65,16 @@ type VideoInsertOpts = {
 
 type Placement = { x: number; y: number; width: number; height: number };
 
+export type GeneratedImageInsertPlan = {
+  assetId: string;
+  elementId: string;
+  nextDocument: CucumberCanvasDocument;
+  operations: CanvasOperation[];
+};
+
 type InsertResult = { elementId: string };
+
+export const IMAGE_GENERATION_LOADING_META_ROLE = "image_generation_loading";
 
 // ---------------------------------------------------------------------------
 // Placement calculation (ported from apps/web/src/lib/canvas-elements.ts)
@@ -224,6 +235,96 @@ function resolveCucumberPlacement(
   };
 }
 
+function collectTargetContainerLoadingNodeIds(
+  doc: CucumberCanvasDocument,
+  targetContainerId?: string,
+): string[] {
+  if (!targetContainerId) return [];
+  const target = findNode(doc, targetContainerId);
+  if (!target || !isContainerNode(target)) return [];
+  const targetWithChildren = target as PenNode & { children?: PenNode[] };
+  const children = Array.isArray(targetWithChildren.children)
+    ? targetWithChildren.children
+    : [];
+  return children
+    .filter(
+      (child) =>
+        child.meta?.agentCanvasRole === IMAGE_GENERATION_LOADING_META_ROLE,
+    )
+    .map((child) => child.id);
+}
+
+export function buildGeneratedImageInsertPlan(args: {
+  doc: CucumberCanvasDocument;
+  imageUrl: string;
+  opts: ImageInsertOpts;
+  explicitPlacement?: Placement;
+}): GeneratedImageInsertPlan {
+  const sizedPlacement = args.explicitPlacement
+    ? args.explicitPlacement
+    : scaleToFit(args.opts.width, args.opts.height, IMAGE_MAX_SIZE);
+  const { containerId, placement } = resolveCucumberPlacement(
+    args.doc,
+    sizedPlacement.width,
+    sizedPlacement.height,
+    args.explicitPlacement,
+    args.opts.targetContainerId,
+  );
+  const loadingNodeIds = collectTargetContainerLoadingNodeIds(
+    args.doc,
+    containerId ?? undefined,
+  );
+  const assetId = createNodeId("asset");
+  const nodeId = createNodeId("image");
+  const operations: CanvasOperation[] = [
+    {
+      type: "upsertAsset",
+      asset: {
+        id: assetId,
+        url: args.imageUrl,
+        mimeType: args.opts.mimeType,
+        name: args.opts.title,
+        width: args.opts.width,
+        height: args.opts.height,
+        source: "generated",
+      },
+    },
+    ...loadingNodeIds.map(
+      (nodeId): CanvasOperation => ({
+        type: "deleteNode",
+        nodeId,
+      }),
+    ),
+    {
+      type: "insertNode",
+      node: {
+        id: nodeId,
+        type: "image" as const,
+        x: placement.x,
+        y: placement.y,
+        width: placement.width,
+        height: placement.height,
+        name: args.opts.title ?? "Generated image",
+        assetId,
+        src: args.imageUrl,
+        objectFit: "fill",
+        cornerRadius: 8,
+        meta: { source: "generated" },
+      } as PenNode,
+      ...(containerId ? { parentId: containerId } : {}),
+    },
+  ];
+  const nextDocument = applyCanvasTransaction(args.doc, operations, {
+    transactionId: createNodeId("image_insert_tx"),
+  }).doc as CucumberCanvasDocument;
+  return {
+    assetId,
+    elementId: nodeId,
+    nextDocument,
+    operations,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Public API — Read-Modify-Write canvas content
 // ---------------------------------------------------------------------------
@@ -287,55 +388,18 @@ export async function insertImageElement(
   const imageUrl = urlData.publicUrl;
 
   const content = await readCanvasContent(client, opts.canvasId);
-  const sizedPlacement = explicitPlacement
-    ? explicitPlacement
-    : scaleToFit(opts.width, opts.height, IMAGE_MAX_SIZE);
-  const { containerId, placement } = resolveCucumberPlacement(
-    content,
-    sizedPlacement.width,
-    sizedPlacement.height,
+  const plan = buildGeneratedImageInsertPlan({
+    doc: content,
     explicitPlacement,
-    opts.targetContainerId,
-  );
-  const assetId = createNodeId("asset");
-  const nodeId = createNodeId("image");
-  const nextWithAsset: CucumberCanvasDocument = {
-    ...content,
-    assets: {
-      ...content.assets,
-      [assetId]: {
-        id: assetId,
-        url: imageUrl,
-        mimeType: opts.mimeType,
-        name: opts.title,
-        width: opts.width,
-        height: opts.height,
-        source: "generated",
-      },
-    },
-  };
-  const nextDoc = applyCanvasOperation(nextWithAsset, {
-    type: "insertNode",
-    node: {
-      id: nodeId,
-      type: "image" as const,
-      x: placement.x,
-      y: placement.y,
-      width: placement.width,
-      height: placement.height,
-      name: opts.title ?? "Generated image",
-      assetId,
-      src: imageUrl,
-      meta: { source: "generated" },
-    } as PenNode,
-    ...(containerId ? { parentId: containerId } : {}),
+    imageUrl,
+    opts,
   });
 
-  await writeCanvasContent(client, opts.canvasId, nextDoc);
+  await writeCanvasContent(client, opts.canvasId, plan.nextDocument);
   console.log(
-    `[canvas-element-writer] cucumber image inserted canvasId=${opts.canvasId} elementId=${nodeId} containerId=${containerId ?? "root"}`,
+    `[canvas-element-writer] cucumber image inserted canvasId=${opts.canvasId} elementId=${plan.elementId} targetContainerId=${opts.targetContainerId ?? "auto"} operationCount=${plan.operations.length}`,
   );
-  return { elementId: nodeId };
+  return { elementId: plan.elementId };
 }
 
 /**

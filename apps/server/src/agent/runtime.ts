@@ -24,6 +24,7 @@ import {
   insertVideoElement,
 } from "../features/canvas/canvas-element-writer.js";
 import type { LiveCanvasService } from "../features/canvas/live-canvas-service.js";
+import { insertGeneratedImageIntoLiveCanvas } from "../features/canvas/live-generated-image-writer.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import type {
   AuthenticatedUser,
@@ -533,7 +534,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               jobLap("job_poll_done", { pollCount, status: "succeeded" });
 
               let elementId = result.element_id;
-              if (canvasId && result.object_path && !elementId) {
+              if (canvasId && result.object_path) {
                 const writerClient = createClient(
                   accessToken,
                 ) as UserSupabaseClient;
@@ -546,25 +547,59 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                         height: input.placementHeight ?? 512,
                       }
                     : undefined;
-                const insertResult = await insertImageElement(
-                  writerClient,
-                  {
-                    canvasId,
-                    objectPath: result.object_path,
-                    width: result.width ?? 1024,
-                    height: result.height ?? 1024,
-                    mimeType: result.mime_type ?? "image/png",
-                    title: input.title,
-                    ...(input.targetContainerId
-                      ? { targetContainerId: input.targetContainerId }
-                      : {}),
-                  },
-                  explicitPlacement,
-                );
-                elementId = insertResult.elementId;
-                jobLap("canvas_image_inserted", {
-                  elementId,
-                });
+                const insertOpts = {
+                  canvasId,
+                  objectPath: result.object_path,
+                  width: result.width ?? 1024,
+                  height: result.height ?? 1024,
+                  mimeType: result.mime_type ?? "image/png",
+                  title: input.title,
+                  ...(input.targetContainerId
+                    ? { targetContainerId: input.targetContainerId }
+                    : {}),
+                };
+                if (options.liveCanvasService) {
+                  try {
+                    const liveInsert = await insertGeneratedImageIntoLiveCanvas(
+                      {
+                        canvasId,
+                        image: insertOpts,
+                        liveCanvasService: options.liveCanvasService,
+                        ...(explicitPlacement
+                          ? { placement: explicitPlacement }
+                          : {}),
+                        storageClient: writerClient,
+                        transactionId: `image_insert_${job.id}`,
+                        user,
+                      },
+                    );
+                    elementId = liveInsert.elementId;
+                    jobLap("live_canvas_image_inserted", {
+                      elementId,
+                      nextVersion: liveInsert.nextVersion,
+                      operationCount: liveInsert.operationCount,
+                      targetContainerId: input.targetContainerId,
+                    });
+                  } catch (error) {
+                    jobLap("live_canvas_image_insert_failed", {
+                      error:
+                        error instanceof Error ? error.message : String(error),
+                      targetContainerId: input.targetContainerId,
+                    });
+                  }
+                }
+
+                if (!elementId) {
+                  const insertResult = await insertImageElement(
+                    writerClient,
+                    insertOpts,
+                    explicitPlacement,
+                  );
+                  elementId = insertResult.elementId;
+                  jobLap("canvas_image_inserted", {
+                    elementId,
+                  });
+                }
               }
 
               if (canvasId) {

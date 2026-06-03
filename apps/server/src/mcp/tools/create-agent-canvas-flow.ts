@@ -12,6 +12,7 @@ import {
 import type { FrameNode, LineNode, PenNode } from "@cucumber/pen-types";
 import { z } from "zod";
 
+import { IMAGE_GENERATION_LOADING_META_ROLE } from "../../features/canvas/canvas-element-writer.js";
 import type { CucumberMcpTool } from "../types.js";
 import { schemaToJsonSchema } from "../utils.js";
 import {
@@ -186,6 +187,7 @@ function buildAgentCanvasFlowPlan(args: {
     args,
   );
   const resultContainerId = createNodeId("agent_image_result");
+  const loadingChildren = buildImageGenerationLoadingChildren(args);
   const resultContainer: FrameNode = withRunMetadata(
     {
       id: resultContainerId,
@@ -195,7 +197,7 @@ function buildAgentCanvasFlowPlan(args: {
       y: origin.y - 20,
       width: 600,
       height: 640,
-      children: [],
+      children: loadingChildren,
       clipContent: false,
       containerRole: ["visual"],
       contextSlots: {
@@ -248,6 +250,7 @@ function buildAgentCanvasFlowPlan(args: {
   return {
     connectorNodeIds: connectors.map((node) => node.id),
     imagePlacement: { x: 44, y: 88, width: 512, height: 512 },
+    loadingNodeIds: loadingChildren.map((node) => node.id),
     inputNodeId: inputSticky.id,
     operations,
     promptNodeId: promptSticky.id,
@@ -259,6 +262,61 @@ function buildAgentCanvasFlowPlan(args: {
     },
     resultContainerId,
   };
+}
+
+function buildImageGenerationLoadingChildren(args: {
+  agentId?: string;
+  optimizedPrompt: string;
+  runId?: string;
+  sessionId?: string;
+}): PenNode[] {
+  const sharedMeta = {
+    agentCanvasRole: IMAGE_GENERATION_LOADING_META_ROLE,
+    source: "agent_canvas_flow",
+  };
+  const loadingPanel = withRunMetadata(
+    {
+      id: createNodeId("agent_image_loading_panel"),
+      type: "rectangle",
+      name: "生成图片加载区域",
+      x: 44,
+      y: 88,
+      width: 512,
+      height: 512,
+      cornerRadius: 8,
+      fill: [{ type: "solid", color: "rgba(248,250,252,0.96)" }],
+      stroke: {
+        thickness: 1,
+        fill: [{ type: "solid", color: "rgba(15,23,42,0.12)" }],
+      },
+      meta: sharedMeta,
+    } as PenNode,
+    args,
+  );
+  const loadingText = withRunMetadata(
+    {
+      id: createNodeId("agent_image_loading_text"),
+      type: "text",
+      name: "生成图片状态",
+      x: 80,
+      y: 310,
+      width: 440,
+      height: 72,
+      content: "图片生成中...\n完成后会在这里显示结果",
+      fontSize: 18,
+      fontWeight: 600,
+      lineHeight: 1.35,
+      textAlign: "center",
+      textGrowth: "fixed-width-height",
+      fill: [{ type: "solid", color: "rgba(15,23,42,0.68)" }],
+      meta: {
+        ...sharedMeta,
+        promptPreview: args.optimizedPrompt.slice(0, 180),
+      },
+    } as PenNode,
+    args,
+  );
+  return [loadingPanel as PenNode, loadingText as PenNode];
 }
 
 function inferFlowOrigin(
@@ -373,6 +431,7 @@ function buildAgentCanvasFlowPayload(args: {
     inputNodeId: args.plan.inputNodeId,
     promptNodeId: args.plan.promptNodeId,
     resultContainerId: args.plan.resultContainerId,
+    loadingNodeIds: args.plan.loadingNodeIds,
     connectorNodeIds: args.plan.connectorNodeIds,
     imagePlacement: args.plan.imagePlacement,
     resultContainerBounds: args.plan.resultContainerBounds,

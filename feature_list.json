@@ -125,7 +125,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "generation-engineering",
-      "summary": "Seedream/Volcengine-backed image and video generation through provider adapters, background_jobs state, Supabase task leasing, worker execution, prompt normalization, and direct Cucumber canvas asset insertion with explicit generated-image placement into Agent-created result containers.",
+      "summary": "Seedream/Volcengine-backed image and video generation through provider adapters, background_jobs state, Supabase task leasing, worker execution, prompt normalization, live Cucumber canvas image placement into Agent-created result containers, and visible in-container loading nodes that are replaced by the generated image result.",
       "artifacts": [
         "apps/server/src/generation/providers/seedream.ts",
         "apps/server/src/generation/providers/seedream-prompt.ts",
@@ -135,6 +135,7 @@
         "apps/server/src/worker.ts",
         "apps/server/src/features/canvas/canvas-element-writer.ts",
         "apps/server/src/features/canvas/canvas-element-writer.test.ts",
+        "apps/server/src/features/canvas/live-generated-image-writer.ts",
         "apps/server/src/features/jobs/executors/image-generation.ts",
         "apps/server/src/agent/tools/image-generate.ts",
         "apps/server/src/agent/tools/image-generate.test.ts",

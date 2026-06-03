@@ -4,6 +4,11 @@ Last updated: 2026-06-03 CST
 
 ## 2026-06-03
 
+- Fixed the Agent image result container flow so `create_agent_canvas_flow` creates visible loading nodes inside the result container, and generated images replace those loading nodes inside the same container through shared canvas operations instead of appearing as a separate direct insertion.
+- Changed image job completion in the Agent runtime to prefer `LiveCanvasService.patchDocument` when a canvas is open, so the currently visible Skia canvas receives the generated image in its target container; the existing database writer remains the offline/background boundary.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/create-agent-canvas-flow.test.ts src/features/canvas/canvas-element-writer.test.ts src/agent/tools/image-generate.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm exec biome check apps/server/src/features/canvas/canvas-element-writer.ts apps/server/src/features/canvas/canvas-element-writer.test.ts apps/server/src/mcp/tools/create-agent-canvas-flow.ts apps/server/src/mcp/tools/create-agent-canvas-flow.test.ts apps/server/src/agent/runtime.ts`.
 - Fixed live Agent canvas writes so browser RPC `canvas.document.set` and `canvas.document.patch` update the Skia renderer immediately after committing to the live `PenDocument.pages` runtime state, preventing Agent-created execution chains and patch transactions from only becoming visible after final artifact insertion or a later refresh.
 - Kept normal UI `setDocument` calls on the existing animation-frame coalesced renderer sync path, and added regression coverage for the live RPC immediate path plus the coalesced UI path.
 - Passed: `pnpm --filter @cucumber/web test -- --run test/skia-canvas-selection-snapshot.test.tsx test/canvas-api-types.test.ts --reporter=dot`.

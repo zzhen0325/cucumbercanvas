@@ -92,6 +92,7 @@ describe("create_agent_canvas_flow", () => {
         connectorNodeIds: [expect.any(String), expect.any(String)],
         imagePlacement: { x: 44, y: 88, width: 512, height: 512 },
         inputNodeId: expect.any(String),
+        loadingNodeIds: [expect.any(String), expect.any(String)],
         mode: "simple_image_generation",
         nextDocumentVersion: 8,
         optimizedPrompt:
@@ -103,6 +104,7 @@ describe("create_agent_canvas_flow", () => {
     const payload = result.structuredContent as {
       connectorNodeIds: string[];
       inputNodeId: string;
+      loadingNodeIds: string[];
       promptNodeId: string;
       resultContainerId: string;
     };
@@ -123,6 +125,25 @@ describe("create_agent_canvas_flow", () => {
       name: "图片结果容器",
       type: "frame",
     });
+    const resultContainer = findNode(state.doc, payload.resultContainerId) as
+      | { children?: Array<{ id: string; meta?: Record<string, unknown> }> }
+      | undefined;
+    expect(resultContainer?.children?.map((node) => node.id)).toEqual(
+      payload.loadingNodeIds,
+    );
+    expect(resultContainer?.children).toEqual([
+      expect.objectContaining({
+        meta: expect.objectContaining({
+          agentCanvasRole: "image_generation_loading",
+        }),
+      }),
+      expect.objectContaining({
+        content: expect.stringContaining("图片生成中"),
+        meta: expect.objectContaining({
+          agentCanvasRole: "image_generation_loading",
+        }),
+      }),
+    ]);
     const connectors = payload.connectorNodeIds.map(
       (id) => findNode(state.doc, id) as LineNode | undefined,
     );
