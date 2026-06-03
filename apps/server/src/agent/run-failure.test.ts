@@ -19,10 +19,14 @@ describe("createRunFailedEvent", () => {
         error: {
           code: "run_failed",
           details: {
+            diagnosticSummary: "Error: fetch failed",
             errorName: "Error",
+            reason: "provider_unavailable",
+            retryable: true,
             source: "runtime",
           },
-          message: "AI 服务暂时不可用，请稍后重试。",
+          message:
+            "AI 服务暂时不可用：上游模型或工具调用失败，请稍后重试或切换模型。",
         },
         runId: "run-test",
         timestamp: "2026-05-25T00:00:00.000Z",

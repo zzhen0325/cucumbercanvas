@@ -14,7 +14,6 @@ import {
   createImageGenerateTool,
 } from "./image-generate.js";
 import { createProjectSearchTool } from "./project-search.js";
-import { createScreenshotCanvasTool } from "./screenshot-canvas.js";
 import {
   type SubmitVideoJobFn,
   createVideoGenerateTool,
@@ -73,17 +72,11 @@ export function createMainAgentTools(
     // execute 工具由 deepagents FilesystemMiddleware 自动注入，
     // 因为 CompositeBackend 的 default backend 是 LocalShellBackend。
     // 不需要在这里手动注册。
+    // screenshot_canvas 只通过 MCP bridge 注册。旧的直接工具注册会产生
+    // 同名双实例，触发 LangChain wrapModelCall 工具一致性校验。
   ];
   if (deps.brandKitId) {
     tools.push(createBrandKitTool(deps, deps.brandKitId));
-  }
-  if (deps.connectionManager) {
-    tools.push(
-      createScreenshotCanvasTool({
-        connectionManager: deps.connectionManager,
-        ...(deps.persistImage ? { persistImage: deps.persistImage } : {}),
-      }),
-    );
   }
   return tools;
 }

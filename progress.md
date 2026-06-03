@@ -797,3 +797,11 @@ Status:
 - Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
 - Passed: `pnpm --filter @cucumber/web typecheck`.
 - Note: `pnpm --filter @cucumber/pen-core typecheck` remains blocked by existing strict indexed-access diagnostics in untouched pen-core test files such as `__tests__/node-diff.test.ts`, `__tests__/node-merge.test.ts`, `__tests__/normalize-tree-layout.test.ts`, and `__tests__/tree-utils.test.ts`; touched pen-core files no longer appear in that failure list.
+
+2026-06-03 - Agent screenshot tool registration fix
+
+- Fixed Agent runs failing with LangChain `todoListMiddleware` tool identity errors by removing the legacy direct `screenshot_canvas` registration from the main Agent tool list; `screenshot_canvas` now has one runtime source through the MCP bridge.
+- Updated Agent prompts and run critique rules so structured canvas reads use `inspect_canvas_semantic`, `get_selection_context`, `batch_get`, `snapshot_layout`, and `validate_canvas` first; `screenshot_canvas` is reserved for visual verification and evidence.
+- Improved `run.failed` client diagnostics with safe failure reason classification and redacted diagnostic summaries, so future Agent failures do not collapse to an opaque retry message.
+- Passed: `pnpm --filter @cucumber/server test -- run src/agent/tools/index.test.ts src/agent/run-failure.test.ts src/utils/error-sanitizer.test.ts src/mcp/deepagents-bridge.test.ts` (workspace Vitest configuration ran 37 server test files / 134 tests).
+- Passed: `pnpm --filter @cucumber/server typecheck`.

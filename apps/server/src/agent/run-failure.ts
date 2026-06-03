@@ -1,6 +1,6 @@
 import type { StreamEvent } from "@cucumber/shared";
 
-import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
+import { describeErrorForClient } from "../utils/error-sanitizer.js";
 
 type RunFailureSource = "run-event-pump" | "runtime" | "stream-adapter";
 
@@ -21,7 +21,7 @@ export function createRunFailedEvent({
   runId,
   source,
 }: CreateRunFailedEventOptions): StreamEvent {
-  const clientMessage = sanitizeErrorForClient(error);
+  const clientError = describeErrorForClient(error);
   const errorName = error instanceof Error ? error.name : typeof error;
 
   console.error(`[${source}] Agent run failed for run ${runId}:`, error);
@@ -29,7 +29,8 @@ export function createRunFailedEvent({
     `[${source}] Emitting run.failed`,
     JSON.stringify({
       errorName,
-      message: clientMessage,
+      message: clientError.message,
+      reason: clientError.details.reason,
       runId,
     }),
   );
@@ -38,10 +39,11 @@ export function createRunFailedEvent({
     error: {
       code: "run_failed",
       details: {
+        ...clientError.details,
         errorName,
         source,
       },
-      message: clientMessage,
+      message: clientError.message,
     },
     runId,
     timestamp: now(),

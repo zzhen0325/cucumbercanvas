@@ -35,4 +35,20 @@ describe("sanitizeErrorForClient", () => {
       errorSpy.mockRestore();
     }
   });
+
+  it("classifies LangChain tool identity errors as actionable tool failures", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const error = new Error(
+        'You have modified a tool in "wrapModelCall" hook of middleware "todoListMiddleware": screenshot_canvas. This is not supported.',
+      );
+
+      expect(sanitizeErrorForClient(error)).toBe(
+        "Agent 工具执行失败：某个画布或生成工具返回错误，本次运行已停止，请根据工具输出修正输入后重试。",
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
 });
