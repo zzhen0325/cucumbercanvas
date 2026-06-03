@@ -8,13 +8,30 @@ import type { SubmitVideoJobFn } from "../agent/tools/video-generate.js";
 import type { LiveCanvasService } from "../features/canvas/live-canvas-service.js";
 import type { UserSupabaseClient } from "../supabase/user.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
+import type { CanvasEventBuffer } from "../ws/event-buffer.js";
+import { createApplyCanvasTransactionMcpTool } from "./tools/apply-canvas-transaction.js";
+import { createCanvasDiffPreviewMcpTool } from "./tools/canvas-diff-preview.js";
+import { createCanvasMemoryIndexMcpTool } from "./tools/canvas-memory-index.js";
+import { createCanvasRunTraceMcpTool } from "./tools/canvas-run-trace.js";
+import { createConnectNodesMcpTool } from "./tools/connect-nodes.js";
+import { createAgentOutputContainerMcpTool } from "./tools/create-agent-output-container.js";
+import { createCritiqueCanvasMcpTool } from "./tools/critique-canvas.js";
+import { createExportCanvasDeliverableMcpTool } from "./tools/export-canvas-deliverable.js";
 import { createGenerateImageMcpTool } from "./tools/generate-image.js";
 import { createGenerateVideoMcpTool } from "./tools/generate-video.js";
+import { createGetSelectionContextMcpTool } from "./tools/get-selection-context.js";
+import { createInspectCanvasSemanticMcpTool } from "./tools/inspect-canvas-semantic.js";
 import { createInspectCanvasMcpTool } from "./tools/inspect-canvas.js";
+import { createLayoutCanvasMcpTool } from "./tools/layout-canvas.js";
 import { createManipulateCanvasMcpTool } from "./tools/manipulate-canvas.js";
 import { createPersistSandboxFileMcpTool } from "./tools/persist-sandbox-file.js";
 import { createProjectSearchMcpTool } from "./tools/project-search.js";
+import { createQueryCanvasAssetsMcpTool } from "./tools/query-canvas-assets.js";
+import { createReplaceAssetInNodeMcpTool } from "./tools/replace-asset-in-node.js";
+import { createResizeContainerToFitMcpTool } from "./tools/resize-container-to-fit.js";
+import { createScreenshotCanvasMcpTool } from "./tools/screenshot-canvas.js";
 import { createStructuredCanvasMcpTools } from "./tools/structured-canvas.js";
+import { createValidateCanvasMcpTool } from "./tools/validate-canvas.js";
 import type {
   CucumberMcpTool,
   McpListedTool,
@@ -26,6 +43,7 @@ export type CreateCucumberMcpServerDeps = {
   createUserClient: (accessToken: string) => unknown;
   brandKitId?: string | null;
   connectionManager?: ConnectionManager;
+  eventBuffer?: CanvasEventBuffer;
   liveCanvasService?: LiveCanvasService;
   persistImage?: PersistImageFn;
   sandboxDir?: string;
@@ -58,6 +76,88 @@ export function createCucumberMcpServer(
       ...(deps.liveCanvasService
         ? { liveCanvasService: deps.liveCanvasService }
         : {}),
+    }),
+    createInspectCanvasSemanticMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createGetSelectionContextMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createCanvasDiffPreviewMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createApplyCanvasTransactionMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createQueryCanvasAssetsMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createReplaceAssetInNodeMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createConnectNodesMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createResizeContainerToFitMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createAgentOutputContainerMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createLayoutCanvasMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createValidateCanvasMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createCanvasMemoryIndexMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createCritiqueCanvasMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createExportCanvasDeliverableMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createCanvasRunTraceMcpTool({
+      ...(deps.eventBuffer ? { eventBuffer: deps.eventBuffer } : {}),
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createScreenshotCanvasMcpTool({
+      ...(deps.connectionManager
+        ? { connectionManager: deps.connectionManager }
+        : {}),
+      ...(deps.persistImage ? { persistImage: deps.persistImage } : {}),
     }),
     createManipulateCanvasMcpTool({
       createUserClient,

@@ -33,12 +33,27 @@ describe("createLiveCanvasService", () => {
     const doc = createEmptyDocument();
     const service = createLiveCanvasService({
       connectionManager: {
-        rpcToCanvas: vi.fn(async () => ({ document: doc })),
+        rpcToCanvas: vi.fn(async () => ({ document: doc, version: 3 })),
       } as never,
       createUserClient: createUserClient as never,
     });
 
     await expect(service.getDocument(user, "canvas-1")).resolves.toEqual(doc);
+  });
+
+  it("returns a live document state with version through a bound editor RPC", async () => {
+    const doc = createEmptyDocument();
+    const service = createLiveCanvasService({
+      connectionManager: {
+        rpcToCanvas: vi.fn(async () => ({ document: doc, version: 7 })),
+      } as never,
+      createUserClient: createUserClient as never,
+    });
+
+    await expect(service.getDocumentState(user, "canvas-1")).resolves.toEqual({
+      document: doc,
+      version: 7,
+    });
   });
 
   it("fails clearly when no live editor is available", async () => {

@@ -934,6 +934,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(options.connectionManager
               ? { connectionManager: options.connectionManager }
               : {}),
+            ...(options.eventBuffer
+              ? { eventBuffer: options.eventBuffer }
+              : {}),
             env: options.env,
             ...(options.liveCanvasService
               ? { liveCanvasService: options.liveCanvasService }

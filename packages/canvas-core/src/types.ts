@@ -188,6 +188,10 @@ export type CanvasOperation =
       binding: AgentBinding;
     }>
   | {
+      type: "upsertAsset";
+      asset: CanvasAsset;
+    }
+  | {
       type: "createDataFlowEdge";
       edgeId: string;
       sourceNodeId: string;

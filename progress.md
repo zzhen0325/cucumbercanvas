@@ -4,6 +4,64 @@ Last updated: 2026-06-02 CST
 
 ## 2026-06-02
 
+- Added the P2 read-only `canvas_memory_index` MCP tool: Agents can now build a searchable live-canvas memory index from durable `PenDocument.pages` nodes, context slots, Agent bindings, run/session metadata, and text content while explicitly marking that no persisted memory truth was written.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/schema.test.ts src/mcp/tools/canvas-transaction-tools.test.ts src/mcp/tools/canvas-validation-tools.test.ts src/mcp/tools/get-selection-context.test.ts src/mcp/tools/canvas-asset-tools.test.ts src/mcp/tools/canvas-connector-tools.test.ts src/mcp/tools/canvas-resize-tools.test.ts src/mcp/tools/canvas-agent-output-container-tools.test.ts src/mcp/tools/canvas-layout-tools.test.ts src/mcp/tools/canvas-memory-index-tools.test.ts src/mcp/tools/canvas-critique-tools.test.ts src/mcp/tools/canvas-export-deliverable-tools.test.ts src/mcp/tools/canvas-run-trace-tools.test.ts src/mcp/deepagents-bridge.test.ts src/features/canvas/live-canvas-service.test.ts`.
+- Passed: `pnpm --filter @cucumber/server build`.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/canvas-memory-index-tools.test.ts src/mcp/deepagents-bridge.test.ts`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: targeted `pnpm exec biome check` for the touched memory-index MCP tool, memory-index tests, MCP registry, and bridge test.
+- Added the P2 read-only `canvas_run_trace` MCP tool: Agents and engineers can now inspect recent Agent stream events plus live run-bound canvas nodes, including tool calls, canvas patch transaction IDs, affected node IDs, active/requested run context, and explicit event-buffer availability without materializing process containers on the canvas.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/canvas-run-trace-tools.test.ts src/mcp/deepagents-bridge.test.ts`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: targeted `pnpm exec biome check` for the touched run-trace MCP tool, run-trace tests, MCP registry, Deep Agent tool wiring, runtime event-buffer wiring, and bridge test.
+- Added the P2 read-only `export_canvas_deliverable` MCP tool: Agents can now turn selected or explicit live canvas nodes into traceable `structured_json`, `flow_spec`, or `component_spec` handoffs with root/source node IDs, scene bounds, referenced assets, and validation summaries while unsupported render/code/deck targets return explicit reasons.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/canvas-export-deliverable-tools.test.ts src/mcp/deepagents-bridge.test.ts`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: targeted `pnpm exec biome check` for the touched export-deliverable MCP tool, export tests, MCP registry, and bridge test.
+- Added the P2 read-only `critique_canvas` MCP tool: Agents can now run deterministic canvas critique passes for hierarchy, visual consistency, brand/style context, container role clarity, deliverable completeness, and validation summaries, returning node-grounded findings and suggested fixes without mutating canvas state.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/canvas-critique-tools.test.ts src/mcp/deepagents-bridge.test.ts`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: targeted `pnpm exec biome check` for the touched critique MCP tool, critique tests, MCP registry, and bridge test.
+- Completed the P1 durable editing primitive surface from `ai-native-canvas-agent-capability-plan.md` by adding MCP `layout_canvas`: Agents can now express layout intent through auto-layout field updates or bounded stack/grid/flow/avoid-overlap/align-distribute node placement, with same-parent coordinate-space enforcement, dry-run preview, transaction IDs, and live `baseVersion` protection.
+- Split layout planning into `layout-canvas-planner.ts` so the MCP wrapper stays below the project file-size threshold and layout strategy math remains a pure helper module.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/canvas-layout-tools.test.ts src/mcp/deepagents-bridge.test.ts`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: targeted `pnpm exec biome check` for the touched layout MCP tool, layout planner, layout tests, MCP registry, and bridge test.
+- Added the P1 `create_agent_output_container` MCP tool: Agents can now create canonical durable output `FrameNode` containers with role, context slots, agent binding, IO ports, run/session metadata, optional children, deterministic placement, dry-run preview, created-container selection, transaction IDs, and live `baseVersion` protection.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/canvas-agent-output-container-tools.test.ts src/mcp/deepagents-bridge.test.ts`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: targeted `pnpm exec biome check` for the touched output-container MCP tool, output-container tests, MCP registry, and bridge test.
+- Added the P1 `resize_container_to_fit` MCP tool: Agents can now resize frame/group containers to visible descendant scene bounds with padding, min/max constraints, dry-run preview, layout warnings, container selection, transaction IDs, and live `baseVersion` protection while leaving child positions unchanged.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/canvas-resize-tools.test.ts src/mcp/deepagents-bridge.test.ts`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: targeted `pnpm exec biome check` for the touched resize MCP tool, resize tests, MCP registry, and bridge test.
+- Added the P1 `connect_nodes` MCP tool: Agents can now create durable semantic `LineNode.connector` relations between visible connector-capable frame/group/rectangle nodes, with automatic endpoint side selection from scene bounds, optional relationship labels/style, dry-run preview, created connector selection, transaction IDs, and live `baseVersion` protection.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/canvas-connector-tools.test.ts src/mcp/deepagents-bridge.test.ts`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: targeted `pnpm exec biome check` for the touched connector MCP tool, connector tests, MCP registry, and bridge test.
+- Added the first P1 durable asset primitives from `ai-native-canvas-agent-capability-plan.md`: MCP `query_canvas_assets` now reads `PenDocument.assets` plus image/video/fill references with missing-reference diagnostics, and MCP `replace_asset_in_node` preserves node identity/bounds while replacing `image.src`, `videoEmbed.src`, or image fill URLs through versioned live canvas patch transactions.
+- Extended the canonical canvas operation protocol with `upsertAsset` so asset replacement can update `PenDocument.assets` and the consuming node field in one transaction instead of bypassing the patch boundary.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/canvas-asset-tools.test.ts src/mcp/deepagents-bridge.test.ts`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm --filter @cucumber/canvas-core test -- --run src/__tests__/canvas-core.test.ts`.
+- Passed: targeted `pnpm exec biome check` for the touched canvas-core operation/type files, MCP asset tools, server registry, bridge test, and asset tool tests.
+- Completed the P0 live semantic loop tool surface from `ai-native-canvas-agent-capability-plan.md` by adding MCP `validate_canvas` and MCP-compatible `screenshot_canvas`: validation now performs deterministic structural checks for page/node integrity, duplicate/missing node IDs, missing assets, missing variables, dangling connectors, likely fixed text overflow, invalid component refs, and hidden/locked Agent outputs, while screenshot capture is now visible through the MCP registry by wrapping the existing browser `canvas.screenshot` RPC tool.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/schema.test.ts src/mcp/deepagents-bridge.test.ts src/mcp/tools/get-selection-context.test.ts src/mcp/tools/canvas-transaction-tools.test.ts src/mcp/tools/canvas-validation-tools.test.ts src/features/canvas/live-canvas-service.test.ts`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: targeted `pnpm exec biome check` for the touched P0 MCP canvas tools, helper modules, live-canvas service files, docs, `progress.md`, and `feature_list.json`.
+- Added the P0 `canvas_diff_preview` and `apply_canvas_transaction` MCP tools: Agents can now preview page-aware `CanvasOperation[]` edits without mutation, inspect affected/created/updated/deleted/moved nodes, affected bounds, high-risk deletes/asset replacements/large moves/visibility-lock changes, and then commit through `LiveCanvasService.patchDocument` with dry-run support, optional selection updates, transaction IDs, and live `baseVersion` protection.
+- Extended `LiveCanvasService` with `getDocumentState` so transaction tools can read the current live document version from `canvas.document.get` while preserving the existing `getDocument` read API.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/schema.test.ts src/mcp/deepagents-bridge.test.ts src/mcp/tools/get-selection-context.test.ts src/mcp/tools/canvas-transaction-tools.test.ts src/features/canvas/live-canvas-service.test.ts`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: targeted `pnpm exec biome check` for the touched live-canvas service, MCP transaction/semantic/selection tool, helper, and test files.
+- Added the P0 `get_selection_context` MCP tool for AI-native selection anchoring: it reads the live runtime selection from the current document, returns selected node summaries, parent container paths, effective context slots, optional ancestors/descendants/siblings, and capability flags with explicit disabled reasons for empty selections, locked nodes, text editing, asset replacement, connection, grouping, and ungrouping.
+- Split shared AI-native canvas live-context and semantic traversal helpers out of `inspect_canvas_semantic` so future P0 tools can reuse the same live `PenDocument.pages` truth without growing a single tool file past the project size threshold.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/schema.test.ts src/mcp/deepagents-bridge.test.ts src/mcp/tools/get-selection-context.test.ts`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: targeted `pnpm exec biome check` for the touched MCP tool, helper, and test files.
+- Added the P0 `inspect_canvas_semantic` MCP tool for AI-native live canvas reading: it validates live `canvasId`/`userId`/`accessToken` context, reads only `PenDocument.pages` plus active or explicit page truth, returns semantic containers, selected/focus nodes, connector dataflow edges, referenced assets, optional variable/theme summaries, and structured warnings for omitted hidden/locked nodes or invalid references.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/schema.test.ts src/mcp/deepagents-bridge.test.ts`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
 - Added `docs/tech/canvas-tooling-capability-map.md` as the current inventory for canvas runtime truth, Web editor tools, property inspector fields, `CanvasApi` functions, core operations, and Agent/MCP callability.
 - Added `docs/tech/ai-native-canvas-agent-capability-plan.md` as the implementation plan for the next Agent-callable canvas capabilities, including semantic inspect, selection context, diff preview, transactional apply, validation, MCP screenshot, layout/fit, asset replacement, critique, export, and run trace.
 - Fixed the `inspect_canvas` MCP wrapper to receive `liveCanvasService`, keeping the documented MCP capability aligned with the live-editor read path.

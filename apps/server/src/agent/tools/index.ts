@@ -6,6 +6,7 @@ import { bridgeMcpServerToolsToDeepAgent } from "../../mcp/deepagents-bridge.js"
 import { createCucumberMcpServer } from "../../mcp/server.js";
 import type { UserSupabaseClient } from "../../supabase/user.js";
 import type { ConnectionManager } from "../../ws/connection-manager.js";
+import type { CanvasEventBuffer } from "../../ws/event-buffer.js";
 import { createBrandKitTool } from "./brand-kit.js";
 import {
   type PersistImageFn,
@@ -58,6 +59,7 @@ export function createMainAgentTools(
     createUserClient: (accessToken: string) => UserSupabaseClient;
     brandKitId?: string | null;
     connectionManager?: ConnectionManager;
+    eventBuffer?: CanvasEventBuffer;
     liveCanvasService?: LiveCanvasService;
     persistImage?: PersistImageFn;
     sandboxDir?: string;

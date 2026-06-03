@@ -195,6 +195,19 @@ function applyCanvasOperationToMutableDoc(
       );
       break;
     }
+    case "upsertAsset": {
+      if (!operation.asset.id || !operation.asset.url) {
+        throw new CanvasOperationError(
+          "invalid_operation",
+          "upsertAsset requires an asset with id and url.",
+        );
+      }
+      next.assets = {
+        ...(next.assets ?? {}),
+        [operation.asset.id]: structuredClone(operation.asset),
+      };
+      break;
+    }
     case "reorderNode": {
       reorderNodeInDoc(next, operation, activePageId);
       break;
@@ -229,7 +242,8 @@ function applyTransactionDefaults(
 ): CanvasOperation {
   if (
     operation.type === "createDataFlowEdge" ||
-    operation.type === "removeDataFlowEdge"
+    operation.type === "removeDataFlowEdge" ||
+    operation.type === "upsertAsset"
   ) {
     return operation;
   }

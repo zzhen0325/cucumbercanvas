@@ -101,6 +101,12 @@ Purpose:
 
 Read the canvas as an AI workspace, not just as flat geometry.
 
+Status:
+
+- Available as MCP tool `inspect_canvas_semantic` as of 2026-06-02 CST.
+- Current slice reads the live editor document, active or explicit page, semantic containers, selected/focus nodes, connector dataflow edges, referenced assets, optional variable/theme summary, and warnings for omitted hidden/locked nodes or missing connector/assets.
+- Follow-up slices should continue expanding validation depth and UI selection RPC fidelity without changing the durable truth boundary.
+
 Single source of truth:
 
 - `PenDocument.pages`
@@ -158,6 +164,12 @@ Purpose:
 
 Make the user's current selection a first-class Agent intent anchor.
 
+Status:
+
+- Available as MCP tool `get_selection_context` as of 2026-06-02 CST.
+- Current slice reads selection from the live editor document returned by `canvas.document.get`, summarizes selected nodes, parent container paths, effective context slots, optional ancestors/descendants/siblings, and editable capability flags with explicit disabled reasons.
+- The tool is read-only and does not set selection.
+
 Single source of truth:
 
 - Web runtime selection in `CanvasRuntimeStore`
@@ -202,6 +214,12 @@ Purpose:
 
 Let Agent propose a bounded canvas edit before committing.
 
+Status:
+
+- Available as MCP tool `canvas_diff_preview` as of 2026-06-02 CST.
+- Current slice supports `CanvasOperation[]` previews against the latest live editor document. It reuses `applyCanvasTransaction` on a cloned document, does not mutate the live editor, and reports affected/created/updated/deleted/moved node IDs, affected bounds, high-risk changes, preview warnings, and a transaction ID candidate.
+- `structuredOperations` / `batch_design` parse-preview remains a follow-up so the DSL and transaction path can share one normalization boundary.
+
 Single source of truth:
 
 - current live document
@@ -245,6 +263,12 @@ Acceptance:
 Purpose:
 
 Provide one production-grade commit boundary for Agent canvas edits.
+
+Status:
+
+- Available as MCP tool `apply_canvas_transaction` as of 2026-06-02 CST.
+- Current slice supports page-aware `CanvasOperation[]`, `dryRun`, optional selection updates, live `baseVersion` protection, shared affected/high-risk reporting with `canvas_diff_preview`, and commits through `LiveCanvasService.patchDocument`.
+- The Web live document state now exposes version through `LiveCanvasService.getDocumentState`; existing `getDocument` behavior remains available for read-only tools.
 
 Single source of truth:
 
@@ -298,6 +322,12 @@ Acceptance:
 Purpose:
 
 Let Agent self-check generated or edited canvas output.
+
+Status:
+
+- Available as MCP tool `validate_canvas` as of 2026-06-02 CST.
+- Current slice implements deterministic structural validation for invalid page/node structure, duplicate/missing node IDs, missing canvas assets, missing variables, dangling connector endpoints, likely fixed-size text overflow, invalid ref component targets, and hidden/locked Agent output.
+- Visual heuristics such as low contrast and overlap critique remain follow-up checks and should stay field-backed rather than screenshot-only.
 
 Single source of truth:
 
@@ -355,6 +385,12 @@ Acceptance:
 Purpose:
 
 Unify visual verification under the MCP-compatible registry.
+
+Status:
+
+- Available in the MCP registry as `screenshot_canvas` as of 2026-06-02 CST.
+- Current slice wraps the existing direct screenshot tool, preserving `canvas.screenshot` browser RPC behavior while exposing the same capability to MCP clients and Deep Agents bridge discovery.
+- Missing browser/user context returns structured errors instead of opaque fallbacks.
 
 Single source of truth:
 
@@ -420,6 +456,15 @@ Acceptance:
 
 - Agent can create dense but readable structured diagrams without brittle coordinate math.
 
+Status:
+
+- Implemented as MCP `layout_canvas`.
+- Supports `auto_layout`, `stack`, `grid`, `flow`, `avoid_overlap`, and `align_distribute` strategies.
+- `auto_layout` writes only runtime-consumed container layout fields (`layout`, `gap`, `padding`) and leaves child positions untouched.
+- Coordinate-moving strategies emit explicit `updateNode` operations and require all target nodes to share one parent coordinate space, preventing scene coordinates from being written into mixed local coordinate systems.
+- Supports `containerId` or explicit `nodeIds`, optional bounds, direction, gap, padding, dry-run preview, transaction IDs, and live `baseVersion` protection.
+- Planner logic lives in `layout-canvas-planner.ts` so the MCP wrapper remains focused on validation, logging, and patch orchestration.
+
 ### `resize_container_to_fit`
 
 Purpose:
@@ -450,6 +495,14 @@ Output:
 Acceptance:
 
 - Agent can add content into a container and fit the container without visual overflow.
+
+Status:
+
+- Implemented as MCP `resize_container_to_fit`.
+- Computes visible descendant scene bounds, applies numeric width/height updates to the container only, and leaves child positions untouched.
+- Supports `axis`, `padding`, min/max dimensions, dry-run preview, transaction IDs, created selection focus on the resized container, and live `baseVersion` protection.
+- Returns previous bounds, next bounds, content bounds, affected child IDs, and layout warnings when content extends before the container origin or max dimensions clamp the required fit.
+- Empty containers and unsupported node types fail with concrete reasons instead of silently applying no-op updates.
 
 ### `connect_nodes`
 
@@ -482,6 +535,14 @@ Output:
 Acceptance:
 
 - Agent can make durable canvas dataflow relations without manual coordinates.
+
+Status:
+
+- Implemented as MCP `connect_nodes`.
+- Inserts a durable `LineNode` with `connector.start` and `connector.end` bindings, route metadata, arrow direction, optional relationship/name, and style overrides.
+- Chooses connector sides from live scene bounds and lets existing `reconcileCanvasConnectors` keep endpoint coordinates synchronized after node movement.
+- Supports dry-run preview, transaction IDs, selection of the created connector, and live `baseVersion` protection through `LiveCanvasService.patchDocument`.
+- Current connector targets intentionally match the Web connector runtime: visible `frame`, `group`, and `rectangle` nodes. Unsupported target types fail with a concrete reason instead of creating a line that is not consumed by connector semantics.
 
 ### `create_agent_output_container`
 
@@ -519,6 +580,13 @@ Acceptance:
 
 - Agent uses a consistent container schema for final visual/structured deliverables.
 
+Status:
+
+- Implemented as MCP `create_agent_output_container`.
+- Creates one canonical `FrameNode` truth for durable Agent output with `containerRole`, `contextSlots`, `agentBinding`, `ioPorts`, `createdByAgentId`, `runId`, `sessionId`, optional children, and bounds stored on the node.
+- Supports explicit bounds or deterministic placement to the right of existing page content, dry-run preview, transaction IDs, created container selection, and live `baseVersion` protection.
+- Child nodes must include `id` and `type`; duplicate child IDs fail fast before the live document is patched.
+
 ### `query_canvas_assets`
 
 Purpose:
@@ -550,6 +618,13 @@ Acceptance:
 
 - Agent can answer "which existing image should I edit?" from canvas state.
 
+Status:
+
+- Implemented as MCP `query_canvas_assets`.
+- Reads only the live `PenDocument.pages` document through `LiveCanvasService`.
+- Returns `PenDocument.assets` entries with concrete node references, referenced node IDs, dimensions/mime/source metadata, and missing document-asset references such as unresolved `asset:` URLs.
+- Supports `type`, `source`, `referencedOnly`, `nodeIds`, and explicit `pageId` filters.
+
 ### `replace_asset_in_node`
 
 Purpose:
@@ -576,6 +651,14 @@ Output:
 - previous asset/source
 - next asset/source
 - preserved bounds
+
+Status:
+
+- Implemented as MCP `replace_asset_in_node`.
+- Preserves node identity and bounds by updating the runtime-consumed source field: `image.src`, `videoEmbed.src`, or the first image fill URL.
+- Uses `PenDocument.assets` plus node source/fill fields as one transaction truth by adding core `CanvasOperation.type = "upsertAsset"` and committing through `LiveCanvasService.patchDocument`.
+- Supports reusing an existing `assetId`, creating/updating an asset record from `url + mimeType`, dry-run preview, transaction IDs, and live `baseVersion` protection.
+- `preserveBounds` must currently remain true. `updatePromptMetadata` is intentionally rejected until prompt metadata input and ownership are defined, preventing a UI/tool control that appears editable but is not consumed by runtime.
 
 Acceptance:
 
@@ -605,6 +688,13 @@ Acceptance:
 
 - Agent remembers why a container exists and which feedback shaped it.
 
+Status:
+
+- Implemented as read-only MCP `canvas_memory_index` live-canvas slice.
+- Builds searchable memory entries from durable `PenDocument.pages` nodes, including names, roles, text content, `contextSlots`, `agentBinding`, `createdByAgentId`, `runId`, and `sessionId`.
+- Returns `searchableText`, source node IDs, metadata, relevance score, hidden/locked omission warnings, and source flags that explicitly mark `persistedMemory: false`.
+- This slice does not persist long-term memory and does not read chat/user-message history yet; those remain follow-up persistence boundaries and must not become a second runtime canvas truth.
+
 ### `critique_canvas`
 
 Purpose:
@@ -625,6 +715,13 @@ Acceptance:
 
 - Agent can propose or apply fix passes grounded in specific node IDs and reasons.
 
+Status:
+
+- Implemented as read-only MCP `critique_canvas`.
+- Runs deterministic critique checks for design hierarchy, visual consistency, brand/style context, readability through validation summary, container role clarity, deliverable completeness, and validation issue summary.
+- Reuses live `PenDocument.pages` truth plus `validateCanvasDocument`; findings reference concrete node IDs and suggested fixes, but the tool never mutates canvas state.
+- Supports explicit `pageId`, `nodeIds`, check selection, optional validation summary, and severity threshold filtering.
+
 ### `export_canvas_deliverable`
 
 Purpose:
@@ -643,6 +740,13 @@ Targets:
 Acceptance:
 
 - Agent can turn selected containers into user-facing deliverables with traceable source node IDs.
+
+Status:
+
+- Implemented as read-only MCP `export_canvas_deliverable` for `structured_json`, `flow_spec`, and `component_spec` targets.
+- Uses explicit `nodeIds` or the current live canvas selection as the export source, keeps root/source node IDs, scene bounds, referenced assets, and optional validation summary in the handoff payload.
+- `flow_spec` exports connector endpoints from durable `LineNode.connector` data; `component_spec` exports component root summaries, child counts, component refs, slot metadata, and variable refs.
+- Image/poster/code/deck targets intentionally return explicit unsupported reasons instead of pretending to render; React/HTML/Vue handoff remains owned by `codegen_export`, and image evidence remains owned by `screenshot_canvas`.
 
 ### `canvas_run_trace`
 
@@ -669,6 +773,13 @@ Output:
 Acceptance:
 
 - Users and engineers can replay what changed and why without polluting the visual canvas.
+
+Status:
+
+- Implemented as read-only MCP `canvas_run_trace`.
+- Reads recent `StreamEvent` records from the shared `CanvasEventBuffer` and live canvas node metadata from the current `PenDocument.pages`; it does not persist a second trace document or create process containers.
+- Returns active/requested run context, compact event timeline, tool call lifecycle, canvas patch transaction IDs, patch operation summaries, affected node IDs, and live nodes linked by `runId`, `sessionId`, or `agentBinding`.
+- Supports `runId`, `sessionId`, `nodeIds`, `pageId`, `maxEvents`, optional tool payload inclusion, and `includeEvents: false` for live node-only diagnosis when no event buffer is available.
 
 ## Suggested Implementation Slices
 

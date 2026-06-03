@@ -17,6 +17,7 @@ import {
 import type { LiveCanvasService } from "../features/canvas/live-canvas-service.js";
 import type { UserSupabaseClient } from "../supabase/user.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
+import type { CanvasEventBuffer } from "../ws/event-buffer.js";
 import {
   type AgentBackendResult,
   createAgentBackend,
@@ -50,6 +51,7 @@ export type CucumberAgentFactory = (options: {
   connectionManager?: ConnectionManager;
   createUserClient?: (accessToken: string) => UserSupabaseClient;
   env: ServerEnv;
+  eventBuffer?: CanvasEventBuffer;
   liveCanvasService?: LiveCanvasService;
   model?: BaseLanguageModel | string;
   persistImage?: PersistImageFn;
@@ -68,6 +70,7 @@ export function createCucumberDeepAgent(options: {
   connectionManager?: ConnectionManager;
   createUserClient?: (accessToken: string) => UserSupabaseClient;
   env: ServerEnv;
+  eventBuffer?: CanvasEventBuffer;
   liveCanvasService?: LiveCanvasService;
   model?: BaseLanguageModel | string;
   persistImage?: PersistImageFn;
@@ -138,6 +141,7 @@ export function createCucumberDeepAgent(options: {
       ...(options.connectionManager
         ? { connectionManager: options.connectionManager }
         : {}),
+      ...(options.eventBuffer ? { eventBuffer: options.eventBuffer } : {}),
       ...(options.liveCanvasService
         ? { liveCanvasService: options.liveCanvasService }
         : {}),

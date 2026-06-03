@@ -87,26 +87,45 @@ export function createLiveCanvasService(options: {
     }
   }
 
+  async function getDocumentState(
+    user: AuthenticatedUser,
+    canvasId: string,
+  ): Promise<{ document: CucumberCanvasDocument; version: number }> {
+    await assertCanvasAccess(user, canvasId);
+    const result = await rpcToLiveEditor<{
+      document?: unknown;
+      version?: unknown;
+    }>(user, canvasId, "canvas.document.get", {});
+    if (!isCucumberCanvasDocument(result.document)) {
+      throw new LiveCanvasServiceError(
+        "invalid_canvas_document",
+        "Live editor returned an invalid Cucumber canvas document.",
+        500,
+      );
+    }
+    if (typeof result.version !== "number") {
+      throw new LiveCanvasServiceError(
+        "invalid_canvas_document",
+        "Live editor returned a canvas document without a numeric version.",
+        500,
+      );
+    }
+    return { document: result.document, version: result.version };
+  }
+
   return {
+    async getDocumentState(
+      user: AuthenticatedUser,
+      canvasId: string,
+    ): Promise<{ document: CucumberCanvasDocument; version: number }> {
+      return getDocumentState(user, canvasId);
+    },
+
     async getDocument(
       user: AuthenticatedUser,
       canvasId: string,
     ): Promise<CucumberCanvasDocument> {
-      await assertCanvasAccess(user, canvasId);
-      const result = await rpcToLiveEditor<{ document?: unknown }>(
-        user,
-        canvasId,
-        "canvas.document.get",
-        {},
-      );
-      if (!isCucumberCanvasDocument(result.document)) {
-        throw new LiveCanvasServiceError(
-          "invalid_canvas_document",
-          "Live editor returned an invalid Cucumber canvas document.",
-          500,
-        );
-      }
-      return result.document;
+      return (await getDocumentState(user, canvasId)).document;
     },
 
     async setDocument(

@@ -193,6 +193,22 @@ If the canvas page is not open, live canvas writes fail with `live_canvas_unavai
 | Tool | Agent can call through MCP? | What it does |
 | --- | --- | --- |
 | `inspect_canvas` | Yes | Reads live document summaries, full node details, type filters, and region filters. |
+| `inspect_canvas_semantic` | Yes | Reads the live canvas as AI workspace context: active or explicit page summary, semantic containers, selected/focus nodes, connector dataflow edges, referenced assets, optional variables/themes, and warnings without mutating the document. |
+| `get_selection_context` | Yes | Reads the current live canvas selection as the user's intent anchor, including selected node summaries, parent container paths, effective context slots, optional related nodes, and capability flags with disabled reasons. |
+| `canvas_diff_preview` | Yes | Previews a `CanvasOperation[]` transaction against the latest live document without mutating it, returning affected node IDs, created/updated/deleted/moved IDs, affected bounds, high-risk changes, preview warnings, and a transaction ID candidate. |
+| `apply_canvas_transaction` | Yes | Applies a page-aware `CanvasOperation[]` transaction through `LiveCanvasService.patchDocument`, with dry-run support, live version protection, optional selection update, affected-node reporting, and validation preview warnings. |
+| `layout_canvas` | Yes | Applies conservative layout intent through `updateNode` operations or container layout field updates, covering auto-layout fields, stack, grid, flow, avoid-overlap, and align/distribute for one parent coordinate space. |
+| `query_canvas_assets` | Yes | Reads `PenDocument.assets` and live node asset references, returning asset metadata, referenced node IDs, concrete node field references, and missing document-asset references. |
+| `replace_asset_in_node` | Yes | Replaces an image/video node source or image fill while preserving node identity and bounds, optionally upserting a `PenDocument.assets` record and committing through versioned canvas patch transactions. |
+| `connect_nodes` | Yes | Creates a bound semantic connector `LineNode` between visible connector-capable nodes, choosing endpoint sides from scene bounds and committing through versioned canvas patch transactions. |
+| `resize_container_to_fit` | Yes | Resizes a frame/group container to fit visible descendant content with padding, returning previous/next/content bounds, affected child IDs, and fit warnings. |
+| `create_agent_output_container` | Yes | Creates the canonical durable Agent output `FrameNode` with container role, context slots, agent binding, IO ports, run/session metadata, optional children, deterministic placement, and versioned patch support. |
+| `validate_canvas` | Yes | Runs deterministic live canvas checks for page/node structure, duplicate or missing node IDs, missing assets, missing variables, dangling connectors, likely fixed-text overflow, invalid component refs, and hidden/locked Agent output. |
+| `canvas_memory_index` | Yes | Builds a read-only searchable memory index from live `PenDocument.pages` nodes, context slots, Agent bindings, run/session metadata, and text content, explicitly marking that no persisted memory truth was written. |
+| `critique_canvas` | Yes | Runs a read-only deterministic critique for hierarchy, visual consistency, brand/style context, container role clarity, deliverable completeness, and validation summary, returning node-grounded findings and suggested fixes. |
+| `export_canvas_deliverable` | Yes | Exports selected or explicit live canvas nodes as traceable structured JSON, flow specs, or component specs with root/source node IDs, scene bounds, referenced assets, and validation summary; unsupported render/code/deck targets return explicit reasons. |
+| `canvas_run_trace` | Yes | Reads recent Agent stream events plus live run-bound canvas nodes, returning tool calls, canvas patch transaction IDs, affected node IDs, active/requested run context, and explicit event-buffer availability without mutating the canvas. |
+| `screenshot_canvas` | Yes | Captures full, region, or viewport screenshots through the browser `canvas.screenshot` RPC for visual verification, now listed in the MCP registry as well as the existing direct Agent tool path. |
 | `manipulate_canvas` | Yes | Applies common canvas operations in batches. |
 | `batch_get` | Yes | Reads/searches live canvas nodes by IDs, patterns, parent, depth, and page. |
 | `batch_design` | Yes | Applies structured DSL operations `I/C/U/R/M/D` against the live canvas. |
@@ -238,9 +254,9 @@ Adjacent MCP-compatible non-canvas tools registered in the same server include `
 
 Same-batch operations can reference earlier created IDs as `op_0`, `op_1`, and so on.
 
-### Direct Agent Tools That Are Not MCP
+### Direct Agent Tools Outside The Canvas MCP Tool Set
 
-`screenshot_canvas` is injected as a direct LangChain tool when a `connectionManager` exists. It calls browser RPC `canvas.screenshot`, supports `full`, `region`, and `viewport`, and can persist the screenshot to a short URL. It is Agent-callable, but not registered in `apps/server/src/mcp/server.ts`.
+`screenshot_canvas` is still injected as a direct LangChain tool when a `connectionManager` exists, and is also registered as an MCP-compatible Cucumber canvas tool. Both paths call browser RPC `canvas.screenshot`, support `full`, `region`, and `viewport`, and can persist the screenshot to a short URL when image persistence is available.
 
 The Deep Agents filesystem tools (`ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `execute`, `task`, `write_todos`) are provided by middleware and are also not Cucumber canvas MCP tools.
 
