@@ -97,6 +97,12 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
       .describe(
         "Optional display height on canvas. If omitted, the server preserves the generated aspect ratio.",
       ),
+    targetContainerId: z
+      .string()
+      .optional()
+      .describe(
+        "Optional canvas container ID to receive the generated image. When provided, placementX/Y are local to this container.",
+      ),
   });
 }
 
@@ -112,6 +118,7 @@ type ImageGenerateInput = {
   placementY?: number;
   placementWidth?: number;
   placementHeight?: number;
+  targetContainerId?: string;
 };
 
 type ResolvedImageGenerateInput = Omit<
@@ -402,6 +409,7 @@ export type SubmitImageJobFn = (input: {
   placementY?: number;
   placementWidth?: number;
   placementHeight?: number;
+  targetContainerId?: string;
 }) => Promise<{
   jobId: string;
   elementId?: string;
@@ -466,6 +474,9 @@ export async function runImageGenerate(
       : {}),
     ...(input.placementHeight != null
       ? { placementHeight: input.placementHeight }
+      : {}),
+    ...(input.targetContainerId
+      ? { targetContainerId: input.targetContainerId }
       : {}),
   };
   const selectedProvider = availableModels.find(
@@ -547,6 +558,9 @@ export async function runImageGenerate(
           : {}),
         ...(request.placementHeight != null
           ? { placementHeight: request.placementHeight }
+          : {}),
+        ...(request.targetContainerId
+          ? { targetContainerId: request.targetContainerId }
           : {}),
       });
 

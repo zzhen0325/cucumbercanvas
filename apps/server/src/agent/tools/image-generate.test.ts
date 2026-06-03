@@ -101,4 +101,41 @@ describe("createImageGenerateTool", () => {
       height: 288,
     });
   });
+
+  it("forwards placement and target container metadata to image jobs", async () => {
+    let submitted:
+      | {
+          placementHeight?: number;
+          placementWidth?: number;
+          placementX?: number;
+          placementY?: number;
+          targetContainerId?: string;
+        }
+      | undefined;
+    const imageTool = createImageGenerateTool({
+      availableModels,
+      submitImageJob: async (input) => {
+        submitted = input;
+        return { jobId: "job_4", error: "stubbed failure" };
+      },
+    });
+
+    await imageTool.invoke({
+      prompt: "A playful puppy",
+      model: "Seedream 4.6",
+      placementHeight: 512,
+      placementWidth: 512,
+      placementX: 44,
+      placementY: 88,
+      targetContainerId: "agent_image_result_1",
+    });
+
+    expect(submitted).toMatchObject({
+      placementHeight: 512,
+      placementWidth: 512,
+      placementX: 44,
+      placementY: 88,
+      targetContainerId: "agent_image_result_1",
+    });
+  });
 });

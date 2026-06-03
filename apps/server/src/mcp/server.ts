@@ -14,6 +14,7 @@ import { createCanvasDiffPreviewMcpTool } from "./tools/canvas-diff-preview.js";
 import { createCanvasMemoryIndexMcpTool } from "./tools/canvas-memory-index.js";
 import { createCanvasRunTraceMcpTool } from "./tools/canvas-run-trace.js";
 import { createConnectNodesMcpTool } from "./tools/connect-nodes.js";
+import { createAgentCanvasFlowMcpTool } from "./tools/create-agent-canvas-flow.js";
 import { createAgentOutputContainerMcpTool } from "./tools/create-agent-output-container.js";
 import { createCritiqueCanvasMcpTool } from "./tools/critique-canvas.js";
 import { createExportCanvasDeliverableMcpTool } from "./tools/export-canvas-deliverable.js";
@@ -118,6 +119,11 @@ export function createCucumberMcpServer(
         : {}),
     }),
     createAgentOutputContainerMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createAgentCanvasFlowMcpTool({
       ...(deps.liveCanvasService
         ? { liveCanvasService: deps.liveCanvasService }
         : {}),

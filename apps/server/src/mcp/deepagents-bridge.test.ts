@@ -33,6 +33,7 @@ describe("createCucumberMcpServer", () => {
       "connect_nodes",
       "resize_container_to_fit",
       "create_agent_output_container",
+      "create_agent_canvas_flow",
       "layout_canvas",
       "validate_canvas",
       "canvas_memory_index",

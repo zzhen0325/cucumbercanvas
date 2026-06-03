@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-06-03T11:41:58+08:00",
+  "updatedAt": "2026-06-03T12:15:22+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -42,7 +42,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "agent-engineering",
-      "summary": "Deep Agents/LangChain runtime with streaming, MCP-compatible typed tools, live editor canvas document access, semantic canvas inspection, live selection context anchoring, canvas transaction preview/apply, layout intent primitives, live canvas asset query/replacement, semantic node connectors, canonical Agent output containers, container fit resizing, deterministic canvas validation and critique, live canvas memory indexing, traceable structured/flow/component deliverable export, read-only canvas run trace inspection, MCP screenshot verification, Cucumber structured canvas read/write, page management, layered design/content/refine tools, Figma import, style/variable tools, prompt-to-canvas planning/execution, design-as-code export to React/HTML/Vue, persistence, and workspace skill execution.",
+      "summary": "Deep Agents/LangChain runtime with streaming, MCP-compatible typed tools, live editor canvas document access, semantic canvas inspection, live selection context anchoring, canvas transaction preview/apply, layout intent primitives, live canvas asset query/replacement, semantic node connectors, canonical Agent output containers, minimal visible Agent canvas flow creation for simple image generation, container fit resizing, deterministic canvas validation and critique, live canvas memory indexing, traceable structured/flow/component deliverable export, read-only canvas run trace inspection, MCP screenshot verification, Cucumber structured canvas read/write, page management, layered design/content/refine tools, Figma import, style/variable tools, prompt-to-canvas planning/execution, design-as-code export to React/HTML/Vue, persistence, and workspace skill execution.",
       "artifacts": [
         "apps/server/src/agent/deep-agent.ts",
         "apps/server/src/agent/runtime.ts",
@@ -71,6 +71,8 @@
         "apps/server/src/mcp/tools/get-selection-context.test.ts",
         "apps/server/src/mcp/tools/inspect-canvas-semantic.ts",
         "apps/server/src/mcp/tools/connect-nodes.ts",
+        "apps/server/src/mcp/tools/create-agent-canvas-flow.ts",
+        "apps/server/src/mcp/tools/create-agent-canvas-flow.test.ts",
         "apps/server/src/mcp/tools/create-agent-output-container.ts",
         "apps/server/src/mcp/tools/critique-canvas.ts",
         "apps/server/src/mcp/tools/canvas-memory-index.ts",
@@ -108,7 +110,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "generation-engineering",
-      "summary": "Seedream/Volcengine-backed image and video generation through provider adapters, background_jobs state, Supabase task leasing, worker execution, prompt normalization, and direct Cucumber canvas asset insertion.",
+      "summary": "Seedream/Volcengine-backed image and video generation through provider adapters, background_jobs state, Supabase task leasing, worker execution, prompt normalization, and direct Cucumber canvas asset insertion with explicit generated-image placement into Agent-created result containers.",
       "artifacts": [
         "apps/server/src/generation/providers/seedream.ts",
         "apps/server/src/generation/providers/seedream-prompt.ts",
@@ -117,6 +119,10 @@
         "apps/server/src/queue/task-manager.ts",
         "apps/server/src/worker.ts",
         "apps/server/src/features/canvas/canvas-element-writer.ts",
+        "apps/server/src/features/canvas/canvas-element-writer.test.ts",
+        "apps/server/src/features/jobs/executors/image-generation.ts",
+        "apps/server/src/agent/tools/image-generate.ts",
+        "apps/server/src/agent/tools/image-generate.test.ts",
         "apps/server/src/agent/runtime.ts",
         "supabase/migrations/20260331150000_supabase_tasks.sql",
         "apps/web/src/components/canvas/image-generator-panel.tsx",
@@ -142,7 +148,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "product-engineering",
-      "summary": "Cucumber canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit with unified scene-space viewport interaction, transient transform previews, viewport render culling through a render-node viewport index, single-pass scene snapshot indexing, image mipmap sampling with a single sliced 512px interaction variant plus base-image idle rendering, interaction draws avoid 2048px fallback while LODs are pending, Skia interaction background snapshots, threshold-gated viewport pan snapshot reuse, URL-backed canvas asset persistence that extracts inline base64 to project-assets, path geometry caches, single-pass renderer document sync, animation-frame coalesced document-store renderer/scene sync with drag deferral, capped history snapshots, render hot-path caches, transaction-batched mutations, encapsulated sticky-note container nodes with non-selectable body text, placeholder-only empty body text, sticky labels with rounded editable names, sticky descendants selecting as a single object, sticky frames excluded from paste/import/drop parent resolution, no sticky mask inspector controls, hidden selection chrome during sticky body editing, sticky formatting toolbar controls with local-font DropdownMenu support, and four scene-stable side connector handles whose blue-dot positions define connector endpoints and can branch into linked sticky containers, live-following attached connector previews during container movement, connector endpoint reconciliation across container move/resize/delete operations, smooth routed connector rendering with endpoint tips aligned to the curve tangent, patch-first live canvas protocol scaffolding, fully migrated selector-driven Zustand/Immer SkiaCanvas core runtime state, connected toolbar/page/property-panel/panel subscriptions, stable keyboard event callbacks, corrected history undo/redo semantics, and a standalone CanvasApi contract with sticky, section, connector, and endpoint detach actions, PenDocument.pages is the only supported durable shape, legacy flat-map/root-children data fails fast, dangling connector references fail with readable diagnostics, and paste/batch drag-drop import, text-tool Auto Width/Auto Height editing, endpoint-driven line/arrow/connector drawing/editing with Figma-style reverse drag, side snapping, 45-degree constraints, center drawing, endpoint handles, typed stroke endpoint tips, typed connector binding metadata, and SVG marker export, and export flows produce editable PenNode trees with high-fidelity Figma layer ordering/fill/stroke cap/effect spread/style/PostScript-aware text/layout stretch/transform/shape/mask/component override-path metadata, a strict layout runtime boundary where parent auto-layout truth lives on ContainerProps and child sizing/flow/align/grow truth lives on layoutConstraints, plus matching property-panel controls for layered fills and strokes, image crop matrices, gradient stops, blend modes, ordered effects, transforms, text fidelity, layout constraints, masks, editable style refs, editable variable refs, structured component refs/overrides, vector/path diagnostics, validated path editing, clipping, shape details, visible validation errors, and root/nested layer-ordering verification, with explicit degradation warnings.",
+      "summary": "Cucumber canvas runtime where containers represent Agent output units, spatial layout carries context/data flow, native editing runs on Skia/CanvasKit with unified scene-space viewport interaction, transient transform previews, viewport render culling through a render-node viewport index, single-pass scene snapshot indexing, image mipmap sampling with a single sliced 512px interaction variant plus base-image idle rendering, interaction draws avoid 2048px fallback while LODs are pending, Skia interaction background snapshots, threshold-gated viewport pan snapshot reuse, URL-backed canvas asset persistence that extracts inline base64 to project-assets, path geometry caches, single-pass renderer document sync, animation-frame coalesced document-store renderer/scene sync with drag deferral, capped history snapshots, render hot-path caches, transaction-batched mutations, shared sticky-note node factories for Web and Agent paths, encapsulated sticky-note container nodes with non-selectable body text, placeholder-only empty body text, sticky labels with rounded editable names, sticky descendants selecting as a single object, sticky frames excluded from paste/import/drop parent resolution, no sticky mask inspector controls, hidden selection chrome during sticky body editing, sticky formatting toolbar controls with local-font DropdownMenu support, and four scene-stable side connector handles whose blue-dot positions define connector endpoints and can branch into linked sticky containers, live-following attached connector previews during container movement, connector endpoint reconciliation across container move/resize/delete operations, smooth routed connector rendering with endpoint tips aligned to the curve tangent, patch-first live canvas protocol scaffolding, fully migrated selector-driven Zustand/Immer SkiaCanvas core runtime state, connected toolbar/page/property-panel/panel subscriptions, stable keyboard event callbacks, corrected history undo/redo semantics, and a standalone CanvasApi contract with sticky, section, connector, and endpoint detach actions, PenDocument.pages is the only supported durable shape, legacy flat-map/root-children data fails fast, dangling connector references fail with readable diagnostics, and paste/batch drag-drop import, text-tool Auto Width/Auto Height editing, endpoint-driven line/arrow/connector drawing/editing with Figma-style reverse drag, side snapping, 45-degree constraints, center drawing, endpoint handles, typed stroke endpoint tips, typed connector binding metadata, and SVG marker export, and export flows produce editable PenNode trees with high-fidelity Figma layer ordering/fill/stroke cap/effect spread/style/PostScript-aware text/layout stretch/transform/shape/mask/component override-path metadata, a strict layout runtime boundary where parent auto-layout truth lives on ContainerProps and child sizing/flow/align/grow truth lives on layoutConstraints, plus matching property-panel controls for layered fills and strokes, image crop matrices, gradient stops, blend modes, ordered effects, transforms, text fidelity, layout constraints, masks, editable style refs, editable variable refs, structured component refs/overrides, vector/path diagnostics, validated path editing, clipping, shape details, visible validation errors, and root/nested layer-ordering verification, with explicit degradation warnings.",
       "artifacts": [
         "packages/canvas-core",
         "packages/pen-figma",
@@ -156,6 +162,7 @@
         "packages/canvas-core/src/import.ts",
         "packages/canvas-core/src/layout.ts",
         "packages/canvas-core/src/connector-geometry.ts",
+        "packages/canvas-core/src/sticky-note.ts",
         "packages/canvas-core/src/operations.ts",
         "packages/canvas-core/src/__tests__/canvas-core.test.ts",
         "packages/canvas-core/src/__tests__/connector-geometry.test.ts",

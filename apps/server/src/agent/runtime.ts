@@ -484,6 +484,21 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               model: input.model,
               aspect_ratio: input.aspectRatio,
               ...(input.inputImages ? { input_images: input.inputImages } : {}),
+              ...(input.placementX != null
+                ? { placement_x: input.placementX }
+                : {}),
+              ...(input.placementY != null
+                ? { placement_y: input.placementY }
+                : {}),
+              ...(input.placementWidth != null
+                ? { placement_width: input.placementWidth }
+                : {}),
+              ...(input.placementHeight != null
+                ? { placement_height: input.placementHeight }
+                : {}),
+              ...(input.targetContainerId
+                ? { target_container_id: input.targetContainerId }
+                : {}),
             },
           });
 
@@ -522,14 +537,30 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 const writerClient = createClient(
                   accessToken,
                 ) as UserSupabaseClient;
-                const insertResult = await insertImageElement(writerClient, {
-                  canvasId,
-                  objectPath: result.object_path,
-                  width: result.width ?? 1024,
-                  height: result.height ?? 1024,
-                  mimeType: result.mime_type ?? "image/png",
-                  title: input.title,
-                });
+                const explicitPlacement =
+                  input.placementX != null && input.placementY != null
+                    ? {
+                        x: input.placementX,
+                        y: input.placementY,
+                        width: input.placementWidth ?? 512,
+                        height: input.placementHeight ?? 512,
+                      }
+                    : undefined;
+                const insertResult = await insertImageElement(
+                  writerClient,
+                  {
+                    canvasId,
+                    objectPath: result.object_path,
+                    width: result.width ?? 1024,
+                    height: result.height ?? 1024,
+                    mimeType: result.mime_type ?? "image/png",
+                    title: input.title,
+                    ...(input.targetContainerId
+                      ? { targetContainerId: input.targetContainerId }
+                      : {}),
+                  },
+                  explicitPlacement,
+                );
                 elementId = insertResult.elementId;
                 jobLap("canvas_image_inserted", {
                   elementId,

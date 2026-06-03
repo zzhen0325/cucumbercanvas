@@ -46,6 +46,7 @@ type ImageInsertOpts = {
   width: number;
   height: number;
   mimeType: string;
+  targetContainerId?: string;
   title?: string;
 };
 
@@ -152,7 +153,37 @@ function resolveCucumberPlacement(
   width: number,
   height: number,
   explicitPlacement?: Placement,
+  targetContainerId?: string,
 ): { containerId: string | null; placement: Placement } {
+  if (targetContainerId) {
+    const target = findNode(doc, targetContainerId);
+    if (!target) {
+      throw new Error(
+        `Target image container ${targetContainerId} does not exist on the canvas.`,
+      );
+    }
+    const targetType = (target as PenNode).type;
+    if (!isContainerNode(target)) {
+      throw new Error(
+        `Target image container ${targetContainerId} is type ${targetType}, but generated images can only be inserted into frame or group containers.`,
+      );
+    }
+    if (target.visible === false) {
+      throw new Error(
+        `Target image container ${targetContainerId} is hidden and cannot receive generated images.`,
+      );
+    }
+    return {
+      containerId: targetContainerId,
+      placement: explicitPlacement ?? {
+        x: 24,
+        y: 32,
+        width,
+        height,
+      },
+    };
+  }
+
   if (explicitPlacement) {
     return {
       containerId: inferCucumberInsertContainerId(doc),
@@ -264,6 +295,7 @@ export async function insertImageElement(
     sizedPlacement.width,
     sizedPlacement.height,
     explicitPlacement,
+    opts.targetContainerId,
   );
   const assetId = createNodeId("asset");
   const nodeId = createNodeId("image");

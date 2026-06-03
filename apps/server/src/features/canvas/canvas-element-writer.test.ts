@@ -116,4 +116,72 @@ describe("canvas-element-writer generated asset insertion", () => {
       "https://cdn.example.test/workspace/generated/job_4.png",
     );
   });
+
+  it("inserts generated images into an explicit result container", async () => {
+    let doc = createEmptyDocument();
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: {
+        id: "result_container",
+        type: "frame",
+        name: "图片结果容器",
+        x: 760,
+        y: -20,
+        width: 600,
+        height: 640,
+        children: [],
+      } as PenNode,
+    });
+    const client = createClient(doc);
+
+    const result = await insertImageElement(
+      client,
+      {
+        canvasId: "canvas_1",
+        objectPath: "workspace/generated/job_5.png",
+        width: 1024,
+        height: 1024,
+        mimeType: "image/png",
+        targetContainerId: "result_container",
+        title: "Puppy image",
+      },
+      { x: 44, y: 88, width: 512, height: 512 },
+    );
+
+    const nextDoc = client.state.content as ReturnType<
+      typeof createEmptyDocument
+    >;
+    const resultContainer = findNode(nextDoc, "result_container") as
+      | (PenNode & { children?: PenNode[] })
+      | undefined;
+    expect(resultContainer?.children?.map((node) => node.id)).toEqual([
+      result.elementId,
+    ]);
+    expect(findNode(nextDoc, result.elementId)).toMatchObject({
+      height: 512,
+      src: "https://cdn.example.test/workspace/generated/job_5.png",
+      type: "image",
+      width: 512,
+      x: 44,
+      y: 88,
+    });
+  });
+
+  it("fails clearly when the explicit result container is missing", async () => {
+    const client = createClient(createEmptyDocument());
+
+    await expect(
+      insertImageElement(client, {
+        canvasId: "canvas_1",
+        objectPath: "workspace/generated/job_6.png",
+        width: 1024,
+        height: 1024,
+        mimeType: "image/png",
+        targetContainerId: "missing_result_container",
+        title: "Puppy image",
+      }),
+    ).rejects.toThrow(
+      "Target image container missing_result_container does not exist",
+    );
+  });
 });

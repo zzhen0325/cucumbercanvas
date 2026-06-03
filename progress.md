@@ -4,6 +4,16 @@ Last updated: 2026-06-03 CST
 
 ## 2026-06-03
 
+- Added the minimal Agent canvas image-generation flow: MCP `create_agent_canvas_flow` now creates a visible user-input sticky → optimized image prompt sticky → image result container chain with semantic connector arrows, and `generate_image` can target that result container with explicit placement so simple requests like "帮我生成一张小狗的图片" appear on the canvas instead of only in chat.
+- Shared the sticky-note node factory through `packages/canvas-core` so Agent-created sticky nodes use the same `meta.boardKind="sticky"` / body-text structure as Web-created sticky notes, keeping sticky selection/connector behavior on one runtime truth.
+- Updated image background job insertion to preserve explicit placement and `targetContainerId` through runtime and worker paths, with clear failures when the requested result container is missing, hidden, or not a container.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/create-agent-canvas-flow.test.ts src/agent/tools/image-generate.test.ts src/features/canvas/canvas-element-writer.test.ts src/mcp/deepagents-bridge.test.ts`.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/schema.test.ts src/mcp/deepagents-bridge.test.ts`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm --filter @cucumber/shared typecheck`.
+- Passed: `pnpm --filter @cucumber/web exec tsc --noEmit --pretty false --incremental false`.
+- Passed: targeted `pnpm exec biome check` for touched server, shared, canvas-core, web sticky, prompt, progress, and feature registry files.
 - 新增 `docs/code-map.md`，作为功能能力到代码入口的导航地图，覆盖稳定功能入口、职责边界、附近测试、常用 `rg` 搜索，以及现有 `.codegraph/codegraph.db` symbol 索引的可复用 SQLite 查询。
 - 将代码地图登记到 `docs/workflow.md` 和 `feature_list.json` 的项目 harness artifacts 中。
 - 将 `docs/code-map.md` 和本次新增的相关登记说明改为中文，路径、命令和 symbol 名称保持原样，便于直接查询。

@@ -36,6 +36,11 @@ registerExecutor(
       aspect_ratio?: string;
       title?: string;
       input_images?: string[];
+      placement_x?: number;
+      placement_y?: number;
+      placement_width?: number;
+      placement_height?: number;
+      target_container_id?: string;
     };
 
     if (!payload.prompt)
@@ -156,14 +161,30 @@ registerExecutor(
 
       let elementId: string | undefined;
       if (jobRow.canvas_id) {
-        const insertResult = await insertImageElement(admin, {
-          canvasId: jobRow.canvas_id as string,
-          objectPath,
-          width: generated.width,
-          height: generated.height,
-          mimeType: generated.mimeType ?? "image/png",
-          title: payload.title ?? payload.prompt.slice(0, 80),
-        });
+        const explicitPlacement =
+          payload.placement_x != null && payload.placement_y != null
+            ? {
+                x: payload.placement_x,
+                y: payload.placement_y,
+                width: payload.placement_width ?? 512,
+                height: payload.placement_height ?? 512,
+              }
+            : undefined;
+        const insertResult = await insertImageElement(
+          admin,
+          {
+            canvasId: jobRow.canvas_id as string,
+            objectPath,
+            width: generated.width,
+            height: generated.height,
+            mimeType: generated.mimeType ?? "image/png",
+            ...(payload.target_container_id
+              ? { targetContainerId: payload.target_container_id }
+              : {}),
+            title: payload.title ?? payload.prompt.slice(0, 80),
+          },
+          explicitPlacement,
+        );
         elementId = insertResult.elementId;
         lap("canvas_image_inserted");
       }
