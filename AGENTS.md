@@ -172,6 +172,19 @@ When changing agent runtime code under `apps/server/src/agent/`, inspect the cur
 
 对于其他框架包括 Next.js、Excalidraw、Supabase、shadcn/Base UI 等不理解或者不熟悉的地方，一定要先看文档或者源码再开始，确保先获取信息上下文再开干，不然容易导致返工。
 
+<br />
+
+## 测试说明
+
+\
+测试时只运行相关的最小测试集。\
+测试命令尽量使用 quiet / short traceback / dot reporter。\
+不要把完整测试日志放进上下文。\
+如果测试失败，只总结失败测试名、核心错误、最短相关堆栈。\
+除非我明确要求，不要运行全量测试、coverage、snapshot 全量更新。
+
+<br />
+
 ## Forbidden Changes
 
 Do not modify these unless explicitly requested:

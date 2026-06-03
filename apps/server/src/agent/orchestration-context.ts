@@ -160,7 +160,7 @@ function buildPromptLayers(
       title: "Critique Rules",
       source: "system",
       content: [
-        "不得把复杂画布任务压成单条无结构回复；过程、草稿、工具调用和最终产物都应能被 run 事件复盘。",
+        "不得把复杂画布任务压成单条无结构回复；设计、生成、画布编辑任务默认把最小执行链和最终产物写入画布，run 事件用于补充诊断和等待状态。",
         "不要在界面或结果里输出 null、undefined、错误码或空默认值；失败要说明具体原因和下一步。",
         "完成 3 个以上画布元素创建或大批量修改后，优先用 validate_canvas 或 inspect_canvas_semantic 验证结构；需要视觉证据时再使用 screenshot_canvas。",
       ],

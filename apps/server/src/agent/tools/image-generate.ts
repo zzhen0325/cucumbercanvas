@@ -77,13 +77,13 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
       .number()
       .optional()
       .describe(
-        "Left edge x coordinate on canvas. Use inspect_canvas to determine position.",
+        "Left edge x coordinate on canvas. Use canvas_state, find_empty_space, batch_get, or snapshot_layout to determine placement.",
       ),
     placementY: z
       .number()
       .optional()
       .describe(
-        "Top edge y coordinate on canvas. Use inspect_canvas to determine position.",
+        "Top edge y coordinate on canvas. Use canvas_state, find_empty_space, batch_get, or snapshot_layout to determine placement.",
       ),
     placementWidth: z
       .number()

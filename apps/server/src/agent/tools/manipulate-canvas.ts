@@ -1856,7 +1856,7 @@ export function createManipulateCanvasTool(deps: {
     {
       name: "manipulate_canvas",
       description:
-        "Manipulate elements on the live Cucumber canvas. Supports: add_container, move, resize, delete, update_style, update_text, add_text, add_shape, add_line, add_path, align, distribute, reorder, group, ungroup, duplicate, rotate, edit_path, boolean_ops, gradient_fill, effects, auto_layout, lock, unlock, flip. Use inspect_canvas first to understand the current layout. Returns created element IDs for subsequent binding, and same-batch operations can reference earlier IDs with op_0, op_1, etc.",
+        "Legacy imperative editor for simple live Cucumber canvas edits such as move, resize, delete, update_style, update_text, add_text, add_shape, add_line, align, distribute, reorder, lock, and unlock. For complex structured edits, bulk node creation/replacement, hierarchy changes, layout planning, or transaction preview/apply flows, prefer batch_design, apply_canvas_transaction, canvas_diff_preview, find_empty_space, and validate_canvas. Read current state from canvas_state, inspect_canvas_semantic, get_selection_context, batch_get, or snapshot_layout rather than using inspect_canvas by default. Returns created element IDs, and same-batch operations can reference earlier IDs with op_0, op_1, etc.",
       schema: manipulateCanvasSchema,
     },
   );

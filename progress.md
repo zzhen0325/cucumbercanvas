@@ -802,6 +802,17 @@ Status:
 
 - Fixed Agent runs failing with LangChain `todoListMiddleware` tool identity errors by removing the legacy direct `screenshot_canvas` registration from the main Agent tool list; `screenshot_canvas` now has one runtime source through the MCP bridge.
 - Updated Agent prompts and run critique rules so structured canvas reads use `inspect_canvas_semantic`, `get_selection_context`, `batch_get`, `snapshot_layout`, and `validate_canvas` first; `screenshot_canvas` is reserved for visual verification and evidence.
+- Removed the unused deprecated `createPhaseATools` export, marked `inspect_canvas` as a legacy exact-field reader, marked `manipulate_canvas` as a simple imperative editor, and updated image/video placement descriptions to use `canvas_state`, `find_empty_space`, `batch_get`, or `snapshot_layout` instead of `inspect_canvas`.
 - Improved `run.failed` client diagnostics with safe failure reason classification and redacted diagnostic summaries, so future Agent failures do not collapse to an opaque retry message.
 - Passed: `pnpm --filter @cucumber/server test -- run src/agent/tools/index.test.ts src/agent/run-failure.test.ts src/utils/error-sanitizer.test.ts src/mcp/deepagents-bridge.test.ts` (workspace Vitest configuration ran 37 server test files / 134 tests).
 - Passed: `pnpm --filter @cucumber/server typecheck`.
+
+2026-06-03 - Agent canvas execution chain default prompt
+
+- Updated the main Agent prompt so design, generation, and canvas editing tasks default to writing the minimal execution chain and final result into the canvas instead of waiting for the user to explicitly request "show it on the canvas"; pure text tasks remain chat-only.
+- Aligned `agent_run_context` critique rules with the same boundary: canvas execution chain is the default product surface for visual/generation work, while run events remain diagnostic and waiting-state support.
+- Added prompt regression coverage for the default canvas-chain behavior and the pure-text no-tool boundary.
+- Passed: `pnpm --filter @cucumber/server test -- run src/agent/prompts/cucumber-main.test.ts src/agent/orchestration-context.test.ts` (workspace Vitest configuration ran 38 server test files / 136 tests).
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm exec biome check apps/server/src/agent/prompts/cucumber-main.ts apps/server/src/agent/prompts/cucumber-main.test.ts apps/server/src/agent/orchestration-context.ts apps/server/src/agent/orchestration-context.test.ts feature_list.json progress.md`.
+- Passed: `git diff --check -- apps/server/src/agent/prompts/cucumber-main.ts apps/server/src/agent/prompts/cucumber-main.test.ts apps/server/src/agent/orchestration-context.ts apps/server/src/agent/orchestration-context.test.ts feature_list.json progress.md`.

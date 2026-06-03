@@ -119,13 +119,13 @@ function buildVideoGenerateSchema(models: AvailableModel[]) {
       .number()
       .optional()
       .describe(
-        "Canvas X coordinate for video placement. Use inspect_canvas to find a good position.",
+        "Canvas X coordinate for video placement. Use canvas_state, find_empty_space, batch_get, or snapshot_layout to find a good position.",
       ),
     placementY: z
       .number()
       .optional()
       .describe(
-        "Canvas Y coordinate for video placement. Use inspect_canvas to find a good position.",
+        "Canvas Y coordinate for video placement. Use canvas_state, find_empty_space, batch_get, or snapshot_layout to find a good position.",
       ),
     placementWidth: z
       .number()

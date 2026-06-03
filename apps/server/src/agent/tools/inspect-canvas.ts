@@ -20,7 +20,7 @@ const inspectCanvasSchema = z.object({
     .enum(["summary", "full"])
     .default("summary")
     .describe(
-      "Level of detail: summary (id, type, position, size) or full (all properties)",
+      "Legacy compatibility detail level: summary (id, type, position, size) or full (raw node properties). Prefer inspect_canvas_semantic, get_selection_context, batch_get, or snapshot_layout for normal canvas reads.",
     ),
   element_id: z.string().optional().describe("Query a specific element by ID"),
   filter_type: z
@@ -355,7 +355,7 @@ export function createInspectCanvasTool(deps: {
     {
       name: "inspect_canvas",
       description:
-        "Inspect the current canvas state. Returns element positions, sizes, and types. Use before placing new elements to avoid overlaps. Set detail_level='full' for complete properties, or query a specific element_id. Use filter_type to narrow by element type(s) and filter_region to narrow by spatial area.",
+        "Legacy compatibility reader for exact Cucumber canvas node fields, raw properties, element_id lookups, type filters, or spatial region filters. Prefer inspect_canvas_semantic, get_selection_context, batch_get, snapshot_layout, or find_empty_space for normal structure, selection, layout, and placement reads.",
       schema: inspectCanvasSchema,
     },
   );

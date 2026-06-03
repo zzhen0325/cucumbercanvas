@@ -8,16 +8,8 @@ import type { UserSupabaseClient } from "../../supabase/user.js";
 import type { ConnectionManager } from "../../ws/connection-manager.js";
 import type { CanvasEventBuffer } from "../../ws/event-buffer.js";
 import { createBrandKitTool } from "./brand-kit.js";
-import {
-  type PersistImageFn,
-  type SubmitImageJobFn,
-  createImageGenerateTool,
-} from "./image-generate.js";
-import { createProjectSearchTool } from "./project-search.js";
-import {
-  type SubmitVideoJobFn,
-  createVideoGenerateTool,
-} from "./video-generate.js";
+import type { PersistImageFn, SubmitImageJobFn } from "./image-generate.js";
+import type { SubmitVideoJobFn } from "./video-generate.js";
 
 export { createImageGenerateTool } from "./image-generate.js";
 export { createVideoGenerateTool } from "./video-generate.js";
@@ -79,13 +71,4 @@ export function createMainAgentTools(
     tools.push(createBrandKitTool(deps, deps.brandKitId));
   }
   return tools;
-}
-
-/** @deprecated Use createMainAgentTools + sub-agents instead */
-export function createPhaseATools(backend: BackendProtocol | BackendFactory) {
-  return [
-    createProjectSearchTool(backend),
-    createImageGenerateTool(),
-    createVideoGenerateTool(),
-  ] as const;
 }

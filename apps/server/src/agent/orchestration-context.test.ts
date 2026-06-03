@@ -69,6 +69,9 @@ describe("agent orchestration context", () => {
 
     expect(xml).toContain('<agent_run_context version="agent-context-v1">');
     expect(xml).toContain('<layer key="user_goal"');
+    expect(xml).toContain(
+      "设计、生成、画布编辑任务默认把最小执行链和最终产物写入画布",
+    );
     expect(xml).toContain('<agent role="planner"');
     expect(xml).toContain('<model_profile id="openai:gpt-4.1"');
   });

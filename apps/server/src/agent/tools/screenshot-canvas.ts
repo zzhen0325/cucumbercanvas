@@ -53,7 +53,7 @@ export function createScreenshotCanvasTool(deps: {
   return new DynamicStructuredTool({
     name: "screenshot_canvas",
     description:
-      "Take a visual screenshot of the canvas to inspect layout, design quality, color harmony, and spatial relationships. Use this to visually verify your changes or understand the current canvas state. Supports full canvas, specific region, or current viewport capture.",
+      "Take a visual screenshot of the live Cucumber canvas for visual verification, design-quality review, color harmony checks, spatial relationship evidence, or answering questions about appearance. This is not the structured canvas reader; use inspect_canvas_semantic, get_selection_context, batch_get, snapshot_layout, or validate_canvas for data/state reads. Supports full canvas, specific region, or current viewport capture.",
     schema: screenshotCanvasSchema,
     func: async (input, _runManager, config): Promise<string> => {
       const userId = (config as ScreenshotToolConfig | undefined)?.configurable

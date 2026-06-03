@@ -12,7 +12,7 @@ export function createScreenshotCanvasMcpTool(deps: {
     return {
       name: "screenshot_canvas",
       description:
-        "Take a visual screenshot of the current live Cucumber canvas. Requires a live browser connection.",
+        "Take a visual screenshot of the current live Cucumber canvas for visual verification or evidence. This is not the structured canvas reader. Requires a live browser connection.",
       schema: {} as never,
       inputSchema: {
         type: "object",
