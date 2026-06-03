@@ -4,6 +4,10 @@ Last updated: 2026-06-03 CST
 
 ## 2026-06-03
 
+- Closed the Agent chat SSE follow-up failure debug session: removed temporary `127.0.0.1:7777/event` browser debug probes from the web stream/sidebar code and locked the run-scoped SSE stop behavior with a regression test for replayed old-run terminal events.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/use-sse-stream.test.tsx`.
+- Passed: `pnpm --filter @cucumber/web typecheck`.
+- Passed: `pnpm exec biome check apps/web/src/hooks/use-sse-stream.ts apps/web/src/components/chat-sidebar.tsx apps/web/test/use-sse-stream.test.tsx debug-agent-followup-chat.md` (Biome checked the configured TS/TSX files; Markdown is ignored by current config).
 - Added the minimal Agent canvas image-generation flow: MCP `create_agent_canvas_flow` now creates a visible user-input sticky → optimized image prompt sticky → image result container chain with semantic connector arrows, and `generate_image` can target that result container with explicit placement so simple requests like "帮我生成一张小狗的图片" appear on the canvas instead of only in chat.
 - Shared the sticky-note node factory through `packages/canvas-core` so Agent-created sticky nodes use the same `meta.boardKind="sticky"` / body-text structure as Web-created sticky notes, keeping sticky selection/connector behavior on one runtime truth.
 - Updated image background job insertion to preserve explicit placement and `targetContainerId` through runtime and worker paths, with clear failures when the requested result container is missing, hidden, or not a container.

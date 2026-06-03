@@ -1,5 +1,5 @@
 # Debug Session: agent-followup-chat
-- **Status**: [OPEN]
+- **Status**: [CLOSED]
 - **Issue**: Agent 首轮对话可正常执行任务，第二轮发送消息后 UI 短暂显示“思考中”随即消失，没有继续响应。
 - **Debug Server**: http://127.0.0.1:7777/event
 - **Log File**: .dbg/trae-debug-log-agent-followup-chat.ndjson
@@ -30,3 +30,8 @@
 
 ## Verification Conclusion
 - 根因已确认：`/api/canvases/:canvasId/stream` 在新连接时会回放该 canvas 的历史缓冲事件；前端 `useSseStream` 对“任何 terminal event”都会立刻 stop，而不是仅对当前 run 的 terminal event stop，导致后续对话在旧 run 的 `run.completed` 上被提前中止。
+
+## Resolution
+- The current `ChatSidebar` run-scoped `shouldStop` predicate is now covered by regression testing, so replayed terminal events from older runs do not end the active run stream.
+- Removed the temporary browser debug POST probes from `ChatSidebar` and `useSseStream`; the app no longer emits `http://127.0.0.1:7777/event` requests during normal chat/canvas use.
+- Added a focused `useSseStream` regression test covering old-run terminal replay followed by active-run events.

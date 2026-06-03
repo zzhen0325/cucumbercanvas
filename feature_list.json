@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-06-03T12:15:22+08:00",
+  "updatedAt": "2026-06-03T13:51:16+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -88,7 +88,10 @@
         "apps/server/src/mcp/tools/structured-canvas.test.ts",
         "apps/server/src/mcp/tools/validate-canvas.ts",
         "apps/server/src/mcp/deepagents-bridge.ts",
-        "apps/server/src/agent/workspace-skills.ts"
+        "apps/server/src/agent/workspace-skills.ts",
+        "apps/web/src/components/chat-sidebar.tsx",
+        "apps/web/src/hooks/use-sse-stream.ts",
+        "apps/web/test/use-sse-stream.test.tsx"
       ]
     },
     {
