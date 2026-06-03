@@ -11,6 +11,7 @@ The harness gives every Codex session the same starting contract:
 - `scripts/codex-check.sh`: quick/full verification entry point.
 - `progress.md`: current state, next targets, and handoff notes.
 - `feature_list.json`: feature registry with unique IDs, status, and priority.
+- `docs/code-map.md`: 功能能力到代码入口的导航地图，以及 `.codegraph` 查询指南。
 - `docs/architecture.md`: system map.
 - `docs/design-system.md`: UI rules.
 - `docs/workflow.md`: this workflow.

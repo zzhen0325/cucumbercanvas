@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-06-02T21:52:21+08:00",
+  "updatedAt": "2026-06-03T11:41:58+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -17,6 +17,7 @@
         "scripts/codex-check.sh",
         "progress.md",
         "feature_list.json",
+        "docs/code-map.md",
         "docs/architecture.md",
         "docs/design-system.md",
         "docs/workflow.md"

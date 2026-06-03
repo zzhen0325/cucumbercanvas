@@ -1,6 +1,15 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-06-02 CST
+Last updated: 2026-06-03 CST
+
+## 2026-06-03
+
+- 新增 `docs/code-map.md`，作为功能能力到代码入口的导航地图，覆盖稳定功能入口、职责边界、附近测试、常用 `rg` 搜索，以及现有 `.codegraph/codegraph.db` symbol 索引的可复用 SQLite 查询。
+- 将代码地图登记到 `docs/workflow.md` 和 `feature_list.json` 的项目 harness artifacts 中。
+- 将 `docs/code-map.md` 和本次新增的相关登记说明改为中文，路径、命令和 symbol 名称保持原样，便于直接查询。
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `pnpm exec biome check docs/code-map.md docs/workflow.md progress.md feature_list.json` (Biome checked the configured JSON file; Markdown docs are ignored by current config).
+- Passed: `git diff --check -- docs/code-map.md docs/workflow.md feature_list.json progress.md`.
 
 ## 2026-06-02
 
