@@ -30,9 +30,11 @@ import { CanvasBooleanToolbar } from "./boolean-toolbar";
 import type { CanvasApi, CanvasTool } from "./canvas-api";
 import {
   getCanvasApiDocument,
+  selectCanvasActiveTool,
   selectCanvasBooleanInputState,
   selectCanvasSelectedNodePanelState,
   selectCanvasToolbarState,
+  useCanvasRuntimeSelector,
   useCanvasRuntimeShallowSelector,
   useCanvasRuntimeStoreApi,
 } from "./canvas-runtime-store";
@@ -990,6 +992,7 @@ export function CanvasPropertyPanelConnected({
   commitDocument: (document: PenDocument) => void;
 }) {
   const store = useCanvasRuntimeStoreApi();
+  const activeTool = useCanvasRuntimeSelector(selectCanvasActiveTool);
   const { node, styleDefinitions, variables } = useCanvasRuntimeShallowSelector(
     selectCanvasSelectedNodePanelState,
   );
@@ -1003,7 +1006,9 @@ export function CanvasPropertyPanelConnected({
       [node],
     ),
   );
-  if (!node) return null;
+  if (!node || (activeTool !== "select" && activeTool !== "hand")) {
+    return null;
+  }
   return (
     <CanvasPropertyPanel
       node={node}
