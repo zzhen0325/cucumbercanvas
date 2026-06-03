@@ -21,12 +21,13 @@ cd "$ROOT_DIR"
 case "$MODE" in
   quick)
     run_step "lint" pnpm lint
-    run_step "typecheck" pnpm typecheck
+    run_step "changed package validation" pnpm run test:changed
     ;;
   full)
     run_step "lint" pnpm lint
     run_step "typecheck" pnpm typecheck
     run_step "test" pnpm test
+    run_step "canvas regression matrix" pnpm run test:canvas
     run_step "build" pnpm build
     ;;
   *)

@@ -4,6 +4,17 @@ Last updated: 2026-06-03 CST
 
 ## 2026-06-03
 
+- Reworked the project test harness into faster, more precise layers: added root Vitest `test.projects`, changed-aware package validation via `pnpm test:changed`, and a deterministic canvas regression matrix via `pnpm test:canvas`.
+- Wired `packages/pen-core` tests into the default package test surface, split its source typecheck away from test fixture strictness, and fixed `normalizeTreeLayout` to truly delete stale child `x/y` fields for active-layout parents.
+- Kept default server package tests unit/contract-only by excluding `.integration.test.ts` from the server Vitest project; real Supabase/Postgres integration tests remain explicit instead of blocking local quick validation.
+- Fixed sticky-note shared color parsing for compact CSS RGB strings and updated the project creation failure test to assert the concrete user-facing error message.
+- Passed: `pnpm test:workspace`.
+- Passed: `pnpm --filter @cucumber/pen-core typecheck`.
+- Passed: `pnpm --filter @cucumber/pen-core test`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/sticky-note-tool.test.ts`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/projects.test.tsx`.
+- Passed: `pnpm run test:canvas`.
+- Passed: `pnpm run test:changed`.
 - Closed the Agent chat SSE follow-up failure debug session: removed temporary `127.0.0.1:7777/event` browser debug probes from the web stream/sidebar code and locked the run-scoped SSE stop behavior with a regression test for replayed old-run terminal events.
 - Passed: `pnpm --filter @cucumber/web exec vitest run test/use-sse-stream.test.tsx`.
 - Passed: `pnpm --filter @cucumber/web typecheck`.

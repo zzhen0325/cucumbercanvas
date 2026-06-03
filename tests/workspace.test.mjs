@@ -45,20 +45,32 @@ test("workspace includes apps and packages globs", async () => {
   assert.match(workspace, /packages\/\*/);
 });
 
-test("root test command wires node:test and turbo package tests", async () => {
+test("root test command wires workspace, changed, canvas, and package tests", async () => {
   const manifest = await readJson("package.json");
 
   assert.match(manifest.scripts["test:workspace"], /node --test/);
+  assert.match(manifest.scripts["test:changed"], /scripts\/test-changed\.mjs/);
+  assert.match(manifest.scripts["test:canvas"], /scripts\/test-canvas\.mjs/);
   assert.match(manifest.scripts["test:packages"], /turbo run test/);
+  assert.match(manifest.scripts["test:e2e:smoke"], /playwright test/);
   assert.match(manifest.scripts.test, /test:workspace/);
   assert.match(manifest.scripts.test, /test:packages/);
 });
 
-test("vitest workspace config exists for later package-level adoption", async () => {
-  const workspaceConfig = await readText("vitest.workspace.ts");
+test("vitest projects config covers package-level tests", async () => {
+  const projectsConfig = await readText("vitest.config.ts");
 
-  assert.match(workspaceConfig, /defineWorkspace/);
-  assert.match(workspaceConfig, /tests\/\*\*\/\*\.test\.mjs/);
+  assert.match(projectsConfig, /projects/);
+  assert.match(projectsConfig, /tests\/\*\*\/\*\.test\.mjs/);
+  assert.match(projectsConfig, /apps\/server\/src\/\*\*\/\*\.test\.ts/);
+  assert.match(
+    projectsConfig,
+    /apps\/server\/src\/\*\*\/\*\.integration\.test\.ts/,
+  );
+  assert.match(
+    projectsConfig,
+    /packages\/pen-core\/__tests__\/\*\*\/\*\.test\.ts/,
+  );
 });
 
 for (const appName of ["web", "server"]) {

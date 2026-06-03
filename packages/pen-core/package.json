@@ -12,6 +12,8 @@
     }
   },
   "scripts": {
+    "test": "vitest run --project pen-core",
+    "test:fast": "vitest run --project pen-core",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

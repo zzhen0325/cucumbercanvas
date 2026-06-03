@@ -328,6 +328,8 @@ describe("Projects page", () => {
     const newBtn = await screen.findByRole("button", { name: /新建项目/i });
     await userEvent.click(newBtn);
     expect(openedTab.close).toHaveBeenCalled();
-    expect(await screen.findByText("项目创建失败")).toBeInTheDocument();
+    expect(
+      await screen.findByText("项目创建失败：Create failed."),
+    ).toBeInTheDocument();
   });
 });

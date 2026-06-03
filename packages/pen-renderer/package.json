@@ -12,7 +12,7 @@
     }
   },
   "scripts": {
-    "test": "vitest run",
+    "test": "vitest run --project pen-renderer",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

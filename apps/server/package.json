@@ -50,7 +50,7 @@
     "dev:workers:2": "CUCUMBER_WORKER_ID=w1 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & CUCUMBER_WORKER_ID=w2 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & wait",
     "dev:workers:3": "CUCUMBER_WORKER_ID=w1 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & CUCUMBER_WORKER_ID=w2 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & CUCUMBER_WORKER_ID=w3 node --watch --env-file=../../.env.local --import tsx ./src/worker.ts & wait",
     "worker": "node --env-file=../../.env.local --import tsx ./src/worker.ts",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run --project server --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   }
 }

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-06-03T13:51:16+08:00",
+  "updatedAt": "2026-06-03T14:03:06+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -15,6 +15,9 @@
         ".codex/rules/default.rules",
         "scripts/codex-setup.sh",
         "scripts/codex-check.sh",
+        "scripts/test-changed.mjs",
+        "scripts/test-canvas.mjs",
+        "vitest.config.ts",
         "progress.md",
         "feature_list.json",
         "docs/code-map.md",

@@ -99,18 +99,33 @@ function parseCssColor(
 ): { r: number; g: number; b: number } | null {
   const trimmed = color.trim();
   const hex = trimmed.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
-  if (!hex?.[1]) return null;
-  const raw = hex[1];
-  const expanded =
-    raw.length === 3
-      ? raw
-          .split("")
-          .map((part) => `${part}${part}`)
-          .join("")
-      : raw;
+  if (hex?.[1]) {
+    const raw = hex[1];
+    const expanded =
+      raw.length === 3
+        ? raw
+            .split("")
+            .map((part) => `${part}${part}`)
+            .join("")
+        : raw;
+    return {
+      r: Number.parseInt(expanded.slice(0, 2), 16),
+      g: Number.parseInt(expanded.slice(2, 4), 16),
+      b: Number.parseInt(expanded.slice(4, 6), 16),
+    };
+  }
+
+  const rgb = trimmed.match(
+    /^rgba?\(\s*(\d{1,3})(?:\s*,\s*|\s+)(\d{1,3})(?:\s*,\s*|\s+)(\d{1,3})(?:\s*(?:,|\/)\s*(?:0|1|0?\.\d+|\d+%))?\s*\)$/i,
+  );
+  if (!rgb?.[1] || !rgb[2] || !rgb[3]) return null;
+  const r = Number.parseInt(rgb[1], 10);
+  const g = Number.parseInt(rgb[2], 10);
+  const b = Number.parseInt(rgb[3], 10);
+  if ([r, g, b].some((channel) => channel < 0 || channel > 255)) return null;
   return {
-    r: Number.parseInt(expanded.slice(0, 2), 16),
-    g: Number.parseInt(expanded.slice(2, 4), 16),
-    b: Number.parseInt(expanded.slice(4, 6), 16),
+    r,
+    g,
+    b,
   };
 }

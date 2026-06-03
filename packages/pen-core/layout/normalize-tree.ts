@@ -66,8 +66,7 @@ export function normalizeTreeLayout(node: PenNode): void {
     if (c.layout === "vertical" || c.layout === "horizontal") {
       for (const child of children) {
         if (!isOverlayNode(child)) {
-          if ("x" in child) (child as { x?: number }).x = undefined;
-          if ("y" in child) (child as { y?: number }).y = undefined;
+          stripChildLayoutPosition(child);
         }
       }
     }
@@ -79,6 +78,11 @@ export function normalizeTreeLayout(node: PenNode): void {
       normalizeTreeLayout(child);
     }
   }
+}
+
+function stripChildLayoutPosition(child: PenNode): void {
+  Reflect.deleteProperty(child, "x");
+  Reflect.deleteProperty(child, "y");
 }
 
 /**
