@@ -34,7 +34,7 @@ export function AgentExecutionFailureRecoverySection({
   const failure = execution.failure;
   if (!failure) return null;
 
-  const disabledReason = "当前面板不能打开 Agent 输入框。";
+  const disabledReason = "当前页面暂时不能继续生成。";
   const actionDisabled = !onContinueFromNode;
 
   return (
@@ -97,7 +97,7 @@ export function AgentExecutionFailureRecoverySection({
         />
       </div>
       <p className="mt-2 text-[11px] leading-4 text-destructive/75">
-        这些操作会打开 Agent 输入框，保留失败节点、上下游和恢复历史作为上下文。
+        继续时会带上失败原因，帮助 Agent 接着处理。
       </p>
     </div>
   );

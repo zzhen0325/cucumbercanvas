@@ -33,16 +33,16 @@ export function AgentExecutionCheckpointSection({
   const rerunReason = canRestartFromHere
     ? onContinueFromNode
       ? undefined
-      : "当前面板不能打开 Agent 输入框。"
-    : "这个检查点没有标记为可从此处重跑。";
+      : "当前页面暂时不能继续生成。"
+    : "这个保存点还不能从此处重跑。";
   const continueReason = onContinueFromNode
     ? undefined
-    : "当前面板不能打开 Agent 输入框。";
+    : "当前页面暂时不能继续生成。";
 
   return (
     <div className="mt-3 rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground">
       <div className="flex items-center justify-between gap-2">
-        <div className="font-medium">检查点</div>
+        <div className="font-medium">保存点</div>
         <span
           className={cn(
             "rounded-md px-2 py-0.5 text-[10px] font-semibold",
@@ -51,7 +51,7 @@ export function AgentExecutionCheckpointSection({
               : "bg-muted text-muted-foreground",
           )}
         >
-          {canRestartFromHere ? "可从此处恢复" : "仅记录进度"}
+          {canRestartFromHere ? "可从此处继续" : "仅记录进度"}
         </span>
       </div>
 
@@ -59,7 +59,7 @@ export function AgentExecutionCheckpointSection({
         <p className="mt-2 leading-5 text-muted-foreground">{restartReason}</p>
       ) : (
         <p className="mt-2 leading-5 text-muted-foreground">
-          这个检查点已写入画布节点，可作为后续继续、分支或重跑的上下文锚点。
+          这个保存点已记录当前进度，可用于继续、复制分支或重新生成后续结果。
         </p>
       )}
 
@@ -74,7 +74,7 @@ export function AgentExecutionCheckpointSection({
         <AgentExecutionActionButton
           disabled={!canRestartFromHere || !onContinueFromNode}
           icon={RotateCcw}
-          label="从 checkpoint 重跑"
+          label="从保存点重跑"
           onClick={() => onContinueFromNode?.(nodeId, "rerun_checkpoint")}
           reason={rerunReason}
         />

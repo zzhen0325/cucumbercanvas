@@ -65,7 +65,7 @@ export function AgentComparisonBranchCards({
               <div className="mt-0.5 truncate text-muted-foreground">
                 {recommendedMeta?.kind === "variant_branch"
                   ? (recommendedMeta.branchLabel ?? recommendedMeta.title)
-                  : recommendedBranchId}
+                  : "推荐分支暂不可用"}
               </div>
               {comparison?.recommendationReason ? (
                 <div className="mt-1 line-clamp-2 text-muted-foreground">
@@ -104,9 +104,9 @@ export function AgentComparisonBranchCards({
               }}
               reason={
                 !recommendedCanContinue
-                  ? "推荐分支当前不在活动页面或缺少方案分支 metadata。"
+                  ? "推荐方案当前不在活动页面或信息不完整。"
                   : !onContinueFromNode
-                    ? "当前面板不能打开 Agent 输入框。"
+                    ? "当前页面暂时不能继续生成。"
                     : (selectVariantBranchReason ??
                       "深化推荐选择前需要先把这个分支设为主线。")
               }
@@ -123,7 +123,7 @@ export function AgentComparisonBranchCards({
                 key={id}
                 className="rounded-md border border-border bg-muted/40 px-2 py-2 text-[11px] text-muted-foreground"
               >
-                分支节点 {id} 当前不在活动页面或缺少方案分支 metadata。
+                这个方案当前不在活动页面或信息不完整。
               </div>
             );
           }
@@ -152,7 +152,11 @@ export function AgentComparisonBranchCards({
                     {branchMeta.branchLabel || branchMeta.title}
                   </div>
                   <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                    {branchMeta.branchId ?? id}
+                    {isMainline
+                      ? "当前主线"
+                      : isRecommended
+                        ? "推荐方案"
+                        : "备选方案"}
                   </div>
                 </div>
                 {isMainline || isRecommended ? (
@@ -197,7 +201,7 @@ export function AgentComparisonBranchCards({
                   }}
                   reason={
                     !onContinueFromNode
-                      ? "当前面板不能打开 Agent 输入框。"
+                      ? "当前页面暂时不能继续生成。"
                       : (selectVariantBranchReason ??
                         "继续深化前需要先把这个分支设为主线。")
                   }

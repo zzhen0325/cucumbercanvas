@@ -29,20 +29,20 @@ export function AgentExecutionChainSection({
 
   return (
     <div className="mt-3 rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground">
-      <div className="font-medium">执行链上下文</div>
+      <div className="font-medium">关联步骤</div>
       <div className="mt-2 space-y-3">
         <ChainGroup
-          emptyLabel="没有记录上游节点。"
+          emptyLabel="还没有前置内容。"
           icon={ArrowUp}
           items={upstream}
-          label="上游"
+          label="前置内容"
           onSelectNode={onSelectNode}
         />
         <ChainGroup
-          emptyLabel="没有记录下游节点。"
+          emptyLabel="还没有后续结果。"
           icon={ArrowDown}
           items={downstream}
-          label="下游"
+          label="后续结果"
           onSelectNode={onSelectNode}
         />
       </div>
@@ -111,10 +111,7 @@ function ChainCard({
       <div className="rounded-md border border-dashed border-border bg-muted/30 px-2 py-2">
         <div className="flex items-center gap-2 font-medium text-muted-foreground">
           <CircleHelp className="h-3.5 w-3.5" />
-          <span>当前页未找到节点</span>
-        </div>
-        <div className="mt-1 truncate text-[11px] text-muted-foreground/80">
-          {item.id}
+          <span>关联内容暂不可用</span>
         </div>
       </div>
     );
@@ -152,9 +149,6 @@ function ChainCard({
         >
           {getAgentExecutionStatusLabel(item.meta.status)}
         </span>
-      </div>
-      <div className="mt-1 truncate text-[10px] text-muted-foreground/80">
-        {item.id}
       </div>
     </button>
   );

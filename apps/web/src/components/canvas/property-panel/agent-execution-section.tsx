@@ -71,6 +71,7 @@ export function AgentExecutionSection({
 }: AgentExecutionSectionProps) {
   const execution = getAgentExecutionMeta(node);
   const [copied, setCopied] = useState<"node" | "run" | null>(null);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(
     execution?.kind === "task_step" ||
       execution?.kind === "tool_call" ||
@@ -90,8 +91,7 @@ export function AgentExecutionSection({
     return [
       ["节点类型", getAgentExecutionKindLabel(execution.kind)],
       ["状态", getAgentExecutionStatusLabel(execution.status)],
-      ["所属 Run", execution.runId],
-      ["工具", execution.toolName],
+      ["执行方式", execution.toolName],
     ].filter((row): row is [string, string] => Boolean(row[1]));
   }, [execution]);
 
@@ -138,8 +138,7 @@ export function AgentExecutionSection({
 
   if (!execution) return null;
 
-  const unavailableReason =
-    "继续、重跑和分支操作需要 Agent run 控制器接入后才能生效。";
+  const unavailableReason = "当前页面暂时不能继续生成。";
   const hasExpandableDetails =
     execution.kind === "task_step" ||
     execution.kind === "tool_call" ||
@@ -164,6 +163,24 @@ export function AgentExecutionSection({
         node: pageNodes?.find((pageNode) => pageNode.id === branchNodeId),
       }))
     : [];
+  const recommendedComparisonBranch = execution.comparison
+    ? comparisonBranchNodes.find(({ id, node }) => {
+        if (id === execution.comparison?.recommendedBranchId) return true;
+        const branchMeta = getAgentExecutionMeta(node);
+        return (
+          branchMeta?.kind === "variant_branch" &&
+          branchMeta.branchId === execution.comparison?.recommendedBranchId
+        );
+      })
+    : undefined;
+  const recommendedComparisonMeta = getAgentExecutionMeta(
+    recommendedComparisonBranch?.node,
+  );
+  const recommendedComparisonLabel =
+    recommendedComparisonMeta?.kind === "variant_branch"
+      ? (recommendedComparisonMeta.branchLabel ??
+        recommendedComparisonMeta.title)
+      : undefined;
 
   return (
     <section className="-mx-4 border-t border-border/70 px-4 py-4">
@@ -274,7 +291,7 @@ export function AgentExecutionSection({
               }}
               reason={
                 !onContinueFromNode
-                  ? "当前面板不能打开 Agent 输入框。"
+                  ? "当前页面暂时不能继续生成。"
                   : (selectVariantBranchReason ??
                     "继续深化前需要先把这个分支设为主线。")
               }
@@ -301,7 +318,7 @@ export function AgentExecutionSection({
           <div className="mt-2 grid grid-cols-[72px_minmax(0,1fr)] gap-2">
             <span className="text-muted-foreground">推荐分支</span>
             <span className="truncate font-medium">
-              {execution.comparison.recommendedBranchId ?? "未指定"}
+              {recommendedComparisonLabel ?? "暂未推荐，等待对比完成。"}
             </span>
           </div>
           {execution.comparison.recommendationReason ? (
@@ -312,10 +329,12 @@ export function AgentExecutionSection({
               </span>
             </div>
           ) : null}
-          <DetailList
-            label="分支节点"
-            values={execution.comparison.branchNodeIds}
-          />
+          <div className="mt-2 grid grid-cols-[72px_minmax(0,1fr)] gap-2">
+            <span className="text-muted-foreground">分支数量</span>
+            <span className="font-medium">
+              {execution.comparison.branchNodeIds.length} 个
+            </span>
+          </div>
           <AgentComparisonBranchCards
             branches={comparisonBranchNodes}
             comparison={execution.comparison}
@@ -348,7 +367,7 @@ export function AgentExecutionSection({
           />
           {waitingResponseSubmitted ? (
             <p className="mt-2 text-[11px] text-muted-foreground">
-              已写入这个节点，等待 Agent run 控制器继续执行。
+              已保存补充内容，可继续生成后续结果。
             </p>
           ) : null}
           {waitingAttachmentCount > 0 ? (
@@ -364,8 +383,8 @@ export function AgentExecutionSection({
               onClick={() => onContinueFromNode?.(node.id, "attach_files")}
               title={
                 onContinueFromNode
-                  ? "打开 Agent 输入框并选择要补充的文件/图片。"
-                  : "当前面板不能打开 Agent 输入框。"
+                  ? "打开输入区并选择要补充的文件/图片。"
+                  : "当前页面暂时不能继续生成。"
               }
             >
               <FilePlus className="h-3.5 w-3.5" />
@@ -379,9 +398,7 @@ export function AgentExecutionSection({
               label="提交补充"
               onClick={submitWaitingResponse}
               reason={
-                onUpdate
-                  ? "请先填写补充说明。"
-                  : "当前面板没有节点更新能力，无法提交补充。"
+                onUpdate ? "请先填写补充说明。" : "当前页面暂时不能保存补充。"
               }
             />
           </div>
@@ -397,18 +414,6 @@ export function AgentExecutionSection({
       <AgentExecutionSaveRecipeSection node={node} pageNodes={pageNodes} />
 
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <AgentExecutionActionButton
-          icon={Copy}
-          label={copied === "node" ? "已复制节点" : "复制节点 ID"}
-          onClick={() => copyText("node", node.id)}
-        />
-        {execution.runId ? (
-          <AgentExecutionActionButton
-            icon={Copy}
-            label={copied === "run" ? "已复制 Run" : "复制 Run ID"}
-            onClick={() => copyText("run", execution.runId ?? "")}
-          />
-        ) : null}
         {showGenericContinuationActions ? (
           <>
             <AgentExecutionActionButton
@@ -416,7 +421,7 @@ export function AgentExecutionSection({
               icon={Play}
               label="从这里继续"
               onClick={() => onContinueFromNode?.(node.id, "continue")}
-              reason="当前面板不能打开 Agent 输入框。"
+              reason="当前页面暂时不能继续生成。"
             />
             <AgentExecutionActionButton
               disabled
@@ -429,11 +434,35 @@ export function AgentExecutionSection({
               icon={GitBranch}
               label="复制为分支"
               onClick={() => onContinueFromNode?.(node.id, "new_branch")}
-              reason="当前面板不能打开 Agent 输入框。"
+              reason="当前页面暂时不能继续生成。"
             />
           </>
         ) : null}
       </div>
+      <button
+        type="button"
+        className="mt-3 w-full rounded-md border border-border bg-background px-2 py-1.5 text-left text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        aria-expanded={diagnosticsOpen}
+        onClick={() => setDiagnosticsOpen((open) => !open)}
+      >
+        {diagnosticsOpen ? "收起开发诊断" : "显示开发诊断"}
+      </button>
+      {diagnosticsOpen ? (
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <AgentExecutionActionButton
+            icon={Copy}
+            label={copied === "node" ? "已复制节点 ID" : "复制节点 ID"}
+            onClick={() => copyText("node", node.id)}
+          />
+          {execution.runId ? (
+            <AgentExecutionActionButton
+              icon={Copy}
+              label={copied === "run" ? "已复制运行 ID" : "复制运行 ID"}
+              onClick={() => copyText("run", execution.runId ?? "")}
+            />
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -479,18 +508,4 @@ function buildSelectedBranchContinuationTarget(
     x: typeof bounds.x === "number" ? bounds.x : 0,
     y: typeof bounds.y === "number" ? bounds.y : 0,
   };
-}
-
-function DetailList({ label, values }: { label: string; values?: string[] }) {
-  if (!values?.length) return null;
-  return (
-    <div className="mt-2 grid grid-cols-[72px_minmax(0,1fr)] gap-2">
-      <span className="text-muted-foreground">{label}</span>
-      <ul className="min-w-0 list-disc space-y-1 pl-4 leading-5">
-        {values.map((value) => (
-          <li key={value}>{value}</li>
-        ))}
-      </ul>
-    </div>
-  );
 }

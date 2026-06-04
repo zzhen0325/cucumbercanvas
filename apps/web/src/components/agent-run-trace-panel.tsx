@@ -5,6 +5,7 @@ import {
   getAgentExecutionStatusLabel,
 } from "@cucumber/canvas-core";
 import type { StreamEvent } from "@cucumber/shared";
+import { useState } from "react";
 
 import type { CanvasSelectedElement } from "./canvas-editor";
 import { formatAgentFailureReason } from "./canvas/agent-execution-failure-copy";
@@ -20,6 +21,7 @@ export function AgentRunTracePanel({
   runId,
   selectedElement,
 }: AgentRunTracePanelProps) {
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const execution = selectedElement?.agentExecution;
   const toolEvents = events.filter(
     (event) => event.type === "tool.started" || event.type === "tool.completed",
@@ -29,7 +31,7 @@ export function AgentRunTracePanel({
   return (
     <div
       className="absolute left-1/2 top-[calc(100%+8px)] z-40 w-[520px] max-w-[calc(100vw-32px)] -translate-x-1/2 rounded-xl border border-border bg-card p-3 text-xs text-foreground shadow-card ring-1 ring-foreground/5"
-      aria-label="Agent run trace"
+      aria-label="Agent 执行记录"
       onPointerDown={(event) => event.stopPropagation()}
       onPointerUp={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
@@ -37,14 +39,14 @@ export function AgentRunTracePanel({
     >
       <div className="flex items-center justify-between gap-3 border-b border-border/70 pb-2">
         <div className="min-w-0">
-          <div className="font-semibold">Run trace</div>
+          <div className="font-semibold">执行记录</div>
           <div className="truncate text-[11px] text-muted-foreground">
-            {runId ?? "未绑定 run"} · {events.length} 个事件
+            已记录 {events.length} 条活动
           </div>
         </div>
         <div className="flex shrink-0 gap-2 text-[11px] text-muted-foreground">
-          <span>{toolEvents.length} tools</span>
-          <span>{patchEvents.length} patches</span>
+          <span>{toolEvents.length} 次工具调用</span>
+          <span>{patchEvents.length} 次画布更新</span>
         </div>
       </div>
       {execution ? (
@@ -59,16 +61,13 @@ export function AgentRunTracePanel({
           <div
             className="mt-1 truncate text-[11px] text-muted-foreground"
             title={[
-              `画布节点 ${selectedElement.id}`,
-              execution.runId ? `run ${execution.runId}` : undefined,
-              `上游 ${execution.upstreamNodeIds?.length ?? 0}`,
-              `下游 ${execution.downstreamNodeIds?.length ?? 0}`,
+              `前置内容 ${execution.upstreamNodeIds?.length ?? 0}`,
+              `后续结果 ${execution.downstreamNodeIds?.length ?? 0}`,
             ]
               .filter((value): value is string => Boolean(value))
               .join(" · ")}
           >
-            画布节点 {selectedElement.id} · 上游{" "}
-            {execution.upstreamNodeIds?.length ?? 0} · 下游{" "}
+            前置内容 {execution.upstreamNodeIds?.length ?? 0} · 后续结果{" "}
             {execution.downstreamNodeIds?.length ?? 0}
           </div>
         </div>
@@ -84,9 +83,30 @@ export function AgentRunTracePanel({
         </div>
       ) : (
         <div className="mt-2 rounded-lg bg-muted/50 px-3 py-2 text-muted-foreground">
-          当前没有收到该 run 的实时事件；仍可从选中节点查看持久化执行上下文。
+          当前还没有收到实时活动；仍可从选中内容查看已保存的执行上下文。
         </div>
       )}
+      <button
+        type="button"
+        className="mt-2 w-full rounded-md border border-border bg-background px-2 py-1.5 text-left text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        aria-expanded={diagnosticsOpen}
+        onClick={() => setDiagnosticsOpen((open) => !open)}
+      >
+        {diagnosticsOpen ? "收起高级诊断" : "显示高级诊断"}
+      </button>
+      {diagnosticsOpen ? (
+        <div className="mt-2 max-h-40 overflow-y-auto rounded-lg bg-muted/50 px-3 py-2 font-mono text-[10px] leading-5 text-muted-foreground">
+          {runId ? <div>runId: {runId}</div> : null}
+          {selectedElement ? <div>nodeId: {selectedElement.id}</div> : null}
+          {events.map((event, index) => (
+            <div
+              key={`${event.runId}:${event.timestamp}:${event.type}:diag:${index}`}
+            >
+              {formatDiagnosticEvent(event)}
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -110,39 +130,40 @@ function TraceEventRow({ event }: { event: StreamEvent }) {
 function traceEventTitle(event: StreamEvent): string {
   switch (event.type) {
     case "run.started":
-      return "Run started";
+      return "任务已开始";
     case "run.completed":
-      return "Run completed";
+      return "任务已完成";
     case "run.canceled":
-      return "Run canceled";
+      return "任务已停止";
     case "run.paused":
-      return "Run paused";
+      return "任务已暂停";
     case "run.failed":
-      return "Run failed";
+      return "任务失败";
     case "tool.started":
-      return `Tool started · ${event.toolName}`;
+      return `开始处理 · ${formatToolName(event.toolName)}`;
     case "tool.completed":
-      return `Tool completed · ${event.toolName}`;
+      return `处理完成 · ${formatToolName(event.toolName)}`;
     case "canvas.patch":
-      return "Canvas patch";
+      return "画布已更新";
     case "message.delta":
-      return "Message delta";
+      return "回复生成中";
     case "thinking.delta":
-      return "Thinking delta";
+      return "正在思考";
     case "canvas.sync":
-      return "Canvas sync";
+      return "画布已同步";
     case "agent.stage":
-      return "Agent stage";
+      return "执行阶段更新";
     case "run.context":
-      return "Run context";
+      return "上下文已读取";
   }
 }
 
 function traceEventDetail(event: StreamEvent): string {
   switch (event.type) {
     case "tool.started":
+      return "正在调用相关能力。";
     case "tool.completed":
-      return event.toolCallId;
+      return "相关能力已完成。";
     case "canvas.patch":
       return formatCanvasPatchTraceDetail(event);
     case "run.failed":
@@ -153,7 +174,7 @@ function traceEventDetail(event: StreamEvent): string {
     case "thinking.delta":
       return event.delta;
     default:
-      return event.runId;
+      return "执行状态已更新。";
   }
 }
 
@@ -168,11 +189,24 @@ function formatCanvasPatchTraceDetail(
     ),
   );
   const nodeSummary = affectedNodeIds.length
-    ? ` · ${affectedNodeIds.slice(0, 4).join("、")}${
-        affectedNodeIds.length > 4 ? ` 等 ${affectedNodeIds.length} 个节点` : ""
-      }`
+    ? `，影响 ${affectedNodeIds.length} 个对象`
     : "";
-  return `${event.transactionId} · ${event.operations.length} operations${nodeSummary}`;
+  return `更新了 ${event.operations.length} 项内容${nodeSummary}`;
+}
+
+function formatDiagnosticEvent(event: StreamEvent): string {
+  const details = [
+    event.timestamp,
+    event.type,
+    "runId" in event ? event.runId : undefined,
+    "toolCallId" in event ? event.toolCallId : undefined,
+    "transactionId" in event ? event.transactionId : undefined,
+  ].filter((value): value is string => Boolean(value));
+  return details.join(" | ");
+}
+
+function formatToolName(toolName: string): string {
+  return toolName.replace(/_/g, " ");
 }
 
 function getCanvasPatchOperationNodeIds(operation: unknown): string[] {

@@ -110,9 +110,9 @@ function buildAgentContinueDraft(
   if (intent === "rerun_checkpoint") {
     const downstreamNodeIds = execution?.downstreamNodeIds ?? [];
     const downstreamCopy = downstreamNodeIds.length
-      ? `本次需要重建的下游节点：${formatAgentContinueNodeIdList(downstreamNodeIds)}。`
-      : "当前 checkpoint 没有记录下游节点；请先检查画布执行链，再决定需要重建的后续节点。";
-    return `从 checkpoint「${title}」重跑后续执行链：保留这个 checkpoint 作为锚点，重新读取当前画布上下文，重建后续步骤、产物和验证结果。${downstreamCopy}`;
+      ? `本次预计重建 ${downstreamNodeIds.length} 个后续结果。`
+      : "当前保存点没有记录后续结果；请先检查画布内容，再决定需要重建的后续部分。";
+    return `从保存点「${title}」重跑后续执行链：保留这个保存点，重新读取当前画布上下文，重建后续步骤、产物和验证结果。${downstreamCopy}`;
   }
   if (intent === "rewrite") {
     return `改写「${title}」的输入或约束后继续执行，并把新的过程和结果写回当前主线。`;
@@ -139,14 +139,6 @@ function formatAgentContinueContextText(value: string): string {
   const normalized = value.replace(/\s+/g, " ").trim();
   if (normalized.length <= 240) return normalized;
   return `${normalized.slice(0, 240)}...`;
-}
-
-function formatAgentContinueNodeIdList(nodeIds: string[]): string {
-  const visibleIds = nodeIds.slice(0, 6).join("、");
-  const hiddenCount = nodeIds.length - 6;
-  return hiddenCount > 0
-    ? `${visibleIds} 等 ${nodeIds.length} 个节点`
-    : visibleIds;
 }
 
 function CanvasPageContent() {
@@ -621,7 +613,7 @@ function CanvasPageContent() {
         setError(
           err instanceof ApiApplicationError
             ? err.message
-            : "Unable to load this canvas. Check the server logs for the underlying cause.",
+            : "暂时无法打开这个画布，请稍后重试；如果仍然失败，请联系团队排查项目访问或画布数据状态。",
         );
         setPageLoading(false);
       });
@@ -634,7 +626,9 @@ function CanvasPageContent() {
   if (!canvasId) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <p className="text-sm text-muted-foreground">No canvas ID specified.</p>
+        <p className="text-sm text-muted-foreground">
+          缺少画布信息，请从项目列表重新打开画布。
+        </p>
       </div>
     );
   }

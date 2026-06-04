@@ -444,7 +444,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                   type="button"
                   onClick={() => onRemoveMention(mention)}
                   className="inline-flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 text-[11px] text-foreground transition-colors hover:bg-muted/80"
-                  title="Remove mention"
+                  title="移除引用"
                 >
                   <span className="text-muted-foreground">@</span>
                   <span className="max-w-[180px] truncate">
@@ -471,7 +471,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             onChange={handleChange}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder='Start with an idea, or type "@" to mention'
+            placeholder='输入你的想法，或输入 "@" 引用素材'
             aria-label="输入消息"
             rows={1}
             style={{ scrollbarWidth: "none" }}
@@ -499,7 +499,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     className="flex h-8 w-8 items-center justify-center rounded-full border-[0.5px] border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                    title="Attach images"
+                    aria-label="添加图片"
+                    title="添加图片"
                   >
                     <svg
                       aria-hidden="true"
@@ -520,7 +521,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                   ref={modelBtnRef}
                   type="button"
                   onClick={() => setModelPopoverOpen((prev) => !prev)}
-                  title="Image model"
+                  aria-label="选择生成模型"
+                  title="生成模型"
                   className={`flex h-8 w-8 items-center justify-center rounded-full border-[0.5px] transition-colors ${
                     preference.mode === "manual" ||
                     videoPreference.mode === "manual"
@@ -548,6 +550,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               type="button"
               onClick={handleSubmit}
               disabled={disabled || !hasContent || isUploading}
+              aria-label="发送消息"
               className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/80 active:bg-primary/90 disabled:opacity-20 disabled:cursor-not-allowed"
             >
               <svg

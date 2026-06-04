@@ -39,7 +39,7 @@ describe("AgentRunControlBar", () => {
       <AgentRunControlBar runState={{ streaming: false }} />,
     );
 
-    expect(screen.queryByLabelText("Agent run 控制条")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Agent 任务控制条")).not.toBeInTheDocument();
 
     rerender(
       <AgentRunControlBar
@@ -54,7 +54,7 @@ describe("AgentRunControlBar", () => {
       />,
     );
 
-    expect(screen.getByLabelText("Agent run 控制条")).toBeVisible();
+    expect(screen.getByLabelText("Agent 任务控制条")).toBeVisible();
     expect(
       consoleError.mock.calls.some((call) =>
         String(call[0]).includes(
@@ -94,7 +94,7 @@ describe("AgentRunControlBar", () => {
       />,
     );
 
-    expect(screen.getByLabelText("Agent run 控制条")).toBeVisible();
+    expect(screen.getByLabelText("Agent 任务控制条")).toBeVisible();
     expect(screen.getByText("运行中")).toBeVisible();
     expect(
       screen.getByText(
@@ -115,19 +115,17 @@ describe("AgentRunControlBar", () => {
     expect(screen.getByRole("button", { name: "继续" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "继续" })).toHaveAttribute(
       "title",
-      "当前 run 仍在运行，等待它停止或完成后再从选中节点继续。",
+      "当前任务仍在运行，等待它停止或完成后再继续。",
     );
-    await userEvent.click(
-      screen.getByRole("button", { name: "查看 run trace" }),
-    );
-    const tracePanel = screen.getByLabelText("Agent run trace");
+    await userEvent.click(screen.getByRole("button", { name: "查看执行记录" }));
+    const tracePanel = screen.getByLabelText("Agent 执行记录");
     expect(tracePanel).toBeVisible();
     expect(
       within(tracePanel).getByText("等待用户补充 · 等待品牌资料"),
     ).toBeVisible();
     expect(
-      within(tracePanel).getByText("画布节点 ask-1 · 上游 1 · 下游 2"),
-    ).toHaveAttribute("title", "画布节点 ask-1 · run run-1 · 上游 1 · 下游 2");
+      within(tracePanel).getByText("前置内容 1 · 后续结果 2"),
+    ).toHaveAttribute("title", "前置内容 1 · 后续结果 2");
   });
 
   it("calls the real stop handler and surfaces failed-node reason", async () => {
@@ -177,7 +175,7 @@ describe("AgentRunControlBar", () => {
     expect(screen.getByRole("button", { name: "暂停中" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "暂停中" })).toHaveAttribute(
       "title",
-      "正在暂停当前 Agent run。",
+      "正在暂停当前任务。",
     );
   });
 
@@ -227,12 +225,10 @@ describe("AgentRunControlBar", () => {
     );
 
     expect(
-      screen.getByText(
-        "已暂停：从此节点继续会读取当前画布并开启新的 Agent run。",
-      ),
+      screen.getByText("已暂停：从此处继续会读取当前画布并开启新的生成任务。"),
     ).toHaveAttribute(
       "title",
-      "选中的 Agent 执行节点已暂停。 继续会以该节点为 durable context anchor 打开新的 Agent run，而不是静默恢复旧 SSE 流。 暂停/重启说明：用户暂停后补充品牌素材。",
+      "选中的 Agent 执行节点已暂停。 继续会读取当前画布并开启新的生成任务。 暂停/重启说明：用户暂停后补充品牌素材。",
     );
 
     await user.click(screen.getByRole("button", { name: "从暂停点继续" }));
@@ -264,17 +260,10 @@ describe("AgentRunControlBar", () => {
     );
 
     expect(
-      screen.getByText(
-        "Checkpoint 重跑将重建 2 个下游节点：step-after-checkpoint、final-1",
-      ),
-    ).toHaveAttribute(
-      "title",
-      "需要重建的下游节点：step-after-checkpoint、final-1",
-    );
+      screen.getByText("从保存点重跑将重建 2 个后续结果。"),
+    ).toHaveAttribute("title", "将重建 2 个后续结果。");
 
-    await user.click(
-      screen.getByRole("button", { name: "从 checkpoint 重跑" }),
-    );
+    await user.click(screen.getByRole("button", { name: "从保存点重跑" }));
 
     expect(onContinueFromSelection).toHaveBeenCalledWith(
       "ask-1",
@@ -343,16 +332,19 @@ describe("AgentRunControlBar", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "查看 run trace" }));
+    await user.click(screen.getByRole("button", { name: "查看执行记录" }));
 
-    expect(screen.getByLabelText("Agent run trace")).toBeVisible();
-    expect(screen.getByText("run-3 · 5 个事件")).toBeVisible();
+    expect(screen.getByLabelText("Agent 执行记录")).toBeVisible();
+    expect(screen.getByText("已记录 5 条活动")).toBeVisible();
     expect(
-      screen.getByText("Tool started · create_agent_execution_flow"),
+      screen.getByText("开始处理 · create agent execution flow"),
     ).toBeVisible();
-    expect(screen.getByText("tx-1 · 1 operations · node-1")).toBeVisible();
+    expect(screen.getByText("更新了 1 项内容，影响 1 个对象")).toBeVisible();
     expect(screen.getByText("用户暂停了执行链。")).toBeVisible();
     expect(screen.getByText("服务连接失败，请检查网络后重试。")).toBeVisible();
     expect(screen.queryByText("ECONNRESET")).not.toBeInTheDocument();
+    expect(screen.queryByText(/tx-1|tool-1|node-1/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "显示高级诊断" }));
+    expect(screen.getByText(/tx-1/)).toBeVisible();
   });
 });

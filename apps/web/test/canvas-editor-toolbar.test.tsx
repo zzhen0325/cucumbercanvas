@@ -37,12 +37,12 @@ describe("CanvasEditorToolbar", () => {
     const user = userEvent.setup();
     const props = renderEditorToolbar();
 
-    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "撤销" })).toBeDisabled();
 
-    await user.click(screen.getByRole("button", { name: "Text" }));
-    await user.click(screen.getByRole("button", { name: "Sticky" }));
-    await user.click(screen.getByRole("button", { name: "Connector" }));
-    await user.click(screen.getByRole("button", { name: "Section" }));
+    await user.click(screen.getByRole("button", { name: "文本" }));
+    await user.click(screen.getByRole("button", { name: "便签" }));
+    await user.click(screen.getByRole("button", { name: "连接线" }));
+    await user.click(screen.getByRole("button", { name: "分区" }));
 
     expect(props.onUndo).not.toHaveBeenCalled();
     expect(props.onToolChange).toHaveBeenNthCalledWith(1, "text");
@@ -55,23 +55,17 @@ describe("CanvasEditorToolbar", () => {
     const user = userEvent.setup();
     const props = renderEditorToolbar();
 
-    await user.click(screen.getByRole("button", { name: "Open shape menu" }));
-    await user.click(await screen.findByRole("menuitem", { name: /Ellipse/ }));
+    await user.click(screen.getByRole("button", { name: "打开形状菜单" }));
+    await user.click(await screen.findByRole("menuitem", { name: /椭圆/ }));
 
     expect(props.onToolChange).toHaveBeenCalledWith("ellipse");
 
-    await user.click(screen.getByRole("button", { name: "Open shape menu" }));
-    await user.click(
-      await screen.findByRole("menuitem", { name: "Import image" }),
-    );
-    await user.click(screen.getByRole("button", { name: "Open shape menu" }));
-    await user.click(
-      await screen.findByRole("menuitem", { name: "Insert icon" }),
-    );
-    await user.click(screen.getByRole("button", { name: "Open shape menu" }));
-    await user.click(
-      await screen.findByRole("menuitem", { name: "Import SVG" }),
-    );
+    await user.click(screen.getByRole("button", { name: "打开形状菜单" }));
+    await user.click(await screen.findByRole("menuitem", { name: "导入图片" }));
+    await user.click(screen.getByRole("button", { name: "打开形状菜单" }));
+    await user.click(await screen.findByRole("menuitem", { name: "插入图标" }));
+    await user.click(screen.getByRole("button", { name: "打开形状菜单" }));
+    await user.click(await screen.findByRole("menuitem", { name: "导入 SVG" }));
 
     expect(props.onInsertIcon).toHaveBeenCalledOnce();
     expect(props.onImportImage).toHaveBeenCalledOnce();
@@ -82,9 +76,9 @@ describe("CanvasEditorToolbar", () => {
     const user = userEvent.setup();
     const props = renderEditorToolbar({ onInsertIcon: undefined });
 
-    await user.click(screen.getByRole("button", { name: "Open shape menu" }));
+    await user.click(screen.getByRole("button", { name: "打开形状菜单" }));
 
-    expect(screen.queryByText("Insert icon")).not.toBeInTheDocument();
+    expect(screen.queryByText("插入图标")).not.toBeInTheDocument();
     expect(props.onToolChange).not.toHaveBeenCalled();
   });
 });

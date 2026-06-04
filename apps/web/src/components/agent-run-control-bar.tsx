@@ -38,7 +38,7 @@ type AgentRunControlBarProps = {
   traceEvents?: StreamEvent[];
 };
 
-const RUN_TRACE_REASON = "当前没有可查看的 run trace。";
+const RUN_TRACE_REASON = "当前没有可查看的执行记录。";
 
 export function AgentRunControlBar({
   onContinueFromSelection,
@@ -78,31 +78,29 @@ export function AgentRunControlBar({
           ? getAgentExecutionStatusLabel(execution.status)
           : "空闲";
   const pauseDisabledReason = runState.pausing
-    ? "正在暂停当前 Agent run。"
+    ? "正在暂停当前任务。"
     : runState.streaming && onPauseRun
       ? undefined
-      : "当前没有正在运行的 Agent run。";
+      : "当前没有正在运行的任务。";
   const stopDisabledReason =
-    runState.streaming && onStopRun
-      ? undefined
-      : "当前没有正在运行的 Agent run。";
+    runState.streaming && onStopRun ? undefined : "当前没有正在运行的任务。";
   const continueDisabledReason = !selectedAgentElement
     ? "先选中一个 Agent 执行节点。"
     : runState.streaming || runState.canceling || runState.pausing
-      ? "当前 run 仍在运行，等待它停止或完成后再从选中节点继续。"
+      ? "当前任务仍在运行，等待它停止或完成后再继续。"
       : onContinueFromSelection
         ? undefined
-        : "当前页面不能打开 Agent 输入框。";
+        : "当前页面暂时不能继续生成。";
   const checkpointRerunDisabledReason =
     execution?.kind !== "checkpoint"
-      ? "先选中一个 checkpoint 节点。"
+      ? "先选中一个保存点。"
       : execution.checkpoint?.canRestartFromHere !== true
-        ? "这个 checkpoint 没有标记为可从此处重跑。"
+        ? "这个保存点还不能从此处重跑。"
         : runState.streaming || runState.canceling || runState.pausing
-          ? "当前 run 仍在运行，等待它停止或完成后再从 checkpoint 重跑。"
+          ? "当前任务仍在运行，等待它停止或完成后再从保存点重跑。"
           : onContinueFromSelection
             ? undefined
-            : "当前页面不能打开 Agent 输入框。";
+            : "当前页面暂时不能继续生成。";
   const traceDisabledReason =
     visibleTraceEvents.length > 0 || execution ? undefined : RUN_TRACE_REASON;
 
@@ -116,7 +114,7 @@ export function AgentRunControlBar({
         onPointerUp={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
-        aria-label="Agent run 控制条"
+        aria-label="Agent 任务控制条"
       >
         <div className="flex min-w-0 items-center gap-2">
           <span
@@ -133,14 +131,6 @@ export function AgentRunControlBar({
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-2">
               <span className="shrink-0 font-semibold">{statusText}</span>
-              {targetRunId ? (
-                <span
-                  className="max-w-36 truncate text-muted-foreground"
-                  title={targetRunId}
-                >
-                  {targetRunId}
-                </span>
-              ) : null}
             </div>
             {execution ? (
               <div
@@ -213,7 +203,7 @@ export function AgentRunControlBar({
           <ControlButton
             disabled={Boolean(checkpointRerunDisabledReason)}
             icon={RotateCcw}
-            label="从 checkpoint 重跑"
+            label="从保存点重跑"
             onClick={() => {
               if (selectedAgentElement) {
                 onContinueFromSelection?.(
@@ -227,7 +217,7 @@ export function AgentRunControlBar({
           <ControlButton
             disabled={Boolean(traceDisabledReason)}
             icon={Eye}
-            label="查看 run trace"
+            label="查看执行记录"
             onClick={() => setTraceOpen((open) => !open)}
             reason={traceDisabledReason}
           />
@@ -279,19 +269,13 @@ function getCheckpointRerunScope(
   const downstreamNodeIds = execution.downstreamNodeIds ?? [];
   if (!downstreamNodeIds.length) {
     return {
-      summary: "Checkpoint 重跑前会先检查当前画布下游链路。",
-      title:
-        "这个 checkpoint 没有记录 downstreamNodeIds；重跑前需要先回读当前 PenDocument.pages 执行链。",
+      summary: "从保存点重跑前，会先检查当前画布上的后续内容。",
+      title: "这个保存点没有记录后续内容；重跑前会先检查当前画布。",
     };
   }
-  const visibleIds = downstreamNodeIds.slice(0, 4).join("、");
-  const suffix =
-    downstreamNodeIds.length > 4
-      ? ` 等 ${downstreamNodeIds.length} 个节点`
-      : "";
   return {
-    summary: `Checkpoint 重跑将重建 ${downstreamNodeIds.length} 个下游节点：${visibleIds}${suffix}`,
-    title: `需要重建的下游节点：${downstreamNodeIds.join("、")}`,
+    summary: `从保存点重跑将重建 ${downstreamNodeIds.length} 个后续结果。`,
+    title: `将重建 ${downstreamNodeIds.length} 个后续结果。`,
   };
 }
 
@@ -302,13 +286,13 @@ function getPausedContinuationState(
   const restartReason = execution.checkpoint?.restartReason?.trim();
   const title = [
     "选中的 Agent 执行节点已暂停。",
-    "继续会以该节点为 durable context anchor 打开新的 Agent run，而不是静默恢复旧 SSE 流。",
+    "继续会读取当前画布并开启新的生成任务。",
     restartReason ? `暂停/重启说明：${restartReason}` : undefined,
   ]
     .filter((value): value is string => Boolean(value))
     .join(" ");
   return {
-    summary: "已暂停：从此节点继续会读取当前画布并开启新的 Agent run。",
+    summary: "已暂停：从此处继续会读取当前画布并开启新的生成任务。",
     title,
   };
 }

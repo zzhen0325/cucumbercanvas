@@ -38,12 +38,12 @@ const SHAPE_TOOLS: Array<{
   shortcut?: string;
   tool: ShapeTool;
 }> = [
-  { icon: Square, label: "Rectangle", shortcut: "R", tool: "rect" },
-  { icon: Circle, label: "Ellipse", shortcut: "O", tool: "ellipse" },
-  { icon: Pentagon, label: "Polygon", tool: "polygon" },
-  { icon: Minus, label: "Line", shortcut: "L", tool: "line" },
-  { icon: ArrowRight, label: "Arrow", shortcut: "Shift+L", tool: "arrow" },
-  { icon: PenTool, label: "Path", shortcut: "P", tool: "path" },
+  { icon: Square, label: "矩形", shortcut: "R", tool: "rect" },
+  { icon: Circle, label: "椭圆", shortcut: "O", tool: "ellipse" },
+  { icon: Pentagon, label: "多边形", tool: "polygon" },
+  { icon: Minus, label: "线条", shortcut: "L", tool: "line" },
+  { icon: ArrowRight, label: "箭头", shortcut: "Shift+L", tool: "arrow" },
+  { icon: PenTool, label: "路径", shortcut: "P", tool: "path" },
 ];
 
 const DEFAULT_SHAPE_TOOL = SHAPE_TOOLS[0] as (typeof SHAPE_TOOLS)[number];
@@ -94,17 +94,17 @@ export function ShapeToolDropdown({
           active={Boolean(activeShape)}
           className={cn(activeShape && "border-transparent bg-transparent")}
           icon={primaryShape.icon}
-          label="Shapes"
+          label="形状"
           onClick={() => chooseShapeTool(primaryTool)}
           shortcut={primaryShape.shortcut}
         />
         <DropdownMenuTrigger
-          aria-label="Open shape menu"
+          aria-label="打开形状菜单"
           className={cn(
             " flex size-5 items-center justify-center rotate-270 rounded-md text-foreground/50 outline-none transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
             activeShape && "text-foreground",
           )}
-          title="Open shape menu"
+          title="打开形状菜单"
         >
           <ChevronDown className="size-3" />
         </DropdownMenuTrigger>
@@ -137,16 +137,16 @@ export function ShapeToolDropdown({
           {onInsertIcon ? (
             <DropdownMenuItem onClick={onInsertIcon}>
               <Smile className="size-4" />
-              Insert icon
+              插入图标
             </DropdownMenuItem>
           ) : null}
           <DropdownMenuItem onClick={onImportImage}>
             <ImageIcon className="size-4" />
-            Import image
+            导入图片
           </DropdownMenuItem>
           <DropdownMenuItem onClick={onImportSvg}>
             <FileCode2 className="size-4" />
-            Import SVG
+            导入 SVG
           </DropdownMenuItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>

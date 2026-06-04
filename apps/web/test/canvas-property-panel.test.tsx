@@ -1765,11 +1765,12 @@ describe("CanvasPropertyPanel", () => {
     expect(screen.getByRole("heading", { name: "Agent 执行" })).toBeVisible();
     expect(screen.getByText("最终交付物")).toBeVisible();
     expect(screen.getAllByText("运行中")).toHaveLength(2);
-    expect(screen.getByText("run-1")).toBeVisible();
+    expect(screen.queryByText("run-1")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "显示开发诊断" })).toBeVisible();
     expect(screen.getByRole("button", { name: "从这里继续" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "重跑此步骤" })).toHaveAttribute(
       "title",
-      "继续、重跑和分支操作需要 Agent run 控制器接入后才能生效。",
+      "当前页面暂时不能继续生成。",
     );
   });
 
@@ -1812,15 +1813,15 @@ describe("CanvasPropertyPanel", () => {
       pageNodes: [goalNode, stepNode, validateNode],
     });
 
-    expect(screen.getByText("执行链上下文")).toBeVisible();
-    expect(screen.getByText("上游")).toBeVisible();
+    expect(screen.getByText("关联步骤")).toBeVisible();
+    expect(screen.getByText("前置内容")).toBeVisible();
     expect(screen.getByText("生成三套海报方向")).toBeVisible();
     expect(screen.getByText("用户目标")).toBeVisible();
-    expect(screen.getByText("下游")).toBeVisible();
+    expect(screen.getByText("后续结果")).toBeVisible();
     expect(screen.getByText("验证画布结构")).toBeVisible();
     expect(screen.getByText("工具调用 · validate_canvas")).toBeVisible();
-    expect(screen.getByText("当前页未找到节点")).toBeVisible();
-    expect(screen.getByText("missing-next")).toBeVisible();
+    expect(screen.getByText("关联内容暂不可用")).toBeVisible();
+    expect(screen.queryByText("missing-next")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /生成三套海报方向/ }));
     await user.click(screen.getByRole("button", { name: /验证画布结构/ }));
@@ -2138,11 +2139,12 @@ describe("CanvasPropertyPanel", () => {
     );
 
     expect(screen.getAllByText("方案对比").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("branch-b").length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText("branch-b")).not.toBeInTheDocument();
     expect(
       screen.getAllByText("方向 B 更适合活动首发。").length,
     ).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("branch-node-a")).toBeVisible();
+    expect(screen.queryByText("branch-node-a")).not.toBeInTheDocument();
+    expect(screen.getByText("2 个")).toBeVisible();
     expect(screen.getByText("分支对比")).toBeVisible();
     expect(screen.getByText("先探索情绪版式，再补充品牌资产。")).toBeVisible();
     expect(screen.getByText("品牌首发海报方向。")).toBeVisible();
@@ -2283,6 +2285,7 @@ describe("CanvasPropertyPanel", () => {
     });
 
     expect(screen.getByText("推荐选择")).toBeVisible();
+    expect(screen.getAllByText("方向 B").length).toBeGreaterThanOrEqual(1);
     expect(
       screen.getAllByText("方向 B 更适合活动首发。").length,
     ).toBeGreaterThanOrEqual(1);
@@ -2373,15 +2376,13 @@ describe("CanvasPropertyPanel", () => {
 
     renderPropertyPanel(checkpointNode, { onContinueAgentExecution });
 
-    expect(screen.getAllByText("检查点").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("可从此处恢复")).toBeInTheDocument();
+    expect(screen.getAllByText("保存点").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("可从此处继续")).toBeInTheDocument();
     expect(
       screen.getByText("设计方向已经收敛，可从这里继续。"),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "从这里继续" }));
-    await user.click(
-      screen.getByRole("button", { name: "从 checkpoint 重跑" }),
-    );
+    await user.click(screen.getByRole("button", { name: "从保存点重跑" }));
     await user.click(screen.getByRole("button", { name: "复制为新分支" }));
 
     expect(onContinueAgentExecution).toHaveBeenNthCalledWith(
@@ -2600,12 +2601,12 @@ describe("CanvasPropertyPanel", () => {
     expect(screen.getByText("仅记录进度")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "这个检查点已写入画布节点，可作为后续继续、分支或重跑的上下文锚点。",
+        "这个保存点已记录当前进度，可用于继续、复制分支或重新生成后续结果。",
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "从 checkpoint 重跑" }),
-    ).toHaveAttribute("title", "这个检查点没有标记为可从此处重跑。");
+      screen.getByRole("button", { name: "从保存点重跑" }),
+    ).toHaveAttribute("title", "这个保存点还不能从此处重跑。");
     expect(screen.getByRole("button", { name: "从这里继续" })).toBeDisabled();
   });
 });
