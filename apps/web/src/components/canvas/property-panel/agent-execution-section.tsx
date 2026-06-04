@@ -20,7 +20,6 @@ import { AgentExecutionCritiqueSection } from "./agent-execution-critique-sectio
 import { AgentExecutionDetailsSection } from "./agent-execution-details-section";
 import { AgentExecutionEvidenceSection } from "./agent-execution-evidence-section";
 import { AgentExecutionFailureRecoverySection } from "./agent-execution-failure-recovery-section";
-import { AgentExecutionSaveRecipeSection } from "./agent-execution-save-recipe-section";
 import { AgentVariantBranchDetails } from "./agent-variant-branch-details";
 
 type AgentExecutionSectionProps = {
@@ -410,8 +409,6 @@ export function AgentExecutionSection({
         nodeId={node.id}
         onContinueFromNode={onContinueFromNode}
       />
-
-      <AgentExecutionSaveRecipeSection node={node} pageNodes={pageNodes} />
 
       <div className="mt-3 grid grid-cols-2 gap-2">
         {showGenericContinuationActions ? (

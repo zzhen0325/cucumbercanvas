@@ -112,3 +112,14 @@ Maintenance:
 - Updated compact-entry prompt context so Agents pass `agentExecutionNodeId`, leave `targetContainerId` empty, and rely on the server to create the loading result container and connector.
 - Made compact image target creation best-effort: live canvas fetch/RPC failures are logged as `image_target_create_failed` and no longer abort the Agent run or image job submission.
 - Passed: `pnpm --filter @cucumber/server test apps/server/src/features/canvas/live-image-generation-target.test.ts apps/server/src/agent/tools/image-generate.test.ts apps/server/src/agent/prompts/cucumber-main.test.ts apps/server/src/generation/providers/seedream.test.ts --reporter=dot`.
+
+## 2026-06-05 - remove Recipe template surfaces
+
+- Removed the Recipe template runtime truth and UI surfaces: built-in/saved template model exports, chat picker/chip/local-storage hooks, selected-template send context, `<agent_recipe_template>` prompt block formatting, and property-panel save-template panel.
+- Kept the durable `recipe_plan` execution node kind and `create_agent_execution_flow.recipeTitle` path intact because those belong to the execution-chain runtime, not the removed template feature.
+- Updated current docs and feature registry so chat input now only sends continuation and explicit canvas-node reference prompt context.
+- Passed: `pnpm exec vitest run apps/web/test/chat-input.test.tsx apps/web/test/canvas-property-panel.test.tsx apps/server/src/agent/prompts/cucumber-main.test.ts packages/canvas-core/src/__tests__/agent-execution.test.ts --reporter=dot`.
+- Passed: `pnpm exec vitest run apps/web/test/canvas-agent-composer.test.tsx --reporter=dot`.
+- Passed: `pnpm exec biome check` for the touched code, tests, docs, `feature_list.json`, and `progress.md`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`, `pnpm --filter @cucumber/web typecheck`, and `pnpm --filter @cucumber/server typecheck`.
+- Build still blocked by existing Web build issues outside this change: `paper` optional dependency resolution warnings for `acorn` / `canvas`, then Next prerender fails with `<Html> should not be imported outside of pages/_document` on `/404`.

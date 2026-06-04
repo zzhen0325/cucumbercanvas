@@ -1,8 +1,6 @@
-import {
-  type AgentExecutionNodeKind,
-  type AgentExecutionStatus,
-  type AgentRecipeTemplate,
-  formatAgentRecipeTemplatePromptBlock,
+import type {
+  AgentExecutionNodeKind,
+  AgentExecutionStatus,
 } from "@cucumber/canvas-core";
 import type { CanvasSelectedElement } from "./canvas-editor";
 
@@ -24,7 +22,6 @@ export type AgentContinuationIntent =
   | "skip";
 
 export type ChatInputSendContext = {
-  recipeTemplate?: AgentRecipeTemplate;
   agentExecutionContinuation?: {
     intent?: AgentContinuationIntent;
     mode: AgentContinuationMode;
@@ -117,15 +114,11 @@ export function formatAgentExecutionContinuationPrompt(
 ): string {
   const continuation = context?.agentExecutionContinuation;
   const canvasNodeReferences = context?.canvasNodeReferences;
-  const recipeTemplate = context?.recipeTemplate;
-  if (!recipeTemplate && !continuation && !canvasNodeReferences?.length) {
+  if (!continuation && !canvasNodeReferences?.length) {
     return message;
   }
 
   const lines = [
-    ...(recipeTemplate
-      ? [formatAgentRecipeTemplatePromptBlock(recipeTemplate)]
-      : []),
     ...formatAgentContinuationContextLines(continuation),
     ...formatCanvasNodeReferenceLines(canvasNodeReferences),
     "",
@@ -256,17 +249,11 @@ export function buildChatInputSendContext(
     | NonNullable<ChatInputSendContext["agentExecutionContinuation"]>
     | undefined,
   canvasNodeReferences: CanvasNodeReference[],
-  recipeTemplate?: AgentRecipeTemplate,
 ): ChatInputSendContext | undefined {
-  if (
-    !recipeTemplate &&
-    !agentExecutionContinuation &&
-    canvasNodeReferences.length === 0
-  ) {
+  if (!agentExecutionContinuation && canvasNodeReferences.length === 0) {
     return undefined;
   }
   return {
-    ...(recipeTemplate ? { recipeTemplate } : {}),
     ...(agentExecutionContinuation ? { agentExecutionContinuation } : {}),
     ...(canvasNodeReferences.length > 0 ? { canvasNodeReferences } : {}),
   };

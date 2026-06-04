@@ -135,7 +135,7 @@ export function CanvasAgentComposer({
       agentContinuationIntent,
       { waitingResponseText: agentContinuationWaitingResponseText },
     );
-    return buildChatInputSendContext(continuation, [], undefined);
+    return buildChatInputSendContext(continuation, []);
   }, [
     agentContinuationIntent,
     agentContinuationMode,

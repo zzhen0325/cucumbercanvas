@@ -97,8 +97,8 @@ Current status:
   checkpoint nodes, all connected by semantic line nodes. Created execution
   cards now persist both `upstreamNodeIds` and derived `downstreamNodeIds` in
   `meta.agentExecution`, so the Web inspector, continuation drafts, and saved
-  Recipe extraction can read the same bidirectional chain from the durable page
-  nodes instead of reconstructing it from run trace.
+  continuation controls can read the same bidirectional chain from the durable
+  page nodes instead of reconstructing it from run trace.
 - Simple image-generation work now uses that same
   `create_agent_execution_flow` chain instead of a separate flow tool. The
   optimized prompt is represented by a task/tool-call step, `generate_image`
@@ -270,57 +270,6 @@ Current status:
   itself shows the Agent execution kind/status and includes waiting, failure,
   and checkpoint restart reasons in its hover title so users can verify the
   referenced execution context before sending.
-- The chat input now includes a first Recipe template starter surface. Built-in
-  templates live in `packages/canvas-core/src/agent-recipe-template.ts` for
-  brand visual exploration, poster multi-variant work, product image
-  generation, storyboard scripts, webpage design, and design-to-code. Selecting
-  a template pre-fills or augments an editable user prompt with a `待补输入`
-  per-slot checklist (`- 槽位：`) users can fill directly, shows a Recipe chip
-  with the first required input slots, and sends `<agent_recipe_template>` with
-  template source, startup mode, node structure, tool order, input slots,
-  input-slot policy, validation rules, and deliverable format. This is a
-  template-start context, not runtime canvas truth. Completed Recipe, variant
-  branch, comparison, checkpoint, and final deliverable execution nodes can now
-  also be saved as local custom Recipe templates from the property panel;
-  the save panel previews the exact source-node count, node structure, tool
-  order, input slots, validation rules, and deliverable format before writing
-  anything to local storage. Extraction reads the selected
-  `meta.agentExecution` node plus related completed upstream/downstream
-  execution nodes on the active page, then stores reusable template fields in
-  the browser Recipe menu. Saved templates are grouped separately from built-in
-  starters in the Recipe menu, can be previewed for startup behavior, node
-  structure, tool order, input slots, validation rules, deliverable format, and
-  source node IDs, and deleted from local storage without deleting the original
-  canvas execution nodes. Saved template prompt blocks mark
-  `saved_source_nodes` as provenance from the old successful chain;
-  they are not runtime targets to edit or overwrite unless the user also
-  references those live node IDs explicitly. A cloud/team template library,
-  cross-page template management, and richer visual template browsing remain
-  follow-up work.
-  Completed `variant_branch` nodes produce branch-deepening templates with
-  variant branch, critique, checkpoint, and final-deliverable expectations, so a
-  successful direction can be reused without requiring the user to first select
-  the enclosing comparison or checkpoint. When the active page also contains the
-  branch's sibling variants and comparison node, saving the branch preserves that
-  comparison context in the template source-node set and deliverable contract
-  instead of flattening the branch into an isolated single-node recipe.
-  Recipe extraction now also preserves `evidence` and `ask_user_more`
-  boundaries as reusable workflow contract: saved templates infer
-  `create_agent_evidence` / `create_agent_ask_user_more` tool steps, reference
-  material / user-supplement input slots, provenance and waiting-input
-  validation rules, and a deliverable format that names those context nodes
-  instead of flattening them into a generic checkpoint chain.
-  The template prompt block now states that node structure, tool sequence,
-  input slots, validation rules, and deliverable format are the reusable
-  workflow contract, and names `startup_mode` so saved templates start as a new
-  execution-chain instance unless a separate continuation context is present.
-  It also treats `input_slots` as required workflow inputs: when the user
-  message and live canvas context do not provide enough information for a slot,
-  the Agent must create a durable `ask_user_more` node before inventing values
-  or continuing. The Agent prompt treats template tool steps such as
-  `create_agent_evidence`, `create_agent_ask_user_more`,
-  `create_agent_variant_branches`, `critique_canvas`, and checkpoint creation as
-  durable execution-node requirements rather than optional chat narration.
 - The canvas page has a top Agent run control bar that reflects active run
   streaming state, selected execution-node context, waiting-for-user prompts,
   whether the waiting node accepts files/images, submitted response text,

@@ -78,28 +78,6 @@ describe("CUCUMBER_SYSTEM_PROMPT", () => {
     expect(CUCUMBER_SYSTEM_PROMPT).toContain(
       "这些摘要只是定位和意图提示，不是复制出来的画布真值",
     );
-    expect(CUCUMBER_SYSTEM_PROMPT).toContain("<agent_recipe_template>");
-    expect(CUCUMBER_SYSTEM_PROMPT).toContain("模板是执行链计划来源");
-    expect(CUCUMBER_SYSTEM_PROMPT).toContain("不是第二套运行时状态");
-    expect(CUCUMBER_SYSTEM_PROMPT).toContain(
-      "template_source / startup_mode / source_node_policy",
-    );
-    expect(CUCUMBER_SYSTEM_PROMPT).toContain("input_slots 是必需输入槽位");
-    expect(CUCUMBER_SYSTEM_PROMPT).toContain(
-      "必须先创建 durable `ask_user_more` 节点询问缺失项",
-    );
-    expect(CUCUMBER_SYSTEM_PROMPT).toContain(
-      "saved_source_nodes 只是旧成功链路的 provenance",
-    );
-    expect(CUCUMBER_SYSTEM_PROMPT).toContain(
-      "模板 tool_sequence 中出现 create_agent_evidence / create_agent_ask_user_more",
-    );
-    expect(CUCUMBER_SYSTEM_PROMPT).toContain(
-      "不要把 evidence、等待用户补充、分支、评审或 checkpoint 只写成聊天说明",
-    );
-    expect(CUCUMBER_SYSTEM_PROMPT).toContain(
-      "本次必须创建新的 execution-chain 实例或沿明确的 continuation target 执行",
-    );
     expect(CUCUMBER_SYSTEM_PROMPT).toContain(
       "必须调用 create_agent_variant_branches 创建 durable 的 variant_branch 节点和 comparison 节点",
     );

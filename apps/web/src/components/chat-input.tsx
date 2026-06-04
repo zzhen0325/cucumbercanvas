@@ -10,11 +10,6 @@ import {
   useState,
 } from "react";
 
-import {
-  DEFAULT_AGENT_RECIPE_TEMPLATES,
-  appendAgentRecipeTemplateInputSlotChecklist,
-  formatAgentRecipeTemplateStartPrompt,
-} from "@cucumber/canvas-core";
 import type { MessageMention } from "@cucumber/shared";
 import type { ImageAttachmentState } from "../hooks/use-image-attachments";
 import { useImageModelPreference } from "../hooks/use-image-model-preference";
@@ -32,16 +27,8 @@ import {
   buildChatInputSendContext,
   formatAgentExecutionContinuationPrompt,
 } from "./chat-input-context";
-import {
-  ChatRecipeTemplateChip,
-  ChatRecipeTemplatePickerButton,
-} from "./chat-recipe-template-picker";
 import { ImageAttachmentBar } from "./image-attachment-bar";
 import { ImageModelPreferencePopover } from "./image-model-preference";
-import {
-  useCustomAgentRecipeTemplates,
-  useRemoveCustomAgentRecipeTemplate,
-} from "./use-agent-recipe-templates";
 
 export { formatAgentExecutionContinuationPrompt };
 export type {
@@ -115,29 +102,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     ] = useState<string | undefined>(undefined);
     const [agentContinuationTargetElement, setAgentContinuationTargetElement] =
       useState<CanvasSelectedElement | undefined>(undefined);
-    const [selectedRecipeTemplateId, setSelectedRecipeTemplateId] = useState<
-      string | null
-    >(null);
     const [manualCanvasReferences, setManualCanvasReferences] = useState<
       CanvasNodeReference[]
     >([]);
-    const customRecipeTemplates = useCustomAgentRecipeTemplates();
-    const removeCustomAgentRecipeTemplate =
-      useRemoveCustomAgentRecipeTemplate();
-    const recipeTemplates = useMemo(
-      () => [...customRecipeTemplates, ...DEFAULT_AGENT_RECIPE_TEMPLATES],
-      [customRecipeTemplates],
-    );
-
-    const selectedRecipeTemplate = useMemo(
-      () =>
-        selectedRecipeTemplateId
-          ? recipeTemplates.find(
-              (template) => template.id === selectedRecipeTemplateId,
-            )
-          : undefined,
-      [recipeTemplates, selectedRecipeTemplateId],
-    );
 
     useImperativeHandle(ref, () => ({
       clearAtQuery() {
@@ -168,11 +135,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const handleSubmit = useCallback(() => {
       const trimmed = value.trim();
-      const message =
-        trimmed ||
-        (selectedRecipeTemplate
-          ? formatAgentRecipeTemplateStartPrompt(selectedRecipeTemplate).trim()
-          : "");
+      const message = trimmed;
       if (
         (!message && (!attachments || attachments.length === 0)) ||
         disabled ||
@@ -190,11 +153,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       const sendContext = buildChatInputSendContext(
         agentContinuationContext,
         manualCanvasReferences,
-        selectedRecipeTemplate,
       );
       onSend(message, sendContext);
       setValue("");
-      setSelectedRecipeTemplateId(null);
       setManualCanvasReferences([]);
       setAgentContinuationIntent(undefined);
       setAgentContinuationTargetElement(undefined);
@@ -214,7 +175,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       agentContinuationIntent,
       agentContinuationWaitingResponseText,
       manualCanvasReferences,
-      selectedRecipeTemplate,
     ]);
 
     const handleKeyDown = useCallback(
@@ -318,9 +278,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     );
 
     const hasContent =
-      value.trim().length > 0 ||
-      Boolean(selectedRecipeTemplate) ||
-      (attachments && attachments.length > 0);
+      value.trim().length > 0 || (attachments && attachments.length > 0);
 
     const continuationCanvasElements = agentContinuationTargetElement
       ? [agentContinuationTargetElement]
@@ -367,49 +325,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       });
     }, []);
 
-    const handleSelectRecipeTemplate = useCallback(
-      (templateId: string) => {
-        const template = recipeTemplates.find((item) => item.id === templateId);
-        if (!template) return;
-        setSelectedRecipeTemplateId(template.id);
-        setValue((current) =>
-          current.trim().length > 0
-            ? appendAgentRecipeTemplateInputSlotChecklist(current, template)
-            : formatAgentRecipeTemplateStartPrompt(template),
-        );
-        console.info("[chat-input] recipe_template.selected", {
-          templateId: template.id,
-        });
-        window.requestAnimationFrame(() => {
-          textareaRef.current?.focus();
-          const length = textareaRef.current?.value.length ?? 0;
-          textareaRef.current?.setSelectionRange(length, length);
-        });
-      },
-      [recipeTemplates],
-    );
-
-    const handleClearRecipeTemplate = useCallback(() => {
-      if (!selectedRecipeTemplateId) return;
-      console.info("[chat-input] recipe_template.cleared", {
-        templateId: selectedRecipeTemplateId,
-      });
-      setSelectedRecipeTemplateId(null);
-    }, [selectedRecipeTemplateId]);
-
-    const handleRemoveSavedRecipeTemplate = useCallback(
-      (templateId: string) => {
-        removeCustomAgentRecipeTemplate(templateId);
-        if (selectedRecipeTemplateId === templateId) {
-          setSelectedRecipeTemplateId(null);
-        }
-        console.info("[chat-input] recipe_template.removed", {
-          templateId,
-        });
-      },
-      [removeCustomAgentRecipeTemplate, selectedRecipeTemplateId],
-    );
-
     return (
       <div className="px-2 pb-2">
         <div
@@ -424,10 +339,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             onModeChange={setAgentContinuationMode}
             onRemoveReference={handleRemoveReference}
             selectedCanvasElements={continuationCanvasElements}
-          />
-          <ChatRecipeTemplateChip
-            onClear={handleClearRecipeTemplate}
-            template={selectedRecipeTemplate}
           />
           {attachments && onRemoveAttachment && (
             <ImageAttachmentBar
@@ -479,12 +390,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           />
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1">
-              <ChatRecipeTemplatePickerButton
-                onRemoveSavedTemplate={handleRemoveSavedRecipeTemplate}
-                onSelect={handleSelectRecipeTemplate}
-                selectedTemplate={selectedRecipeTemplate}
-                templates={recipeTemplates}
-              />
               {onAddFiles && (
                 <>
                   <input
