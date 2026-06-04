@@ -11,10 +11,11 @@ import { type WebSocket, WebSocketServer } from "ws";
 
 const API_PORT = 4011;
 const WEB_PORT = 3100;
-const TEST_PAGE_URL = `http://127.0.0.1:${WEB_PORT}/test/transport`;
-const SSE_PATH = "/api/canvases/canvas-1/stream";
+const TRANSPORT_CANVAS_ID = "transport-canvas-fixture";
+const SSE_PATH = `/api/canvases/${TRANSPORT_CANVAS_ID}/stream`;
 const WS_PATH = "/api/ws";
-const TOKEN = "token";
+const TOKEN = "dev-skip-auth-token";
+const TEST_PAGE_URL = `http://127.0.0.1:${WEB_PORT}/test/transport?canvasId=${TRANSPORT_CANVAS_ID}&token=${TOKEN}`;
 
 test.describe
   .serial("browser transport black-box", () => {

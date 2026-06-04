@@ -84,6 +84,7 @@ Use these commands from the repository root:
 - Build: `pnpm build`
 - Quick harness check: `pnpm check:quick`
 - Full harness check: `pnpm check:full`
+- Rotate oversized progress log: `pnpm progress:rotate`
 
 ## Definition of Done
 
@@ -96,7 +97,7 @@ A task is done only when:
 - Build passes when the change can affect runtime bundling or deployment.
 - UI changes follow existing Tailwind/shadcn/Base UI/component conventions.
 - New product behavior is documented when it changes workflow, contracts, persistence, or agent/tool behavior.
-- `progress.md` and `feature_list.json` are updated when the work changes project status or a tracked feature.
+- `progress.md` and `feature_list.json` are updated when the work changes project status or a tracked feature. If `progress.md` reaches 300 lines, run `pnpm progress:rotate` and continue in the reset active log.
 
 ## File Size And Module Growth Discipline
 
@@ -197,4 +198,3 @@ Do not modify these unless explicitly requested:
 - Payment logic.
 - Global design tokens.
 - Deployment configuration.
-

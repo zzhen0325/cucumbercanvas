@@ -30,7 +30,7 @@ export default defineConfig({
   // Shared settings for all projects
   use: {
     // Base URL for navigation
-    baseURL: "http://localhost:3000",
+    baseURL: "http://127.0.0.1:3100",
 
     // Collect trace when retrying the failed test
     trace: "on-first-retry",
@@ -56,8 +56,8 @@ export default defineConfig({
   // NOTE: Set reuseExistingServer to true for local development
   // The server will NOT be auto-started if already running
   webServer: {
-    command: "npm run dev",
-    url: "http://localhost:3000",
+    command: "pnpm --dir apps/web exec next dev -p 3100",
+    url: "http://127.0.0.1:3100",
     reuseExistingServer: !process.env.CI,
     timeout: 120 * 1000,
   },

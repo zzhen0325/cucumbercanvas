@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-06-04T20:21:25+08:00",
+  "updatedAt": "2026-06-04T21:09:49+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -8,7 +8,7 @@
       "status": "done",
       "priority": "P0",
       "owner": "engineering",
-      "summary": "Project-level agent manual, Codex config, command rules, verification scripts, progress log, feature registry, and core docs.",
+      "summary": "Project-level agent manual, Codex config, command rules, verification scripts, bounded progress log rotation, feature registry, and core docs.",
       "artifacts": [
         "AGENTS.md",
         ".codex/config.toml",
@@ -17,8 +17,12 @@
         "scripts/codex-check.sh",
         "scripts/test-changed.mjs",
         "scripts/test-canvas.mjs",
+        "scripts/prepare-visual-canvas.mjs",
+        "scripts/rotate-progress.mjs",
+        "playwright.config.ts",
         "vitest.config.ts",
         "progress.md",
+        "docs/progress/README.md",
         "feature_list.json",
         "docs/code-map.md",
         "docs/architecture.md",

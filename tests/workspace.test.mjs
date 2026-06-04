@@ -57,6 +57,25 @@ test("root test command wires workspace, changed, canvas, and package tests", as
   assert.match(manifest.scripts.test, /test:packages/);
 });
 
+test("progress log rotation has a bounded handoff contract", async () => {
+  const manifest = await readJson("package.json");
+  const script = await readText("scripts/rotate-progress.mjs");
+  const workflow = await readText("docs/workflow.md");
+  const archiveReadme = await readText("docs/progress/README.md");
+
+  assert.match(
+    manifest.scripts["progress:rotate"],
+    /scripts\/rotate-progress\.mjs/,
+  );
+  assert.match(script, /const DEFAULT_MAX_LINES = 300/);
+  assert.match(script, /docs", "progress"/);
+  assert.match(workflow, /progress\.md.*300 lines/);
+  assert.match(
+    archiveReadme,
+    /Treat archive files as immutable historical snapshots/,
+  );
+});
+
 test("vitest projects config covers package-level tests", async () => {
   const projectsConfig = await readText("vitest.config.ts");
 

@@ -7,12 +7,14 @@ import { useSseStream } from "../../../hooks/use-sse-stream";
 import { useWebSocket } from "../../../hooks/use-websocket";
 import { useAuth } from "../../../lib/auth-context";
 
-const CANVAS_ID = "canvas-1";
+const DEFAULT_CANVAS_ID = "transport-canvas-fixture";
 const RPC_METHOD = "browser.echo";
 
 export function TransportHarness() {
+  const [canvasId, setCanvasId] = useState(DEFAULT_CANVAS_ID);
+  const [tokenOverride, setTokenOverride] = useState<string | null>(null);
   const { loading, session } = useAuth();
-  const accessToken = session?.access_token ?? "";
+  const accessToken = tokenOverride ?? session?.access_token ?? "";
   const [sseErrors, setSseErrors] = useState<string[]>([]);
   const [sseEvents, setSseEvents] = useState<string[]>([]);
   const [sseOpenCount, setSseOpenCount] = useState(0);
@@ -22,6 +24,18 @@ export function TransportHarness() {
   const streamHandleRef = useRef<{ stop: () => void } | null>(null);
   const { startStream } = useSseStream(accessToken);
   const { connected, registerRPC } = useWebSocket(() => accessToken || null);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const configuredCanvasId = searchParams.get("canvasId");
+    if (configuredCanvasId) {
+      setCanvasId(configuredCanvasId);
+    }
+    const configuredToken = searchParams.get("token");
+    if (configuredToken) {
+      setTokenOverride(configuredToken);
+    }
+  }, []);
 
   useEffect(() => {
     return registerRPC(RPC_METHOD, async (params) => {
@@ -57,7 +71,7 @@ export function TransportHarness() {
     setStreamActive(true);
 
     return startStream({
-      canvasId: CANVAS_ID,
+      canvasId,
       onError: (error) => {
         setSseErrors((current) => [...current, error.message]);
       },
@@ -74,7 +88,7 @@ export function TransportHarness() {
         setSseReconnectCount((count) => count + 1);
       },
     });
-  }, [accessToken, startStream, stopStream]);
+  }, [accessToken, canvasId, startStream, stopStream]);
 
   const handleStartSse = useCallback(() => {
     streamHandleRef.current = startHarnessStream();

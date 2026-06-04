@@ -10,6 +10,7 @@ The harness gives every Codex session the same starting contract:
 - `scripts/codex-setup.sh`: setup entry point.
 - `scripts/codex-check.sh`: quick/full verification entry point.
 - `progress.md`: current state, next targets, and handoff notes.
+- `docs/progress/`: historical progress snapshots once the active log crosses its line threshold.
 - `feature_list.json`: feature registry with unique IDs, status, and priority.
 - `docs/code-map.md`: 功能能力到代码入口的导航地图，以及 `.codegraph` 查询指南。
 - `docs/architecture.md`: system map.
@@ -25,7 +26,7 @@ The harness gives every Codex session the same starting contract:
 5. Implement in small, reviewable diffs.
 6. Add logs or TODOs only when they improve production diagnosis or handoff clarity.
 7. Run focused verification, then `pnpm check:quick` or `pnpm check:full` depending on risk.
-8. Update `progress.md` and `feature_list.json` if project status changed.
+8. Update `progress.md` and `feature_list.json` if project status changed. If `progress.md` reaches 300 lines, run `pnpm progress:rotate` and continue in the reset active log.
 9. Summarize changed files, checks, and remaining risks.
 
 ## Verification Policy
@@ -67,6 +68,14 @@ Use `progress.md` for handoff, not for exhaustive commit history. It should answ
 - What existing changes should not be overwritten?
 - Which checks passed or failed?
 - What risk remains?
+
+Keep the active `progress.md` under 300 lines. Once it reaches that threshold, run:
+
+```bash
+pnpm progress:rotate
+```
+
+The script archives the full current file under `docs/progress/` and resets root `progress.md` as the new active handoff window. Archives are historical snapshots; do not keep appending to them.
 
 ## Command Guardrails
 
