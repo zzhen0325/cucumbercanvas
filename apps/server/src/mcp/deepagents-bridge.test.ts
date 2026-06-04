@@ -39,7 +39,6 @@ describe("createCucumberMcpServer", () => {
       "record_agent_tool_call",
       "create_agent_variant_branches",
       "select_agent_variant_branch",
-      "create_agent_canvas_flow",
       "layout_canvas",
       "validate_canvas",
       "canvas_memory_index",

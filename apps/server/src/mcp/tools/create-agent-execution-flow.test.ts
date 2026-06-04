@@ -206,6 +206,10 @@ describe("create_agent_execution_flow", () => {
       status: "waiting",
       upstreamNodeIds: [payload.critiqueNodeId],
     });
+    expect(findNode(state.doc, payload.finalDeliverableNodeId)).toMatchObject({
+      height: 640,
+      width: 600,
+    });
     expect(
       getAgentExecutionMeta(findNode(state.doc, payload.checkpointNodeId)),
     ).toMatchObject({

@@ -66,8 +66,8 @@ Current status:
   `withAgentExecutionNodeSemantics` is the shared boundary for newly created
   execution nodes that need durable `meta.agentExecution` plus top-level
   `runId`, `sessionId`, `agentBinding`, non-empty `containerRole`, and execution
-  `contextSlots` on the same `PenNode`. `create_agent_canvas_flow`,
-  `create_agent_execution_flow`, `create_agent_ask_user_more`,
+  `contextSlots` on the same `PenNode`. `create_agent_execution_flow`,
+  `create_agent_ask_user_more`,
   `create_agent_evidence`, and `create_agent_variant_branches` use this helper
   so user-goal, Recipe, task/tool, ask, evidence, branch, comparison, critique,
   checkpoint, and final-deliverable creation paths share the same semantic
@@ -78,12 +78,6 @@ Current status:
   status, tool-call output/failure, critique findings, and final delivery
   completion/failure keep `meta.agentExecution` and top-level
   run/session/agent/container-role semantics synchronized on the same `PenNode`.
-- `create_agent_canvas_flow` now tags its simple image-generation chain as
-  `user_goal`, `recipe_plan`, `tool_call`, and `final_deliverable`. Every node
-  it creates with durable `meta.agentExecution`, including nested image-loading
-  `tool_call` nodes, is bound in the same write boundary with top-level
-  `runId`, `sessionId`, `agentBinding`, non-empty `containerRole`, and execution
-  `contextSlots` when those inputs are available.
 - `create_agent_execution_flow` creates a generic durable chain for complex
   design, structured canvas editing, or continuation-oriented work: user goal,
   Recipe, task steps, optional tool calls, critique, final deliverable, and
@@ -92,6 +86,12 @@ Current status:
   `meta.agentExecution`, so the Web inspector, continuation drafts, and saved
   Recipe extraction can read the same bidirectional chain from the durable page
   nodes instead of reconstructing it from run trace.
+- Simple image-generation work now uses that same
+  `create_agent_execution_flow` chain instead of a separate flow tool. The
+  optimized prompt is represented by a task/tool-call step, `generate_image`
+  targets the returned `finalDeliverableNodeId`, and the image job carries the
+  returned `toolCallNodeIds` entry as `agentExecutionNodeId` so tool result
+  write-back and final delivery stay anchored to the unified execution graph.
 - `create_agent_ask_user_more` creates a durable `ask_user_more` execution
   node when the Agent needs user text, file, image, brand material, or
   confirmation before continuing. The waiting prompt and `acceptsFiles` flag are

@@ -120,7 +120,6 @@ export const DEFAULT_AGENT_RECIPE_TEMPLATES: AgentRecipeTemplate[] = [
     toolSequence: [
       "inspect_canvas_semantic",
       "create_agent_execution_flow",
-      "create_agent_canvas_flow",
       "generate_image",
       "critique_canvas",
     ],

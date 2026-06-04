@@ -214,6 +214,74 @@ describe("canvas-element-writer generated asset insertion", () => {
     expect(resultContainer?.agentBinding?.status).toBe("completed");
   });
 
+  it("auto-places generated images inside a unified final deliverable container", async () => {
+    let doc = createEmptyDocument();
+    doc = applyCanvasOperation(doc, {
+      type: "insertNode",
+      node: withAgentExecutionMeta(
+        {
+          agentBinding: {
+            agentId: "agent-1",
+            name: "Image Generation Recipe",
+            permissions: ["read", "write"],
+            status: "running",
+          },
+          id: "final_deliverable",
+          type: "frame",
+          name: "图片交付物",
+          x: 1240,
+          y: -20,
+          width: 600,
+          height: 640,
+          children: [] as PenNode[],
+          containerRole: ["visual"] as ContainerRole[],
+          contextSlots: {},
+          permissions: {
+            canRead: [],
+            canWrite: [],
+            isolationLevel: "open" as const,
+          },
+        } as PenNode,
+        {
+          kind: "final_deliverable",
+          runId: "run-1",
+          status: "waiting",
+          title: "图片交付物",
+        },
+      ),
+    });
+    const client = createClient(doc);
+
+    const result = await insertImageElement(client, {
+      canvasId: "canvas_1",
+      objectPath: "workspace/generated/job_7.png",
+      width: 1024,
+      height: 1024,
+      mimeType: "image/png",
+      targetContainerId: "final_deliverable",
+      title: "Unified puppy image",
+    });
+
+    const nextDoc = client.state.content as ReturnType<
+      typeof createEmptyDocument
+    >;
+    expect(findNode(nextDoc, result.elementId)).toMatchObject({
+      height: 512,
+      src: "https://cdn.example.test/workspace/generated/job_7.png",
+      type: "image",
+      width: 512,
+      x: 44,
+      y: 88,
+    });
+    expect(
+      getAgentExecutionMeta(findNode(nextDoc, "final_deliverable")),
+    ).toMatchObject({
+      downstreamNodeIds: [result.elementId],
+      kind: "final_deliverable",
+      status: "done",
+    });
+  });
+
   it("fails clearly when the explicit result container is missing", async () => {
     const client = createClient(createEmptyDocument());
 

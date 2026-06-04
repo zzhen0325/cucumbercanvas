@@ -306,14 +306,17 @@ function buildAgentExecutionFlowPlan(args: {
     critiqueNodeId = critiqueNode.id;
   }
 
+  const hasImageGenerationStep = args.steps.some(
+    (step) => step.toolName === "generate_image",
+  );
   const finalDeliverableNode = createExecutionCard({
     args,
     body: args.finalSummary ?? "最终内容会写入这里，并可继续追问或分支。",
     bounds: {
       x: (previous.x ?? origin.x) + 380,
       y: origin.y - 20,
-      width: 360,
-      height: 240,
+      width: hasImageGenerationStep ? 600 : 360,
+      height: hasImageGenerationStep ? 640 : 240,
     },
     kind: "final_deliverable",
     role: ["visual"],

@@ -78,10 +78,9 @@ manipulate_canvas 是旧命令式编辑入口，只用于简单移动、对齐�
 
 ## Agent 执行链可视化
 默认把设计、生成、画布编辑等任务的执行链写入画布；只有纯文字任务或用户明确要求不要改画布时，才不创建画布链路。
-- 简单图片生成任务（例如“帮我生成一张小狗的图片”）必须先调用 create_agent_canvas_flow，mode 固定为 simple_image_generation，userInput 使用用户原始请求，optimizedPrompt 写成可直接给 Seedream 使用的高质量图片提示词。
-- create_agent_canvas_flow 返回 resultContainerId 和 imagePlacement 后，再调用 generate_image。generate_image 必须使用同一个 optimizedPrompt，并传 targetContainerId: resultContainerId、placementX/Y/Width/Height: imagePlacement 中的值。
-- 这个最小链路固定为：[用户原始输入 Sticky] → [优化后的图片 Prompt Sticky] → [图片结果容器]。
-- 复杂设计、结构化画布编辑、长链路生成或需要后续复盘/继续执行的任务，必须先调用 create_agent_execution_flow，把 userGoal、recipeTitle、steps、必要的 toolName、includeCritique/includeCheckpoint 写成可消费的执行链，再把实际产物写入返回的 finalDeliverableNodeId 附近或容器内；最终产物写完或无法完成时，必须调用 record_agent_final_deliverable 更新该 final_deliverable 节点的完成/失败状态和交付摘要，不要只在聊天里结束。
+- 所有图片生成、设计、结构化画布编辑、长链路生成或需要后续复盘/继续执行的任务，都必须先调用 create_agent_execution_flow，把 userGoal、recipeTitle、steps、必要的 toolName、includeCritique/includeCheckpoint 写成可消费的统一执行链，再把实际产物写入返回的 finalDeliverableNodeId 附近或容器内；最终产物写完或无法完成时，必须调用 record_agent_final_deliverable 更新该 final_deliverable 节点的完成/失败状态和交付摘要，不要只在聊天里结束。
+- 简单图片生成任务（例如“帮我生成一张小狗的图片”）也走 create_agent_execution_flow：steps 至少包含“优化图片 Prompt”和 toolName 为 generate_image 的“生成图片”步骤，userGoal 使用用户原始请求，生成图片步骤的 summary 写成可直接给 Seedream 使用的高质量图片提示词。
+- create_agent_execution_flow 返回 finalDeliverableNodeId 和 toolCallNodeIds 后，再调用 generate_image。generate_image 必须使用同一个优化后 Prompt，传 targetContainerId: finalDeliverableNodeId，并把对应 generate_image 工具节点 ID 作为 agentExecutionNodeId；未指定 placementX/Y/Width/Height 时，服务器会把图片自动放入目标 final_deliverable 容器。
 - 当用户消息包含 \`<agent_recipe_template>\` 时，优先用模板的 node_structure 和 tool_sequence 组织 create_agent_execution_flow 的 recipeTitle、steps、toolName、includeCritique、includeCheckpoint；如果模板要求多方案或 comparison，继续调用 create_agent_variant_branches。模板 tool_sequence 中出现 create_agent_evidence / create_agent_ask_user_more / create_agent_variant_branches / critique_canvas / checkpoint 时，必须创建或更新对应 durable execution 节点，不要把 evidence、等待用户补充、分支、评审或 checkpoint 只写成聊天说明。若模板来自 saved_execution_chain，saved_from_node_id / saved_source_nodes 只能作为模板来源诊断和工作流参考；本次必须创建新的 execution-chain 实例或沿明确的 continuation target 执行。
 - create_agent_execution_flow 只记录用户可理解、可编辑、可继续执行的节点：用户目标、Recipe、任务步骤、工具调用、验证/评审、最终交付物、检查点；不要把无消费价值的内部思考写成画布节点。
 - 当任务依赖外部资料、搜索结果、上传资产、画布节点引用或关键设计依据时，必须调用 create_agent_evidence 创建 durable evidence 节点，并用 upstreamNodeId 连接到相关 task_step/tool_call/recipe 节点；不要把资料来源只写在聊天里。

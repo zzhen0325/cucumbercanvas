@@ -11,10 +11,13 @@ describe("CUCUMBER_SYSTEM_PROMPT", () => {
       "不需要等待用户额外说明“在画布上展示”",
     );
     expect(CUCUMBER_SYSTEM_PROMPT).toContain(
-      "简单图片生成任务（例如“帮我生成一张小狗的图片”）必须先调用 create_agent_canvas_flow",
+      "所有图片生成、设计、结构化画布编辑、长链路生成或需要后续复盘/继续执行的任务，都必须先调用 create_agent_execution_flow",
     );
     expect(CUCUMBER_SYSTEM_PROMPT).toContain(
-      "复杂设计、结构化画布编辑、长链路生成或需要后续复盘/继续执行的任务，必须先调用 create_agent_execution_flow",
+      "简单图片生成任务（例如“帮我生成一张小狗的图片”）也走 create_agent_execution_flow",
+    );
+    expect(CUCUMBER_SYSTEM_PROMPT).toContain(
+      "传 targetContainerId: finalDeliverableNodeId，并把对应 generate_image 工具节点 ID 作为 agentExecutionNodeId",
     );
     expect(CUCUMBER_SYSTEM_PROMPT).toContain("record_agent_final_deliverable");
     expect(CUCUMBER_SYSTEM_PROMPT).toContain(

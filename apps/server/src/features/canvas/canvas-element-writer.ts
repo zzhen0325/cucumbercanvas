@@ -188,12 +188,9 @@ function resolveCucumberPlacement(
     }
     return {
       containerId: targetContainerId,
-      placement: explicitPlacement ?? {
-        x: 24,
-        y: 32,
-        width,
-        height,
-      },
+      placement:
+        explicitPlacement ??
+        calculateTargetContainerImagePlacement(target, width, height),
     };
   }
 
@@ -234,6 +231,42 @@ function resolveCucumberPlacement(
   return {
     containerId: null,
     placement: calculateAutoPlacement(nodeBoxes, width, height, IMAGE_MAX_SIZE),
+  };
+}
+
+function calculateTargetContainerImagePlacement(
+  container: PenNode,
+  width: number,
+  height: number,
+): Placement {
+  const bounds = getNodeBounds(container);
+  const horizontalInset = 44;
+  const preferredTop = 88;
+  const bottomInset = 40;
+  const availableWidth = Math.max(80, bounds.width - horizontalInset * 2);
+  const availableHeight = Math.max(
+    80,
+    bounds.height - preferredTop - bottomInset,
+  );
+  const scale = Math.min(1, availableWidth / width, availableHeight / height);
+  const fitted = {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
+  const centeredX = Math.max(0, Math.round((bounds.width - fitted.width) / 2));
+  const centeredY = Math.max(
+    0,
+    Math.round((bounds.height - fitted.height) / 2),
+  );
+  const y =
+    preferredTop + fitted.height <= bounds.height - bottomInset
+      ? preferredTop
+      : centeredY;
+  return {
+    x: centeredX,
+    y,
+    width: fitted.width,
+    height: fitted.height,
   };
 }
 
