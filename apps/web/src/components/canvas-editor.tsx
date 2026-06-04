@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  AgentExecutionNodeMeta,
   CanvasBounds,
   CanvasOperation,
   CucumberCanvasDocument,
@@ -25,6 +26,10 @@ import {
   calculateDocumentBounds,
   calculateExportSize,
 } from "./canvas/canvas-export";
+import type {
+  AgentExecutionContinueIntent,
+  AgentExecutionContinueOptions,
+} from "./canvas/property-panel/agent-execution-section";
 import { ErrorBoundary } from "./error-boundary";
 
 const SkiaCanvas = dynamic(
@@ -49,6 +54,7 @@ export type CanvasSelectedElement = {
   importWarningCount?: number;
   degradationHints?: string[];
   autoLayout?: Record<string, unknown>;
+  agentExecution?: AgentExecutionNodeMeta;
 };
 
 type CanvasEditorProps = {
@@ -57,6 +63,11 @@ type CanvasEditorProps = {
   accessToken: string;
   initialContent: CanvasContent;
   onApiReady?: (api: CanvasApi) => void;
+  onContinueAgentExecution?: (
+    nodeId: string,
+    intent?: AgentExecutionContinueIntent,
+    options?: AgentExecutionContinueOptions,
+  ) => void;
   onInsertIcon?: () => void;
   ws?: WebSocketHandle;
   leftPanelOpen?: boolean;
@@ -143,6 +154,7 @@ export function CanvasEditor({
   accessToken,
   initialContent,
   onApiReady,
+  onContinueAgentExecution,
   onInsertIcon,
   ws,
   onSelectionChange,
@@ -226,6 +238,9 @@ export function CanvasEditor({
             | undefined,
           autoLayout: element.customData?.autoLayout as
             | Record<string, unknown>
+            | undefined,
+          agentExecution: element.customData?.agentExecution as
+            | AgentExecutionNodeMeta
             | undefined,
         })),
       );
@@ -417,6 +432,7 @@ export function CanvasEditor({
           accessToken={accessToken}
           initialContent={initialContent}
           onApiReady={handleApiReady}
+          onContinueAgentExecution={onContinueAgentExecution}
           onDocumentChange={handleDocumentChange}
           onInsertIcon={onInsertIcon}
           onSelectionChange={handleSelectionChange}

@@ -62,6 +62,7 @@ import {
 import { useStore } from "zustand";
 
 import { useToast } from "@/components/toast";
+import { CanvasAgentExecutionStatusLayerConnected } from "./agent-execution-status-overlays";
 import type {
   AlignMode,
   CanvasApi,
@@ -97,6 +98,8 @@ import { exportDocumentImage } from "./canvas-export";
 import { createLegacyShapeNode } from "./canvas-legacy-shape-node";
 import { getDefaultCanvasNodeBounds } from "./canvas-node-placement";
 import {
+  AgentCheckpointHoverToolbar,
+  AgentExecutionHoverCard,
   CanvasBooleanToolbarConnected,
   CanvasContextMenu,
   CanvasEditorToolbarConnected,
@@ -146,6 +149,10 @@ import {
   projectTextEditStateToViewport,
 } from "./canvas-text-measure";
 import { getResizeNodeUpdates } from "./canvas-text-resize";
+import type {
+  AgentExecutionContinueIntent,
+  AgentExecutionContinueOptions,
+} from "./property-panel/agent-execution-section";
 import {
   CANVAS_SELECTION_COLOR,
   KEYBOARD_ZOOM_STEP,
@@ -191,6 +198,11 @@ type SkiaCanvasProps = {
   accessToken?: string;
   initialContent: unknown;
   onDocumentChange?: (doc: CucumberCanvasDocument) => void;
+  onContinueAgentExecution?: (
+    nodeId: string,
+    intent?: AgentExecutionContinueIntent,
+    options?: AgentExecutionContinueOptions,
+  ) => void;
   onInsertIcon?: () => void;
   onApiReady?: (api: CanvasApi) => void;
   onSelectionChange?: (elements: CanvasSceneElement[]) => void;
@@ -203,6 +215,7 @@ export const SkiaCanvas = memo(
       accessToken,
       initialContent,
       onDocumentChange,
+      onContinueAgentExecution,
       onInsertIcon,
       onApiReady,
       onSelectionChange,
@@ -822,8 +835,11 @@ export const SkiaCanvas = memo(
       handleContextMenu,
       handleDoubleClick,
       handlePointerDown,
+      handlePointerLeave,
       handlePointerMove,
       handlePointerUp,
+      hoveredAgentExecution,
+      hoveredCheckpoint,
       closeContextMenu,
     } = useSkiaPointerInteractions({
       activePageIdRef,
@@ -838,6 +854,7 @@ export const SkiaCanvas = memo(
       effectiveTool,
       flushRendererDocumentSyncBeforeInteraction,
       getConnectorSnap,
+      hasAgentContinuationHandler: Boolean(onContinueAgentExecution),
       getPointerScenePoint,
       marqueeRafRef,
       marqueeSelectionRef,
@@ -1025,6 +1042,7 @@ export const SkiaCanvas = memo(
           onKeyDown={() => undefined}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
+          onPointerLeave={handlePointerLeave}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
           onDoubleClick={handleDoubleClick}
@@ -1103,7 +1121,17 @@ export const SkiaCanvas = memo(
           <CanvasSelectionToolbarConnected
             api={api}
             canvasRect={canvasContainerRef.current?.getBoundingClientRect()}
+            onContinueAgentExecution={onContinueAgentExecution}
           />
+
+          <CanvasAgentExecutionStatusLayerConnected />
+
+          <AgentCheckpointHoverToolbar
+            checkpoint={hoveredCheckpoint}
+            onContinueAgentExecution={onContinueAgentExecution}
+          />
+
+          <AgentExecutionHoverCard execution={hoveredAgentExecution} />
 
           <CanvasContextMenu
             api={api}
@@ -1120,6 +1148,7 @@ export const SkiaCanvas = memo(
           <CanvasPropertyPanelConnected
             api={api}
             commitDocument={commitDocument}
+            onContinueAgentExecution={onContinueAgentExecution}
           />
 
           {/* Loading indicator while CK initializes */}

@@ -60,6 +60,8 @@ const FRAME_LABEL_CACHE_MAX = 256;
 const VIEWPORT_INTERACTION_CACHE_PADDING_PX = 256;
 const VIEWPORT_CACHE_MIN_NODE_COUNT = 64;
 const VIEWPORT_CACHE_MIN_IMAGE_COUNT = 8;
+const VIEWPORT_INTERACTION_CACHE_MAX_PIXELS = 16_777_216;
+const VIEWPORT_INTERACTION_CACHE_MAX_DIMENSION = 8_192;
 const VIEWPORT_EPSILON = 0.001;
 const STICKY_LABEL_BACKGROUND_COLOR = "rgba(255,255,255,0.78)";
 const STICKY_LABEL_BACKGROUND_STROKE = "rgba(148,163,184,0.26)";
@@ -1059,6 +1061,24 @@ export class PenRenderer {
       return null;
     }
 
+    const surfaceDecision = getViewportInteractionCacheSurfaceDecision({
+      width: surfaceWidth,
+      height: surfaceHeight,
+    });
+    if (!surfaceDecision.shouldBuild) {
+      this.logViewportCacheSkipped({
+        reason: surfaceDecision.reason,
+        imageCount: imageUrls.length,
+        maxDimension: surfaceDecision.maxDimension,
+        maxPixels: surfaceDecision.maxPixels,
+        nodeCount: cacheNodes.length,
+        pixelCount: surfaceDecision.pixelCount,
+        width: surfaceWidth,
+        height: surfaceHeight,
+      });
+      return null;
+    }
+
     const pendingImageCount = countImagesNotReadyForDisplay(
       this.nodeRenderer,
       imageUrls,
@@ -1109,8 +1129,28 @@ export class PenRenderer {
     offscreen.restore();
     surface.flush();
 
-    const image = surface.makeImageSnapshot();
+    let image: ReturnType<Surface["makeImageSnapshot"]> | null = null;
+    try {
+      image = surface.makeImageSnapshot();
+    } catch (error) {
+      console.warn("[pen-renderer] renderer.viewport-cache.failed", {
+        reason: "snapshot_failed",
+        width: surfaceWidth,
+        height: surfaceHeight,
+        error,
+      });
+      surface.delete();
+      return null;
+    }
     surface.delete();
+    if (!image) {
+      console.warn("[pen-renderer] renderer.viewport-cache.failed", {
+        reason: "snapshot_unavailable",
+        width: surfaceWidth,
+        height: surfaceHeight,
+      });
+      return null;
+    }
     const entry = {
       image,
       key,
@@ -1141,10 +1181,17 @@ export class PenRenderer {
   }
 
   private logViewportCacheSkipped(details: {
-    reason: "below_threshold" | "lod_pending";
+    reason:
+      | "below_threshold"
+      | "lod_pending"
+      | "surface_invalid"
+      | "surface_too_large";
     imageCount: number;
+    maxDimension?: number;
+    maxPixels?: number;
     nodeCount: number;
     pendingImageCount?: number;
+    pixelCount?: number;
     width: number;
     height: number;
   }) {
@@ -1153,6 +1200,8 @@ export class PenRenderer {
       details.nodeCount,
       details.imageCount,
       details.pendingImageCount ?? 0,
+      details.width,
+      details.height,
       Number(this._zoom.toFixed(3)),
     ].join("|");
     if (this.viewportInteractionCacheSkipKey === key) return;
@@ -2231,6 +2280,58 @@ export function getViewportInteractionCacheBuildDecision(input: {
   if (input.pendingImageCount > 0) {
     return { reason: "lod_pending", shouldBuild: false };
   }
+  return { reason: "ready", shouldBuild: true };
+}
+
+export function getViewportInteractionCacheSurfaceDecision(input: {
+  width: number;
+  height: number;
+}):
+  | {
+      reason: "surface_invalid" | "surface_too_large";
+      shouldBuild: false;
+      pixelCount: number;
+      maxPixels: number;
+      maxDimension: number;
+    }
+  | {
+      reason: "ready";
+      shouldBuild: true;
+    } {
+  const pixelCount = input.width * input.height;
+  const budget = {
+    maxDimension: VIEWPORT_INTERACTION_CACHE_MAX_DIMENSION,
+    maxPixels: VIEWPORT_INTERACTION_CACHE_MAX_PIXELS,
+  };
+
+  if (
+    !Number.isFinite(input.width) ||
+    !Number.isFinite(input.height) ||
+    !Number.isFinite(pixelCount) ||
+    input.width <= 0 ||
+    input.height <= 0
+  ) {
+    return {
+      ...budget,
+      reason: "surface_invalid",
+      shouldBuild: false,
+      pixelCount: Number.isFinite(pixelCount) ? pixelCount : 0,
+    };
+  }
+
+  if (
+    input.width > VIEWPORT_INTERACTION_CACHE_MAX_DIMENSION ||
+    input.height > VIEWPORT_INTERACTION_CACHE_MAX_DIMENSION ||
+    pixelCount > VIEWPORT_INTERACTION_CACHE_MAX_PIXELS
+  ) {
+    return {
+      ...budget,
+      reason: "surface_too_large",
+      shouldBuild: false,
+      pixelCount,
+    };
+  }
+
   return { reason: "ready", shouldBuild: true };
 }
 

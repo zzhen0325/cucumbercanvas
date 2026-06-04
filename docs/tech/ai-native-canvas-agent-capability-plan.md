@@ -1,6 +1,6 @@
 # AI Native Canvas Agent Capability Plan
 
-Last updated: 2026-06-02 CST
+Last updated: 2026-06-04 CST
 
 This is the implementation plan for making Cucumber Studio's canvas AI-native. It builds on the current capability inventory in [`canvas-tooling-capability-map.md`](./canvas-tooling-capability-map.md).
 
@@ -38,6 +38,372 @@ Forbidden core paths:
 - Falling back from missing new fields to old fields inside render, service, Agent, or UI edit paths.
 - UI controls that write fields not consumed by renderer/layout/persistence/Agent tools.
 - Agent tools that silently mutate stale persisted canvas data when the live editor is unavailable.
+
+## Agent Execution Canvas Schema
+
+Flowith-like Agent execution UX is represented on the same durable
+`PenDocument.pages` node graph. The fine-grained execution role is stored on
+`PenNode.meta.agentExecution` with `schemaVersion: 1`; it is not a parallel
+Agent-only state source and it does not expand `containerRole` beyond the
+existing coarse runtime roles.
+
+Supported execution node kinds:
+
+- `user_goal`: the user's original goal or brief.
+- `recipe_plan`: the live Recipe / plan that explains how the Agent will work.
+- `task_step`: one actionable step inside the Recipe.
+- `tool_call`: a visible tool invocation or waiting tool result.
+- `evidence`: referenced source, asset, search result, or knowledge seed.
+- `variant_branch`: one branch in a multi-variant exploration.
+- `critique`: review findings, validation results, and suggested fixes.
+- `ask_user_more`: a blocking request for user input or missing files.
+- `checkpoint`: a restart/fork point.
+- `final_deliverable`: the final user-facing output container.
+
+Current status:
+
+- Shared helper/schema exists in `packages/canvas-core/src/agent-execution.ts`.
+  `withAgentExecutionNodeSemantics` is the shared boundary for newly created
+  execution nodes that need durable `meta.agentExecution` plus top-level
+  `runId`, `sessionId`, `agentBinding`, non-empty `containerRole`, and execution
+  `contextSlots` on the same `PenNode`. `create_agent_canvas_flow`,
+  `create_agent_execution_flow`, `create_agent_ask_user_more`,
+  `create_agent_evidence`, and `create_agent_variant_branches` use this helper
+  so user-goal, Recipe, task/tool, ask, evidence, branch, comparison, critique,
+  checkpoint, and final-deliverable creation paths share the same semantic
+  binding contract before UI controls read or act on those nodes.
+  `getAgentExecutionNodeSemanticUpdates` is the matching update boundary for
+  existing execution nodes; `record_agent_tool_call`,
+  `record_agent_critique`, and `record_agent_final_deliverable` use it so
+  status, tool-call output/failure, critique findings, and final delivery
+  completion/failure keep `meta.agentExecution` and top-level
+  run/session/agent/container-role semantics synchronized on the same `PenNode`.
+- `create_agent_canvas_flow` now tags its simple image-generation chain as
+  `user_goal`, `recipe_plan`, `tool_call`, and `final_deliverable`. Every node
+  it creates with durable `meta.agentExecution`, including nested image-loading
+  `tool_call` nodes, is bound in the same write boundary with top-level
+  `runId`, `sessionId`, `agentBinding`, non-empty `containerRole`, and execution
+  `contextSlots` when those inputs are available.
+- `create_agent_execution_flow` creates a generic durable chain for complex
+  design, structured canvas editing, or continuation-oriented work: user goal,
+  Recipe, task steps, optional tool calls, critique, final deliverable, and
+  checkpoint nodes, all connected by semantic line nodes. Created execution
+  cards now persist both `upstreamNodeIds` and derived `downstreamNodeIds` in
+  `meta.agentExecution`, so the Web inspector, continuation drafts, and saved
+  Recipe extraction can read the same bidirectional chain from the durable page
+  nodes instead of reconstructing it from run trace.
+- `create_agent_ask_user_more` creates a durable `ask_user_more` execution
+  node when the Agent needs user text, file, image, brand material, or
+  confirmation before continuing. The waiting prompt and `acceptsFiles` flag are
+  stored in `PenNode.meta.agentExecution.waitingForUser`; when an upstream
+  execution node is provided, the tool also updates that node's
+  `downstreamNodeIds` and inserts a semantic connector so the property panel and
+  run-control waiting state have a real canvas anchor.
+- `create_agent_evidence` creates durable `evidence` nodes for URLs, assets,
+  canvas-node references, text notes, or search results. Provenance lives on
+  `PenNode.meta.agentExecution.evidence` with source type, URL/asset/node IDs,
+  optional labels, and confidence, and the tool can link evidence to an upstream
+  execution node so sources become spatial canvas context instead of chat-only
+  references. The Web property panel now renders this provenance as a dedicated
+  evidence source section with source type/name, URL/asset/node IDs,
+  confidence, and an open-link action when a URL exists.
+- `record_agent_tool_call` writes tool execution results back into an existing
+  durable `tool_call` or `task_step` node after the tool runs. It updates visible
+  node text plus `meta.agentExecution.details`, status, tool call ID, and
+  failure recovery fields, making tool input/output/error context inspectable in
+  the property panel instead of leaving it only in chat or run trace. Recovery
+  attempts and next actions can be appended without duplicating existing
+  entries. A new failed-state write-back must provide `failure.reason` or
+  `errorReason`; the tool rejects missing failure reasons instead of creating a
+  vague default. Successful/non-failed write-back clears stale `failure`
+  metadata so a completed node cannot keep driving failed-node UI from old
+  state.
+- `record_agent_critique` writes validation and critique findings back into an
+  existing durable `critique` node. The canonical review truth lives in
+  `PenNode.meta.agentExecution.critique` with findings, issue counts, and pass
+  state, while `details.outputSummary` and the visible text child remain
+  readable summaries. A recorded failed critique always sets structured
+  `critique.pass` to `false`, even if the findings are warnings, so the
+  property panel cannot show a failed node as passing. The Web property panel
+  renders severity, target node, and suggested fix from the structured metadata
+  so review results are not trapped in run trace or plain tool-output text.
+- `record_agent_final_deliverable` writes completed or failed final-deliverable
+  state back into an existing durable `final_deliverable` node after the actual
+  output has been placed on the canvas. It updates visible node text,
+  `details.outputSummary`, status, title, top-level semantic bindings, and
+  failure recovery context when needed, while rejecting non-final nodes instead
+  of guessing a target. Failed final delivery requires a concrete `errorReason`
+  or `failure.reason`, so the UI can explain what blocked the final output and
+  offer recovery actions without exposing raw codes.
+- `generate_image` now accepts and returns `agentExecutionNodeId` so image
+  generation calls can stay correlated with the durable `tool_call` or
+  `task_step` node returned by `create_agent_execution_flow`. Background image
+  job payloads preserve the same ID as diagnostic/correlation metadata; it is
+  not a second runtime truth and does not replace `PenNode.meta.agentExecution`.
+- The runtime now uses that correlation ID when image jobs reach a terminal
+  state: successful jobs mark the referenced execution node `done` with output
+  details, while canceled/failed/timed-out jobs mark it `failed` with recovery
+  actions. This automatic write-back is best-effort and never replaces the
+  durable execution node as the source of truth.
+- Generated image insertion updates a targeted `final_deliverable` container
+  from `running` to `done` when the image replaces its loading nodes.
+- The Web property panel reads the same metadata and shows execution type,
+  status, run/tool information, active-page upstream/downstream execution-chain
+  cards, expandable task/tool details, failed-step recovery context, and direct
+  `ask_user_more` text response write-back into the selected node metadata.
+  Expanded task/tool details show tool, input, output, reasoning, and error
+  context; collapsed details keep the node title/status visible in the section
+  header and preserve a result summary or failure reason instead of collapsing
+  to an empty row. Failure reason display is normalized at the Web UI boundary
+  so raw diagnostic values such as HTTP status numbers, provider error codes,
+  `null`, or `undefined` are not shown directly to users; the same readable
+  failure copy is used in the property panel, canvas hover/status surfaces,
+  run-control bar, and run trace rows. The durable
+  `meta.agentExecution.failure` and tool details remain the source of truth for
+  Agent recovery and debugging.
+  Selecting an Agent execution node also shows a compact canvas toolbar badge
+  with the node kind and current status, derived from the same
+  `meta.agentExecution` truth, so users can read waiting/running/done/failed/
+  paused state on the canvas surface before opening deeper details.
+  Active-page execution nodes with attention-worthy non-complete states
+  (`waiting`, `running`, `failed`, `paused`) also show compact persistent canvas
+  corner markers from the same durable metadata; completed and selected nodes
+  are omitted from that persistent layer to keep the execution chain scannable
+  while selection and hover still expose full details. Clicking a persistent
+  marker selects the corresponding execution node through the normal canvas
+  selection API without mutating `PenDocument.pages`.
+  These markers now render as activity callouts instead of raw status-only
+  chips: running nodes derive labels such as `分析中...`, `生成中...`,
+  `评审中...`, or `对比方案...` from `meta.agentExecution.kind` / `toolName`,
+  while waiting, failed, and paused nodes show `等待补充`, `处理失败`, or
+  `已暂停`. The icon/dot/caret streaming-text animation is purely a UI
+  affordance; run trace remains diagnostic and does not drive the marker truth.
+  Agent-created execution cards now also share a persisted visual structure at
+  creation time: each generated user-goal, recipe, step, tool, evidence,
+  branch, comparison, ask-user-more, critique, checkpoint, and final-deliverable
+  frame uses a rounded card shell with title/status/body text children, larger
+  internal padding, semantic fill/stroke colors, and calmer smooth arrow
+  connectors. These layout nodes are written directly into `PenDocument.pages`;
+  no parallel Agent-only visual state is introduced.
+  The persistent layer also renders a compact active-page status summary for
+  failed/running/waiting/paused execution nodes, helping users spot active work
+  or blockers before drilling into individual containers. Clicking a non-zero
+  summary chip selects the first matching execution node via the normal canvas
+  selection API.
+  Hovering non-checkpoint execution nodes shows a read-only canvas summary card
+  with kind, status, title, tool/summary, and waiting/failure/pause reasons
+  when those reasons explain the current status; checkpoint nodes continue to
+  use the dedicated hover action toolbar for continue/rerun/branch actions.
+  Upstream/downstream cards resolve node IDs against current
+  `PenDocument.pages` nodes and show title, kind, tool, status, and explicit
+  missing-node states instead of treating raw IDs as the user-facing chain UI.
+  Clicking an existing chain card selects that canvas node for inspection;
+  missing references stay visible but not actionable. `ask_user_more` nodes
+  route submitted text into the selected-node continuation draft so the user can
+  continue directly from the waiting point with the submitted answer visible in
+  the editable prompt. Once text or file/image supplements are written into
+  `waitingForUser.response`, the same durable node is marked `paused` rather
+  than remaining `waiting`, so the canvas status summary no longer reports a
+  human blocker after the user has answered. Nodes that accept files can route
+  `补充文件/图片` into the same continuation draft and chat attachment picker,
+  keeping uploads on the existing chat attachment boundary while preserving the
+  selected execution node as context; when the continuation run is created with
+  attachments, the submitted attachment count is written back to
+  `waitingForUser.response.attachmentCount` on the same durable node and shown
+  in the property panel. Unavailable continue / rerun / branch controls remain disabled and
+  explained until the run controller is wired.
+- The chat input shows a "based on selected Agent execution node" context chip
+  when the user selects such a node on the canvas, offers `new_branch` vs
+  `overwrite_current` continuation modes, and sends the selected node/run/mode
+  plus the UI recovery intent (`retry`, `rewrite`, `skip`, `rerun_checkpoint`,
+  `attach_files`, `new_branch`, or `continue`) as
+  `<agent_execution_continue_context>` in the Agent prompt while keeping the
+  visible user message clean. The chip itself shows execution kind/status and
+  includes waiting, failure, and checkpoint restart reasons in its hover title
+  so users can understand the selected continuation anchor before sending.
+  The canvas selection surface also exposes a Flowith-inspired animated
+  follow-up pill below the selected durable Agent execution node; it is derived
+  from `meta.agentExecution`, uses contextual labels such as `修复失败`,
+  `继续补充`, `继续深化`, or `从这里继续`, and routes to the same continuation
+  draft instead of creating any new Agent-only state.
+  Submitted `ask_user_more` answers also enter the
+  same block as `waiting_response_text`, so the Agent can treat the answer as
+  structured continuation input instead of only parsing the draft sentence.
+  Failed-node attempted actions and suggested next actions enter the same block
+  as `failure_attempted` and `failure_next_actions`, so retry/rewrite/skip
+  follow-ups can avoid repeating ineffective attempts and can update the durable
+  recovery state.
+  Restartable checkpoint nodes also pass `checkpoint_restart_reason` so
+  `rerun_checkpoint` follow-ups know why the selected checkpoint is a valid
+  downstream rebuild anchor.
+  Paused execution nodes also pass `paused_continuation_instruction`, making the
+  prompt contract explicit that the Agent should not try to restore the old SSE
+  stream; it should inspect the durable node and continue through a new Agent
+  run that writes later state back to canvas nodes.
+  Intent, waiting response text, checkpoint restart reason, and paused
+  continuation instruction are prompt-only guidance; the Agent still has
+  to inspect the live `PenDocument.pages` node and write durable updates through
+  canvas tools.
+- The chat input now also supports manual canvas node references: the user can
+  add the current canvas selection as removable reference chips, and those node
+  IDs enter the Agent prompt as `<canvas_node_references>` with an explicit
+  instruction to inspect the current `PenDocument.pages` nodes before editing
+  instead of treating the prompt block as copied canvas truth. When the
+  referenced node is an Agent execution node, the reference also carries
+  upstream/downstream IDs, branch/comparison/checkpoint/waiting/failure
+  summaries, waiting response text and attachment counts, checkpoint restart
+  reason, paused continuation instruction, and failed-node recovery history as
+  prompt-only guidance. The chip
+  itself shows the Agent execution kind/status and includes waiting, failure,
+  and checkpoint restart reasons in its hover title so users can verify the
+  referenced execution context before sending.
+- The chat input now includes a first Recipe template starter surface. Built-in
+  templates live in `packages/canvas-core/src/agent-recipe-template.ts` for
+  brand visual exploration, poster multi-variant work, product image
+  generation, storyboard scripts, webpage design, and design-to-code. Selecting
+  a template pre-fills or augments an editable user prompt with a `待补输入`
+  per-slot checklist (`- 槽位：`) users can fill directly, shows a Recipe chip
+  with the first required input slots, and sends `<agent_recipe_template>` with
+  template source, startup mode, node structure, tool order, input slots,
+  input-slot policy, validation rules, and deliverable format. This is a
+  template-start context, not runtime canvas truth. Completed Recipe, variant
+  branch, comparison, checkpoint, and final deliverable execution nodes can now
+  also be saved as local custom Recipe templates from the property panel;
+  the save panel previews the exact source-node count, node structure, tool
+  order, input slots, validation rules, and deliverable format before writing
+  anything to local storage. Extraction reads the selected
+  `meta.agentExecution` node plus related completed upstream/downstream
+  execution nodes on the active page, then stores reusable template fields in
+  the browser Recipe menu. Saved templates are grouped separately from built-in
+  starters in the Recipe menu, can be previewed for startup behavior, node
+  structure, tool order, input slots, validation rules, deliverable format, and
+  source node IDs, and deleted from local storage without deleting the original
+  canvas execution nodes. Saved template prompt blocks mark
+  `saved_source_nodes` as provenance from the old successful chain;
+  they are not runtime targets to edit or overwrite unless the user also
+  references those live node IDs explicitly. A cloud/team template library,
+  cross-page template management, and richer visual template browsing remain
+  follow-up work.
+  Completed `variant_branch` nodes produce branch-deepening templates with
+  variant branch, critique, checkpoint, and final-deliverable expectations, so a
+  successful direction can be reused without requiring the user to first select
+  the enclosing comparison or checkpoint. When the active page also contains the
+  branch's sibling variants and comparison node, saving the branch preserves that
+  comparison context in the template source-node set and deliverable contract
+  instead of flattening the branch into an isolated single-node recipe.
+  Recipe extraction now also preserves `evidence` and `ask_user_more`
+  boundaries as reusable workflow contract: saved templates infer
+  `create_agent_evidence` / `create_agent_ask_user_more` tool steps, reference
+  material / user-supplement input slots, provenance and waiting-input
+  validation rules, and a deliverable format that names those context nodes
+  instead of flattening them into a generic checkpoint chain.
+  The template prompt block now states that node structure, tool sequence,
+  input slots, validation rules, and deliverable format are the reusable
+  workflow contract, and names `startup_mode` so saved templates start as a new
+  execution-chain instance unless a separate continuation context is present.
+  It also treats `input_slots` as required workflow inputs: when the user
+  message and live canvas context do not provide enough information for a slot,
+  the Agent must create a durable `ask_user_more` node before inventing values
+  or continuing. The Agent prompt treats template tool steps such as
+  `create_agent_evidence`, `create_agent_ask_user_more`,
+  `create_agent_variant_branches`, `critique_canvas`, and checkpoint creation as
+  durable execution-node requirements rather than optional chat narration.
+- The canvas page has a top Agent run control bar that reflects active run
+  streaming state, selected execution-node context, waiting-for-user prompts,
+  whether the waiting node accepts files/images, submitted response text,
+  submitted attachment counts, and failed-node reasons. `Stop` is wired to the real run cancel endpoint and
+  SSE cleanup; `Pause` is wired to the real run pause endpoint, emits
+  `run.paused`, and stops the active SSE stream while preserving continuation on
+  selected durable execution nodes. After a successful pause request, the Web
+  canvas writes `paused` back to currently `running` / `waiting` durable
+  execution nodes for that run through `PenDocument.pages`, so overlays,
+  property panels, and status summaries do not keep showing stale active work.
+  After a successful stop request, the same durable write-back path marks active
+  nodes `paused` with an explicit stopped summary instead of adding a separate
+  Agent-only canceled state, keeping the user-visible recovery entry anchored on
+  the execution node.
+  `继续` opens the same selected-node continuation draft when a run is not
+  actively streaming. When the selected durable execution node is already
+  `paused`, the control bar labels this as `从暂停点继续` and explains that it
+  will read the current canvas context and start a new Agent run from that node,
+  rather than silently resuming the old SSE stream. `从 checkpoint 重跑`
+  opens a restartable checkpoint rerun draft that preserves the checkpoint as
+  the durable context anchor, shows the downstream node IDs that will be
+  rebuilt when the checkpoint records them, and sends
+  `checkpoint_rerun_downstream_node_ids` plus a concrete rerun instruction in
+  `<agent_execution_continue_context>`. Those IDs are prompt-only scope hints:
+  the Agent still has to inspect the live `PenDocument.pages` nodes before
+  rewriting downstream work through a new Agent run. The run trace panel remains
+  a live diagnostic view: it shows recent SSE events, tool and patch counts, the
+  selected durable canvas node ID, upstream/downstream counts from
+  `meta.agentExecution`, and affected node IDs for canvas patches, but it does
+  not become a runtime canvas state source. The Web UI keeps that boundary split
+  as `AgentRunControlBar` for run actions and
+  `apps/web/src/components/agent-run-trace-panel.tsx` for read-only trace
+  rendering. Same-generator resume still requires
+  deeper runtime/checkpointer work, and the current paused continuation UI keeps
+  that boundary visible to users.
+- `create_agent_variant_branches` creates durable `variant_branch` nodes plus a
+  `comparison` node for multi-direction work. Branch metadata records
+  plan/product/critique summaries, strengths, risks, use cases, and
+  recommended/mainline flags; the comparison node records branch node IDs and
+  the recommended branch. The property panel surfaces branch and comparison
+  metadata when those nodes are selected; selected `comparison` nodes now
+  resolve their active-page branch nodes and show side-by-side branch cards for
+  plan, deliverable, critique, strengths, risks, use cases,
+  mainline/recommended status, branch continuation, and mainline selection.
+  Missing branch nodes are shown as a concrete unavailable state instead of
+  silently collapsing to IDs.
+- `select_agent_variant_branch` lets the Agent persist a user decision by
+  selecting one `variant_branch` as the unique mainline/recommended branch under
+  its `comparison`, updating sibling branch metadata and the visible comparison
+  recommendation before any follow-up generation continues.
+- The Web property panel exposes the same decision as real `设为主线` and
+  `设为主线并深化` actions on non-mainline `variant_branch` nodes when their
+  comparison context can be resolved, and disables those actions with a
+  concrete reason when it cannot. The combined deepen action first persists the
+  selected branch as the current mainline/recommended branch in
+  `PenDocument.pages`, then opens the continuation draft with mainline branch
+  metadata so the prompt context matches the visible canvas state.
+- The Web property panel also exposes `继续深化` on already-mainline
+  `variant_branch` nodes. It opens the chat input, pre-fills an editable
+  continuation draft, preserves the selected branch as
+  `<agent_execution_continue_context>`, includes branch plan/product/critique
+  summaries plus upstream/downstream IDs as prompt-only context, and defaults to
+  `overwrite_current` / `continue` so follow-up work deepens the chosen branch
+  instead of accidentally copying a new branch.
+  Comparison branch cards pass the clicked branch node as the continuation
+  target even when the selected canvas node is the comparison card, so the chat
+  chip and prompt anchor to the same durable `variant_branch`. For non-mainline
+  comparison cards, the same combined action writes the mainline choice first
+  and passes updated mainline metadata to the input context; prompt-level
+  `branch_continue_requires_mainline_selection` remains only a guard for manual
+  references or stale contexts where the UI could not persist the choice first.
+  The comparison panel also exposes a top-level `深化推荐选择` action when a
+  recommended branch can be resolved, so the recommended choice is directly
+  actionable without requiring the user to locate the matching branch card.
+  The Agent must still inspect the referenced live `PenDocument.pages` node
+  before editing.
+- Generic execution-node continuation actions now use the same path: `从这里继续`
+  and `复制为分支` open editable chat drafts from the selected node, failed nodes
+  can start `重试此步骤`, `改写输入后继续`, `跳过此步骤`, or `新建分支尝试`, and
+  `ask_user_more` text submission writes the response before opening a
+  continuation draft. Failed-node cards show readable failure step/reason,
+  attempted actions, and user next actions without surfacing raw error codes in
+  the panel.
+- Selected `checkpoint` nodes now have a dedicated recovery panel in the Web
+  property panel. It shows whether the node is restartable, why it is a safe
+  restart/fork point, routes `从这里继续` and `复制为新分支` into continuation
+  drafts, and routes restartable `从 checkpoint 重跑` into a rerun draft.
+- Selected `checkpoint` nodes also expose canvas-level selection-toolbar and
+  hover-toolbar actions: `继续` opens the continuation draft, `新分支` opens a
+  branch draft, and restartable `重跑` opens the checkpoint rerun draft.
+- The Agent run control bar can now open a read-only `Run trace` panel from
+  recent front-end SSE events plus selected execution-node metadata. It shows
+  event count, tool events, canvas patch counts/details, and selected node
+  context; this is a diagnostic view and does not become canvas runtime truth.
+  Pause now uses the real run controller and `run.paused`; same-generator resume
+  still waits for deeper runtime/checkpointer support.
 
 ## Development Order
 
@@ -328,6 +694,9 @@ Status:
 
 - Available as MCP tool `validate_canvas` as of 2026-06-02 CST.
 - Current slice implements deterministic structural validation for invalid page/node structure, duplicate/missing node IDs, missing canvas assets, missing variables, dangling connector endpoints, likely fixed-size text overflow, invalid ref component targets, and hidden/locked Agent output.
+- Validation output can be persisted to an existing durable `critique` node via
+  `record_agent_critique`; this keeps `validate_canvas` read-only while making
+  verification results visible on the Agent Execution Canvas.
 - Visual heuristics such as low contrast and overlap critique remain follow-up checks and should stay field-backed rather than screenshot-only.
 
 Single source of truth:
@@ -721,6 +1090,10 @@ Status:
 - Implemented as read-only MCP `critique_canvas`.
 - Runs deterministic critique checks for design hierarchy, visual consistency, brand/style context, readability through validation summary, container role clarity, deliverable completeness, and validation issue summary.
 - Reuses live `PenDocument.pages` truth plus `validateCanvasDocument`; findings reference concrete node IDs and suggested fixes, but the tool never mutates canvas state.
+- `record_agent_critique` is the explicit write-back boundary for these results:
+  it updates an existing `meta.agentExecution.kind = "critique"` node with
+  summary/details/text content after validation or critique, and rejects
+  non-critique nodes instead of guessing a target.
 - Supports explicit `pageId`, `nodeIds`, check selection, optional validation summary, and severity threshold filtering.
 
 ### `export_canvas_deliverable`

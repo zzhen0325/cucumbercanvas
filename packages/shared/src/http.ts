@@ -26,6 +26,11 @@ export const runCancelResponseSchema = z.object({
   status: z.enum(["canceling", "canceled"]),
 });
 
+export const runPauseResponseSchema = z.object({
+  runId: runIdSchema,
+  status: z.enum(["pausing", "paused"]),
+});
+
 export const viewerResponseSchema = z.object({
   profile: viewerProfileSchema,
   workspace: workspaceSummarySchema,
@@ -124,6 +129,7 @@ export const canvasSaveResponseSchema = z.object({
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 export type RunCancelResponse = z.infer<typeof runCancelResponseSchema>;
+export type RunPauseResponse = z.infer<typeof runPauseResponseSchema>;
 export type ViewerResponse = z.infer<typeof viewerResponseSchema>;
 export type ProjectListResponse = z.infer<typeof projectListResponseSchema>;
 export type ProjectCreateRequest = z.infer<typeof projectCreateRequestSchema>;

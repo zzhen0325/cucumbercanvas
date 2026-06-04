@@ -32,6 +32,7 @@ type LangChainStreamEvent = {
 };
 
 type AdaptDeepAgentStreamOptions = {
+  abortEvent?: (runId: string, now: () => string) => StreamEvent;
   conversationId: string;
   now?: () => string;
   runId: string;
@@ -53,6 +54,7 @@ export async function* adaptDeepAgentStream(
   options: AdaptDeepAgentStreamOptions,
 ): AsyncGenerator<StreamEvent> {
   const now = options.now ?? (() => new Date().toISOString());
+  const abortEvent = options.abortEvent ?? canceledEvent;
   const seenCompletedToolCalls = new Set<string>();
   const seenStreamedMessageIds = new Set<string>();
   const seenStartedToolCalls = new Set<string>();
@@ -91,14 +93,14 @@ export async function* adaptDeepAgentStream(
   }
 
   if (options.signal?.aborted) {
-    yield canceledEvent(options.runId, now);
+    yield abortEvent(options.runId, now);
     return;
   }
 
   try {
     for await (const rawEvent of options.stream) {
       if (options.signal?.aborted) {
-        yield canceledEvent(options.runId, now);
+        yield abortEvent(options.runId, now);
         return;
       }
 
@@ -319,7 +321,7 @@ export async function* adaptDeepAgentStream(
     }
   } catch (error) {
     if (isAbortError(error) || options.signal?.aborted) {
-      yield canceledEvent(options.runId, now);
+      yield abortEvent(options.runId, now);
       return;
     }
 

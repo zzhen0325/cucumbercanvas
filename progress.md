@@ -1,9 +1,324 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-06-03 CST
+Last updated: 2026-06-04 CST
+
+## 2026-06-04
+
+- Upgraded generated Agent execution cards and connectors: `create_agent_execution_flow`, `create_agent_variant_branches`, `create_agent_ask_user_more`, and `create_agent_evidence` now share rounded 22px card styling, stable title/status/body text layout, larger internal padding, calmer semantic fills/strokes, and lower-saturation 2px smooth arrow connectors persisted directly in `PenDocument.pages`.
+- Upgraded persistent Agent status markers into Flowith-style activity callouts: non-selected running/waiting/failed/paused execution nodes now show contextual labels such as `分析中...`, `生成中...`, `评审中...`, `等待补充`, or `处理失败`, with lightweight icon/dot/caret streaming text animation derived from durable `meta.agentExecution` rather than run trace.
+- Added a Flowith-inspired canvas follow-up affordance: selecting any durable Agent execution node now shows an animated `继续追问`-style pill below the node that opens the existing selected-node continuation draft from `PenDocument.pages` metadata, with contextual labels for failed, waiting, branch, and checkpoint nodes.
+- Split failed-node recovery UI into `AgentExecutionFailureRecoverySection`, making `重试此步骤`, `改写输入后继续`, `跳过此步骤`, and `新建分支尝试` clearer while preserving the same recovery intents and failure-history prompt context.
+- Split the Agent run trace panel out of `AgentRunControlBar` into a dedicated component, reducing the control bar from 535 to 341 lines while preserving pause/stop/continue/checkpoint rerun/trace behavior and keeping trace rendering as a read-only diagnostic surface.
+- Extended paused-node recovery semantics to manual canvas references: when users add a selected `paused` Agent execution node as a removable reference chip, `<canvas_node_references>` now carries the same `paused_continuation_instruction` so the Agent treats it as a durable node recovery anchor rather than trying to resume an old SSE stream.
+- Added a recommended-branch shortcut to comparison panels: selected `comparison` nodes now surface `深化推荐选择` above the branch cards, resolving the recommended `variant_branch`, persisting it as mainline first when needed, and opening the continuation draft against that durable branch node.
+- Added structured paused-node continuation context: selected `paused` Agent execution nodes now send `paused_continuation_instruction` through `<agent_execution_continue_context>`, and the main Agent prompt treats it as a recovery boundary that starts a new Agent run from the durable node after inspecting live `PenDocument.pages` instead of trying to resume the old SSE stream.
+- Made paused-run continuation explicit in the Agent run control bar: when the selected durable execution node is `paused`, the continue action is labeled `从暂停点继续` and explains that it will inspect the current canvas and open a new Agent run from that node instead of pretending to resume the old SSE stream.
+- Added a pre-save Recipe template preview in the Agent execution property panel: before saving a completed execution node or graph, users can now verify the source-node count, node structure, tool sequence, input slots, validation rules, and deliverable format that will be stored in the local Recipe menu.
+- Preserved user-written prompts when applying a Recipe: selecting a Recipe after typing now appends the per-slot `待补输入` checklist once instead of replacing the user's draft or omitting the template slots.
+- Grouped the Recipe picker into `已保存` and `内置` sections with counts, so reusable execution-chain templates are visually separated from built-in starters before users preview, delete, or launch them.
+- Made Recipe start drafts easier to fill: the `待补输入` section now renders each required template slot as its own `- 槽位：` line, so users can add values directly before sending while the Agent still creates `ask_user_more` for blanks.
+- Added slot-aware Recipe start drafts: selecting a Recipe now pre-fills the editable chat draft with a `待补输入` checklist plus the ask-user-more fallback note, so users can fill template slots before sending while still allowing the Agent to create durable `ask_user_more` nodes for missing inputs.
+- Made Recipe input slots actionable at startup: selected Recipe chips now show the first required input slots, and `<agent_recipe_template>` carries an `input_slot_policy` requiring the Agent to create a durable `ask_user_more` node for missing template inputs instead of inventing values or continuing silently.
+- Tightened Recipe template startup boundaries: `<agent_recipe_template>` now includes `template_source`, `startup_mode`, `saved_from_node_id`, and a `source_node_policy` for saved execution-chain templates, while the Recipe picker preview tells users saved templates start a new execution chain and do not modify source nodes.
+- Removed friction from non-mainline branch deepening: `variant_branch` panels and comparison branch cards now show `设为主线并深化` for non-mainline choices, persist the selected branch as the durable mainline/recommended branch first, then open the continuation draft with updated mainline metadata so the chat context matches the visible `PenDocument.pages` state.
+- Added explicit final-deliverable write-back: `record_agent_final_deliverable` now records completed or failed final delivery state into an existing durable `final_deliverable` node, synchronizing visible text, `meta.agentExecution.details.outputSummary`, top-level run/session/agent semantics, selection, and concrete failure recovery context instead of letting complex Agent chains end only in chat or run trace.
+- Tightened durable critique write-back consistency: `record_agent_critique` now sets structured `critique.pass` to `false` whenever the recorded critique status is `failed`, preventing property-panel review metadata from saying a failed validation/critique passed.
+- Added durable-node anchoring to the Agent run trace panel: the live trace view now shows the selected canvas node ID plus upstream/downstream counts from `meta.agentExecution`, and canvas patch rows list affected node IDs so users can relate transient SSE diagnostics back to durable `PenDocument.pages` nodes.
+- Normalized failed-node UI error copy: Agent execution details and failure recovery cards now convert raw HTTP/provider/network diagnostic values, `null`, and `undefined` into concrete user-facing failure explanations while keeping durable `meta.agentExecution.failure` as the debugging and recovery truth.
+- Reused the same failed-node error-copy boundary in the Agent run control bar and run trace rows, so top-of-canvas status and trace diagnostics do not leak raw provider/network codes when a selected execution node or `run.failed` event is inspected.
+- Reused the same failed-node error-copy boundary in canvas hover/status surfaces, so hovering a failed Agent execution node no longer leaks raw diagnostic codes before the user opens the property panel.
+- Added durable stop-state write-back for Agent runs: after the real cancel endpoint succeeds, the Web canvas now marks the same run's active `running` / `waiting` execution nodes as `paused` with an explicit stopped summary, so canvas overlays, property panels, and run status chips do not keep presenting stopped work as still active.
+- Enabled completed `variant_branch` nodes to be saved directly as Recipe templates: a successful direction can now become a branch-deepening workflow with variant/critique/checkpoint/final-deliverable structure, branch-specific input slots, and `create_agent_variant_branches` in the inferred tool sequence.
+- Tightened `ask_user_more` fulfillment state: when a user submits text or file/image supplements, shared Web write-back now stores `waitingForUser.response`, preserves attachment counts, marks the durable node `paused`, and synchronizes top-level execution semantics so status chips no longer keep showing a human blocker after the user has answered.
+- Added durable pause-state write-back for Agent runs: after the real pause endpoint succeeds, the Web canvas now marks the same run's `running` / `waiting` Agent execution nodes as `paused` in live `PenDocument.pages`, preserving summaries and semantic node fields so overlays, property panels, and active-page status chips reflect the user's pause action instead of stale active work.
+- Added checkpoint rerun downstream scope visibility: restartable checkpoint continuation now surfaces recorded downstream node IDs in the run control bar, includes them in the editable rerun draft, and sends `checkpoint_rerun_downstream_node_ids` plus a concrete rerun instruction through `<agent_execution_continue_context>` while still requiring the Agent to inspect live `PenDocument.pages` before rewriting downstream work.
+- Preserved comparison graph context when saving a completed `variant_branch` as a Recipe template: if the active page includes sibling variant branches and their `comparison` node, the saved template records all related source node IDs and keeps the deliverable contract as `variant_branch` + `comparison` + checkpoint rather than flattening the branch into an isolated workflow.
+- Tightened Recipe template startup semantics: the template prompt block now names node structure, tool sequence, input slots, validation rules, and deliverable format as the reusable workflow contract, and the Agent system prompt treats template evidence/ask/branch/critique/checkpoint tool steps as durable execution-node requirements instead of optional chat narration.
+- Strengthened saved Recipe extraction for context-heavy chains: templates now preserve completed `evidence` and `ask_user_more` boundaries by inferring `create_agent_evidence` / `create_agent_ask_user_more` tool steps, reference-material and user-supplement input slots, provenance/waiting-input validation rules, and a deliverable format that names those context nodes.
+- Completed the Recipe template preview fields in the chat input menu: expanded saved templates now show validation rules and deliverable format in addition to node structure, tool order, input slots, and source node IDs, so users can verify the reusable workflow contract before starting it.
+- Added an explicit non-mainline branch deepening guard: selected/manual `variant_branch` continuation context now emits `branch_continue_requires_mainline_selection` and a concrete instruction to call `select_agent_variant_branch` before deepening a non-mainline branch.
+- Preserved comparison context when deepening a branch from a comparison card: the prefilled branch continuation target now carries the comparison branch-node list, recommended branch, and recommendation reason into `<agent_execution_continue_context>`, so the Agent can select the clicked branch as mainline before continuing.
+- Corrected variant-branch deepening semantics: `继续深化` on a `variant_branch` or comparison branch card now opens an overwrite-current/continue draft anchored to that branch, while comparison branch cards pass the clicked branch as the chat continuation target even when the selected canvas node is the comparison card.
+- Tightened durable failed-node recovery write-back: `record_agent_tool_call` now supports appending recovery attempts/next actions without duplicating existing entries, rejects new failed-state writes that omit a concrete `failure.reason` or `errorReason`, and non-failed write-back clears stale `failure` metadata so completed nodes no longer keep old failed-node UI state.
+- Expanded the Agent run-control waiting state: when the selected durable execution node is waiting for user input, the top control bar now shows the waiting prompt plus file/image acceptance, submitted response text, and submitted attachment count instead of only showing a generic waiting/loading reason.
+- Completed the task/tool detail collapsed-summary slice: the Agent execution property panel now keeps a result summary or failure reason visible when execution details are collapsed, and the detail UI was split into `AgentExecutionDetailsSection` so the already-large main section does not keep accumulating detail-rendering logic.
+- Made the selected Agent continuation chip readable in the chat input: the "基于" chip now shows status with the same tone treatment as reference chips and includes failure, waiting, and checkpoint restart reasons in its hover title before the user sends the continuation.
+- Made manual Agent reference chips readable in the chat input: removable references for Agent execution nodes now show execution kind/status and include failure, waiting, and checkpoint restart reasons in their hover title, so users can verify the referenced execution context before sending.
+- Expanded manual canvas-node references for Agent execution context: when users add selected Agent nodes as removable chat references, `<canvas_node_references>` now carries upstream/downstream IDs plus branch/comparison/checkpoint/waiting/failure summaries, waiting response text/attachment counts, checkpoint restart reasons, and failed-node recovery history while still requiring live `PenDocument.pages` inspection before edits.
+- Added structured checkpoint restart reason context: restartable checkpoint continuation now carries `checkpoint_restart_reason` through `<agent_execution_continue_context>`, so `rerun_checkpoint` follow-ups know why the selected durable checkpoint is a valid downstream rebuild anchor.
+- Added structured failed-node recovery history in continuation context: failed execution nodes now pass `failure_attempted` and `failure_next_actions` through `<agent_execution_continue_context>`, so retry/rewrite/skip/new-branch follow-ups can avoid repeating ineffective attempts and can write updated recovery state back to the durable node.
+- Added structured waiting-response continuation context: when an `ask_user_more` response opens a continuation draft, the submitted text now travels as `waiting_response_text` inside `<agent_execution_continue_context>` in addition to the visible draft copy, so the Agent can treat it as the user's answer to the durable waiting node after inspecting live `PenDocument.pages`.
+- Added structured Agent continuation recovery intents: canvas recovery actions now carry `intent` into `<agent_execution_continue_context>` (`retry`, `rewrite`, `skip`, `rerun_checkpoint`, `attach_files`, `new_branch`, `continue`) with explicit intent instructions, and the Agent system prompt treats those fields as the recovery action to execute after inspecting the selected durable node and its upstream/downstream chain.
+- Added canvas-surface waiting/failure reason visibility: Agent execution hover cards now show waiting prompts, failure reasons, or pause summaries from durable `meta.agentExecution`, and persistent status marker tooltips include the same reason text so users can understand blockers without opening the property panel.
+- Made active-page Agent execution status summary chips selectable: clicking a non-zero `failed`, `running`, `waiting`, or `paused` chip selects the first matching execution node through the normal canvas selection API so users can quickly jump from a blocker/active-work count into inspection.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-property-panel.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/agent-execution.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/chat-input.test.tsx test/agent-run-control-bar.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/agent-run-pause-writeback.test.ts test/chat-sidebar.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/agent-waiting-response-writeback.test.ts test/canvas-property-panel.test.tsx test/chat-sidebar.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/agent/prompts/cucumber-main.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm exec biome check packages/canvas-core/src/agent-recipe-template.ts packages/canvas-core/src/__tests__/agent-execution.test.ts apps/web/test/canvas-property-panel.test.tsx docs/tech/ai-native-canvas-agent-capability-plan.md progress.md feature_list.json`.
+- Passed: `pnpm exec biome check apps/web/src/components/chat-input-context.ts apps/web/src/app/canvas/page.tsx apps/web/src/components/agent-run-control-bar.tsx apps/web/test/chat-input.test.tsx apps/web/test/agent-run-control-bar.test.tsx apps/server/src/agent/prompts/cucumber-main.ts apps/server/src/agent/prompts/cucumber-main.test.ts docs/tech/ai-native-canvas-agent-capability-plan.md progress.md feature_list.json`.
+- Passed: `pnpm exec biome check apps/web/src/components/canvas/agent-run-pause-writeback.ts apps/web/src/app/canvas/page.tsx apps/web/src/components/chat-sidebar.tsx apps/web/test/agent-run-pause-writeback.test.ts apps/web/test/chat-sidebar.test.tsx docs/tech/ai-native-canvas-agent-capability-plan.md progress.md feature_list.json`.
+- Passed: `pnpm exec biome check apps/web/src/components/canvas/agent-waiting-response-writeback.ts apps/web/src/components/canvas/property-panel/agent-execution-section.tsx apps/web/src/app/canvas/page.tsx apps/web/test/agent-waiting-response-writeback.test.ts apps/web/test/canvas-property-panel.test.tsx docs/tech/ai-native-canvas-agent-capability-plan.md progress.md feature_list.json`.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
 
 ## 2026-06-03
 
+- Added the active-page Agent execution status summary slice: the canvas now shows a compact bottom-left summary of current-page attention states (`failed`, `running`, `waiting`, `paused`) derived from durable `meta.agentExecution`, so users can quickly see whether the execution chain has active work or blockers before inspecting individual nodes.
+- Added the persistent Agent execution status marker slice: active-page Agent execution nodes with attention-worthy states (`waiting` / `running` / `failed` / `paused`) now show compact clickable canvas corner markers derived from durable `meta.agentExecution`; clicking a marker selects that node through the normal canvas selection API, while completed and currently selected nodes stay off the persistent layer to avoid clutter and rely on hover/selection details.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/agent-execution-status-overlays.test.tsx test/canvas-overlays.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Added the non-selected Agent execution hover summary slice: hovering a non-checkpoint Agent execution node now shows a read-only canvas hover card with execution kind, status, title, and tool/summary while checkpoint nodes keep their action toolbar. The hover card is derived from durable `meta.agentExecution` and does not write hover state into `PenDocument.pages`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-overlays.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Added the first canvas-surface Agent execution status badge slice: selecting any durable Agent execution node now shows a compact toolbar badge with the execution kind and status (`waiting` / `running` / `done` / `failed` / `paused`) so users can read the node state on the canvas without opening or scrolling the property panel.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-overlays.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Added the shared Agent execution-node semantic update helper: `canvas-core` now exposes `getAgentExecutionNodeSemanticUpdates`, and `record_agent_tool_call` / `record_agent_critique` use it when updating existing execution nodes so status, tool-call details, failure recovery, and critique findings update durable `meta.agentExecution` together with top-level run/session/agent/container-role/context-slot semantics on the same `PenNode`. Failed tool-call write-back also normalizes optional failure input into a concrete `failure.step` for UI recovery panels.
+- Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/agent-execution.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/record-agent-tool-call.test.ts src/mcp/tools/record-agent-critique.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Migrated the blocking/input and branching execution-node creation tools onto the shared semantic binding boundary: `create_agent_ask_user_more`, `create_agent_evidence`, and `create_agent_variant_branches` now use `withAgentExecutionNodeSemantics` so ask/evidence/variant/comparison nodes write durable `meta.agentExecution` together with top-level run/session/agent/container-role/context-slot semantics on the same `PenNode`.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/create-agent-ask-user-more.test.ts src/mcp/tools/create-agent-evidence.test.ts src/mcp/tools/create-agent-variant-branches.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Added the shared Agent execution-node semantic binding helper: `canvas-core` now exposes `withAgentExecutionNodeSemantics` so execution nodes write durable `meta.agentExecution` together with top-level `runId`, `sessionId`, `agentBinding`, non-empty `containerRole`, and execution `contextSlots` on the same `PenNode`; `create_agent_canvas_flow` and `create_agent_execution_flow` now use this shared boundary for their created execution nodes.
+- Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/agent-execution.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/create-agent-canvas-flow.test.ts src/mcp/tools/create-agent-execution-flow.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Tightened the simple image-generation Agent canvas flow binding slice: every `create_agent_canvas_flow` node that carries durable `meta.agentExecution` now also gets top-level `runId`, `sessionId`, `agentBinding`, non-empty `containerRole`, and execution `contextSlots` in the same write boundary, including the nested loading `tool_call` nodes inside the final-deliverable container.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/create-agent-canvas-flow.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Added the selectable Agent execution-chain context slice: selected Agent execution nodes now resolve `upstreamNodeIds` and `downstreamNodeIds` against active-page `PenDocument.pages` nodes and show upstream/downstream cards with title, kind, tool, status, and explicit missing-node states; clicking an existing chain card selects that canvas node for inspection instead of only showing comma-separated IDs.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-property-panel.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm exec biome check apps/web/src/components/canvas/property-panel/agent-execution-chain-section.tsx apps/web/src/components/canvas/property-panel/agent-execution-section.tsx apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx apps/web/src/components/canvas/canvas-overlays.tsx apps/web/test/canvas-property-panel.test.tsx feature_list.json`.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the structured critique-node review slice: `record_agent_critique` now writes validation/critique findings, issue counts, and pass state into durable `meta.agentExecution.critique`; selected critique nodes show those findings in the property panel with severity, target node, and suggested fix instead of requiring users to parse a plain tool-output paragraph.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/record-agent-critique.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-property-panel.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/agent-execution.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm exec biome check packages/canvas-core/src/agent-execution.ts apps/server/src/mcp/tools/record-agent-critique.ts apps/server/src/mcp/tools/record-agent-critique.test.ts apps/web/src/components/canvas/property-panel/agent-execution-section.tsx apps/web/src/components/canvas/property-panel/agent-execution-critique-section.tsx apps/web/test/canvas-property-panel.test.tsx feature_list.json`.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the `ask_user_more` attachment-count write-back slice: when a waiting Agent node continuation sends canvas/image attachments, the chat prompt now includes `waiting_attachment_count`, ChatSidebar reports the submitted attachment count after run creation, CanvasPage writes it back to `meta.agentExecution.waitingForUser.response.attachmentCount`, and the property panel shows the count on the selected waiting node.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/chat-input.test.tsx test/chat-sidebar.test.tsx test/canvas-property-panel.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm exec biome check apps/web/src/components/chat-input-context.ts apps/web/src/components/chat-sidebar.tsx apps/web/src/components/canvas/property-panel/agent-execution-section.tsx apps/web/src/app/canvas/page.tsx apps/web/test/chat-input.test.tsx apps/web/test/chat-sidebar.test.tsx apps/web/test/canvas-property-panel.test.tsx feature_list.json`.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the checkpoint hover action slice: hovering a `checkpoint` execution node now shows transient canvas actions for `继续`, `重跑`, and `新分支`, routing into the existing continuation intents without writing hover state to `PenDocument.pages`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-overlays.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm exec biome check apps/web/src/components/canvas/canvas-overlays.tsx apps/web/src/components/canvas/use-skia-pointer-interactions.ts apps/web/src/components/canvas/skia-canvas.tsx apps/web/test/canvas-overlays.test.tsx feature_list.json`.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the branch-aware continuation context slice: selected Agent execution nodes now send richer `<agent_execution_continue_context>` with upstream/downstream IDs, branch plan/deliverable/critique summaries, branch strengths/risks/use cases, comparison/checkpoint/waiting/failure context, and manual branch references carry the same summaries, so `继续深化` can guide the Agent along the selected `variant_branch` while still requiring live `PenDocument.pages` inspection before edits.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/chat-input.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/agent/prompts/cucumber-main.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm exec biome check apps/web/src/components/chat-input-context.ts apps/web/test/chat-input.test.tsx apps/server/src/agent/prompts/cucumber-main.ts apps/server/src/agent/prompts/cucumber-main.test.ts`.
+- Passed: `git diff --check`.
+- Added the Phase 4 branch execution-summary slice: `variant_branch` metadata now records per-branch plan, deliverable, and critique summaries alongside strengths/risks/use cases; `create_agent_variant_branches` writes those fields into durable branch cards and comparison copy, the Agent prompt requires them for multi-direction requests, and the Web property panel/comparison branch cards surface them for user inspection without introducing branch-only runtime state.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/create-agent-variant-branches.test.ts src/agent/prompts/cucumber-main.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-property-panel.test.tsx test/canvas-overlays.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/agent-execution.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm exec biome check packages/canvas-core/src/agent-execution.ts apps/server/src/mcp/tools/create-agent-variant-branches.ts apps/server/src/mcp/tools/create-agent-variant-branches.test.ts apps/server/src/agent/prompts/cucumber-main.ts apps/server/src/agent/prompts/cucumber-main.test.ts apps/web/src/components/canvas/property-panel/agent-variant-branch-details.tsx apps/web/src/components/canvas/property-panel/agent-comparison-branch-cards.tsx apps/web/src/components/canvas/property-panel/agent-execution-section.tsx apps/web/src/components/canvas/canvas-overlays.tsx apps/web/test/canvas-property-panel.test.tsx feature_list.json`.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the Web property-panel evidence provenance slice: selected Agent `evidence` nodes now show source type/name, URL/asset/node IDs, confidence, and an `打开链接` action when a source URL exists, keeping the UI anchored on `meta.agentExecution.evidence` instead of introducing parallel evidence state.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-property-panel.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm exec biome check apps/web/src/components/canvas/property-panel/agent-execution-evidence-section.tsx apps/web/src/components/canvas/property-panel/agent-execution-section.tsx apps/web/test/canvas-property-panel.test.tsx docs/tech/ai-native-canvas-agent-capability-plan.md docs/tech/canvas-tooling-capability-map.md progress.md feature_list.json`.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the `create_agent_evidence` MCP slice: Agents can now persist URL, asset, canvas-node, text, or search-result evidence as durable `evidence` execution nodes with provenance stored in `meta.agentExecution.evidence`, optional upstream execution links, semantic connectors, and selection, so source material becomes inspectable canvas context instead of chat-only notes.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/create-agent-evidence.test.ts src/mcp/deepagents-bridge.test.ts src/agent/prompts/cucumber-main.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/agent-execution.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm exec biome check packages/canvas-core/src/agent-execution.ts apps/server/src/mcp/tools/create-agent-evidence.ts apps/server/src/mcp/tools/create-agent-evidence.test.ts apps/server/src/mcp/server.ts apps/server/src/mcp/deepagents-bridge.test.ts apps/server/src/agent/prompts/cucumber-main.ts apps/server/src/agent/prompts/cucumber-main.test.ts feature_list.json`.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added best-effort image job execution-node write-back: when `generate_image` carries `agentExecutionNodeId`, the runtime now updates the referenced durable `tool_call` / `task_step` node on image job success, cancellation, failure, or timeout, writing status, visible text, output/error details, and failed-step recovery actions while keeping `PenNode.meta.agentExecution` as the source of truth.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/agent/agent-execution-image-writeback.test.ts src/agent/tools/image-generate.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm exec biome check apps/server/src/agent/agent-execution-image-writeback.ts apps/server/src/agent/agent-execution-image-writeback.test.ts apps/server/src/agent/runtime.ts docs/tech/ai-native-canvas-agent-capability-plan.md docs/tech/canvas-tooling-capability-map.md feature_list.json`.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the `generate_image` execution-node correlation slice: the tool now accepts and returns `agentExecutionNodeId`, the runtime preserves it in image job payloads as diagnostic/correlation metadata, shared job contracts accept `agent_execution_node_id`, and the Agent prompt tells image calls to pass the `toolCallNodeIds` returned by `create_agent_execution_flow` so `record_agent_tool_call` can write back to the exact durable execution node.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/agent/tools/image-generate.test.ts src/agent/prompts/cucumber-main.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/shared exec vitest run src/contracts.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm --filter @cucumber/shared typecheck`.
+- Passed: `pnpm exec biome check apps/server/src/agent/tools/image-generate.ts apps/server/src/agent/tools/image-generate.test.ts apps/server/src/agent/runtime.ts apps/server/src/agent/prompts/cucumber-main.ts apps/server/src/agent/prompts/cucumber-main.test.ts packages/shared/src/job-contracts.ts packages/shared/src/contracts.test.ts apps/server/src/features/jobs/executors/image-generation.ts feature_list.json`.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the `record_agent_tool_call` MCP slice: after a tool runs, the Agent can now write input/output/reasoning/error details, status, tool call ID, visible node text, and failed-step recovery context into an existing durable `tool_call` or `task_step` node, keeping the property panel explainable without treating chat or run trace as runtime truth.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/record-agent-tool-call.test.ts src/mcp/deepagents-bridge.test.ts src/agent/prompts/cucumber-main.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm exec biome check apps/server/src/mcp/tools/record-agent-tool-call.ts apps/server/src/mcp/tools/record-agent-tool-call.test.ts apps/server/src/mcp/server.ts apps/server/src/mcp/deepagents-bridge.test.ts apps/server/src/agent/prompts/cucumber-main.ts apps/server/src/agent/prompts/cucumber-main.test.ts feature_list.json`.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the `create_agent_ask_user_more` MCP slice: when execution needs user text, files, images, brand material, or confirmation, the Agent can now create a durable `ask_user_more` node with `waitingForUser.prompt` / `acceptsFiles`, link it from an upstream execution node through `downstreamNodeIds` plus a semantic connector, select it for property-panel response, and the main Agent prompt now forbids handling missing input only as a chat message.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/create-agent-ask-user-more.test.ts src/mcp/deepagents-bridge.test.ts src/agent/prompts/cucumber-main.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm exec biome check apps/server/src/mcp/tools/create-agent-ask-user-more.ts apps/server/src/mcp/tools/create-agent-ask-user-more.test.ts apps/server/src/mcp/server.ts apps/server/src/mcp/deepagents-bridge.test.ts apps/server/src/agent/prompts/cucumber-main.ts apps/server/src/agent/prompts/cucumber-main.test.ts docs/tech/ai-native-canvas-agent-capability-plan.md docs/tech/canvas-tooling-capability-map.md progress.md feature_list.json`.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Tightened `create_agent_execution_flow` chain metadata: newly created execution cards now persist derived `downstreamNodeIds` alongside existing `upstreamNodeIds` in durable `meta.agentExecution`, so the property panel, continuation drafts, and Recipe extraction can read the same bidirectional execution graph from `PenDocument.pages` instead of reconstructing it from run trace.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/create-agent-execution-flow.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm exec biome check apps/server/src/mcp/tools/create-agent-execution-flow.ts apps/server/src/mcp/tools/create-agent-execution-flow.test.ts docs/tech/ai-native-canvas-agent-capability-plan.md docs/tech/canvas-tooling-capability-map.md progress.md feature_list.json`.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the first Phase 5 Recipe template starter slice: `canvas-core` now defines six reusable Agent Recipe starters with node structure, tool order, input slots, validation rules, and deliverable format; ChatInput exposes a Recipe menu, pre-fills an editable prompt, shows a removable Recipe chip, and sends `<agent_recipe_template>` prompt context so the Agent starts by materializing the template as durable execution-chain nodes instead of a parallel template state.
+- Added the first saved Recipe Template slice: completed Recipe/comparison/checkpoint/final-deliverable execution nodes can now be saved from the property panel into the local Recipe menu. Extraction reads the selected node's durable `meta.agentExecution` metadata, infers node structure/tool order/input slots/validation rules/deliverable format, and keeps the saved template as reusable prompt configuration rather than canvas runtime truth.
+- Extended saved Recipe extraction from a single selected node to the selected node's completed upstream/downstream execution-chain graph on the active page. The template now records ordered source node IDs, derives node structure/tool order/validation rules from the graph, and the property panel passes current page nodes read from `PenDocument.pages` without introducing Agent-only runtime state.
+- Added local Recipe template library controls in the chat input menu: saved templates show source-node counts, can expand to preview node structure/tool order/input slots/source IDs, and can be deleted from local storage without mutating the original canvas execution nodes.
+- Tightened the `ask_user_more` continuation interaction: submitting text now still writes the durable response to `meta.agentExecution.waitingForUser.response`, but also passes that text into the selected-node continuation draft so the next Agent turn starts with the user's submitted answer visible in the editable prompt.
+- Added comparison-node branch cards in the Web property panel: selected `comparison` nodes now resolve active-page branch nodes from `comparison.branchNodeIds`, show strengths/risks/use cases/mainline status side by side, and expose per-branch `继续深化` / `设为主线` actions while missing branch nodes show an explicit unavailable message.
+- Added `record_agent_critique` as the explicit write-back boundary for validation/critique results: `validate_canvas` and `critique_canvas` remain read-only, while this tool updates an existing durable `critique` node's `meta.agentExecution`, visible text content, selection, versioned patch, and diagnostics after the Agent has a concrete critique node ID.
+- Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/agent-execution.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/agent/prompts/cucumber-main.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/record-agent-critique.test.ts src/mcp/deepagents-bridge.test.ts src/agent/prompts/cucumber-main.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/chat-input.test.tsx test/chat-sidebar.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/chat-input.test.tsx test/canvas-property-panel.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/chat-input.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-property-panel.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm exec biome check` for the touched Recipe template schema, chat input/context/tests, property-panel save UI/tests, Agent prompt/tests, and feature registry files.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the Agent run pause controller slice: shared stream contracts now include `run.paused`, the server exposes `/api/agent/runs/:runId/pause`, runtime aborts distinguish pause from cancel, the Web API/chat sidebar/control bar wire a real `暂停` action, and SSE treats paused runs as terminal while continuation remains anchored on durable selected execution nodes.
+- Passed: `pnpm --filter @cucumber/shared exec vitest run src/contracts.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/agent/stream-adapter.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/agent-run-control-bar.test.tsx test/chat-sidebar.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/shared typecheck`.
+- Passed: `pnpm --filter @cucumber/shared build`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm exec biome check` for the touched shared contracts/events/http, server runtime/stream/routes/mock/run-trace, Web API/SSE/chat/control/page/test, and feature registry files.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the checkpoint rerun draft slice: restartable checkpoint nodes now route `从 checkpoint 重跑` / canvas-toolbar `重跑` / run-control checkpoint rerun into a rerun-specific continuation draft that preserves the checkpoint as the durable context anchor and asks the Agent to rebuild downstream work.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-property-panel.test.tsx test/canvas-overlays.test.tsx test/agent-run-control-bar.test.tsx test/chat-sidebar.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm exec biome check` for the touched checkpoint/rerun property-panel, canvas toolbar, run-control, canvas page, related tests, plan, progress, and feature registry files.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the failed-node retry recovery slice: failed Agent execution nodes now route `重试此步骤` into the same selected-node continuation draft with a retry-specific prompt, while still disabling the control when the panel cannot open Agent input.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-property-panel.test.tsx test/chat-sidebar.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm exec biome check` for the touched failed-node recovery UI, canvas page draft text, property-panel test, plan, progress, and feature registry files.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the Agent run-control continue slice: the top Agent run control bar now enables `继续` when a selected Agent execution node is available and no run is actively streaming, opening the same selected-node continuation draft; pause and checkpoint rerun remain gated on a real run controller.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/agent-run-control-bar.test.tsx test/chat-sidebar.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm exec biome check` for the touched run control bar, canvas page, run-control tests, plan, progress, and feature registry files.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the `ask_user_more` file/image supplement slice: selected ask nodes that accept files now expose a real `补充文件/图片` action, opening the Agent continuation draft for that waiting node and requesting the existing chat attachment picker instead of showing a disabled placeholder.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-property-panel.test.tsx test/chat-input.test.tsx test/chat-sidebar.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm exec biome check` for the touched ask-user-more property panel, chat input/sidebar, canvas page, related tests, plan, progress, and feature registry files.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the checkpoint canvas-toolbar interaction slice: selecting a `checkpoint` execution node now shows compact canvas-level actions for `继续`, disabled `重跑`, and `新分支`; continue and branch open the existing continuation draft path, while rerun stays gated with a concrete run-controller reason.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-overlays.test.tsx test/canvas-property-panel.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm exec biome check` for the touched canvas overlay, Skia canvas pass-through, overlay test, plan, progress, and feature registry files.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the next Phase 3 chat-input reference slice: users can now manually add the current canvas selection as removable reference chips before sending a message; those references enter the Agent prompt as live `PenDocument.pages` node IDs under `<canvas_node_references>` with instructions to inspect current canvas state before editing, not as a copied parallel canvas truth.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/chat-input.test.tsx test/chat-sidebar.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm exec biome check` for the touched chat input context/strip, chat tests, plan, progress, and feature registry files.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the checkpoint-specific Phase 3 property-panel slice: selected `checkpoint` execution nodes now show a dedicated recovery panel with restart availability, restart reason/default context copy, real continuation and new-branch draft actions, and a disabled `从 checkpoint 重跑` action with a concrete reason until the run controller is wired.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-property-panel.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm exec biome check` for the touched Agent execution property-panel components/test, plan, progress, and feature registry files.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the next Phase 4 branch decision slice: MCP `select_agent_variant_branch` can now persist a user/Agent choice by setting one durable `variant_branch` as the unique mainline/recommended branch under its `comparison`, updating sibling branch metadata, comparison recommendation copy, visible branch styling, and selected-node context through a version-protected live canvas patch.
+- Added the matching property-panel interaction: non-mainline `variant_branch` nodes now expose a real `设为主线` action when their comparison context is resolvable, committing all sibling branch metadata, comparison recommendation text, visible styling, and selection through the same `PenDocument.pages` runtime truth.
+- Added the branch deepening interaction: `variant_branch` nodes now expose `继续深化` in the property panel; clicking it opens the chat panel, pre-fills an editable continuation draft, keeps the selected branch as `<agent_execution_continue_context>`, and defaults to `new_branch` so the Agent continues along that branch without deleting other variants.
+- Promoted more Agent-node recovery controls from display-only to usable continuation drafts: `从这里继续`, `复制为分支`, failed-node `改写后继续`, `跳过此步骤`, `新分支尝试`, and `ask_user_more` text submission now open/pre-fill the chat input with the selected node context and the correct `new_branch` or `overwrite_current` mode; true run rerun remains disabled until the run controller is wired.
+- Added a real run trace panel to the Agent run control bar: `查看 run trace` now opens a live SSE-backed trace view with recent run events, tool calls, canvas patch counts, selected execution-node context, and an explicit empty-events message instead of a disabled placeholder; pause/continue/checkpoint rerun remain disabled until the run controller exists.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/select-agent-variant-branch.test.ts src/mcp/deepagents-bridge.test.ts src/agent/prompts/cucumber-main.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-property-panel.test.tsx test/chat-input.test.tsx test/chat-sidebar.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/agent-run-control-bar.test.tsx test/chat-sidebar.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Added the first Phase 4 multi-variant branch slice: `meta.agentExecution` now supports `comparison` nodes plus branch/comparison metadata, MCP `create_agent_variant_branches` creates durable `variant_branch` cards and a `comparison` card with strengths, risks, use cases, recommended/mainline flags, and semantic connectors, the main Agent prompt routes multi-direction requests through this tool, and the property panel displays branch and comparison metadata for selected nodes.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/create-agent-variant-branches.test.ts src/mcp/deepagents-bridge.test.ts src/agent/prompts/cucumber-main.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/agent-execution.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-property-panel.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm exec biome check` for the touched Agent execution schema, variant-branch MCP tool/test, MCP registry, prompt, property-panel UI/test, and feature registry files.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the next Phase 3 Agent run control bar slice: the canvas now shows a top run control bar for active Agent runs or selected execution nodes, including active run ID, selected node kind/title/status context, waiting-for-user prompts, failed-node reasons, and disabled pause/continue/checkpoint-rerun/trace controls with explicit reasons; the Stop action is wired through `cancelRun` to `/api/agent/runs/:runId/cancel`, then stops the active SSE stream and clears the control state.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/agent-run-control-bar.test.tsx test/chat-sidebar.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm exec biome check` for the touched Agent run control bar, canvas page, chat sidebar, cancel API wrapper, related tests, and feature registry files.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the next Phase 3 chat-input continuation slice: selecting an Agent execution node now shows a continuation mode control with `新分支继续` and `覆盖当前节点`, submits the selected node/run/status/mode as `<agent_execution_continue_context>` to the Agent prompt while keeping the visible user message clean, and the main Agent prompt now tells the Agent how to honor `new_branch` versus `overwrite_current`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/chat-input.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/agent/prompts/cucumber-main.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm exec biome check` for the touched chat input, chat sidebar, prompt, prompt test, chat input test, and feature registry files.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the next Phase 3 Agent execution-node property-panel interaction slice: `task_step` / `tool_call` / `ask_user_more` / failed nodes now expose expandable execution details for tool/input/output/reasoning/error context, failed nodes show attempted actions and user recovery choices without raw error codes, and `ask_user_more` nodes can write a user's text response directly back into `meta.agentExecution.waitingForUser.response`; run-controller actions remain disabled with explicit reasons until pause/continue/rerun/fork execution is wired.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-property-panel.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/agent-execution.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm exec biome check` for the touched canvas-core metadata, Agent execution property-panel UI, related property-panel test, and feature registry files.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the generic Agent execution flow tool: MCP `create_agent_execution_flow` can now create a durable Flowith-like user goal → Recipe → task step/tool-call → critique → final deliverable → checkpoint chain with semantic connectors and `meta.agentExecution` on every execution node; the main Agent prompt now uses it for complex design, structured canvas editing, and continuation-oriented tasks while keeping `create_agent_canvas_flow` for simple image-generation flows.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/create-agent-execution-flow.test.ts src/mcp/deepagents-bridge.test.ts src/agent/prompts/cucumber-main.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm exec biome check` for the touched server MCP, prompt, and feature registry files.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
+- Added the first Agent execution canvas schema slice: `packages/canvas-core` now owns `meta.agentExecution` schema/helpers for `user_goal`, `recipe_plan`, `task_step`, `tool_call`, `evidence`, `variant_branch`, `critique`, `ask_user_more`, `checkpoint`, and `final_deliverable` nodes; `create_agent_canvas_flow` tags its simple image-generation chain with durable execution metadata, generated image insertion marks targeted final-deliverable containers complete, the property panel shows execution type/status/run/tool/upstream/downstream context with unavailable run controls disabled and explained, and the chat input shows a selected Agent execution-node context chip for follow-up prompts.
+- Passed: `pnpm --filter @cucumber/canvas-core exec vitest run src/__tests__/agent-execution.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/create-agent-canvas-flow.test.ts src/features/canvas/canvas-element-writer.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web exec vitest run test/canvas-property-panel.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm --filter @cucumber/web typecheck` with the existing Next workspace-root multiple-lockfile warning.
+- Passed: `pnpm exec biome check` for the touched canvas-core, server, web, property-panel, chat input, docs registry JSON, and related test files.
+- Passed: `node -e "JSON.parse(require('fs').readFileSync('feature_list.json','utf8')); console.log('feature_list.json ok')"`.
+- Passed: `git diff --check`.
 - Fixed the Agent image result container flow so `create_agent_canvas_flow` creates visible loading nodes inside the result container, and generated images replace those loading nodes inside the same container through shared canvas operations instead of appearing as a separate direct insertion.
 - Changed image job completion in the Agent runtime to prefer `LiveCanvasService.patchDocument` when a canvas is open, so the currently visible Skia canvas receives the generated image in its target container; the existing database writer remains the offline/background boundary.
 - Passed: `pnpm --filter @cucumber/server exec vitest run src/mcp/tools/create-agent-canvas-flow.test.ts src/features/canvas/canvas-element-writer.test.ts src/agent/tools/image-generate.test.ts --reporter=dot`.

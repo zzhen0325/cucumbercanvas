@@ -6,11 +6,14 @@ import type { ZodType } from "zod";
 import {
   type Database,
   canvasDocumentPatchParamsSchema,
+  createImageJobRequestSchema,
   errorCodeValues,
   healthResponseSchema,
+  imageGenerationPayloadSchema,
   runCancelResponseSchema,
   runCreateRequestSchema,
   runCreateResponseSchema,
+  runPauseResponseSchema,
   streamEventSchema,
 } from "./index.js";
 import * as sharedExports from "./index.js";
@@ -30,6 +33,22 @@ describe("@cucumber/shared contracts", () => {
 
     expect(parsed.ok).toBe(true);
     expect(parsed.service).toBe("cucumber-server");
+  });
+
+  it("keeps image generation jobs correlated to durable Agent execution nodes", () => {
+    const payload = imageGenerationPayloadSchema.parse({
+      agent_execution_node_id: "agent_tool_call_1",
+      prompt: "A coffee poster hero image",
+      target_container_id: "agent_final_deliverable_1",
+    });
+    const request = createImageJobRequestSchema.parse({
+      agent_execution_node_id: "agent_tool_call_1",
+      prompt: "A coffee poster hero image",
+      target_container_id: "agent_final_deliverable_1",
+    });
+
+    expect(payload.agent_execution_node_id).toBe("agent_tool_call_1");
+    expect(request.agent_execution_node_id).toBe("agent_tool_call_1");
   });
 
   it("accepts canvasId as optional field", () => {
@@ -149,6 +168,15 @@ describe("@cucumber/shared contracts", () => {
     });
 
     expect(parsed.status).toBe("canceling");
+  });
+
+  it("shares a stable pause response schema", () => {
+    const parsed = runPauseResponseSchema.parse({
+      runId: "run_123",
+      status: "pausing",
+    });
+
+    expect(parsed.status).toBe("pausing");
   });
 
   it("shares the viewer bootstrap contract for GET /api/viewer", () => {
@@ -345,6 +373,7 @@ describe("@cucumber/shared contracts", () => {
       "tool.started",
       "tool.completed",
       "run.canceled",
+      "run.paused",
       "run.completed",
       "run.failed",
     ];
@@ -459,6 +488,14 @@ describe("@cucumber/shared contracts", () => {
             streamEventSchema.parse({
               type,
               runId: "run_123",
+              timestamp: "2026-03-23T12:00:00.000Z",
+            });
+            break;
+          case "run.paused":
+            streamEventSchema.parse({
+              type,
+              runId: "run_123",
+              reason: "用户暂停了当前执行链。",
               timestamp: "2026-03-23T12:00:00.000Z",
             });
             break;

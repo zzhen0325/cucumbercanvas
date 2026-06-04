@@ -175,6 +175,7 @@ Runtime 会调用 `agent.streamEvents(...)` 发起一次真正的模型执行。
 - `canvas.sync`
 - `run.completed`
 - `run.canceled`
+- `run.paused`
 - `run.failed`
 
 ### 7. WebSocket 广播与消息落库

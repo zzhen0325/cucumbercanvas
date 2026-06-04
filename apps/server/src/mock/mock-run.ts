@@ -5,12 +5,19 @@ import type {
   RunCancelResponse,
   RunCreateRequest,
   RunCreateResponse,
+  RunPauseResponse,
   StreamEvent,
 } from "@cucumber/shared";
 
-type MockRunStatus = "accepted" | "running" | "completed" | "canceled";
+type MockRunStatus =
+  | "accepted"
+  | "running"
+  | "completed"
+  | "canceled"
+  | "paused";
 
 type MockRunRecord = RunCreateRequest & {
+  abortKind?: "cancel" | "pause";
   runId: string;
   controller: AbortController;
   messageId: string;
@@ -40,6 +47,7 @@ export function createMockRunStore(options: CreateMockRunStoreOptions = {}) {
         return null;
       }
 
+      run.abortKind = "cancel";
       if (!run.controller.signal.aborted) {
         run.controller.abort();
       }
@@ -48,6 +56,24 @@ export function createMockRunStore(options: CreateMockRunStoreOptions = {}) {
       return {
         runId,
         status: "canceled",
+      };
+    },
+
+    pauseRun(runId: string): RunPauseResponse | null {
+      const run = runs.get(runId);
+      if (!run) {
+        return null;
+      }
+
+      run.abortKind = "pause";
+      if (!run.controller.signal.aborted) {
+        run.controller.abort();
+      }
+
+      run.status = "paused";
+      return {
+        runId,
+        status: "paused",
       };
     },
 
@@ -127,7 +153,8 @@ export function createMockRunStore(options: CreateMockRunStoreOptions = {}) {
 
       for (const [index, event] of events.entries()) {
         if (run.controller.signal.aborted) {
-          run.status = "canceled";
+          run.status = run.abortKind === "pause" ? "paused" : "canceled";
+          yield interruptedEvent(run);
           return;
         }
 
@@ -139,7 +166,8 @@ export function createMockRunStore(options: CreateMockRunStoreOptions = {}) {
               signal: run.controller.signal,
             });
           } catch {
-            run.status = "canceled";
+            run.status = run.abortKind === "pause" ? "paused" : "canceled";
+            yield interruptedEvent(run);
             return;
           }
         }
@@ -147,5 +175,22 @@ export function createMockRunStore(options: CreateMockRunStoreOptions = {}) {
 
       run.status = "completed";
     },
+  };
+}
+
+function interruptedEvent(run: MockRunRecord): StreamEvent {
+  if (run.abortKind === "pause") {
+    return {
+      reason: "用户暂停了当前 Agent 执行链，可从选中的执行节点继续。",
+      runId: run.runId,
+      timestamp: new Date().toISOString(),
+      type: "run.paused",
+    };
+  }
+
+  return {
+    runId: run.runId,
+    timestamp: new Date().toISOString(),
+    type: "run.canceled",
   };
 }

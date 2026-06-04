@@ -10,9 +10,11 @@ import {
   createNodeId,
   findNode,
   flattenNodes,
+  getAgentExecutionMeta,
   getNodeBounds,
   isContainerNode,
   isCucumberCanvasDocument,
+  withAgentExecutionMeta,
 } from "@cucumber/canvas-core";
 import type { Json } from "@cucumber/shared";
 
@@ -276,6 +278,25 @@ export function buildGeneratedImageInsertPlan(args: {
   );
   const assetId = createNodeId("asset");
   const nodeId = createNodeId("image");
+  const imageNode = {
+    id: nodeId,
+    type: "image" as const,
+    x: placement.x,
+    y: placement.y,
+    width: placement.width,
+    height: placement.height,
+    name: args.opts.title ?? "Generated image",
+    assetId,
+    src: args.imageUrl,
+    objectFit: "fill",
+    cornerRadius: 8,
+    meta: { source: "generated" },
+  } as PenNode;
+  const completionOperation = buildAgentResultCompletionOperation(
+    args.doc,
+    containerId,
+    nodeId,
+  );
   const operations: CanvasOperation[] = [
     {
       type: "upsertAsset",
@@ -289,6 +310,7 @@ export function buildGeneratedImageInsertPlan(args: {
         source: "generated",
       },
     },
+    ...(completionOperation ? [completionOperation] : []),
     ...loadingNodeIds.map(
       (nodeId): CanvasOperation => ({
         type: "deleteNode",
@@ -297,20 +319,7 @@ export function buildGeneratedImageInsertPlan(args: {
     ),
     {
       type: "insertNode",
-      node: {
-        id: nodeId,
-        type: "image" as const,
-        x: placement.x,
-        y: placement.y,
-        width: placement.width,
-        height: placement.height,
-        name: args.opts.title ?? "Generated image",
-        assetId,
-        src: args.imageUrl,
-        objectFit: "fill",
-        cornerRadius: 8,
-        meta: { source: "generated" },
-      } as PenNode,
+      node: imageNode,
       ...(containerId ? { parentId: containerId } : {}),
     },
   ];
@@ -322,6 +331,37 @@ export function buildGeneratedImageInsertPlan(args: {
     elementId: nodeId,
     nextDocument,
     operations,
+  };
+}
+
+function buildAgentResultCompletionOperation(
+  doc: CucumberCanvasDocument,
+  containerId: string | null,
+  generatedNodeId: string,
+): CanvasOperation | null {
+  if (!containerId) return null;
+  const target = findNode(doc, containerId);
+  const execution = getAgentExecutionMeta(target);
+  if (!target || !execution || execution.kind !== "final_deliverable") {
+    return null;
+  }
+  const updatedTarget = withAgentExecutionMeta(target, {
+    ...execution,
+    downstreamNodeIds: Array.from(
+      new Set([...(execution.downstreamNodeIds ?? []), generatedNodeId]),
+    ),
+    status: "done",
+    summary: "图片生成完成，最终结果已写入这个容器。",
+  });
+  return {
+    type: "updateNode",
+    nodeId: containerId,
+    updates: {
+      meta: updatedTarget.meta,
+      ...(target.agentBinding
+        ? { agentBinding: { ...target.agentBinding, status: "completed" } }
+        : {}),
+    } as Partial<PenNode>,
   };
 }
 

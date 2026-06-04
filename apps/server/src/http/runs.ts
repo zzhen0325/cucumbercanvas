@@ -5,6 +5,7 @@ import {
   runCancelResponseSchema,
   runCreateRequestSchema,
   runCreateResponseSchema,
+  runPauseResponseSchema,
   unauthenticatedErrorResponseSchema,
 } from "@cucumber/shared";
 
@@ -170,6 +171,20 @@ export async function registerRunRoutes(
     }
 
     const response = runCancelResponseSchema.parse(canceledRun);
+    return reply.code(202).send(response);
+  });
+
+  app.post("/api/agent/runs/:runId/pause", async (request, reply) => {
+    const { runId } = request.params as { runId: string };
+    const pausedRun = agentRuns.pauseRun(runId);
+
+    if (!pausedRun) {
+      return reply.code(404).send({
+        message: `Run not found: ${runId}`,
+      });
+    }
+
+    const response = runPauseResponseSchema.parse(pausedRun);
     return reply.code(202).send(response);
   });
 }

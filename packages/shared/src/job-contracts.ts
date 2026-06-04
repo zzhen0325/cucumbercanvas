@@ -40,6 +40,7 @@ export const imageGenerationPayloadSchema = z.object({
   placement_width: z.number().optional(),
   placement_height: z.number().optional(),
   target_container_id: z.string().optional(),
+  agent_execution_node_id: z.string().optional(),
 });
 export type ImageGenerationPayload = z.infer<
   typeof imageGenerationPayloadSchema
@@ -142,6 +143,7 @@ export const createImageJobRequestSchema = z.object({
   placement_width: z.number().optional(),
   placement_height: z.number().optional(),
   target_container_id: z.string().optional(),
+  agent_execution_node_id: z.string().optional(),
 });
 export type CreateImageJobRequest = z.infer<typeof createImageJobRequestSchema>;
 

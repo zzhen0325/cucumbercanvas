@@ -14,8 +14,12 @@ import { createCanvasDiffPreviewMcpTool } from "./tools/canvas-diff-preview.js";
 import { createCanvasMemoryIndexMcpTool } from "./tools/canvas-memory-index.js";
 import { createCanvasRunTraceMcpTool } from "./tools/canvas-run-trace.js";
 import { createConnectNodesMcpTool } from "./tools/connect-nodes.js";
+import { createAgentAskUserMoreMcpTool } from "./tools/create-agent-ask-user-more.js";
 import { createAgentCanvasFlowMcpTool } from "./tools/create-agent-canvas-flow.js";
+import { createAgentEvidenceMcpTool } from "./tools/create-agent-evidence.js";
+import { createAgentExecutionFlowMcpTool } from "./tools/create-agent-execution-flow.js";
 import { createAgentOutputContainerMcpTool } from "./tools/create-agent-output-container.js";
+import { createAgentVariantBranchesMcpTool } from "./tools/create-agent-variant-branches.js";
 import { createCritiqueCanvasMcpTool } from "./tools/critique-canvas.js";
 import { createExportCanvasDeliverableMcpTool } from "./tools/export-canvas-deliverable.js";
 import { createGenerateImageMcpTool } from "./tools/generate-image.js";
@@ -28,9 +32,13 @@ import { createManipulateCanvasMcpTool } from "./tools/manipulate-canvas.js";
 import { createPersistSandboxFileMcpTool } from "./tools/persist-sandbox-file.js";
 import { createProjectSearchMcpTool } from "./tools/project-search.js";
 import { createQueryCanvasAssetsMcpTool } from "./tools/query-canvas-assets.js";
+import { createRecordAgentCritiqueMcpTool } from "./tools/record-agent-critique.js";
+import { createRecordAgentFinalDeliverableMcpTool } from "./tools/record-agent-final-deliverable.js";
+import { createRecordAgentToolCallMcpTool } from "./tools/record-agent-tool-call.js";
 import { createReplaceAssetInNodeMcpTool } from "./tools/replace-asset-in-node.js";
 import { createResizeContainerToFitMcpTool } from "./tools/resize-container-to-fit.js";
 import { createScreenshotCanvasMcpTool } from "./tools/screenshot-canvas.js";
+import { createSelectAgentVariantBranchMcpTool } from "./tools/select-agent-variant-branch.js";
 import { createStructuredCanvasMcpTools } from "./tools/structured-canvas.js";
 import { createValidateCanvasMcpTool } from "./tools/validate-canvas.js";
 import type {
@@ -123,6 +131,36 @@ export function createCucumberMcpServer(
         ? { liveCanvasService: deps.liveCanvasService }
         : {}),
     }),
+    createAgentExecutionFlowMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createAgentAskUserMoreMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createAgentEvidenceMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createRecordAgentToolCallMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createAgentVariantBranchesMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createSelectAgentVariantBranchMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
     createAgentCanvasFlowMcpTool({
       ...(deps.liveCanvasService
         ? { liveCanvasService: deps.liveCanvasService }
@@ -144,6 +182,16 @@ export function createCucumberMcpServer(
         : {}),
     }),
     createCritiqueCanvasMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createRecordAgentCritiqueMcpTool({
+      ...(deps.liveCanvasService
+        ? { liveCanvasService: deps.liveCanvasService }
+        : {}),
+    }),
+    createRecordAgentFinalDeliverableMcpTool({
       ...(deps.liveCanvasService
         ? { liveCanvasService: deps.liveCanvasService }
         : {}),

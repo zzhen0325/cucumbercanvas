@@ -86,6 +86,37 @@ describe("adaptDeepAgentStream orchestration events", () => {
       summary: "Plan ready",
     });
   });
+
+  it("can emit a paused terminal event for intentional pause aborts", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const events = await collect(
+      adaptDeepAgentStream({
+        abortEvent: (runId, now) => ({
+          reason: "用户暂停了执行链。",
+          runId,
+          timestamp: now(),
+          type: "run.paused",
+        }),
+        conversationId: "canvas_1",
+        now: () => "2026-05-27T00:00:00.000Z",
+        runId: "run_1",
+        sessionId: "session_1",
+        signal: controller.signal,
+        stream: emptyStream(),
+      }),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "run.started",
+      "run.paused",
+    ]);
+    expect(events[1]).toMatchObject({
+      type: "run.paused",
+      reason: "用户暂停了执行链。",
+    });
+  });
 });
 
 async function collect<T>(stream: AsyncIterable<T>): Promise<T[]> {

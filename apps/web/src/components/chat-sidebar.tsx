@@ -29,11 +29,14 @@ import { useVideoModelPreference } from "../hooks/use-video-model-preference";
 import type { WebSocketHandle } from "../hooks/use-websocket";
 import { fetchBrandKit } from "../lib/brand-kit-api";
 import {
+  cancelRun,
   createRun,
   fetchImageModels,
   fetchWorkspaceSkills,
+  pauseRun,
   saveMessage,
 } from "../lib/server-api";
+import type { AgentRunControlState } from "./agent-run-control-bar";
 import type { CanvasSelectedElement } from "./canvas-editor";
 import {
   type BrandKitMentionItem,
@@ -43,7 +46,13 @@ import {
   type MessageMentionPickerItem,
   type SkillMentionItem,
 } from "./canvas-image-picker";
-import { ChatInput } from "./chat-input";
+import {
+  type AgentContinuationIntent,
+  type AgentContinuationMode,
+  ChatInput,
+  type ChatInputSendContext,
+  formatAgentExecutionContinuationPrompt,
+} from "./chat-input";
 import { ChatMessage } from "./chat-message";
 import { ChatSkills } from "./chat-skills";
 import { ErrorBoundary } from "./error-boundary";
@@ -67,7 +76,28 @@ type ChatSidebarProps = {
   onRequestCanvasImages?: () => CanvasImageItem[];
   currentBrandKitId?: string | null;
   selectedCanvasElements?: CanvasSelectedElement[];
+  agentContinueDraftRequest?: {
+    continuationTargetElement?: CanvasSelectedElement;
+    intent?: AgentContinuationIntent;
+    requestId: number;
+    message: string;
+    mode?: AgentContinuationMode;
+    openFilePicker?: boolean;
+    waitingResponseText?: string;
+  } | null;
+  onRunControlStateChange?: (state: AgentRunControlState) => void;
+  onRunPauseChange?: (handler: (() => void) | null) => void;
+  onRunPaused?: (summary: { runId: string }) => void;
+  onRunStopChange?: (handler: (() => void) | null) => void;
+  onRunStopped?: (summary: { runId: string }) => void;
+  onAgentContinuationSubmit?: (summary: AgentContinuationSubmitSummary) => void;
   ws: WebSocketHandle;
+};
+
+export type AgentContinuationSubmitSummary = {
+  attachmentCount: number;
+  nodeId: string;
+  text: string;
 };
 
 export function ChatSidebar({
@@ -86,6 +116,13 @@ export function ChatSidebar({
   onRequestCanvasImages,
   currentBrandKitId,
   selectedCanvasElements,
+  agentContinueDraftRequest,
+  onRunControlStateChange,
+  onAgentContinuationSubmit,
+  onRunPauseChange,
+  onRunPaused,
+  onRunStopChange,
+  onRunStopped,
   ws,
 }: ChatSidebarProps) {
   const breakpoint = useBreakpoint();
@@ -130,6 +167,7 @@ export function ChatSidebar({
     SkillMentionItem[]
   >([]);
   const chatInputRef = useRef<import("./chat-input").ChatInputHandle>(null);
+  const [, setCancelingRunId] = useState<string | null>(null);
 
   const initialPromptSent = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -168,6 +206,45 @@ export function ChatSidebar({
   agentModelRef.current = agentModel;
 
   const { toast: showToast } = useToast();
+
+  useEffect(() => {
+    if (!agentContinueDraftRequest || !open) return;
+    const raf = window.requestAnimationFrame(() => {
+      chatInputRef.current?.prefillAndFocus(agentContinueDraftRequest.message, {
+        ...(agentContinueDraftRequest.continuationTargetElement
+          ? {
+              continuationTargetElement:
+                agentContinueDraftRequest.continuationTargetElement,
+            }
+          : {}),
+        ...(agentContinueDraftRequest.intent
+          ? { intent: agentContinueDraftRequest.intent }
+          : {}),
+        ...(agentContinueDraftRequest.mode
+          ? { mode: agentContinueDraftRequest.mode }
+          : {}),
+        ...(agentContinueDraftRequest.openFilePicker
+          ? { openFilePicker: true }
+          : {}),
+        ...(agentContinueDraftRequest.waitingResponseText
+          ? {
+              waitingResponseText:
+                agentContinueDraftRequest.waitingResponseText,
+            }
+          : {}),
+      });
+      console.info("[chat-sidebar] agent_continue.prefill", {
+        intent: agentContinueDraftRequest.intent,
+        mode: agentContinueDraftRequest.mode,
+        openFilePicker: agentContinueDraftRequest.openFilePicker === true,
+        requestId: agentContinueDraftRequest.requestId,
+        targetNodeId: agentContinueDraftRequest.continuationTargetElement?.id,
+        waitingResponseLength:
+          agentContinueDraftRequest.waitingResponseText?.length ?? 0,
+      });
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [agentContinueDraftRequest, open]);
 
   // ── Sidebar resize ──
   const SIDEBAR_MIN = 300;
@@ -366,6 +443,7 @@ export function ChatSidebar({
       attachmentsOverride?: ReadyAttachment[],
       imageGenerationPreferenceOverride?: ImageGenerationPreference,
       mentionsOverride?: MessageMention[],
+      sendContext?: ChatInputSendContext,
     ) => {
       const currentSessionId = activeSessionIdRef.current;
       if (streaming || !currentSessionId) return;
@@ -403,6 +481,20 @@ export function ChatSidebar({
       const currentVideoGenerationPreference =
         activeVideoGenerationPreferenceRef.current;
       const currentMentions = mentionsOverride ?? messageMentionsRef.current;
+      const contextWithAttachmentCount =
+        sendContext?.agentExecutionContinuation && currentAttachments.length > 0
+          ? {
+              ...sendContext,
+              agentExecutionContinuation: {
+                ...sendContext.agentExecutionContinuation,
+                waitingAttachmentCount: currentAttachments.length,
+              },
+            }
+          : sendContext;
+      const agentPrompt = formatAgentExecutionContinuationPrompt(
+        text,
+        contextWithAttachmentCount,
+      );
 
       // Add user message locally
       const imageBlocks: ContentBlock[] = currentAttachments.map((a) => ({
@@ -495,7 +587,7 @@ export function ChatSidebar({
           {
             sessionId: currentSessionId,
             conversationId: canvasId,
-            prompt: text,
+            prompt: agentPrompt,
             canvasId,
             ...(currentAttachments.length > 0
               ? { attachments: currentAttachments }
@@ -517,6 +609,23 @@ export function ChatSidebar({
           },
           { accessToken: accessTokenRef.current },
         );
+        if (
+          contextWithAttachmentCount?.agentExecutionContinuation &&
+          currentAttachments.length > 0
+        ) {
+          const continuationNodeId =
+            contextWithAttachmentCount.agentExecutionContinuation.nodeId;
+          onAgentContinuationSubmit?.({
+            attachmentCount: currentAttachments.length,
+            nodeId: continuationNodeId,
+            text,
+          });
+          console.info("[chat-sidebar] agent_continue.attachments.submitted", {
+            attachmentCount: currentAttachments.length,
+            nodeId: continuationNodeId,
+            runId: run.runId,
+          });
+        }
 
         perf.tAccepted = performance.now();
         console.log(
@@ -590,7 +699,89 @@ export function ChatSidebar({
             event.runId === run.runId &&
             (event.type === "run.completed" ||
               event.type === "run.failed" ||
-              event.type === "run.canceled"),
+              event.type === "run.canceled" ||
+              event.type === "run.paused"),
+        });
+        const pauseCurrentRun = async () => {
+          onRunControlStateChange?.({
+            activeRunId: run.runId,
+            pausing: true,
+            streaming: true,
+          });
+          try {
+            await pauseRun(run.runId, { accessToken: accessTokenRef.current });
+            onRunPaused?.({ runId: run.runId });
+            abortRef.current = true;
+            streamHandle.stop();
+            setStreaming(false);
+            console.info("[chat-sidebar] run.pause.requested", {
+              canvasId,
+              runId: run.runId,
+            });
+          } catch (error) {
+            showToast(
+              error instanceof Error
+                ? `暂停失败：${error.message}`
+                : "暂停失败：无法暂停当前 Agent run。",
+              "error",
+            );
+            console.warn("[chat-sidebar] run.pause.failed", {
+              canvasId,
+              reason: error instanceof Error ? error.message : String(error),
+              runId: run.runId,
+            });
+          } finally {
+            onRunPauseChange?.(null);
+            onRunStopChange?.(null);
+            onRunControlStateChange?.({ streaming: false });
+          }
+        };
+        const stopCurrentRun = async () => {
+          setCancelingRunId(run.runId);
+          onRunControlStateChange?.({
+            activeRunId: run.runId,
+            canceling: true,
+            streaming: true,
+          });
+          try {
+            await cancelRun(run.runId, { accessToken: accessTokenRef.current });
+            onRunStopped?.({ runId: run.runId });
+            abortRef.current = true;
+            streamHandle.stop();
+            setStreaming(false);
+            console.info("[chat-sidebar] run.cancel.requested", {
+              canvasId,
+              runId: run.runId,
+            });
+          } catch (error) {
+            showToast(
+              error instanceof Error
+                ? `停止失败：${error.message}`
+                : "停止失败：无法取消当前 Agent run。",
+              "error",
+            );
+            console.warn("[chat-sidebar] run.cancel.failed", {
+              canvasId,
+              reason: error instanceof Error ? error.message : String(error),
+              runId: run.runId,
+            });
+          } finally {
+            setCancelingRunId(null);
+            onRunPauseChange?.(null);
+            onRunStopChange?.(null);
+            onRunControlStateChange?.({ streaming: false });
+          }
+        };
+        onRunPauseChange?.(() => {
+          void pauseCurrentRun();
+        });
+        onRunStopChange?.(() => {
+          void stopCurrentRun();
+        });
+        onRunControlStateChange?.({
+          activeRunId: run.runId,
+          canceling: false,
+          streaming: true,
         });
 
         clearAttachments();
@@ -613,6 +804,9 @@ export function ChatSidebar({
         );
       } finally {
         setStreaming(false);
+        setCancelingRunId(null);
+        onRunStopChange?.(null);
+        onRunControlStateChange?.({ streaming: false });
       }
     },
     [
@@ -625,6 +819,7 @@ export function ChatSidebar({
       onBeforeRun,
       onCanvasSync,
       onStreamEvent,
+      onAgentContinuationSubmit,
       readyAttachments,
       clearAttachments,
       autoTitleSession,
@@ -633,6 +828,11 @@ export function ChatSidebar({
       setStreaming,
       showToast,
       startStream,
+      onRunControlStateChange,
+      onRunPauseChange,
+      onRunPaused,
+      onRunStopChange,
+      onRunStopped,
     ],
   );
 
@@ -898,7 +1098,9 @@ export function ChatSidebar({
         )}
         <ChatInput
           ref={chatInputRef}
-          onSend={handleSend}
+          onSend={(message, context) =>
+            void handleSend(message, undefined, undefined, undefined, context)
+          }
           disabled={streaming || sessionsLoading}
           attachments={imageAttachments}
           onAddFiles={addFiles}

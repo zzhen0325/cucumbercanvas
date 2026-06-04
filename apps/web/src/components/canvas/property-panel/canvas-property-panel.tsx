@@ -60,6 +60,11 @@ import { HexColorPicker } from "react-colorful";
 
 import { cn } from "../../../lib/utils";
 import { isStickyNoteNode } from "../sticky-note-tool";
+import {
+  type AgentExecutionContinueIntent,
+  type AgentExecutionContinueOptions,
+  AgentExecutionSection,
+} from "./agent-execution-section";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -4935,6 +4940,7 @@ function SelectedColorsSection({ node }: { node: PenNode }) {
 
 export function CanvasPropertyPanel({
   node,
+  pageNodes,
   parentNode,
   variables,
   styleDefinitions,
@@ -4943,8 +4949,13 @@ export function CanvasPropertyPanel({
   onUpdate,
   onApplyImportedAutoLayout,
   onBindAgent,
+  onContinueAgentExecution,
+  onSelectAgentExecutionNode,
+  onSelectAgentVariantBranch,
+  selectAgentVariantBranchReason,
 }: {
   node: PenNode;
+  pageNodes?: PenNode[];
   parentNode?: PenNode | null;
   variables?: CanvasVariableMap;
   styleDefinitions?: CanvasStyleDefinitionMap;
@@ -4955,6 +4966,14 @@ export function CanvasPropertyPanel({
   onUpdate: (updates: Partial<PenNode>) => void;
   onApplyImportedAutoLayout?: () => void;
   onBindAgent: (binding: AgentBinding) => void;
+  onContinueAgentExecution?: (
+    nodeId: string,
+    intent?: AgentExecutionContinueIntent,
+    options?: AgentExecutionContinueOptions,
+  ) => void;
+  onSelectAgentExecutionNode?: (nodeId: string) => void;
+  onSelectAgentVariantBranch?: (branchNodeId: string) => void;
+  selectAgentVariantBranchReason?: string;
 }) {
   const bounds = getNodeBounds(node);
   const updateBounds = useCallback(
@@ -5018,6 +5037,15 @@ export function CanvasPropertyPanel({
             onChange={(event) => onUpdate({ name: event.currentTarget.value })}
           />
         </div>
+        <AgentExecutionSection
+          node={node}
+          pageNodes={pageNodes}
+          onContinueFromNode={onContinueAgentExecution}
+          onSelectExecutionNode={onSelectAgentExecutionNode}
+          onSelectVariantBranch={onSelectAgentVariantBranch}
+          selectVariantBranchReason={selectAgentVariantBranchReason}
+          onUpdate={onUpdate}
+        />
         <PositionSection
           node={node}
           bounds={bounds}

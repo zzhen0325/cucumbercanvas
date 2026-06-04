@@ -344,7 +344,9 @@ function inferRunStatus(events: StreamEvent[], runId?: string) {
   const terminal = [...events]
     .reverse()
     .find((event) =>
-      ["run.completed", "run.failed", "run.canceled"].includes(event.type),
+      ["run.completed", "run.failed", "run.canceled", "run.paused"].includes(
+        event.type,
+      ),
     );
   if (!terminal) return events.length > 0 ? "running" : undefined;
   if (terminal.type === "run.completed") return "completed";

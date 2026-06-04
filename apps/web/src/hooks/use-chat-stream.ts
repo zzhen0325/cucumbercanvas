@@ -189,6 +189,7 @@ export function useChatStream(updateSessionMessages: MessageUpdater) {
         }
 
         case "run.canceled":
+        case "run.paused":
           // Clean up running tool blocks when a run is aborted.
           update((prev) =>
             prev.map((m) => {

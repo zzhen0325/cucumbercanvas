@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 
-import type { PenNode } from "@cucumber/canvas-core";
+import { type PenNode, withAgentExecutionMeta } from "@cucumber/canvas-core";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { CanvasPropertyPanel } from "@/components/canvas/property-panel/canvas-property-panel";
 import { createStickyNoteNode } from "@/components/canvas/sticky-note-tool";
+import { CUSTOM_AGENT_RECIPE_TEMPLATES_STORAGE_KEY } from "@/components/use-agent-recipe-templates";
 
 const rectangleNode: PenNode = {
   fill: [{ type: "solid", color: "#3366ff", opacity: 0.75 }],
@@ -1731,5 +1732,880 @@ describe("CanvasPropertyPanel", () => {
     expect(screen.getByRole("spinbutton", { name: "效果 1 半径" })).toHaveValue(
       2,
     );
+  });
+
+  it("shows Agent execution metadata and disables unavailable run actions with reasons", () => {
+    const executionNode = withAgentExecutionMeta(
+      {
+        ...frameNode,
+        agentBinding: {
+          agentId: "agent-1",
+          name: "Designer",
+          permissions: ["read", "write"],
+          status: "running",
+        },
+        name: "图片结果容器",
+        runId: "run-1",
+        sessionId: "session-1",
+      },
+      {
+        agentId: "agent-1",
+        kind: "final_deliverable",
+        runId: "run-1",
+        sessionId: "session-1",
+        status: "running",
+        summary: "图片生成完成后会替换容器内的加载节点。",
+        title: "图片结果容器",
+        upstreamNodeIds: ["prompt-1"],
+      },
+    );
+
+    renderPropertyPanel(executionNode);
+
+    expect(screen.getByRole("heading", { name: "Agent 执行" })).toBeVisible();
+    expect(screen.getByText("最终交付物")).toBeVisible();
+    expect(screen.getAllByText("运行中")).toHaveLength(2);
+    expect(screen.getByText("run-1")).toBeVisible();
+    expect(screen.getByRole("button", { name: "从这里继续" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "重跑此步骤" })).toHaveAttribute(
+      "title",
+      "继续、重跑和分支操作需要 Agent run 控制器接入后才能生效。",
+    );
+  });
+
+  it("resolves Agent execution upstream and downstream nodes into readable selectable chain context", async () => {
+    const user = userEvent.setup();
+    const onSelectAgentExecutionNode = vi.fn();
+    const goalNode = withAgentExecutionMeta(
+      { ...frameNode, id: "goal-1", name: "用户目标" },
+      {
+        downstreamNodeIds: ["step-1"],
+        kind: "user_goal",
+        status: "done",
+        title: "生成三套海报方向",
+      },
+    );
+    const stepNode = withAgentExecutionMeta(
+      { ...frameNode, id: "step-1", name: "方向生成" },
+      {
+        downstreamNodeIds: ["validate-1", "missing-next"],
+        kind: "task_step",
+        status: "running",
+        title: "生成方向 A",
+        toolName: "batch_design",
+        upstreamNodeIds: ["goal-1"],
+      },
+    );
+    const validateNode = withAgentExecutionMeta(
+      { ...frameNode, id: "validate-1", name: "验证画布" },
+      {
+        kind: "tool_call",
+        status: "waiting",
+        title: "验证画布结构",
+        toolName: "validate_canvas",
+        upstreamNodeIds: ["step-1"],
+      },
+    );
+
+    renderPropertyPanel(stepNode, {
+      onSelectAgentExecutionNode,
+      pageNodes: [goalNode, stepNode, validateNode],
+    });
+
+    expect(screen.getByText("执行链上下文")).toBeVisible();
+    expect(screen.getByText("上游")).toBeVisible();
+    expect(screen.getByText("生成三套海报方向")).toBeVisible();
+    expect(screen.getByText("用户目标")).toBeVisible();
+    expect(screen.getByText("下游")).toBeVisible();
+    expect(screen.getByText("验证画布结构")).toBeVisible();
+    expect(screen.getByText("工具调用 · validate_canvas")).toBeVisible();
+    expect(screen.getByText("当前页未找到节点")).toBeVisible();
+    expect(screen.getByText("missing-next")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: /生成三套海报方向/ }));
+    await user.click(screen.getByRole("button", { name: /验证画布结构/ }));
+
+    expect(onSelectAgentExecutionNode).toHaveBeenNthCalledWith(1, "goal-1");
+    expect(onSelectAgentExecutionNode).toHaveBeenNthCalledWith(2, "validate-1");
+    expect(
+      screen.queryByRole("button", { name: /missing-next/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows Agent evidence provenance and source actions", () => {
+    const evidenceNode = withAgentExecutionMeta(frameNode, {
+      evidence: {
+        confidence: 0.82,
+        sourceLabel: "Flowith 产品文档",
+        sourceType: "url",
+        url: "https://doc.flowith.io/",
+      },
+      kind: "evidence",
+      runId: "run-1",
+      status: "done",
+      summary: "用于对比 Agent 执行画布的竞品参考来源。",
+      title: "竞品参考",
+      upstreamNodeIds: ["research-step-1"],
+    });
+
+    renderPropertyPanel(evidenceNode);
+
+    expect(screen.getByText("证据来源")).toBeVisible();
+    expect(screen.getAllByText("链接")).toHaveLength(2);
+    expect(screen.getByText("Flowith 产品文档")).toBeVisible();
+    expect(screen.getByText("https://doc.flowith.io/")).toBeVisible();
+    expect(screen.getByText("82%")).toBeVisible();
+    expect(screen.getByRole("link", { name: "打开链接" })).toHaveAttribute(
+      "href",
+      "https://doc.flowith.io/",
+    );
+  });
+
+  it("shows structured critique findings for validation review nodes", () => {
+    const critiqueNode = withAgentExecutionMeta(frameNode, {
+      critique: {
+        findings: [
+          {
+            nodeId: "hero-title",
+            reason: "标题区域可能溢出。",
+            severity: "warning",
+            suggestedFix: "增加容器高度或缩短标题。",
+          },
+          {
+            reason: "交付物结构完整。",
+            severity: "info",
+          },
+        ],
+        issueCounts: {
+          error: 0,
+          info: 1,
+          warning: 1,
+        },
+        pass: true,
+      },
+      kind: "critique",
+      status: "done",
+      summary: "检查到 1 条需要关注的问题。",
+      title: "画布验证结果",
+    });
+
+    renderPropertyPanel(critiqueNode);
+
+    expect(screen.getByText("评审结果")).toBeVisible();
+    expect(screen.getByText("通过")).toBeVisible();
+    expect(screen.getAllByText("警告").length).toBeGreaterThan(0);
+    expect(screen.getByText("hero-title")).toBeVisible();
+    expect(screen.getByText("标题区域可能溢出。")).toBeVisible();
+    expect(screen.getByText("建议：增加容器高度或缩短标题。")).toBeVisible();
+    expect(screen.getByText("交付物结构完整。")).toBeVisible();
+  });
+
+  it("expands and collapses task-step execution details", async () => {
+    const user = userEvent.setup();
+    const executionNode = withAgentExecutionMeta(frameNode, {
+      details: {
+        inputSummary: "用户要求三套品牌方向。",
+        outputSummary: "已生成方向 A 的初稿。",
+        reasoningSummary: "先收敛品牌语气，再生成视觉主线。",
+      },
+      kind: "task_step",
+      runId: "run-1",
+      status: "done",
+      summary: "生成品牌探索方向。",
+      title: "生成方向 A",
+      toolName: "batch_design",
+    });
+
+    renderPropertyPanel(executionNode);
+
+    const detailsButton = screen.getByRole("button", { name: "执行详情" });
+    expect(detailsButton).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("用户要求三套品牌方向。")).toBeVisible();
+    expect(screen.getByText("先收敛品牌语气，再生成视觉主线。")).toBeVisible();
+
+    await user.click(detailsButton);
+
+    expect(detailsButton).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByText("用户要求三套品牌方向。"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("先收敛品牌语气，再生成视觉主线。"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("结果摘要")).toBeVisible();
+    expect(screen.getByText("已生成方向 A 的初稿。")).toBeVisible();
+  });
+
+  it("writes ask-user-more responses and routes file supplements into continuation drafts", async () => {
+    const user = userEvent.setup();
+    const onContinueAgentExecution = vi.fn();
+    const executionNode = withAgentExecutionMeta(frameNode, {
+      kind: "ask_user_more",
+      runId: "run-2",
+      status: "waiting",
+      title: "等待品牌资料",
+      waitingForUser: {
+        acceptsFiles: true,
+        prompt: "请补充品牌名和主色。",
+        response: {
+          attachmentCount: 2,
+          submittedAt: "2026-06-03T12:00:00.000Z",
+          text: "",
+        },
+      },
+    });
+    const { onUpdate } = renderPropertyPanel(executionNode, {
+      onContinueAgentExecution,
+    });
+
+    expect(screen.getByText("已随继续执行补充 2 个文件/图片。")).toBeVisible();
+
+    await user.type(
+      screen.getByLabelText("补充说明"),
+      "品牌名 Cucumber Lab，主色绿色。",
+    );
+    await user.click(screen.getByRole("button", { name: "提交补充" }));
+
+    expect(onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        containerRole: ["task"],
+        runId: "run-2",
+        contextSlots: {
+          rules: ["agent execution node: ask_user_more"],
+        },
+        meta: expect.objectContaining({
+          agentExecution: expect.objectContaining({
+            kind: "ask_user_more",
+            status: "paused",
+            summary: "用户已提交补充，等待 Agent 从该节点继续。",
+            waitingForUser: expect.objectContaining({
+              response: expect.objectContaining({
+                attachmentCount: 2,
+                text: "品牌名 Cucumber Lab，主色绿色。",
+                submittedAt: expect.any(String),
+              }),
+            }),
+          }),
+        }),
+      }),
+    );
+    expect(onContinueAgentExecution).toHaveBeenNthCalledWith(
+      1,
+      "frame-1",
+      "continue",
+      { waitingResponseText: "品牌名 Cucumber Lab，主色绿色。" },
+    );
+    await user.click(screen.getByRole("button", { name: "补充文件/图片" }));
+    expect(onContinueAgentExecution).toHaveBeenNthCalledWith(
+      2,
+      "frame-1",
+      "attach_files",
+    );
+  });
+
+  it("shows failed execution recovery choices without raw error codes", () => {
+    const executionNode = withAgentExecutionMeta(frameNode, {
+      details: {
+        errorReason: "ECONNRESET",
+      },
+      failure: {
+        attempted: ["ERR_BAD_REQUEST", "检查目标容器是否仍然存在"],
+        nextActions: ["重试此步骤", "HTTP 500", "新建分支尝试另一种方案"],
+        reason: "HTTP 503 null undefined",
+        step: "生成视觉资产 ERR_BAD_REQUEST",
+      },
+      kind: "tool_call",
+      status: "failed",
+      title: "generate_image",
+      toolName: "generate_image",
+    });
+
+    renderPropertyPanel(executionNode);
+
+    expect(
+      screen.getAllByText("外部服务暂时不可用，请稍后重试或改写输入后继续。")
+        .length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("生成视觉资产")).toBeVisible();
+    expect(
+      screen.getByText(
+        "该步骤失败，但当前节点没有记录可读的失败原因。请重试此步骤，或改写输入后继续。",
+      ),
+    ).toBeVisible();
+    expect(screen.getByText("检查目标容器是否仍然存在")).toBeVisible();
+    expect(screen.getByRole("button", { name: "重试此步骤" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "跳过此步骤" })).toBeDisabled();
+    expect(
+      screen.queryByText(
+        /\bnull\b|\bundefined\b|ERR_BAD_REQUEST|ECONNRESET|HTTP 500|HTTP 503/,
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows variant branch and comparison metadata for multi-direction work", async () => {
+    const user = userEvent.setup();
+    const onContinueAgentExecution = vi.fn();
+    const onSelectAgentVariantBranch = vi.fn();
+    const branchNode = withAgentExecutionMeta(frameNode, {
+      branch: {
+        critiqueSummary: "制作成本高，需要控制素材数量。",
+        deliverableSummary: "活动海报主视觉与社交媒体延展。",
+        isMainline: true,
+        isRecommended: true,
+        planSummary: "先生成高冲击主视觉，再延展到活动海报。",
+        risks: ["制作成本较高"],
+        strengths: ["传播张力强"],
+        useCases: ["活动海报", "社交媒体"],
+      },
+      branchId: "branch-b",
+      branchLabel: "方向 B",
+      kind: "variant_branch",
+      status: "done",
+      title: "方向 B",
+    });
+
+    const { rerender, onUpdate } = renderPropertyPanel(branchNode);
+
+    expect(screen.getAllByText("方案分支").length).toBeGreaterThan(0);
+    expect(screen.getByText("当前主线")).toBeVisible();
+    expect(
+      screen.getByText("先生成高冲击主视觉，再延展到活动海报。"),
+    ).toBeVisible();
+    expect(screen.getByText("活动海报主视觉与社交媒体延展。")).toBeVisible();
+    expect(screen.getByText("制作成本高，需要控制素材数量。")).toBeVisible();
+    expect(screen.getByText("传播张力强")).toBeVisible();
+    expect(screen.getByText("制作成本较高")).toBeVisible();
+
+    const branchNodeA = withAgentExecutionMeta(
+      { ...frameNode, id: "branch-node-a" },
+      {
+        branch: {
+          critiqueSummary: "情绪强，但需要验证转化效率。",
+          deliverableSummary: "品牌首发海报方向。",
+          isMainline: false,
+          planSummary: "先探索情绪版式，再补充品牌资产。",
+          risks: ["转化效率未知"],
+          strengths: ["情绪感染力强"],
+          useCases: ["品牌首发"],
+        },
+        branchId: "branch-a",
+        branchLabel: "方向 A",
+        kind: "variant_branch",
+        status: "done",
+        title: "方向 A",
+      },
+    );
+    const branchNodeB = withAgentExecutionMeta(
+      { ...frameNode, id: "branch-node-b" },
+      {
+        branch: {
+          critiqueSummary: "制作成本高，需要控制素材数量。",
+          deliverableSummary: "活动海报主视觉。",
+          isMainline: true,
+          isRecommended: true,
+          planSummary: "先生成高冲击主视觉。",
+          risks: ["制作成本较高"],
+          strengths: ["传播张力强"],
+          useCases: ["活动海报"],
+        },
+        branchId: "branch-b",
+        branchLabel: "方向 B",
+        kind: "variant_branch",
+        status: "done",
+        title: "方向 B",
+      },
+    );
+    const comparisonNode = withAgentExecutionMeta(frameNode, {
+      comparison: {
+        branchNodeIds: ["branch-node-a", "branch-node-b"],
+        recommendedBranchId: "branch-b",
+        recommendationReason: "方向 B 更适合活动首发。",
+      },
+      kind: "comparison",
+      status: "done",
+      title: "方案对比",
+    });
+
+    rerender(
+      <CanvasPropertyPanel
+        node={comparisonNode}
+        onContinueAgentExecution={onContinueAgentExecution}
+        onSelectAgentVariantBranch={onSelectAgentVariantBranch}
+        onBindAgent={vi.fn()}
+        onUpdate={onUpdate}
+        pageNodes={[comparisonNode, branchNodeA, branchNodeB]}
+      />,
+    );
+
+    expect(screen.getAllByText("方案对比").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("branch-b").length).toBeGreaterThanOrEqual(1);
+    expect(
+      screen.getAllByText("方向 B 更适合活动首发。").length,
+    ).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("branch-node-a")).toBeVisible();
+    expect(screen.getByText("分支对比")).toBeVisible();
+    expect(screen.getByText("先探索情绪版式，再补充品牌资产。")).toBeVisible();
+    expect(screen.getByText("品牌首发海报方向。")).toBeVisible();
+    expect(screen.getByText("情绪强，但需要验证转化效率。")).toBeVisible();
+    expect(screen.getByText("情绪感染力强")).toBeVisible();
+    expect(screen.getByText("转化效率未知")).toBeVisible();
+    expect(screen.getByText("活动海报")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "设为主线并深化" }));
+    await user.click(screen.getByRole("button", { name: "设为主线" }));
+
+    expect(onSelectAgentVariantBranch).toHaveBeenNthCalledWith(
+      1,
+      "branch-node-a",
+    );
+    expect(onContinueAgentExecution).toHaveBeenCalledWith(
+      "branch-node-a",
+      "continue",
+      expect.objectContaining({
+        continuationTargetElement: expect.objectContaining({
+          agentExecution: expect.objectContaining({
+            branchId: "branch-a",
+            branch: expect.objectContaining({
+              isMainline: true,
+              isRecommended: true,
+            }),
+            comparison: {
+              branchNodeIds: ["branch-node-a", "branch-node-b"],
+              recommendedBranchId: "branch-a",
+              recommendationReason: "方向 B 更适合活动首发。",
+            },
+            kind: "variant_branch",
+            title: "方向 A",
+          }),
+          id: "branch-node-a",
+        }),
+      }),
+    );
+    expect(onSelectAgentVariantBranch).toHaveBeenNthCalledWith(
+      2,
+      "branch-node-a",
+    );
+  });
+
+  it("offers a real set-mainline action for non-mainline variant branches", async () => {
+    const user = userEvent.setup();
+    const onContinueAgentExecution = vi.fn();
+    const onSelectAgentVariantBranch = vi.fn();
+    const branchNode = withAgentExecutionMeta(frameNode, {
+      branch: {
+        isMainline: false,
+        isRecommended: false,
+        strengths: ["文化感强"],
+      },
+      branchId: "branch-c",
+      branchLabel: "方向 C",
+      kind: "variant_branch",
+      status: "done",
+      title: "方向 C",
+    });
+
+    renderPropertyPanel(branchNode, {
+      onContinueAgentExecution,
+      onSelectAgentVariantBranch,
+    });
+
+    await user.click(screen.getByRole("button", { name: "设为主线并深化" }));
+    await user.click(screen.getByRole("button", { name: "设为主线" }));
+
+    expect(onSelectAgentVariantBranch).toHaveBeenNthCalledWith(1, "frame-1");
+    expect(onContinueAgentExecution).toHaveBeenCalledWith(
+      "frame-1",
+      "continue",
+      expect.objectContaining({
+        continuationTargetElement: expect.objectContaining({
+          agentExecution: expect.objectContaining({
+            branch: expect.objectContaining({
+              isMainline: true,
+              isRecommended: true,
+            }),
+            kind: "variant_branch",
+          }),
+          id: "frame-1",
+        }),
+      }),
+    );
+    expect(onSelectAgentVariantBranch).toHaveBeenNthCalledWith(2, "frame-1");
+  });
+
+  it("deepens the recommended comparison branch from the summary action", async () => {
+    const user = userEvent.setup();
+    const onContinueAgentExecution = vi.fn();
+    const onSelectAgentVariantBranch = vi.fn();
+    const branchNodeA = withAgentExecutionMeta(
+      { ...frameNode, id: "branch-node-a" },
+      {
+        branch: {
+          isMainline: true,
+          strengths: ["识别度高"],
+        },
+        branchId: "branch-a",
+        branchLabel: "方向 A",
+        kind: "variant_branch",
+        status: "done",
+        title: "方向 A",
+      },
+    );
+    const branchNodeB = withAgentExecutionMeta(
+      { ...frameNode, id: "branch-node-b" },
+      {
+        branch: {
+          isMainline: false,
+          risks: ["制作成本高"],
+          strengths: ["传播张力强"],
+        },
+        branchId: "branch-b",
+        branchLabel: "方向 B",
+        kind: "variant_branch",
+        status: "done",
+        title: "方向 B",
+      },
+    );
+    const comparisonNode = withAgentExecutionMeta(frameNode, {
+      comparison: {
+        branchNodeIds: ["branch-node-a", "branch-node-b"],
+        recommendedBranchId: "branch-b",
+        recommendationReason: "方向 B 更适合活动首发。",
+      },
+      kind: "comparison",
+      status: "done",
+      title: "方案对比",
+    });
+
+    renderPropertyPanel(comparisonNode, {
+      onContinueAgentExecution,
+      onSelectAgentVariantBranch,
+      pageNodes: [comparisonNode, branchNodeA, branchNodeB],
+    });
+
+    expect(screen.getByText("推荐选择")).toBeVisible();
+    expect(
+      screen.getAllByText("方向 B 更适合活动首发。").length,
+    ).toBeGreaterThanOrEqual(1);
+
+    await user.click(screen.getByRole("button", { name: "深化推荐选择" }));
+
+    expect(onSelectAgentVariantBranch).toHaveBeenCalledWith("branch-node-b");
+    expect(onContinueAgentExecution).toHaveBeenCalledWith(
+      "branch-node-b",
+      "continue",
+      expect.objectContaining({
+        continuationTargetElement: expect.objectContaining({
+          agentExecution: expect.objectContaining({
+            branch: expect.objectContaining({
+              isMainline: true,
+              isRecommended: true,
+            }),
+            branchId: "branch-b",
+            comparison: expect.objectContaining({
+              branchNodeIds: ["branch-node-a", "branch-node-b"],
+              recommendedBranchId: "branch-b",
+            }),
+            kind: "variant_branch",
+          }),
+          id: "branch-node-b",
+        }),
+      }),
+    );
+  });
+
+  it("routes failed-node recovery actions into continuation drafts", async () => {
+    const user = userEvent.setup();
+    const onContinueAgentExecution = vi.fn();
+    const executionNode = withAgentExecutionMeta(frameNode, {
+      failure: {
+        attempted: ["重试图片生成服务"],
+        nextActions: ["改写输入后继续", "新建分支尝试另一种方案"],
+        reason: "图片生成服务暂时不可用。",
+        step: "生成视觉资产",
+      },
+      kind: "tool_call",
+      status: "failed",
+      title: "generate_image",
+      toolName: "generate_image",
+    });
+
+    renderPropertyPanel(executionNode, { onContinueAgentExecution });
+
+    await user.click(screen.getByRole("button", { name: "重试此步骤" }));
+    await user.click(screen.getByRole("button", { name: "改写输入后继续" }));
+    await user.click(screen.getByRole("button", { name: "跳过此步骤" }));
+    await user.click(screen.getByRole("button", { name: "新建分支尝试" }));
+
+    expect(onContinueAgentExecution).toHaveBeenNthCalledWith(
+      1,
+      "frame-1",
+      "retry",
+    );
+    expect(onContinueAgentExecution).toHaveBeenNthCalledWith(
+      2,
+      "frame-1",
+      "rewrite",
+    );
+    expect(onContinueAgentExecution).toHaveBeenNthCalledWith(
+      3,
+      "frame-1",
+      "skip",
+    );
+    expect(onContinueAgentExecution).toHaveBeenNthCalledWith(
+      4,
+      "frame-1",
+      "new_branch",
+    );
+  });
+
+  it("shows checkpoint restart context and routes continuation actions into drafts", async () => {
+    const user = userEvent.setup();
+    const onContinueAgentExecution = vi.fn();
+    const checkpointNode = withAgentExecutionMeta(frameNode, {
+      checkpoint: {
+        canRestartFromHere: true,
+        restartReason: "设计方向已经收敛，可从这里继续。",
+      },
+      kind: "checkpoint",
+      status: "done",
+      title: "Checkpoint 1",
+    });
+
+    renderPropertyPanel(checkpointNode, { onContinueAgentExecution });
+
+    expect(screen.getAllByText("检查点").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("可从此处恢复")).toBeInTheDocument();
+    expect(
+      screen.getByText("设计方向已经收敛，可从这里继续。"),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "从这里继续" }));
+    await user.click(
+      screen.getByRole("button", { name: "从 checkpoint 重跑" }),
+    );
+    await user.click(screen.getByRole("button", { name: "复制为新分支" }));
+
+    expect(onContinueAgentExecution).toHaveBeenNthCalledWith(
+      1,
+      "frame-1",
+      "continue",
+    );
+    expect(onContinueAgentExecution).toHaveBeenNthCalledWith(
+      2,
+      "frame-1",
+      "rerun_checkpoint",
+    );
+    expect(onContinueAgentExecution).toHaveBeenNthCalledWith(
+      3,
+      "frame-1",
+      "new_branch",
+    );
+  });
+
+  it("saves a completed checkpoint as a reusable Recipe template", async () => {
+    const user = userEvent.setup();
+    window.localStorage.removeItem(CUSTOM_AGENT_RECIPE_TEMPLATES_STORAGE_KEY);
+    const checkpointNode = withAgentExecutionMeta(frameNode, {
+      checkpoint: {
+        canRestartFromHere: true,
+        restartReason: "设计方向已经收敛，可从这里继续。",
+      },
+      kind: "checkpoint",
+      status: "done",
+      summary: "三套海报方向已评审完成。",
+      title: "海报探索完成点",
+    });
+
+    renderPropertyPanel(checkpointNode);
+
+    expect(screen.getByText("保存为 Recipe 模板")).toBeVisible();
+    await user.clear(screen.getByLabelText("模板名称"));
+    await user.type(screen.getByLabelText("模板名称"), "我的海报探索模板");
+    await user.click(screen.getByRole("button", { name: "保存模板" }));
+
+    const saved = JSON.parse(
+      window.localStorage.getItem(CUSTOM_AGENT_RECIPE_TEMPLATES_STORAGE_KEY) ??
+        "[]",
+    );
+    expect(saved).toEqual([
+      expect.objectContaining({
+        savedFromNodeId: "frame-1",
+        source: "saved_execution_chain",
+        title: "我的海报探索模板",
+      }),
+    ]);
+    expect(screen.getByText("已保存到 Recipe 菜单。")).toBeVisible();
+  });
+
+  it("saves a completed variant branch as a reusable Recipe template", async () => {
+    const user = userEvent.setup();
+    window.localStorage.removeItem(CUSTOM_AGENT_RECIPE_TEMPLATES_STORAGE_KEY);
+    const branchNode = withAgentExecutionMeta(frameNode, {
+      branch: {
+        critiqueSummary: "传播张力强，但素材复杂度需要控制。",
+        deliverableSummary: "活动海报主视觉。",
+        isMainline: true,
+        planSummary: "先生成高冲击主视觉。",
+        risks: ["素材复杂"],
+        strengths: ["识别度高"],
+        useCases: ["发布会 KV"],
+      },
+      branchId: "branch-a",
+      branchLabel: "方向 A",
+      kind: "variant_branch",
+      status: "done",
+      summary: "已验证的活动海报方向。",
+      title: "方向 A",
+    });
+    const siblingBranchNode = withAgentExecutionMeta(
+      { ...frameNode, id: "branch-b" },
+      {
+        branch: {
+          isMainline: false,
+          risks: ["制作成本高"],
+        },
+        branchId: "branch-b",
+        branchLabel: "方向 B",
+        kind: "variant_branch",
+        status: "done",
+        title: "方向 B",
+      },
+    );
+    const comparisonNode = withAgentExecutionMeta(
+      { ...frameNode, id: "comparison-1" },
+      {
+        comparison: {
+          branchNodeIds: ["frame-1", "branch-b"],
+          recommendedBranchId: "branch-a",
+          recommendationReason: "方向 A 更适合首发。",
+        },
+        kind: "comparison",
+        status: "done",
+        title: "方案对比",
+        upstreamNodeIds: ["frame-1", "branch-b"],
+      },
+    );
+
+    renderPropertyPanel(branchNode, {
+      pageNodes: [branchNode, siblingBranchNode, comparisonNode],
+    });
+
+    expect(screen.getByText("将保存内容")).toBeVisible();
+    expect(screen.getByText("3 个已完成执行节点")).toBeVisible();
+    expect(screen.getByText("variant_branch -> comparison")).toBeVisible();
+    expect(
+      screen.getByText((content) =>
+        content.includes("create_agent_variant_branches"),
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByText("variant_branch 节点 + comparison 推荐 + checkpoint"),
+    ).toBeVisible();
+
+    await user.clear(screen.getByLabelText("模板名称"));
+    await user.type(screen.getByLabelText("模板名称"), "方向 A 深化模板");
+    await user.click(screen.getByRole("button", { name: "保存模板" }));
+
+    const saved = JSON.parse(
+      window.localStorage.getItem(CUSTOM_AGENT_RECIPE_TEMPLATES_STORAGE_KEY) ??
+        "[]",
+    );
+    expect(saved).toEqual([
+      expect.objectContaining({
+        deliverableFormat: "variant_branch 节点 + comparison 推荐 + checkpoint",
+        inputSlots: expect.arrayContaining(["已验证分支方向", "深化目标"]),
+        nodeStructure: ["variant_branch", "comparison"],
+        savedFromNodeId: "frame-1",
+        savedSourceNodeIds: ["frame-1", "branch-b", "comparison-1"],
+        title: "方向 A 深化模板",
+        toolSequence: expect.arrayContaining(["create_agent_variant_branches"]),
+      }),
+    ]);
+    expect(
+      screen.getByText("已保存 3 个执行节点到 Recipe 菜单。"),
+    ).toBeVisible();
+  });
+
+  it("saves related execution-chain nodes into a Recipe template", async () => {
+    const user = userEvent.setup();
+    window.localStorage.removeItem(CUSTOM_AGENT_RECIPE_TEMPLATES_STORAGE_KEY);
+    const goalNode = withAgentExecutionMeta(
+      { ...frameNode, id: "goal-1" },
+      {
+        downstreamNodeIds: ["plan-1"],
+        kind: "user_goal",
+        runId: "run-1",
+        status: "done",
+        title: "用户目标",
+      },
+    );
+    const planNode = withAgentExecutionMeta(
+      { ...frameNode, id: "plan-1" },
+      {
+        downstreamNodeIds: ["frame-1"],
+        kind: "recipe_plan",
+        runId: "run-1",
+        status: "done",
+        title: "Recipe 计划",
+        upstreamNodeIds: ["goal-1"],
+      },
+    );
+    const checkpointNode = withAgentExecutionMeta(frameNode, {
+      checkpoint: {
+        canRestartFromHere: true,
+        restartReason: "计划已验证。",
+      },
+      kind: "checkpoint",
+      runId: "run-1",
+      status: "done",
+      title: "Checkpoint",
+      upstreamNodeIds: ["plan-1"],
+    });
+
+    renderPropertyPanel(checkpointNode, {
+      pageNodes: [checkpointNode, planNode, goalNode],
+    });
+
+    await user.clear(screen.getByLabelText("模板名称"));
+    await user.type(screen.getByLabelText("模板名称"), "链路模板");
+    await user.click(screen.getByRole("button", { name: "保存模板" }));
+
+    const saved = JSON.parse(
+      window.localStorage.getItem(CUSTOM_AGENT_RECIPE_TEMPLATES_STORAGE_KEY) ??
+        "[]",
+    );
+    expect(saved).toEqual([
+      expect.objectContaining({
+        savedFromNodeId: "frame-1",
+        savedSourceNodeIds: ["goal-1", "plan-1", "frame-1"],
+        title: "链路模板",
+      }),
+    ]);
+    expect(
+      screen.getByText("已保存 3 个执行节点到 Recipe 菜单。"),
+    ).toBeVisible();
+  });
+
+  it("explains when a checkpoint is only a progress marker", () => {
+    const checkpointNode = withAgentExecutionMeta(frameNode, {
+      checkpoint: {
+        canRestartFromHere: false,
+      },
+      kind: "checkpoint",
+      status: "done",
+      title: "Checkpoint marker",
+    });
+
+    renderPropertyPanel(checkpointNode);
+
+    expect(screen.getByText("仅记录进度")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "这个检查点已写入画布节点，可作为后续继续、分支或重跑的上下文锚点。",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "从 checkpoint 重跑" }),
+    ).toHaveAttribute("title", "这个检查点没有标记为可从此处重跑。");
+    expect(screen.getByRole("button", { name: "从这里继续" })).toBeDisabled();
   });
 });

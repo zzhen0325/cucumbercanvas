@@ -10,6 +10,7 @@ import type {
   RunCancelResponse,
   RunCreateRequest,
   RunCreateResponse,
+  RunPauseResponse,
   StreamEvent,
   VideoGenerationPreference,
 } from "@cucumber/shared";
@@ -33,6 +34,9 @@ import type {
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import type { CanvasEventBuffer } from "../ws/event-buffer.js";
 import { createPipelineLogger } from "../ws/logger.js";
+// execute 工具由 deepagents 内置提供（LocalShellBackend 作为 sandbox backend）
+// 不需要自定义代码执行工具
+import { recordImageGenerationExecutionNode } from "./agent-execution-image-writeback.js";
 import { createAgentBackend } from "./backends/index.js";
 import {
   type CucumberAgent,
@@ -47,8 +51,6 @@ import {
 import type { AgentPersistenceService } from "./persistence/index.js";
 import { createRunFailedEvent } from "./run-failure.js";
 import { adaptDeepAgentStream } from "./stream-adapter.js";
-// execute 工具由 deepagents 内置提供（LocalShellBackend 作为 sandbox backend）
-// 不需要自定义代码执行工具
 import type { SubmitImageJobFn } from "./tools/image-generate.js";
 import { buildCanvasSummaryForContext } from "./tools/inspect-canvas.js";
 import type { SubmitVideoJobFn } from "./tools/video-generate.js";
@@ -253,10 +255,12 @@ type RuntimeRunStatus =
   | "canceled"
   | "completed"
   | "failed"
+  | "paused"
   | "running";
 
 type RuntimeRunRecord = RunCreateRequest & {
   accessToken?: string;
+  abortKind?: "cancel" | "pause";
   consumed: boolean;
   controller: AbortController;
   modelOverride?: string;
@@ -307,6 +311,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         return null;
       }
 
+      run.abortKind = "cancel";
       if (!run.controller.signal.aborted) {
         run.controller.abort();
       }
@@ -315,6 +320,25 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       return {
         runId,
         status: "canceled",
+      };
+    },
+
+    pauseRun(runId: string): RunPauseResponse | null {
+      const run = runs.get(runId);
+      if (!run) {
+        return null;
+      }
+
+      run.abortKind = "pause";
+      if (!run.controller.signal.aborted) {
+        run.controller.abort();
+      }
+
+      run.status = "paused";
+      console.info("[agent-runtime] run.pause.requested", { runId });
+      return {
+        runId,
+        status: "paused",
       };
     },
 
@@ -500,6 +524,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               ...(input.targetContainerId
                 ? { target_container_id: input.targetContainerId }
                 : {}),
+              ...(input.agentExecutionNodeId
+                ? { agent_execution_node_id: input.agentExecutionNodeId }
+                : {}),
             },
           });
 
@@ -610,6 +637,24 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 });
               }
 
+              if (
+                canvasId &&
+                input.agentExecutionNodeId &&
+                options.liveCanvasService
+              ) {
+                await recordImageGenerationExecutionNode({
+                  canvasId,
+                  ...(elementId ? { elementId } : {}),
+                  imageUrl: result.signed_url ?? "",
+                  jobId: job.id,
+                  liveCanvasService: options.liveCanvasService,
+                  nodeId: input.agentExecutionNodeId,
+                  status: "done",
+                  title: input.title,
+                  user,
+                });
+              }
+
               return {
                 jobId: job.id,
                 ...(elementId != null ? { elementId } : {}),
@@ -625,9 +670,27 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               current.status === "canceled"
             ) {
               jobLap("job_poll_done", { pollCount, status: current.status });
+              const error =
+                current.error_message ?? `Image job ${current.status}.`;
+              if (
+                canvasId &&
+                input.agentExecutionNodeId &&
+                options.liveCanvasService
+              ) {
+                await recordImageGenerationExecutionNode({
+                  canvasId,
+                  errorReason: error,
+                  jobId: job.id,
+                  liveCanvasService: options.liveCanvasService,
+                  nodeId: input.agentExecutionNodeId,
+                  status: "failed",
+                  title: input.title,
+                  user,
+                });
+              }
               return {
                 jobId: job.id,
-                error: current.error_message ?? `Job ${current.status}`,
+                error,
               };
             }
 
@@ -640,17 +703,52 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 pollCount,
                 status: "failed_max_retries",
               });
+              const error =
+                current.error_message ?? "Image job failed after max retries.";
+              if (
+                canvasId &&
+                input.agentExecutionNodeId &&
+                options.liveCanvasService
+              ) {
+                await recordImageGenerationExecutionNode({
+                  canvasId,
+                  errorReason: error,
+                  jobId: job.id,
+                  liveCanvasService: options.liveCanvasService,
+                  nodeId: input.agentExecutionNodeId,
+                  status: "failed",
+                  title: input.title,
+                  user,
+                });
+              }
               return {
                 jobId: job.id,
-                error: current.error_message ?? "Job failed after max retries",
+                error,
               };
             }
           }
 
           jobLap("job_poll_done", { pollCount, status: "timeout" });
+          const error = `Image job timed out after ${MAX_WAIT / 1000}s.`;
+          if (
+            canvasId &&
+            input.agentExecutionNodeId &&
+            options.liveCanvasService
+          ) {
+            await recordImageGenerationExecutionNode({
+              canvasId,
+              errorReason: error,
+              jobId: job.id,
+              liveCanvasService: options.liveCanvasService,
+              nodeId: input.agentExecutionNodeId,
+              status: "failed",
+              title: input.title,
+              user,
+            });
+          }
           return {
             jobId: job.id,
-            error: `Job timed out after ${MAX_WAIT / 1000}s`,
+            error,
           };
         };
 
@@ -1208,6 +1306,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
         try {
           for await (const event of adaptDeepAgentStream({
+            abortEvent: () => createInterruptedRunEvent(runId, now, run),
             conversationId: run.conversationId,
             now,
             runId,
@@ -1238,12 +1337,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   signal: run.controller.signal,
                 });
               } catch {
-                run.status = "canceled";
-                yield {
+                const interruptedEvent = createInterruptedRunEvent(
                   runId,
-                  timestamp: now(),
-                  type: "run.canceled",
-                };
+                  now,
+                  run,
+                );
+                run.status = mapEventToStatus(interruptedEvent);
+                yield interruptedEvent;
                 return;
               }
             }
@@ -1287,7 +1387,8 @@ function isTerminalEvent(event: StreamEvent) {
   return (
     event.type === "run.canceled" ||
     event.type === "run.completed" ||
-    event.type === "run.failed"
+    event.type === "run.failed" ||
+    event.type === "run.paused"
   );
 }
 
@@ -1319,9 +1420,32 @@ function mapEventToStatus(event: StreamEvent): RuntimeRunStatus {
       return "completed";
     case "run.failed":
       return "failed";
+    case "run.paused":
+      return "paused";
     default:
       return "running";
   }
+}
+
+function createInterruptedRunEvent(
+  runId: string,
+  now: () => string,
+  run: RuntimeRunRecord,
+): StreamEvent {
+  if (run.abortKind === "pause") {
+    return {
+      reason: "用户暂停了当前 Agent 执行链，可从选中的执行节点继续。",
+      runId,
+      timestamp: now(),
+      type: "run.paused",
+    };
+  }
+
+  return {
+    runId,
+    timestamp: now(),
+    type: "run.canceled",
+  };
 }
 
 function toFailedEvent(

@@ -4,6 +4,8 @@ import {
   applyCanvasOperation,
   createEmptyDocument,
   findNode,
+  getAgentExecutionMeta,
+  withAgentExecutionMeta,
 } from "@cucumber/canvas-core";
 import { describe, expect, it } from "vitest";
 
@@ -121,38 +123,52 @@ describe("canvas-element-writer generated asset insertion", () => {
     let doc = createEmptyDocument();
     doc = applyCanvasOperation(doc, {
       type: "insertNode",
-      node: {
-        id: "result_container",
-        type: "frame",
-        name: "图片结果容器",
-        x: 760,
-        y: -20,
-        width: 600,
-        height: 640,
-        children: [
-          {
-            id: "loading_panel",
-            type: "rectangle",
-            name: "生成图片加载区域",
-            x: 44,
-            y: 88,
-            width: 512,
-            height: 512,
-            meta: { agentCanvasRole: "image_generation_loading" },
-          } as PenNode,
-          {
-            id: "loading_text",
-            type: "text",
-            name: "生成图片状态",
-            x: 80,
-            y: 310,
-            width: 440,
-            height: 72,
-            content: "图片生成中...",
-            meta: { agentCanvasRole: "image_generation_loading" },
-          } as PenNode,
-        ],
-      } as PenNode,
+      node: withAgentExecutionMeta(
+        {
+          agentBinding: {
+            agentId: "agent-1",
+            name: "Image Generation Flow",
+            permissions: ["read", "write"],
+            status: "running",
+          },
+          id: "result_container",
+          type: "frame",
+          name: "图片结果容器",
+          x: 760,
+          y: -20,
+          width: 600,
+          height: 640,
+          children: [
+            {
+              id: "loading_panel",
+              type: "rectangle",
+              name: "生成图片加载区域",
+              x: 44,
+              y: 88,
+              width: 512,
+              height: 512,
+              meta: { agentCanvasRole: "image_generation_loading" },
+            } as PenNode,
+            {
+              id: "loading_text",
+              type: "text",
+              name: "生成图片状态",
+              x: 80,
+              y: 310,
+              width: 440,
+              height: 72,
+              content: "图片生成中...",
+              meta: { agentCanvasRole: "image_generation_loading" },
+            } as PenNode,
+          ],
+        } as PenNode,
+        {
+          kind: "final_deliverable",
+          runId: "run-1",
+          status: "running",
+          title: "图片结果容器",
+        },
+      ),
     });
     const client = createClient(doc);
 
@@ -189,6 +205,13 @@ describe("canvas-element-writer generated asset insertion", () => {
       x: 44,
       y: 88,
     });
+    expect(getAgentExecutionMeta(resultContainer)).toMatchObject({
+      downstreamNodeIds: [result.elementId],
+      kind: "final_deliverable",
+      status: "done",
+      summary: "图片生成完成，最终结果已写入这个容器。",
+    });
+    expect(resultContainer?.agentBinding?.status).toBe("completed");
   });
 
   it("fails clearly when the explicit result container is missing", async () => {

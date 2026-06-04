@@ -105,6 +105,7 @@ describe("createImageGenerateTool", () => {
   it("forwards placement and target container metadata to image jobs", async () => {
     let submitted:
       | {
+          agentExecutionNodeId?: string;
           placementHeight?: number;
           placementWidth?: number;
           placementX?: number;
@@ -120,22 +121,27 @@ describe("createImageGenerateTool", () => {
       },
     });
 
-    await imageTool.invoke({
+    const result = await imageTool.invoke({
       prompt: "A playful puppy",
       model: "Seedream 4.6",
       placementHeight: 512,
       placementWidth: 512,
       placementX: 44,
       placementY: 88,
+      agentExecutionNodeId: "agent_tool_call_1",
       targetContainerId: "agent_image_result_1",
     });
 
     expect(submitted).toMatchObject({
+      agentExecutionNodeId: "agent_tool_call_1",
       placementHeight: 512,
       placementWidth: 512,
       placementX: 44,
       placementY: 88,
       targetContainerId: "agent_image_result_1",
+    });
+    expect(result).toMatchObject({
+      agentExecutionNodeId: "agent_tool_call_1",
     });
   });
 });

@@ -6,6 +6,7 @@ import {
   filterRenderNodesToViewportWithTransformPreview,
   getViewportInteractionCacheBuildDecision,
   getViewportInteractionCacheDrawOffset,
+  getViewportInteractionCacheSurfaceDecision,
   isViewportInteractionCacheReusable,
 } from "./renderer.js";
 import { RenderNodeViewportIndex } from "./spatial-index.js";
@@ -229,5 +230,28 @@ describe("renderer performance helpers", () => {
         pendingImageCount: 0,
       }),
     ).toEqual({ reason: "ready", shouldBuild: true });
+  });
+
+  it("skips oversized viewport interaction cache surfaces before CanvasKit snapshot", () => {
+    expect(
+      getViewportInteractionCacheSurfaceDecision({ width: 4096, height: 4096 }),
+    ).toEqual({ reason: "ready", shouldBuild: true });
+
+    expect(
+      getViewportInteractionCacheSurfaceDecision({ width: 4097, height: 4097 }),
+    ).toMatchObject({
+      reason: "surface_too_large",
+      shouldBuild: false,
+    });
+
+    expect(
+      getViewportInteractionCacheSurfaceDecision({
+        width: Number.POSITIVE_INFINITY,
+        height: 1024,
+      }),
+    ).toMatchObject({
+      reason: "surface_invalid",
+      shouldBuild: false,
+    });
   });
 });

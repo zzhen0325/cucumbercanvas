@@ -4,6 +4,7 @@ import {
   createCanvasDocument,
   findNode,
   flattenNodes,
+  getAgentExecutionMeta,
 } from "@cucumber/canvas-core";
 import type { LineNode, PenDocument } from "@cucumber/pen-types";
 import { describe, expect, it, vi } from "vitest";
@@ -111,19 +112,55 @@ describe("create_agent_canvas_flow", () => {
     const topLevelNodes = state.doc.pages?.[0]?.children ?? [];
     expect(topLevelNodes).toHaveLength(5);
     expect(findNode(state.doc, payload.inputNodeId)).toMatchObject({
+      agentBinding: expect.objectContaining({
+        agentId: "agent-1",
+        status: "completed",
+      }),
+      containerRole: ["context"],
       meta: { boardKind: "sticky", containerType: "sticky_note" },
       name: "用户原始输入",
       runId: "run-1",
       sessionId: "session-1",
     });
+    expect(
+      getAgentExecutionMeta(findNode(state.doc, payload.inputNodeId)),
+    ).toMatchObject({
+      kind: "user_goal",
+      runId: "run-1",
+      status: "done",
+      title: "用户原始输入",
+    });
     expect(findNode(state.doc, payload.promptNodeId)).toMatchObject({
+      agentBinding: expect.objectContaining({
+        agentId: "agent-1",
+        status: "completed",
+      }),
+      containerRole: ["context"],
       meta: { boardKind: "sticky", containerType: "sticky_note" },
       name: "优化后的图片 Prompt",
     });
+    expect(
+      getAgentExecutionMeta(findNode(state.doc, payload.promptNodeId)),
+    ).toMatchObject({
+      kind: "recipe_plan",
+      status: "done",
+      upstreamNodeIds: [payload.inputNodeId],
+    });
     expect(findNode(state.doc, payload.resultContainerId)).toMatchObject({
+      agentBinding: expect.objectContaining({
+        agentId: "agent-1",
+        status: "running",
+      }),
       containerRole: ["visual"],
       name: "图片结果容器",
       type: "frame",
+    });
+    expect(
+      getAgentExecutionMeta(findNode(state.doc, payload.resultContainerId)),
+    ).toMatchObject({
+      kind: "final_deliverable",
+      status: "running",
+      upstreamNodeIds: [payload.promptNodeId],
     });
     const resultContainer = findNode(state.doc, payload.resultContainerId) as
       | { children?: Array<{ id: string; meta?: Record<string, unknown> }> }
@@ -133,17 +170,52 @@ describe("create_agent_canvas_flow", () => {
     );
     expect(resultContainer?.children).toEqual([
       expect.objectContaining({
+        agentBinding: expect.objectContaining({
+          agentId: "agent-1",
+          status: "running",
+          toolName: "generate_image",
+        }),
+        containerRole: ["dataflow", "task"],
+        contextSlots: expect.objectContaining({
+          rules: ["agent execution node: tool_call"],
+        }),
         meta: expect.objectContaining({
           agentCanvasRole: "image_generation_loading",
         }),
+        runId: "run-1",
+        sessionId: "session-1",
       }),
       expect.objectContaining({
+        agentBinding: expect.objectContaining({
+          agentId: "agent-1",
+          status: "running",
+          toolName: "generate_image",
+        }),
+        containerRole: ["dataflow", "task"],
         content: expect.stringContaining("图片生成中"),
+        contextSlots: expect.objectContaining({
+          rules: ["agent execution node: tool_call"],
+        }),
         meta: expect.objectContaining({
           agentCanvasRole: "image_generation_loading",
         }),
+        runId: "run-1",
+        sessionId: "session-1",
       }),
     ]);
+    const executionNodes = flattenNodes(state.doc).filter((node) =>
+      Boolean(getAgentExecutionMeta(node)),
+    );
+    expect(executionNodes).toHaveLength(5);
+    for (const node of executionNodes) {
+      expect(node).toMatchObject({
+        agentBinding: expect.objectContaining({ agentId: "agent-1" }),
+        containerRole: expect.any(Array),
+        runId: "run-1",
+        sessionId: "session-1",
+      });
+      expect(node.containerRole?.length).toBeGreaterThan(0);
+    }
     const connectors = payload.connectorNodeIds.map(
       (id) => findNode(state.doc, id) as LineNode | undefined,
     );

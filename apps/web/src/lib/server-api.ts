@@ -14,8 +14,10 @@ import type {
   ProjectCreateResponse,
   ProjectListResponse,
   ProjectUpdateRequest,
+  RunCancelResponse,
   RunCreateRequest,
   RunCreateResponse,
+  RunPauseResponse,
   SessionCreateResponse,
   SessionListResponse,
   SkillCreateRequest,
@@ -98,6 +100,58 @@ export async function createRun(
   }
 
   return (await response.json()) as RunCreateResponse;
+}
+
+export async function cancelRun(
+  runId: string,
+  options?: { accessToken?: string },
+) {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+  if (options?.accessToken) {
+    headers.Authorization = `Bearer ${options.accessToken}`;
+  }
+
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/agent/runs/${encodeURIComponent(runId)}/cancel`,
+    {
+      method: "POST",
+      headers,
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Run cancel failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as RunCancelResponse;
+}
+
+export async function pauseRun(
+  runId: string,
+  options?: { accessToken?: string },
+) {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+  if (options?.accessToken) {
+    headers.Authorization = `Bearer ${options.accessToken}`;
+  }
+
+  const response = await fetch(
+    `${getServerBaseUrl()}/api/agent/runs/${encodeURIComponent(runId)}/pause`,
+    {
+      method: "POST",
+      headers,
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Run pause failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as RunPauseResponse;
 }
 
 // --- Authenticated API ---

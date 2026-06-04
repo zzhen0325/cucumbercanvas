@@ -41,6 +41,7 @@ registerExecutor(
       placement_width?: number;
       placement_height?: number;
       target_container_id?: string;
+      agent_execution_node_id?: string;
     };
 
     if (!payload.prompt)

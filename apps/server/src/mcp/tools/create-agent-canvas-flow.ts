@@ -1,4 +1,6 @@
 import {
+  type AgentExecutionNodeKind,
+  type AgentExecutionStatus,
   type CanvasBounds,
   type CanvasOperation,
   type CucumberCanvasDocument,
@@ -8,6 +10,7 @@ import {
   flattenNodes,
   getBoundsUnion,
   getNodeSceneBounds,
+  withAgentExecutionNodeSemantics,
 } from "@cucumber/canvas-core";
 import type { FrameNode, LineNode, PenNode } from "@cucumber/pen-types";
 import { z } from "zod";
@@ -171,62 +174,91 @@ function buildAgentCanvasFlowPlan(args: {
 }) {
   const origin = inferFlowOrigin(args.doc, args.pageId);
   const inputSticky = withRunMetadata(
-    createStickyNoteNode(
-      { x: origin.x, y: origin.y, width: 260, height: 180 },
-      args.userInput,
-      { name: "用户原始输入" },
+    withExecutionMeta(
+      createStickyNoteNode(
+        { x: origin.x, y: origin.y, width: 260, height: 180 },
+        args.userInput,
+        { name: "用户原始输入" },
+      ),
+      {
+        args,
+        kind: "user_goal",
+        status: "done",
+        summary: args.userInput,
+        title: "用户原始输入",
+      },
     ),
     args,
   );
   const promptSticky = withRunMetadata(
-    createStickyNoteNode(
-      { x: origin.x + 360, y: origin.y, width: 300, height: 220 },
-      args.optimizedPrompt,
-      { name: "优化后的图片 Prompt" },
+    withExecutionMeta(
+      createStickyNoteNode(
+        { x: origin.x + 360, y: origin.y, width: 300, height: 220 },
+        args.optimizedPrompt,
+        { name: "优化后的图片 Prompt" },
+      ),
+      {
+        args,
+        kind: "recipe_plan",
+        status: "done",
+        summary: "将用户目标转成可直接执行的图片生成 Prompt。",
+        title: "优化后的图片 Prompt",
+        upstreamNodeIds: [inputSticky.id],
+      },
     ),
     args,
   );
   const resultContainerId = createNodeId("agent_image_result");
   const loadingChildren = buildImageGenerationLoadingChildren(args);
   const resultContainer: FrameNode = withRunMetadata(
-    {
-      id: resultContainerId,
-      type: "frame",
-      name: "图片结果容器",
-      x: origin.x + 760,
-      y: origin.y - 20,
-      width: 600,
-      height: 640,
-      children: loadingChildren,
-      clipContent: false,
-      containerRole: ["visual"],
-      contextSlots: {
-        rules: ["generated image result for the optimized prompt"],
+    withExecutionMeta(
+      {
+        id: resultContainerId,
+        type: "frame",
+        name: "图片结果容器",
+        x: origin.x + 760,
+        y: origin.y - 20,
+        width: 600,
+        height: 640,
+        children: loadingChildren,
+        clipContent: false,
+        containerRole: ["visual"],
+        contextSlots: {
+          rules: ["generated image result for the optimized prompt"],
+        },
+        fill: [{ type: "solid", color: "rgba(255,255,255,0.86)" }],
+        stroke: {
+          thickness: 2,
+          fill: [{ type: "solid", color: "#1971c2" }],
+        },
+        cornerRadius: 8,
+        permissions: {
+          owner: "agent",
+          canRead: [],
+          canWrite: [],
+          isolationLevel: "open",
+        },
+        ...(args.agentId
+          ? {
+              agentBinding: {
+                agentId: args.agentId,
+                name: "Image Generation Flow",
+                permissions: ["read", "write"],
+                role: "designer",
+                status: "running",
+              },
+            }
+          : {}),
+      } as FrameNode,
+      {
+        args,
+        kind: "final_deliverable",
+        status: "running",
+        summary: "图片生成完成后会替换容器内的加载节点。",
+        title: "图片结果容器",
+        upstreamNodeIds: [promptSticky.id],
       },
-      fill: [{ type: "solid", color: "rgba(255,255,255,0.86)" }],
-      stroke: {
-        thickness: 2,
-        fill: [{ type: "solid", color: "#1971c2" }],
-      },
-      cornerRadius: 8,
-      permissions: {
-        owner: "agent",
-        canRead: [],
-        canWrite: [],
-        isolationLevel: "open",
-      },
-      ...(args.agentId
-        ? {
-            agentBinding: {
-              agentId: args.agentId,
-              name: "Image Generation Flow",
-              permissions: ["read", "write"],
-              role: "designer",
-              status: "completed",
-            },
-          }
-        : {}),
-    } as FrameNode,
+    ),
     args,
   ) as FrameNode;
   const connectors = [
@@ -275,45 +307,65 @@ function buildImageGenerationLoadingChildren(args: {
     source: "agent_canvas_flow",
   };
   const loadingPanel = withRunMetadata(
-    {
-      id: createNodeId("agent_image_loading_panel"),
-      type: "rectangle",
-      name: "生成图片加载区域",
-      x: 44,
-      y: 88,
-      width: 512,
-      height: 512,
-      cornerRadius: 8,
-      fill: [{ type: "solid", color: "rgba(248,250,252,0.96)" }],
-      stroke: {
-        thickness: 1,
-        fill: [{ type: "solid", color: "rgba(15,23,42,0.12)" }],
+    withExecutionMeta(
+      {
+        id: createNodeId("agent_image_loading_panel"),
+        type: "rectangle",
+        name: "生成图片加载区域",
+        x: 44,
+        y: 88,
+        width: 512,
+        height: 512,
+        cornerRadius: 8,
+        fill: [{ type: "solid", color: "rgba(248,250,252,0.96)" }],
+        stroke: {
+          thickness: 1,
+          fill: [{ type: "solid", color: "rgba(15,23,42,0.12)" }],
+        },
+        meta: sharedMeta,
+      } as PenNode,
+      {
+        args,
+        kind: "tool_call",
+        status: "running",
+        summary: "等待图片生成工具返回资产。",
+        title: "图片生成工具",
+        toolName: "generate_image",
       },
-      meta: sharedMeta,
-    } as PenNode,
+    ),
     args,
   );
   const loadingText = withRunMetadata(
-    {
-      id: createNodeId("agent_image_loading_text"),
-      type: "text",
-      name: "生成图片状态",
-      x: 80,
-      y: 310,
-      width: 440,
-      height: 72,
-      content: "图片生成中...\n完成后会在这里显示结果",
-      fontSize: 18,
-      fontWeight: 600,
-      lineHeight: 1.35,
-      textAlign: "center",
-      textGrowth: "fixed-width-height",
-      fill: [{ type: "solid", color: "rgba(15,23,42,0.68)" }],
-      meta: {
-        ...sharedMeta,
-        promptPreview: args.optimizedPrompt.slice(0, 180),
+    withExecutionMeta(
+      {
+        id: createNodeId("agent_image_loading_text"),
+        type: "text",
+        name: "生成图片状态",
+        x: 80,
+        y: 310,
+        width: 440,
+        height: 72,
+        content: "图片生成中...\n完成后会在这里显示结果",
+        fontSize: 18,
+        fontWeight: 600,
+        lineHeight: 1.35,
+        textAlign: "center",
+        textGrowth: "fixed-width-height",
+        fill: [{ type: "solid", color: "rgba(15,23,42,0.68)" }],
+        meta: {
+          ...sharedMeta,
+          promptPreview: args.optimizedPrompt.slice(0, 180),
+        },
+      } as PenNode,
+      {
+        args,
+        kind: "tool_call",
+        status: "running",
+        summary: args.optimizedPrompt.slice(0, 180),
+        title: "图片生成状态",
+        toolName: "generate_image",
       },
-    } as PenNode,
+    ),
     args,
   );
   return [loadingPanel as PenNode, loadingText as PenNode];
@@ -399,6 +451,41 @@ function withRunMetadata<T extends PenNode>(
     ...(args.runId ? { runId: args.runId } : {}),
     ...(args.sessionId ? { sessionId: args.sessionId } : {}),
   };
+}
+
+function withExecutionMeta<T extends PenNode>(
+  node: T,
+  input: {
+    args: {
+      agentId?: string;
+      runId?: string;
+      sessionId?: string;
+    };
+    kind: AgentExecutionNodeKind;
+    status: AgentExecutionStatus;
+    title: string;
+    summary?: string;
+    toolName?: string;
+    upstreamNodeIds?: string[];
+    downstreamNodeIds?: string[];
+  },
+): T {
+  return withAgentExecutionNodeSemantics(node, {
+    kind: input.kind,
+    status: input.status,
+    title: input.title,
+    ...(input.args.agentId ? { agentId: input.args.agentId } : {}),
+    ...(input.args.runId ? { runId: input.args.runId } : {}),
+    ...(input.args.sessionId ? { sessionId: input.args.sessionId } : {}),
+    ...(input.summary ? { summary: input.summary } : {}),
+    ...(input.toolName ? { toolName: input.toolName } : {}),
+    ...(input.upstreamNodeIds
+      ? { upstreamNodeIds: input.upstreamNodeIds }
+      : {}),
+    ...(input.downstreamNodeIds
+      ? { downstreamNodeIds: input.downstreamNodeIds }
+      : {}),
+  });
 }
 
 function insertNode(

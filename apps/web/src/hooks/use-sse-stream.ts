@@ -29,6 +29,7 @@ const TERMINAL_EVENT_TYPES = new Set<StreamEvent["type"]>([
   "run.completed",
   "run.failed",
   "run.canceled",
+  "run.paused",
 ]);
 
 export function useSseStream(accessToken: string) {

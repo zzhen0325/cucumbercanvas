@@ -103,6 +103,12 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
       .describe(
         "Optional canvas container ID to receive the generated image. When provided, placementX/Y are local to this container.",
       ),
+    agentExecutionNodeId: z
+      .string()
+      .optional()
+      .describe(
+        "Optional durable Agent tool_call or task_step node ID that this image generation belongs to. Use toolCallNodeIds returned by create_agent_execution_flow so the result can be recorded with record_agent_tool_call.",
+      ),
   });
 }
 
@@ -119,6 +125,7 @@ type ImageGenerateInput = {
   placementWidth?: number;
   placementHeight?: number;
   targetContainerId?: string;
+  agentExecutionNodeId?: string;
 };
 
 type ResolvedImageGenerateInput = Omit<
@@ -149,6 +156,7 @@ type ImageGenerateResult = {
   jobId?: string;
   jobType?: "image_generation";
   placement?: { x: number; y: number; width: number; height: number };
+  agentExecutionNodeId?: string;
 };
 
 type Placement = { x: number; y: number; width: number; height: number };
@@ -410,6 +418,7 @@ export type SubmitImageJobFn = (input: {
   placementWidth?: number;
   placementHeight?: number;
   targetContainerId?: string;
+  agentExecutionNodeId?: string;
 }) => Promise<{
   jobId: string;
   elementId?: string;
@@ -477,6 +486,9 @@ export async function runImageGenerate(
       : {}),
     ...(input.targetContainerId
       ? { targetContainerId: input.targetContainerId }
+      : {}),
+    ...(input.agentExecutionNodeId
+      ? { agentExecutionNodeId: input.agentExecutionNodeId }
       : {}),
   };
   const selectedProvider = availableModels.find(
@@ -562,6 +574,9 @@ export async function runImageGenerate(
         ...(request.targetContainerId
           ? { targetContainerId: request.targetContainerId }
           : {}),
+        ...(request.agentExecutionNodeId
+          ? { agentExecutionNodeId: request.agentExecutionNodeId }
+          : {}),
       });
 
       if (jobResult.error) {
@@ -576,6 +591,9 @@ export async function runImageGenerate(
           // (worker may still succeed after agent poll timeout)
           jobId: jobResult.jobId,
           jobType: "image_generation" as const,
+          ...(request.agentExecutionNodeId
+            ? { agentExecutionNodeId: request.agentExecutionNodeId }
+            : {}),
         };
       }
       lap("job_complete", { jobId: jobResult.jobId });
@@ -590,6 +608,9 @@ export async function runImageGenerate(
         mimeType: jobResult.mimeType ?? "image/png",
         ...(jobResult.width != null ? { width: jobResult.width } : {}),
         ...(jobResult.height != null ? { height: jobResult.height } : {}),
+        ...(request.agentExecutionNodeId
+          ? { agentExecutionNodeId: request.agentExecutionNodeId }
+          : {}),
       };
       const placement = resolveImagePlacement({
         ...(request.placementX != null
@@ -617,6 +638,9 @@ export async function runImageGenerate(
       return {
         summary: `Image generation failed with model ${model}: ${message}. Consider trying a different model or simplifying the prompt.`,
         error: message,
+        ...(request.agentExecutionNodeId
+          ? { agentExecutionNodeId: request.agentExecutionNodeId }
+          : {}),
       };
     }
   }
@@ -658,6 +682,9 @@ export async function runImageGenerate(
       mimeType: result.mimeType,
       width: result.width,
       height: result.height,
+      ...(request.agentExecutionNodeId
+        ? { agentExecutionNodeId: request.agentExecutionNodeId }
+        : {}),
     };
     const placement = resolveImagePlacement({
       ...(request.placementX != null ? { placementX: request.placementX } : {}),
@@ -681,6 +708,9 @@ export async function runImageGenerate(
     return {
       summary: `Image generation failed: ${message}`,
       error: message,
+      ...(request.agentExecutionNodeId
+        ? { agentExecutionNodeId: request.agentExecutionNodeId }
+        : {}),
     };
   }
 }

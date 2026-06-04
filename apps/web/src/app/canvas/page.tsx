@@ -3,11 +3,17 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
+import { findNode, getAgentExecutionMeta } from "@cucumber/canvas-core";
 import type {
   CanvasContent,
   ImageArtifact,
+  StreamEvent,
   VideoArtifact,
 } from "@cucumber/shared";
+import {
+  AgentRunControlBar,
+  type AgentRunControlState,
+} from "../../components/agent-run-control-bar";
 import { BrandKitSelector } from "../../components/brand-kit-selector";
 import { CanvasBottomBar } from "../../components/canvas-bottom-bar";
 import {
@@ -21,12 +27,25 @@ import { CanvasFilesPanel } from "../../components/canvas-files-panel";
 import type { CanvasImageItem } from "../../components/canvas-image-picker";
 import { CanvasLayersPanel } from "../../components/canvas-layers-panel";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
+import {
+  getAgentRunPausedNodeUpdates,
+  getAgentRunStoppedNodeUpdates,
+} from "../../components/canvas/agent-run-pause-writeback";
+import { getAgentWaitingResponseSubmittedUpdates } from "../../components/canvas/agent-waiting-response-writeback";
 import type {
   CanvasApi,
   CanvasFileRecord,
   CanvasSceneElement,
 } from "../../components/canvas/canvas-api";
-import { ChatSidebar } from "../../components/chat-sidebar";
+import type {
+  AgentExecutionContinueIntent,
+  AgentExecutionContinueOptions,
+} from "../../components/canvas/property-panel/agent-execution-section";
+import type { AgentContinuationMode } from "../../components/chat-input";
+import {
+  type AgentContinuationSubmitSummary,
+  ChatSidebar,
+} from "../../components/chat-sidebar";
 import { EditableProjectName } from "../../components/editable-project-name";
 import { LoadingScreen } from "../../components/loading-screen";
 import { useJobFallbackPolling } from "../../hooks/use-job-fallback-polling";
@@ -61,6 +80,73 @@ function formatImportHint(hint: string): string {
     default:
       return hint;
   }
+}
+
+function modeForAgentContinueIntent(
+  intent: AgentExecutionContinueIntent,
+): AgentContinuationMode {
+  return intent === "new_branch" ? "new_branch" : "overwrite_current";
+}
+
+function buildAgentContinueDraft(
+  element: CanvasSelectedElement,
+  intent: AgentExecutionContinueIntent,
+  options: AgentExecutionContinueOptions = {},
+): string {
+  const execution = element.agentExecution;
+  const title = execution?.title?.trim() || "当前 Agent 节点";
+  const waitingResponseText =
+    options.waitingResponseText?.trim() ||
+    execution?.waitingForUser?.response?.text?.trim();
+  if (intent === "attach_files") {
+    return `为「${title}」补充文件或图片，并基于这些新材料从当前等待节点继续执行。`;
+  }
+  if (execution?.kind === "ask_user_more" && waitingResponseText) {
+    return `已为「${title}」提交补充：${formatAgentContinueContextText(waitingResponseText)}\n\n请基于这条补充从当前等待节点继续执行，并把后续过程和结果写回画布执行链。`;
+  }
+  if (intent === "retry") {
+    return `重试「${title}」这一步，优先沿用原有输入和上下文；如果仍失败，请在画布执行链中记录新的失败原因和下一步建议。`;
+  }
+  if (intent === "rerun_checkpoint") {
+    const downstreamNodeIds = execution?.downstreamNodeIds ?? [];
+    const downstreamCopy = downstreamNodeIds.length
+      ? `本次需要重建的下游节点：${formatAgentContinueNodeIdList(downstreamNodeIds)}。`
+      : "当前 checkpoint 没有记录下游节点；请先检查画布执行链，再决定需要重建的后续节点。";
+    return `从 checkpoint「${title}」重跑后续执行链：保留这个 checkpoint 作为锚点，重新读取当前画布上下文，重建后续步骤、产物和验证结果。${downstreamCopy}`;
+  }
+  if (intent === "rewrite") {
+    return `改写「${title}」的输入或约束后继续执行，并把新的过程和结果写回当前主线。`;
+  }
+  if (intent === "skip") {
+    return `跳过「${title}」这一步，继续执行后续可完成的任务，并在画布上记录跳过原因。`;
+  }
+  if (execution?.kind === "variant_branch") {
+    return `继续深化「${title}」，沿这个方案分支扩展下一步产物，并保留其他方案作为分支。`;
+  }
+  if (intent === "new_branch") {
+    return `基于「${title}」复制为新分支继续尝试，保留当前节点和原有主线不变。`;
+  }
+  if (execution?.kind === "critique") {
+    return `基于「${title}」继续修复问题，并把修改结果写回画布执行链。`;
+  }
+  if (execution?.kind === "checkpoint") {
+    return `从「${title}」继续执行，保留已有上下文并生成下一步结果。`;
+  }
+  return `基于「${title}」继续执行下一步，并把过程和结果写到画布执行链。`;
+}
+
+function formatAgentContinueContextText(value: string): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 240) return normalized;
+  return `${normalized.slice(0, 240)}...`;
+}
+
+function formatAgentContinueNodeIdList(nodeIds: string[]): string {
+  const visibleIds = nodeIds.slice(0, 6).join("、");
+  const hiddenCount = nodeIds.length - 6;
+  return hiddenCount > 0
+    ? `${visibleIds} 等 ${nodeIds.length} 个节点`
+    : visibleIds;
 }
 
 function CanvasPageContent() {
@@ -104,6 +190,21 @@ function CanvasPageContent() {
   const [importSummary, setImportSummary] =
     useState<CanvasImportSummary | null>(null);
   const [showImportWarnings, setShowImportWarnings] = useState(false);
+  const [agentRunControlState, setAgentRunControlState] =
+    useState<AgentRunControlState>({ streaming: false });
+  const pauseAgentRunRef = useRef<(() => void) | null>(null);
+  const stopAgentRunRef = useRef<(() => void) | null>(null);
+  const [agentTraceEvents, setAgentTraceEvents] = useState<StreamEvent[]>([]);
+  const agentContinueDraftRequestIdRef = useRef(0);
+  const [agentContinueDraftRequest, setAgentContinueDraftRequest] = useState<{
+    continuationTargetElement?: CanvasSelectedElement;
+    intent: AgentExecutionContinueIntent;
+    requestId: number;
+    message: string;
+    mode: AgentContinuationMode;
+    openFilePicker?: boolean;
+    waitingResponseText?: string;
+  } | null>(null);
 
   const canvasApiRef = useRef<CanvasApi | null>(null);
   const [canvasApi, setCanvasApi] = useState<CanvasApi | null>(null);
@@ -169,6 +270,15 @@ function CanvasPageContent() {
             element.fileId ?? "",
             element.importWarningCount ?? 0,
             (element.degradationHints ?? []).join(","),
+            element.agentExecution?.kind ?? "",
+            element.agentExecution?.status ?? "",
+            element.agentExecution?.runId ?? "",
+            element.agentExecution?.title ?? "",
+            element.agentExecution?.branchId ?? "",
+            element.agentExecution?.waitingForUser?.response?.text ?? "",
+            element.agentExecution?.waitingForUser?.response?.attachmentCount ??
+              0,
+            element.agentExecution?.branch?.isMainline ? "mainline" : "",
           ].join(":"),
         )
         .join("|");
@@ -178,6 +288,158 @@ function CanvasPageContent() {
     },
     [],
   );
+
+  const handleContinueAgentExecution = useCallback(
+    (
+      nodeId: string,
+      intent: AgentExecutionContinueIntent = "continue",
+      options?: AgentExecutionContinueOptions,
+    ) => {
+      const selectedElement =
+        selectedCanvasElements.find(
+          (element) => element.id === nodeId && element.agentExecution,
+        ) ?? options?.continuationTargetElement;
+      if (!selectedElement?.agentExecution) {
+        console.warn("[canvas-page] agent_continue.request.missing_context", {
+          nodeId,
+        });
+        return;
+      }
+      const request = {
+        continuationTargetElement: selectedElement,
+        intent,
+        message: buildAgentContinueDraft(selectedElement, intent, options),
+        mode: modeForAgentContinueIntent(intent),
+        ...(intent === "attach_files" ? { openFilePicker: true } : {}),
+        ...(options?.waitingResponseText?.trim()
+          ? { waitingResponseText: options.waitingResponseText.trim() }
+          : {}),
+        requestId: ++agentContinueDraftRequestIdRef.current,
+      };
+      setChatOpen(true);
+      setAgentContinueDraftRequest(request);
+      console.info("[canvas-page] agent_continue.request", {
+        hasWaitingResponseText: Boolean(options?.waitingResponseText?.trim()),
+        intent,
+        kind: selectedElement.agentExecution.kind,
+        mode: request.mode,
+        nodeId,
+        openFilePicker: request.openFilePicker === true,
+        requestId: request.requestId,
+        targetNodeId: request.continuationTargetElement.id,
+        title: selectedElement.agentExecution.title,
+      });
+    },
+    [selectedCanvasElements],
+  );
+
+  const handleAgentContinuationSubmit = useCallback(
+    (summary: AgentContinuationSubmitSummary) => {
+      if (summary.attachmentCount <= 0) return;
+      const api = canvasApiRef.current;
+      if (!api) {
+        console.warn(
+          "[canvas-page] agent_continue.attachments.writeback.skipped",
+          {
+            nodeId: summary.nodeId,
+            reason: "canvas_api_unavailable",
+          },
+        );
+        return;
+      }
+
+      const activePageId = api.getActivePageId();
+      const node = findNode(api.getDocument(), summary.nodeId, activePageId);
+      const execution = getAgentExecutionMeta(node);
+      if (!node || !execution?.waitingForUser) {
+        console.warn(
+          "[canvas-page] agent_continue.attachments.writeback.skipped",
+          {
+            nodeId: summary.nodeId,
+            reason: "waiting_node_not_found",
+          },
+        );
+        return;
+      }
+
+      const existingResponse = execution.waitingForUser.response;
+      const responseText =
+        existingResponse?.text?.trim() ||
+        summary.text.trim() ||
+        `已补充 ${summary.attachmentCount} 个文件/图片，材料随本次 Agent 消息发送。`;
+      const nextAttachmentCount =
+        (existingResponse?.attachmentCount ?? 0) + summary.attachmentCount;
+
+      const updates = getAgentWaitingResponseSubmittedUpdates(node, {
+        text: responseText,
+        submittedAt: new Date().toISOString(),
+        attachmentCount: nextAttachmentCount,
+      });
+      if (!updates) {
+        console.warn(
+          "[canvas-page] agent_continue.attachments.writeback.skipped",
+          {
+            nodeId: summary.nodeId,
+            reason: "waiting_response_update_unavailable",
+          },
+        );
+        return;
+      }
+      api.updateNode(summary.nodeId, updates);
+      console.info("[canvas-page] agent_continue.attachments.writeback", {
+        attachmentCount: summary.attachmentCount,
+        nextAttachmentCount,
+        nodeId: summary.nodeId,
+      });
+    },
+    [],
+  );
+
+  const handleAgentRunPaused = useCallback((summary: { runId: string }) => {
+    const api = canvasApiRef.current;
+    if (!api) {
+      console.warn("[canvas-page] agent_run.pause.writeback.skipped", {
+        reason: "canvas_api_unavailable",
+        runId: summary.runId,
+      });
+      return;
+    }
+    const updates = getAgentRunPausedNodeUpdates(
+      api.getDocument(),
+      api.getActivePageId(),
+      summary.runId,
+    );
+    for (const update of updates) {
+      api.updateNode(update.nodeId, update.updates);
+    }
+    console.info("[canvas-page] agent_run.pause.writeback", {
+      nodeCount: updates.length,
+      runId: summary.runId,
+    });
+  }, []);
+
+  const handleAgentRunStopped = useCallback((summary: { runId: string }) => {
+    const api = canvasApiRef.current;
+    if (!api) {
+      console.warn("[canvas-page] agent_run.stop.writeback.skipped", {
+        reason: "canvas_api_unavailable",
+        runId: summary.runId,
+      });
+      return;
+    }
+    const updates = getAgentRunStoppedNodeUpdates(
+      api.getDocument(),
+      api.getActivePageId(),
+      summary.runId,
+    );
+    for (const update of updates) {
+      api.updateNode(update.nodeId, update.updates);
+    }
+    console.info("[canvas-page] agent_run.stop.writeback", {
+      nodeCount: updates.length,
+      runId: summary.runId,
+    });
+  }, []);
 
   useEffect(() => {
     if (selectedCanvasElements.length === 0) return;
@@ -264,6 +526,14 @@ function CanvasPageContent() {
       [handleCanvasSync],
     ),
   });
+
+  const handleAgentStreamEvent = useCallback(
+    (event: StreamEvent) => {
+      setAgentTraceEvents((events) => [...events, event].slice(-120));
+      checkForTimedOutJobs(event);
+    },
+    [checkForTimedOutJobs],
+  );
 
   const handleSessionChange = useCallback(
     (sessionId: string) => {
@@ -446,11 +716,24 @@ function CanvasPageContent() {
           accessToken={accessToken}
           initialContent={canvasData.content}
           onApiReady={handleApiReady}
+          onContinueAgentExecution={handleContinueAgentExecution}
           onInsertIcon={handleInsertIconFromToolbar}
           ws={ws}
           leftPanelOpen={layersOpen || filesOpen || designOpen}
           onSelectionChange={handleSelectionChange}
         />
+        <div className="pointer-events-none absolute left-1/2 top-3 z-30 -translate-x-1/2">
+          <AgentRunControlBar
+            runState={agentRunControlState}
+            selectedCanvasElements={selectedCanvasElements}
+            onContinueFromSelection={(nodeId, intent = "continue") =>
+              handleContinueAgentExecution(nodeId, intent)
+            }
+            onPauseRun={() => pauseAgentRunRef.current?.()}
+            onStopRun={() => stopAgentRunRef.current?.()}
+            traceEvents={agentTraceEvents}
+          />
+        </div>
         <CanvasEmptyHint canvasApi={canvasApi} onOpenChat={handleOpenChat} />
         <CanvasBottomBar
           canvasApi={canvasApi}
@@ -491,7 +774,7 @@ function CanvasPageContent() {
           await canvasApiRef.current?.flushPendingSave();
         }}
         onCanvasSync={handleCanvasSync}
-        onStreamEvent={checkForTimedOutJobs}
+        onStreamEvent={handleAgentStreamEvent}
         initialPrompt={initialPrompt}
         initialSessionId={initialSessionId}
         onSessionChange={handleSessionChange}
@@ -499,6 +782,17 @@ function CanvasPageContent() {
         currentBrandKitId={brandKitId}
         ws={ws}
         selectedCanvasElements={selectedCanvasElements}
+        agentContinueDraftRequest={agentContinueDraftRequest}
+        onAgentContinuationSubmit={handleAgentContinuationSubmit}
+        onRunControlStateChange={setAgentRunControlState}
+        onRunPauseChange={(handler) => {
+          pauseAgentRunRef.current = handler;
+        }}
+        onRunPaused={handleAgentRunPaused}
+        onRunStopChange={(handler) => {
+          stopAgentRunRef.current = handler;
+        }}
+        onRunStopped={handleAgentRunStopped}
       />
     </div>
   );
