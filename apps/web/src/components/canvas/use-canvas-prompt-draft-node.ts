@@ -60,6 +60,7 @@ export function useCanvasPromptDraftNode(canvasApi: CanvasApi | null) {
         }),
         ...getAgentExecutionNodePresentationUpdates({
           execution: nextExecution,
+          node,
           width: getNodeWidth(node),
         }),
       } as Partial<PenNode>;

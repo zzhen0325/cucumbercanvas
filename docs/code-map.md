@@ -9,6 +9,7 @@
 - [`progress.md`](../progress.md)：最近交接记录、校验结果和已知问题。
 - [`docs/tech/`](./tech/)：具体能力的技术计划和专题说明。
 - [`docs/tech/canvas-node-figma-fusion.md`](./tech/canvas-node-figma-fusion.md)：节点系统与 Figma-like 画布能力的同一真值融合边界。
+- [`docs/tech/canvas-node-figma-fusion-code-map.md`](./tech/canvas-node-figma-fusion-code-map.md)：按执行节点语义和 Figma-like 物理编辑整理当前代码归属。
 
 ## 使用方式
 
@@ -36,7 +37,7 @@
 | 能力 | 先看这里 | 继续追到 | 测试 / 校验 |
 | --- | --- | --- | --- |
 | 画布 page/document 模型 | `packages/canvas-core/src/document.ts`, `packages/canvas-core/src/pages.ts`, `packages/pen-types/src/pen.ts` | `packages/canvas-core/src/operations.ts`, `packages/canvas-core/src/history.ts`, `packages/canvas-core/src/types.ts` | `packages/canvas-core/src/__tests__/pages.test.ts`, `packages/canvas-core/src/__tests__/canvas-core.test.ts` |
-| 节点系统与 Figma-like 融合边界 | `docs/tech/canvas-node-figma-fusion.md`, `docs/tech/canvas-tooling-capability-map.md` | `packages/canvas-core/src/agent-execution.ts`, `packages/canvas-core/src/connector-geometry.ts`, `apps/server/src/mcp/tools/inspect-canvas-semantic.ts`, `apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx` | 涉及代码时优先跑对应 canvas-core、MCP tool、property-panel 测试 |
+| 节点系统与 Figma-like 融合边界 | `docs/tech/canvas-node-figma-fusion.md`, `docs/tech/canvas-node-figma-fusion-code-map.md`, `docs/tech/canvas-tooling-capability-map.md` | `packages/canvas-core/src/agent-execution.ts`, `packages/canvas-core/src/connector-geometry.ts`, `apps/server/src/mcp/tools/inspect-canvas-semantic.ts`, `apps/web/src/components/canvas/property-panel/canvas-property-panel.tsx` | 涉及代码时优先跑对应 canvas-core、MCP tool、property-panel 测试 |
 | 画布编辑器外壳 | `apps/web/src/components/canvas-editor.tsx`, `apps/web/src/app/canvas/page.tsx` | `apps/web/src/components/canvas/skia-canvas.tsx`, `apps/web/src/components/canvas/editor-toolbar.tsx`, `apps/web/src/components/canvas/page-tabs.tsx` | `apps/web/test/`, `tests/e2e/skia-canvas.spec.ts` |
 | 画布运行时状态和 API | `apps/web/src/components/canvas/canvas-runtime-store.ts`, `apps/web/src/components/canvas/canvas-api.ts` | `apps/web/src/components/canvas/canvas-api-facade.ts`, `apps/web/src/components/canvas/use-skia-canvas-api.ts`, `apps/web/src/components/canvas/canvas-runtime-utils.ts` | `apps/web/test/canvas-runtime-store.test.ts`, `apps/web/test/canvas-api-types.test.ts` |
 | 画布渲染和交互 | `apps/web/src/components/canvas/skia-canvas.tsx`, `packages/pen-renderer/src/renderer.ts` | `packages/pen-renderer/src/node-renderer.ts`, `packages/pen-renderer/src/document-flattener.ts`, `packages/pen-renderer/src/spatial-index.ts`, `apps/web/src/components/canvas/use-skia-pointer-interactions.ts` | `packages/pen-renderer/src/*.test.ts`, `apps/web/test/skia-canvas-selection-snapshot.test.tsx` |

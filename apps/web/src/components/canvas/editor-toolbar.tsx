@@ -64,7 +64,7 @@ export function CanvasEditorToolbar({
   return (
     <nav
       aria-label="画布编辑工具"
-      className="pointer-events-auto absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-card/75 px-3 py-1.5 shadow-card backdrop-blur-lg"
+      className="pointer-events-auto absolute left-8 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-[5px] rounded-full border border-border bg-card/90 p-[7px] shadow-card backdrop-blur-lg"
       onClick={stopCanvasPropagation}
       onDoubleClick={stopCanvasPropagation}
       onKeyDown={stopCanvasPropagation}
@@ -74,7 +74,7 @@ export function CanvasEditorToolbar({
       onPointerUp={stopCanvasPropagation}
       onWheel={stopCanvasPropagation}
     >
-      <div className="flex items-center gap-1">
+      <div className="flex flex-col items-center gap-[5px]">
         <EditorToolButton
           active={activeTool === "select"}
           icon={MousePointer2}
@@ -91,9 +91,9 @@ export function CanvasEditorToolbar({
         />
       </div>
 
-      <Separator orientation="vertical" className="h-6 w-px bg-border/70" />
+      <Separator orientation="horizontal" className="h-px w-4 bg-border/70" />
 
-      <div className="flex items-center gap-1">
+      <div className="flex flex-col items-center gap-[5px]">
         <EditorToolButton
           draggable
           icon={MessageSquareText}
@@ -143,9 +143,9 @@ export function CanvasEditorToolbar({
         />
       </div>
 
-      <Separator orientation="vertical" className="h-6 w-px bg-border/70" />
+      <Separator orientation="horizontal" className="h-px w-4 bg-border/70" />
 
-      <div className="flex items-center gap-1">
+      <div className="flex flex-col items-center gap-[5px]">
         <EditorToolButton
           disabled={!canUndo}
           icon={Undo2}
@@ -160,9 +160,9 @@ export function CanvasEditorToolbar({
         />
       </div>
 
-      <Separator orientation="vertical" className="h-6 w-px bg-border/70" />
+      <Separator orientation="horizontal" className="h-px w-4 bg-border/70" />
 
-      <div className="flex items-center gap-1">
+      <div className="flex flex-col items-center gap-[5px]">
         <EditorToolButton
           icon={Plus}
           label="新建容器"

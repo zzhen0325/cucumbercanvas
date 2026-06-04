@@ -32,3 +32,16 @@ Maintenance:
 - Updated the transport harness to accept `canvasId` and token overrides via query string and to use a dedicated `transport-canvas-fixture` id in the mocked black-box transport spec.
 - Playwright evidence: direct probes confirmed the visual fixture script now reaches the API boundary; current local API rejects the default dev token with a clear 401 unless `CUCUMBER_VISUAL_ACCEPTANCE_TOKEN` is provided or dev-skip-auth is enabled.
 - Remaining blocker: local Next dev still shows pre-existing test-page/chunk instability under `/test/*` (including `_next/static/chunks/app/test/transport/page.js` and CanvasKit/Paper chunk warnings), so the transport Playwright spec remains blocked by the dev server/chunk layer rather than by `canvas-1`.
+
+## 2026-06-04 - Figma-aligned canvas input/control pass
+
+- Re-read Figma node `ZCLLsSiEhnVEaH2uwRrmjF / 19:2` and corrected the control split: `CanvasEditorToolbar` is now the Figma-style left vertical 32px icon rail, while `CanvasBottomBar` is restored as the top-right horizontal view-control strip instead of being repurposed as the left toolbar.
+- Added canvas-core display children for Agent execution presentation nodes so `user_goal` and compact `agent_execution` frames render visible text such as the user prompt and `Thinking...`; stream/draft write-back now refreshes those children via the same presentation helper.
+- Adjusted compact execution-node measurement to match the 36px Figma execution capsule when collapsed; expanded state remains available for detailed stream entries.
+- Figma screenshots used for comparison were downloaded to `/tmp/cucumber-figma-node-19-2.png`, `/tmp/cucumber-figma-toolbar-19-177.png`, and `/tmp/cucumber-figma-chain-19-275.png`.
+- Passed: `pnpm --filter @cucumber/canvas-core test`.
+- Passed: `pnpm --filter web typecheck`.
+- Passed: `pnpm --filter web exec vitest run test/canvas-agent-composer.test.tsx test/canvas-agent-execution-stream-writeback.test.ts test/canvas-page-toolbar-icon.test.tsx test/canvas-editor-toolbar.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter server typecheck`.
+- Passed: targeted `pnpm exec biome check ...` and `git diff --check`.
+- Note: Browser still cannot compare `/canvas?id=canvas-1` because the local API returns `Canvas not found`; use `pnpm prepare:visual-canvas` with a valid `CUCUMBER_VISUAL_ACCEPTANCE_TOKEN` to create the real visual URL before live screenshot comparison.

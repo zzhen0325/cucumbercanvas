@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AGENT_EXECUTION_CANVAS_LAYOUT_VERSION,
+  createAgentExecutionNode,
   measureAgentExecutionComponentLayout,
   normalizeAgentExecutionCanvasLayout,
   toggleAgentExecutionCanvasCollapsed,
@@ -294,7 +295,7 @@ describe("agent execution canvas presentation", () => {
     });
     const stepNode = findNode(migrated.doc, "step-1");
     expect(stepNode).toMatchObject({
-      height: 103,
+      height: 36,
       width: 240,
       x: 420,
       y: 344,
@@ -307,11 +308,33 @@ describe("agent execution canvas presentation", () => {
       kind: "task_step",
       status: "running",
     });
-    expect(textContents(stepNode)).toEqual([]);
+    expect(textContents(stepNode)).toContain("正在拆解执行计划。");
 
     const secondPass = normalizeAgentExecutionCanvasLayout(migrated.doc);
     expect(secondPass.changed).toBe(false);
     expect(secondPass.migratedNodeIds).toEqual([]);
+  });
+
+  it("creates visible compact agent execution text for the canvas node", () => {
+    const node = createAgentExecutionNode({
+      summary: "Thinking...",
+      x: 120,
+      y: 240,
+    });
+
+    expect(node).toMatchObject({
+      height: 36,
+      width: 240,
+    });
+    expect(getAgentExecutionMeta(node)).toMatchObject({
+      canvasPresentation: {
+        collapsed: true,
+        layoutVersion: AGENT_EXECUTION_CANVAS_LAYOUT_VERSION,
+      },
+      kind: "agent_execution",
+      status: "running",
+    });
+    expect(textContents(node)).toContain("Thinking...");
   });
 
   it("toggles canvas collapsed state without changing Agent semantics", () => {
@@ -390,7 +413,7 @@ describe("agent execution canvas presentation", () => {
     );
     expect(collapsedLayout.hasOverflow).toBe(true);
     expect(collapsedLayout.showToggle).toBe(true);
-    expect(collapsedLayout.height).toBe(148);
+    expect(collapsedLayout.height).toBe(36);
     expect(expandedLayout.height).toBeGreaterThan(collapsedLayout.height);
   });
 });

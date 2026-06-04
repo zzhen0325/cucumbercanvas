@@ -3,6 +3,7 @@ import type {
   LineNode,
   PenDocument,
   PenNode,
+  TextNode,
 } from "@cucumber/pen-types";
 
 import {
@@ -58,6 +59,9 @@ const COMPONENT_LINE_HEIGHT = 17;
 const COMPONENT_BODY_FONT_SIZE = 11;
 const DISPLAY_CHILD_NAMES = new Set([
   "Agent 执行展开按钮",
+  "Agent 执行箭头",
+  "Agent 执行图标",
+  "Agent 执行图标标记",
   "Agent 执行摘要",
   "Agent 执行标题",
   "Agent 执行状态",
@@ -154,9 +158,12 @@ export function measureAgentExecutionComponentLayout(
     fullHeightForRole(role, titleLines, bodyLines),
   );
   const hasOverflow = fullHeight > maxCollapsedHeight;
-  const collapsedHeight = hasOverflow
-    ? maxCollapsedHeight
-    : Math.max(minHeight, fullHeight);
+  const collapsedHeight =
+    role === "execution"
+      ? minHeight
+      : hasOverflow
+        ? maxCollapsedHeight
+        : Math.max(minHeight, fullHeight);
   return {
     body,
     collapsedHeight,
@@ -194,20 +201,30 @@ export function createAgentUserGoalNode(input: {
     { collapsed: false },
   );
   const width = input.width ?? AGENT_EXECUTION_USER_CARD_SIZE.width;
+  const id = createNodeId("agent_user_goal");
   const visual = getAgentExecutionCanvasFrameUpdates({
     execution,
     bounds: { width },
   });
+  const visualHeight =
+    typeof visual.height === "number"
+      ? visual.height
+      : AGENT_EXECUTION_USER_CARD_SIZE.height;
   return withAgentExecutionNodeSemantics(
     {
-      id: createNodeId("agent_user_goal"),
+      id,
       type: "frame",
       name: title,
       x: input.x,
       y: input.y,
       width,
-      height: visual.height ?? AGENT_EXECUTION_USER_CARD_SIZE.height,
-      children: [],
+      height: visualHeight,
+      children: createAgentExecutionDisplayChildren({
+        execution,
+        height: visualHeight,
+        parentId: id,
+        width,
+      }),
       clipContent: false,
       containerRole: ["context"],
       contextSlots: {
@@ -254,25 +271,35 @@ export function createAgentExecutionNode(input: {
         : {}),
       streamEntries: [],
     },
-    { collapsed: false },
+    { collapsed: true },
   );
   const width = input.width ?? AGENT_EXECUTION_BAR_SIZE.width;
+  const id = createNodeId("agent_execution");
   const visual = getAgentExecutionCanvasFrameUpdates({
     body: summary,
     bounds: { width },
-    collapsed: false,
+    collapsed: true,
     execution,
   });
+  const visualHeight =
+    typeof visual.height === "number"
+      ? visual.height
+      : AGENT_EXECUTION_BAR_SIZE.collapsedHeight;
   return withAgentExecutionNodeSemantics(
     {
-      id: createNodeId("agent_execution"),
+      id,
       type: "frame",
       name: title,
       x: input.x,
       y: input.y,
       width,
-      height: visual.height ?? AGENT_EXECUTION_BAR_SIZE.expandedHeight,
-      children: [],
+      height: visualHeight,
+      children: createAgentExecutionDisplayChildren({
+        execution,
+        height: visualHeight,
+        parentId: id,
+        width,
+      }),
       clipContent: false,
       containerRole: ["task", "context"],
       contextSlots: {
@@ -293,10 +320,11 @@ export function createAgentExecutionNode(input: {
 
 export function getAgentExecutionNodePresentationUpdates(input: {
   execution: AgentExecutionNodeMeta;
+  node?: PenNode;
   width?: number;
 }): Partial<FrameNode> {
   const collapsed = getAgentExecutionCanvasCollapsed(input.execution);
-  return getAgentExecutionCanvasFrameUpdates({
+  const visual = getAgentExecutionCanvasFrameUpdates({
     body: formatAgentExecutionCanvasBody(input.execution),
     ...(typeof input.width === "number"
       ? { bounds: { width: input.width } }
@@ -304,6 +332,22 @@ export function getAgentExecutionNodePresentationUpdates(input: {
     collapsed,
     execution: input.execution,
   });
+  const width = visual.width ?? input.width;
+  const height = visual.height;
+  return {
+    ...visual,
+    ...(input.node && typeof width === "number" && typeof height === "number"
+      ? {
+          children: createAgentExecutionDisplayChildren({
+            existingChildren: getRetainedDisplayChildren(input.node),
+            execution: input.execution,
+            height,
+            parentId: input.node.id,
+            width,
+          }),
+        }
+      : {}),
+  };
 }
 
 export function isAgentExecutionCanvasPresentationV2(
@@ -444,6 +488,188 @@ export function getAgentExecutionCanvasFrameUpdates(input: {
   } as Partial<FrameNode>;
 }
 
+function createAgentExecutionDisplayChildren(input: {
+  existingChildren?: PenNode[];
+  execution: AgentExecutionNodeMeta;
+  height: number;
+  parentId: string;
+  width: number;
+}): PenNode[] {
+  const role = getAgentExecutionCanvasRole(input.execution.kind);
+  const children =
+    role === "user_input"
+      ? createUserGoalDisplayChildren(input)
+      : role === "execution"
+        ? createExecutionBarDisplayChildren(input)
+        : createResultDisplayChildren(input);
+  return [...(input.existingChildren ?? []), ...children];
+}
+
+function createUserGoalDisplayChildren(input: {
+  execution: AgentExecutionNodeMeta;
+  height: number;
+  parentId: string;
+  width: number;
+}): PenNode[] {
+  const body = formatAgentExecutionCanvasBody(input.execution);
+  return [
+    createDisplayTextNode({
+      color: "#000000",
+      content: body,
+      fontSize: 12,
+      height: Math.max(16, input.height - 52),
+      id: `${input.parentId}__user_input_text`,
+      lineHeight: 1.3,
+      name: "用户输入",
+      width: Math.max(1, input.width - 54),
+      x: 27,
+      y: 26,
+    }),
+  ];
+}
+
+function createExecutionBarDisplayChildren(input: {
+  execution: AgentExecutionNodeMeta;
+  height: number;
+  parentId: string;
+  width: number;
+}): PenNode[] {
+  const body = formatAgentExecutionCanvasBody(input.execution);
+  const collapsed = getAgentExecutionCanvasCollapsed(input.execution);
+  const children: PenNode[] = [
+    {
+      cornerRadius: 999,
+      fill: [{ color: EXECUTION_GREEN, type: "solid" }],
+      height: 20,
+      id: `${input.parentId}__execution_icon`,
+      name: "Agent 执行图标",
+      type: "ellipse",
+      width: 20,
+      x: 12,
+      y: 8,
+    } as PenNode,
+    createDisplayTextNode({
+      color: "#ffffff",
+      content: "✦",
+      fontSize: 10,
+      height: 12,
+      id: `${input.parentId}__execution_icon_mark`,
+      lineHeight: 1,
+      name: "Agent 执行图标标记",
+      textAlign: "center",
+      width: 12,
+      x: 16,
+      y: 12,
+    }),
+    createDisplayTextNode({
+      color: EXECUTION_GREEN,
+      content: body,
+      fontSize: 12,
+      height: collapsed ? 16 : Math.max(16, input.height - 52),
+      id: `${input.parentId}__execution_summary`,
+      lineHeight: 1.3,
+      name: "Agent 执行摘要",
+      width: Math.max(1, input.width - 62),
+      x: 36.5,
+      y: collapsed ? 10 : 10,
+    }),
+    createDisplayTextNode({
+      color: EXECUTION_GREEN,
+      content: "⌄",
+      fontSize: 12,
+      height: 14,
+      id: `${input.parentId}__execution_arrow`,
+      lineHeight: 1,
+      name: "Agent 执行箭头",
+      textAlign: "center",
+      width: 12,
+      x: input.width - 21,
+      y: 11,
+    }),
+  ];
+  if (!collapsed && input.execution.streamEntries?.length) {
+    children.push(
+      createDisplayTextNode({
+        color: "#334155",
+        content: input.execution.streamEntries
+          .slice(-5)
+          .map((entry) => `${entry.label}：${entry.content ?? entry.status}`)
+          .join("\n"),
+        fontSize: 11,
+        height: Math.max(16, input.height - 48),
+        id: `${input.parentId}__execution_details`,
+        lineHeight: 1.35,
+        name: "Agent 执行状态文本",
+        width: Math.max(1, input.width - 32),
+        x: 16,
+        y: 44,
+      }),
+    );
+  }
+  return children;
+}
+
+function createResultDisplayChildren(input: {
+  execution: AgentExecutionNodeMeta;
+  parentId: string;
+  width: number;
+}): PenNode[] {
+  const body = formatAgentExecutionCanvasBody(input.execution);
+  if (!body) return [];
+  return [
+    createDisplayTextNode({
+      color: "#737373",
+      content: body,
+      fontSize: 12,
+      height: 36,
+      id: `${input.parentId}__result_summary`,
+      lineHeight: 1.3,
+      name: "结果摘要",
+      width: Math.max(1, input.width - 32),
+      x: 16,
+      y: 16,
+    }),
+  ];
+}
+
+function createDisplayTextNode(input: {
+  color: string;
+  content: string;
+  fontSize: number;
+  height: number;
+  id: string;
+  lineHeight: number;
+  name: string;
+  textAlign?: TextNode["textAlign"];
+  width: number;
+  x: number;
+  y: number;
+}): TextNode {
+  return {
+    content: input.content,
+    fill: [{ color: input.color, type: "solid" }],
+    fontFamily: "system-ui, sans-serif",
+    fontSize: input.fontSize,
+    fontWeight: 400,
+    height: input.height,
+    id: input.id,
+    lineHeight: input.lineHeight,
+    name: input.name,
+    textAlign: input.textAlign ?? "left",
+    textAlignVertical: "top",
+    textGrowth: "fixed-width-height",
+    type: "text",
+    width: input.width,
+    x: input.x,
+    y: input.y,
+  };
+}
+
+function getRetainedDisplayChildren(node: PenNode): PenNode[] {
+  if (!("children" in node) || !Array.isArray(node.children)) return [];
+  return removeAgentExecutionDisplayChildren(node);
+}
+
 export function getAgentExecutionCanvasConnectorStroke(
   tone: "accent" | "warning" = "accent",
 ): LineNode["stroke"] {
@@ -492,21 +718,21 @@ export function normalizeAgentExecutionCanvasLayout(doc: PenDocument): {
           collapsed: nextExecution.canvasPresentation?.collapsed ?? true,
           kind: nextExecution.kind,
         });
-        return {
+        const retainedNode = {
           ...node,
-          ...(layout ? { x: layout.x, y: layout.y } : {}),
           children: removeAgentExecutionDisplayChildren(node),
+        } as PenNode;
+        return {
+          ...retainedNode,
+          ...(layout ? { x: layout.x, y: layout.y } : {}),
           meta: {
             ...(node.meta ?? {}),
             [AGENT_EXECUTION_META_KEY]: nextExecution,
           },
-          ...getAgentExecutionCanvasFrameUpdates({
-            body: formatAgentExecutionCanvasBody(nextExecution),
-            bounds: {
-              width: size.width,
-            },
-            collapsed: nextExecution.canvasPresentation?.collapsed ?? true,
+          ...getAgentExecutionNodePresentationUpdates({
             execution: nextExecution,
+            node: retainedNode,
+            width: size.width,
           }),
         } as PenNode;
       }),

@@ -36,6 +36,7 @@ export function useCanvasAgentExecutionStreamWriteback(
         }),
         ...getAgentExecutionNodePresentationUpdates({
           execution: nextExecution,
+          node,
           width: getNodeWidth(node),
         }),
       } as Partial<PenNode>;

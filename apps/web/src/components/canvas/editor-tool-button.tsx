@@ -41,7 +41,7 @@ export function EditorToolButton({
       aria-label={label}
       aria-pressed={active === undefined ? undefined : active}
       className={cn(
-        "relative size-8 rounded-lg border border-transparent text-foreground/60 transition-all duration-150 hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
+        "relative size-8 rounded-full border border-transparent text-foreground/60 transition-all duration-150 hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
         active &&
           "border-foreground/10 bg-foreground/[0.08] text-foreground shadow-subtle hover:bg-foreground/[0.1]",
         className,

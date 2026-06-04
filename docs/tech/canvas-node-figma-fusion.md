@@ -140,5 +140,6 @@ Before implementing a feature that touches node-system or Figma-like behavior, a
 ## Documentation Cross-links
 
 - Use [`cucumber-canvas-foundation.md`](./cucumber-canvas-foundation.md) for the durable canvas shape and read/write chain.
+- Use [`canvas-node-figma-fusion-code-map.md`](./canvas-node-figma-fusion-code-map.md) for the current code ownership map and refactor hotspots.
 - Use [`canvas-tooling-capability-map.md`](./canvas-tooling-capability-map.md) for current UI tools, properties, runtime fields, and MCP callability.
 - Use [`ai-native-canvas-agent-capability-plan.md`](./ai-native-canvas-agent-capability-plan.md) for staged Agent-callable canvas capabilities.

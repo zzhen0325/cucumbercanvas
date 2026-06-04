@@ -37,7 +37,7 @@ interface CanvasBottomBarProps {
   onToggleFiles: () => void;
   designOpen: boolean;
   onToggleDesign: () => void;
-  /** Whether any left panel is open — shifts the bar right */
+  /** Kept for the parent contract; the view controls stay pinned top-right. */
   leftPanelOpen: boolean;
 }
 
@@ -215,7 +215,6 @@ export function CanvasBottomBar({
   onToggleFiles,
   designOpen,
   onToggleDesign,
-  leftPanelOpen,
 }: CanvasBottomBarProps) {
   /* ── Zoom state ── */
   const [zoom, setZoom] = useState(1);
@@ -329,12 +328,12 @@ export function CanvasBottomBar({
 
   return (
     <div
-      className="absolute top-1/2 z-20 -translate-y-1/2 transition-[left] duration-200"
-      style={{ left: leftPanelOpen ? 296 : 16 }}
+      className="absolute right-5 top-4 z-20"
+      data-canvas-view-controls
       onKeyDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >
-      <div className="flex flex-col items-center gap-0.5 rounded-full bg-card/90 backdrop-blur-lg border border-border px-1 py-1 shadow-card">
+      <div className="flex h-[38px] items-center gap-0.5 rounded-full bg-card/90 backdrop-blur-lg border border-border px-1 py-1 shadow-card">
         {/* ── Background color button ── */}
         <button
           ref={bgBtnRef}
@@ -384,7 +383,7 @@ export function CanvasBottomBar({
         </button>
 
         {/* ── Divider ── */}
-        <span className="my-1 h-px w-3 bg-border" />
+        <span className="mx-1 h-3 w-px bg-border" />
 
         {/* ── Zoom controls ── */}
         <button
@@ -398,7 +397,7 @@ export function CanvasBottomBar({
         <button
           ref={zoomBtnRef}
           type="button"
-          className="min-h-7 w-7 text-center text-[10px] leading-7 text-muted-foreground select-none cursor-pointer hover:text-foreground transition-colors"
+          className="min-w-[40px] text-center text-xs text-muted-foreground select-none cursor-pointer hover:text-foreground transition-colors"
           onClick={toggleZoomMenu}
         >
           {Math.round(zoom * 100)}%
