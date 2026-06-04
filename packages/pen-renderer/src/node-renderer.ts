@@ -572,6 +572,214 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+type RenderableAgentExecutionKind =
+  | "ask_user_more"
+  | "checkpoint"
+  | "comparison"
+  | "critique"
+  | "evidence"
+  | "final_deliverable"
+  | "recipe_plan"
+  | "task_step"
+  | "tool_call"
+  | "user_goal"
+  | "variant_branch";
+
+type RenderableAgentExecutionStatus =
+  | "waiting"
+  | "running"
+  | "done"
+  | "failed"
+  | "paused";
+
+type RenderableAgentExecution = {
+  kind: RenderableAgentExecutionKind;
+  status: RenderableAgentExecutionStatus;
+  title: string;
+  summary?: string;
+  toolName?: string;
+  details?: {
+    inputSummary?: string;
+    outputSummary?: string;
+    reasoningSummary?: string;
+    errorReason?: string;
+  };
+  failure?: {
+    reason: string;
+  };
+  waitingForUser?: {
+    prompt: string;
+  };
+  canvasPresentation?: {
+    collapsed?: boolean;
+  };
+};
+
+type AgentComponentRole = "user_input" | "execution" | "result";
+
+const AGENT_EXECUTION_STATUS_LABELS: Record<
+  RenderableAgentExecutionStatus,
+  string
+> = {
+  done: "已完成",
+  failed: "失败",
+  paused: "已暂停",
+  running: "Thinking",
+  waiting: "等待中",
+};
+
+const AGENT_EXECUTION_KIND_LABELS: Record<
+  RenderableAgentExecutionKind,
+  string
+> = {
+  ask_user_more: "等待用户补充",
+  checkpoint: "检查点",
+  comparison: "方案对比",
+  critique: "评审",
+  evidence: "证据",
+  final_deliverable: "最终交付物",
+  recipe_plan: "Recipe 计划",
+  task_step: "任务步骤",
+  tool_call: "工具调用",
+  user_goal: "用户目标",
+  variant_branch: "方案分支",
+};
+
+const AGENT_COMPONENT_MAX_COLLAPSED_HEIGHT: Record<AgentComponentRole, number> =
+  {
+    execution: 148,
+    result: 320,
+    user_input: 180,
+  };
+
+function getRenderableAgentExecution(
+  node: PenNode,
+): RenderableAgentExecution | null {
+  const value = node.meta?.agentExecution;
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  if (record.schemaVersion !== 1) return null;
+  if (typeof record.kind !== "string" || typeof record.status !== "string") {
+    return null;
+  }
+  if (
+    !Object.hasOwn(AGENT_EXECUTION_KIND_LABELS, record.kind) ||
+    !Object.hasOwn(AGENT_EXECUTION_STATUS_LABELS, record.status)
+  ) {
+    return null;
+  }
+  if (typeof record.title !== "string" || record.title.trim().length === 0) {
+    return null;
+  }
+  return record as RenderableAgentExecution;
+}
+
+function getAgentComponentRole(
+  kind: RenderableAgentExecutionKind,
+): AgentComponentRole {
+  if (kind === "user_goal") return "user_input";
+  if (
+    kind === "comparison" ||
+    kind === "final_deliverable" ||
+    kind === "variant_branch"
+  ) {
+    return "result";
+  }
+  return "execution";
+}
+
+function formatAgentExecutionBody(execution: RenderableAgentExecution): string {
+  return (
+    [
+      execution.details?.inputSummary
+        ? `输入：${execution.details.inputSummary}`
+        : undefined,
+      execution.details?.reasoningSummary
+        ? `思考：${execution.details.reasoningSummary}`
+        : undefined,
+      execution.details?.outputSummary
+        ? `输出：${execution.details.outputSummary}`
+        : undefined,
+      execution.failure?.reason
+        ? `失败原因：${execution.failure.reason}`
+        : undefined,
+      execution.waitingForUser?.prompt
+        ? `等待补充：${execution.waitingForUser.prompt}`
+        : undefined,
+      execution.summary,
+    ].find((value) => typeof value === "string" && value.trim().length > 0) ??
+    fallbackAgentExecutionBody(execution)
+  );
+}
+
+function fallbackAgentExecutionBody(
+  execution: RenderableAgentExecution,
+): string {
+  if (execution.status === "failed") {
+    return "执行失败：没有记录具体失败原因，请查看相关执行节点或服务端日志。";
+  }
+  if (execution.status === "paused") return "执行已暂停，可从该节点继续。";
+  if (execution.status === "running") return "Agent 正在处理当前步骤。";
+  if (execution.status === "waiting") return "等待 Agent 执行或用户补充信息。";
+  return "Agent 已完成该步骤。";
+}
+
+function estimateAgentLineCount(
+  text: string,
+  width: number,
+  fontSize: number,
+): number {
+  return Math.max(
+    1,
+    text.split("\n").reduce((count, line) => {
+      const measured = Array.from(line).reduce((sum, char) => {
+        if (/\s/.test(char)) return sum + fontSize * 0.3;
+        if (/[\u3400-\u9fff\u3000-\u303f\uff00-\uffef]/.test(char)) {
+          return sum + fontSize;
+        }
+        return sum + fontSize * 0.58;
+      }, 0);
+      return count + Math.max(1, Math.ceil(measured / Math.max(width, 1)));
+    }, 0),
+  );
+}
+
+function measureRenderableAgentExecution(
+  execution: RenderableAgentExecution,
+  width: number,
+): {
+  body: string;
+  expanded: boolean;
+  hasOverflow: boolean;
+  role: AgentComponentRole;
+} {
+  const role = getAgentComponentRole(execution.kind);
+  const expanded = execution.canvasPresentation?.collapsed === false;
+  const body = formatAgentExecutionBody(execution);
+  const contentWidth = Math.max(1, width - 32);
+  const titleLines = estimateAgentLineCount(
+    execution.title,
+    contentWidth,
+    role === "result" ? 13 : 12,
+  );
+  const bodyLines = estimateAgentLineCount(body, contentWidth, 11);
+  const minHeight = role === "execution" ? 36 : role === "result" ? 240 : 84;
+  const fullHeight = Math.max(
+    minHeight,
+    role === "execution"
+      ? 40 + titleLines * 18 + 8 + bodyLines * 17 + 20
+      : role === "result"
+        ? 18 + titleLines * 20 + 14 + bodyLines * 17 + 24
+        : 24 + titleLines * 20 + 12 + bodyLines * 17 + 24,
+  );
+  return {
+    body,
+    expanded,
+    hasOverflow: fullHeight > AGENT_COMPONENT_MAX_COLLAPSED_HEIGHT[role],
+    role,
+  };
+}
+
 /**
  * Core node renderer for CanvasKit/Skia. Draws PenNode shapes, fills,
  * strokes, effects, text, and images. No editor overlays or store dependencies.
@@ -683,6 +891,248 @@ export class SkiaNodeRenderer {
       hits: this.pathCacheHits,
       misses: this.pathCacheMisses,
     };
+  }
+
+  private drawAgentExecutionComponent(
+    canvas: Canvas,
+    node: PenNode,
+    execution: RenderableAgentExecution,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    opacity: number,
+  ) {
+    const layout = measureRenderableAgentExecution(execution, w);
+    const isExecution = layout.role === "execution";
+    const background = isExecution
+      ? "rgba(248,255,191,1)"
+      : "rgba(255,255,255,0.98)";
+    const stroke = isExecution ? "rgba(41,191,78,0.22)" : "rgba(15,23,42,0.08)";
+    this.drawRect(
+      canvas,
+      {
+        ...node,
+        cornerRadius: 18,
+        fill: [{ color: background, type: "solid" }],
+        stroke: {
+          fill: [{ color: stroke, type: "solid" }],
+          thickness: isExecution ? 0.5 : 1,
+        },
+      } as PenNode,
+      x,
+      y,
+      w,
+      h,
+      opacity,
+    );
+
+    if (isExecution) {
+      this.drawAgentExecutionStatusDot(canvas, x + 12, y + 8, 20, opacity);
+      this.drawAgentExecutionText(
+        canvas,
+        {
+          color: "rgba(41,191,78,1)",
+          fontSize: 11,
+          fontWeight: 600,
+          height: 16,
+          name: "Agent 执行状态",
+          text:
+            execution.status === "running"
+              ? "Thinking..."
+              : `${AGENT_EXECUTION_STATUS_LABELS[execution.status]}...`,
+          width: Math.max(40, w - 76),
+          x: x + 37,
+          y: y + 10,
+        },
+        opacity,
+      );
+      this.drawAgentExecutionText(
+        canvas,
+        {
+          color: "rgba(15,23,42,0.92)",
+          fontSize: 12,
+          fontWeight: 600,
+          height: Math.max(18, h - 60),
+          name: "Agent 执行标题",
+          text: `${AGENT_EXECUTION_KIND_LABELS[execution.kind]} · ${execution.title}`,
+          width: Math.max(40, w - 32),
+          x: x + 16,
+          y: y + 46,
+        },
+        opacity,
+      );
+      this.drawAgentExecutionText(
+        canvas,
+        {
+          color: "rgba(15,23,42,0.58)",
+          fontSize: 11,
+          fontWeight: 400,
+          height: Math.max(16, h - 76),
+          name: "Agent 执行摘要",
+          text: layout.body,
+          width: Math.max(40, w - 32),
+          x: x + 16,
+          y: y + 70,
+        },
+        opacity,
+      );
+    } else {
+      this.drawAgentExecutionText(
+        canvas,
+        {
+          color: "rgba(15,23,42,0.92)",
+          fontSize: layout.role === "result" ? 13 : 12,
+          fontWeight: 600,
+          height: 22,
+          name: layout.role === "result" ? "结果标题" : "用户目标",
+          text: execution.title,
+          width: Math.max(40, w - 32),
+          x: x + 16,
+          y: y + (layout.role === "result" ? 18 : 20),
+        },
+        opacity,
+      );
+      this.drawAgentExecutionText(
+        canvas,
+        {
+          color:
+            layout.role === "result"
+              ? "rgba(15,23,42,0.58)"
+              : "rgba(15,23,42,0.82)",
+          fontSize: 11,
+          fontWeight: layout.role === "user_input" ? 500 : 400,
+          height: Math.max(24, h - (layout.role === "result" ? 52 : 54)),
+          name: layout.role === "result" ? "结果摘要" : "用户输入",
+          text: layout.body,
+          width: Math.max(40, w - 32),
+          x: x + 16,
+          y: y + (layout.role === "result" ? 46 : 48),
+        },
+        opacity,
+      );
+    }
+
+    if (!layout.hasOverflow) return;
+    if (!layout.expanded) {
+      this.drawAgentExecutionFade(canvas, x, y, w, h, background, opacity);
+    }
+    this.drawAgentExecutionToggle(canvas, {
+      expanded: layout.expanded,
+      opacity,
+      x: x + Math.max(12, w - 56),
+      y: y + 8,
+    });
+  }
+
+  private drawAgentExecutionText(
+    canvas: Canvas,
+    input: {
+      color: string;
+      fontSize: number;
+      fontWeight: number;
+      height: number;
+      name: string;
+      text: string;
+      width: number;
+      x: number;
+      y: number;
+    },
+    opacity: number,
+  ) {
+    this.textRenderer.drawText(
+      canvas,
+      {
+        content: input.text,
+        fill: [{ color: input.color, type: "solid" }],
+        fontFamily: "Inter",
+        fontFallback: ["Noto Sans SC"],
+        fontSize: input.fontSize,
+        fontWeight: input.fontWeight,
+        height: input.height,
+        id: `agent_execution_render_${input.name}`,
+        lineHeight: 1.35,
+        name: input.name,
+        textGrowth: "fixed-width-height",
+        type: "text",
+        width: input.width,
+        x: input.x,
+        y: input.y,
+      } as PenNode,
+      input.x,
+      input.y,
+      input.width,
+      input.height,
+      opacity,
+    );
+  }
+
+  private drawAgentExecutionStatusDot(
+    canvas: Canvas,
+    x: number,
+    y: number,
+    size: number,
+    opacity: number,
+  ) {
+    const paint = new this.ck.Paint();
+    paint.setColor(parseColor(this.ck, "rgba(41,191,78,1)"));
+    paint.setAlphaf(opacity);
+    canvas.drawOval(this.ck.LTRBRect(x, y, x + size, y + size), paint);
+    paint.delete();
+  }
+
+  private drawAgentExecutionFade(
+    canvas: Canvas,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    color: string,
+    opacity: number,
+  ) {
+    const paint = new this.ck.Paint();
+    paint.setColor(parseColor(this.ck, color));
+    paint.setAlphaf(Math.min(1, opacity * 0.88));
+    canvas.drawRect(
+      this.ck.LTRBRect(x + 8, y + h - 30, x + w - 8, y + h - 8),
+      paint,
+    );
+    paint.delete();
+  }
+
+  private drawAgentExecutionToggle(
+    canvas: Canvas,
+    input: { expanded: boolean; opacity: number; x: number; y: number },
+  ) {
+    const bounds = this.ck.LTRBRect(
+      input.x,
+      input.y,
+      input.x + 44,
+      input.y + 22,
+    );
+    const paint = new this.ck.Paint();
+    paint.setColor(parseColor(this.ck, "rgba(255,255,255,0.86)"));
+    canvas.drawRRect(this.ck.RRectXY(bounds, 11, 11), paint);
+    paint.setStyle(this.ck.PaintStyle.Stroke);
+    paint.setStrokeWidth(1);
+    paint.setColor(parseColor(this.ck, "rgba(15,23,42,0.12)"));
+    canvas.drawRRect(this.ck.RRectXY(bounds, 11, 11), paint);
+    paint.delete();
+    this.drawAgentExecutionText(
+      canvas,
+      {
+        color: "rgba(15,23,42,0.68)",
+        fontSize: 10,
+        fontWeight: 600,
+        height: 16,
+        name: "Agent 展开按钮",
+        text: input.expanded ? "收起" : "展开",
+        width: 32,
+        x: input.x + 7,
+        y: input.y + 4,
+      },
+      input.opacity,
+    );
   }
 
   private getImageSamplingOptions() {
@@ -2034,11 +2484,25 @@ export class SkiaNodeRenderer {
       blurLayerCount += 1;
     }
 
+    const agentExecution = getRenderableAgentExecution(node);
     switch (node.type) {
       case "frame":
       case "rectangle":
       case "group":
-        this.drawRect(canvas, node, absX, absY, absW, absH, opacity);
+        if (agentExecution && node.type === "frame") {
+          this.drawAgentExecutionComponent(
+            canvas,
+            node,
+            agentExecution,
+            absX,
+            absY,
+            absW,
+            absH,
+            opacity,
+          );
+        } else {
+          this.drawRect(canvas, node, absX, absY, absW, absH, opacity);
+        }
         break;
       case "ellipse":
         this.drawEllipse(canvas, node, absX, absY, absW, absH, opacity);
@@ -2072,7 +2536,7 @@ export class SkiaNodeRenderer {
         break;
     }
 
-    if (node.type !== "text") {
+    if (!agentExecution && node.type !== "text") {
       this.applyInnerShadowsDirect(
         canvas,
         node,

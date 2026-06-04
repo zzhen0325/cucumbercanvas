@@ -12,6 +12,12 @@ The goal is not to let the Agent click every UI control. The goal is to let the 
 4. Write structured, container-first results into `PenDocument.pages`.
 5. Continue from user manual edits, selection, assets, and prior Agent outputs.
 
+For the product/runtime boundary that fuses Figma-like direct editing with
+Flowith-like node execution semantics, use
+[`canvas-node-figma-fusion.md`](./canvas-node-figma-fusion.md). This plan should
+only add Agent capabilities that operate on that shared `PenNode` tree, not a
+parallel workflow graph or Agent-only canvas state.
+
 ## Non-Negotiable Runtime Boundary
 
 The only durable canvas truth remains:

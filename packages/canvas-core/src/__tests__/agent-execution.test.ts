@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AGENT_EXECUTION_CANVAS_LAYOUT_VERSION,
+  measureAgentExecutionComponentLayout,
   normalizeAgentExecutionCanvasLayout,
   toggleAgentExecutionCanvasCollapsed,
   withAgentExecutionCanvasPresentation,
@@ -293,7 +294,7 @@ describe("agent execution canvas presentation", () => {
     });
     const stepNode = findNode(migrated.doc, "step-1");
     expect(stepNode).toMatchObject({
-      height: 36,
+      height: 103,
       width: 240,
       x: 420,
       y: 344,
@@ -306,9 +307,7 @@ describe("agent execution canvas presentation", () => {
       kind: "task_step",
       status: "running",
     });
-    expect(textContents(stepNode)).toEqual(
-      expect.arrayContaining(["Thinking...", "v"]),
-    );
+    expect(textContents(stepNode)).toEqual([]);
 
     const secondPass = normalizeAgentExecutionCanvasLayout(migrated.doc);
     expect(secondPass.changed).toBe(false);
@@ -345,6 +344,54 @@ describe("agent execution canvas presentation", () => {
       title: "generate_image",
       toolName: "generate_image",
     });
+  });
+
+  it("measures auto-height Agent components and only shows toggles on overflow", () => {
+    const shortExecution = withAgentExecutionCanvasPresentation({
+      kind: "user_goal",
+      schemaVersion: 1,
+      status: "waiting",
+      summary: "生成一张小狗插画。",
+      title: "用户目标",
+    });
+    const shortLayout = measureAgentExecutionComponentLayout(
+      shortExecution,
+      240,
+      false,
+    );
+    expect(shortLayout.hasOverflow).toBe(false);
+    expect(shortLayout.showToggle).toBe(false);
+    expect(shortLayout.height).toBeGreaterThanOrEqual(84);
+
+    const longExecution = withAgentExecutionCanvasPresentation(
+      {
+        kind: "tool_call",
+        schemaVersion: 1,
+        status: "running",
+        summary: Array.from(
+          { length: 24 },
+          (_, index) =>
+            `步骤 ${index + 1} 需要记录输入、输出、失败原因和下一步动作`,
+        ).join("，"),
+        title: "生成图片",
+        toolName: "generate_image",
+      },
+      { collapsed: true },
+    );
+    const collapsedLayout = measureAgentExecutionComponentLayout(
+      longExecution,
+      240,
+      false,
+    );
+    const expandedLayout = measureAgentExecutionComponentLayout(
+      longExecution,
+      240,
+      true,
+    );
+    expect(collapsedLayout.hasOverflow).toBe(true);
+    expect(collapsedLayout.showToggle).toBe(true);
+    expect(collapsedLayout.height).toBe(148);
+    expect(expandedLayout.height).toBeGreaterThan(collapsedLayout.height);
   });
 });
 

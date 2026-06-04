@@ -22,6 +22,7 @@ export function createCanvasApiFacade(getLiveApi: () => CanvasApi): CanvasApi {
     createContainer: (opts) => getLiveApi().createContainer(opts),
     createSection: (opts) => getLiveApi().createSection(opts),
     createSticky: (opts) => getLiveApi().createSticky(opts),
+    createAgentUserGoal: (opts) => getLiveApi().createAgentUserGoal(opts),
     createConnector: (opts) => getLiveApi().createConnector(opts),
     detachConnectorEndpoint: (nodeId, endpoint) =>
       getLiveApi().detachConnectorEndpoint(nodeId, endpoint),

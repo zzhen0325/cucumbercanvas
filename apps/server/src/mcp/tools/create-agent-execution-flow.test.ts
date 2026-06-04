@@ -148,7 +148,7 @@ describe("create_agent_execution_flow", () => {
     };
     const topLevelNodes = state.doc.pages?.[0]?.children ?? [];
     expect(topLevelNodes).toHaveLength(15);
-    expect(flattenNodes(state.doc)).toHaveLength(36);
+    expect(flattenNodes(state.doc)).toHaveLength(15);
     const [firstStepNodeId, secondStepNodeId] = payload.taskStepNodeIds;
     const [toolCallNodeId] = payload.toolCallNodeIds;
     if (!firstStepNodeId || !secondStepNodeId || !toolCallNodeId) {
@@ -262,19 +262,8 @@ describe("create_agent_execution_flow", () => {
     const recipeNode = findNode(state.doc, payload.recipeNodeId) as
       | FrameNode
       | undefined;
-    const recipeChildren = recipeNode?.children as PenNode[] | undefined;
-    expect(recipeChildren).toHaveLength(3);
-    expect(recipeChildren?.[1]).toMatchObject({
-      content: "已完成...",
-      fontSize: 11,
-      x: 37,
-      y: 10,
-    });
-    expect(recipeChildren?.[2]).toMatchObject({
-      content: "v",
-      name: "Agent 执行展开按钮",
-    });
-    expect(textContents(recipeNode)).not.toContain("品牌海报 Recipe");
+    expect(recipeNode?.children).toEqual([]);
+    expect(textContents(recipeNode)).toEqual([]);
     const connectors = payload.connectorNodeIds.map(
       (id) => findNode(state.doc, id) as LineNode | undefined,
     );

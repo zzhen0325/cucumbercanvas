@@ -159,7 +159,7 @@ describe("record_agent_final_deliverable", () => {
       title: "品牌视觉探索最终交付",
       upstreamNodeIds: ["critique-1"],
     });
-    expect(textContents(updatedNode as PenNode).join("\n")).toContain(
+    expect(textContents(updatedNode as PenNode).join("\n")).not.toContain(
       "交付摘要：品牌视觉探索交付完成。",
     );
   });
@@ -209,7 +209,7 @@ describe("record_agent_final_deliverable", () => {
       kind: "final_deliverable",
       status: "failed",
     });
-    expect(textContents(updatedNode as PenNode).join("\n")).toContain(
+    expect(textContents(updatedNode as PenNode).join("\n")).not.toContain(
       "失败原因：最终导出所需的组件规格缺少移动端布局说明。",
     );
   });

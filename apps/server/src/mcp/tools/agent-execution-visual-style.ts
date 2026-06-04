@@ -3,7 +3,6 @@ import {
   type AgentExecutionNodeMeta,
   type AgentExecutionStatus,
   type CanvasBounds,
-  createAgentExecutionCanvasChildren,
   getAgentExecutionCanvasConnectorStroke,
   getAgentExecutionCanvasFrameUpdates,
   withAgentExecutionCanvasPresentation,
@@ -13,33 +12,6 @@ import type { FrameNode, LineNode, PenNode } from "@cucumber/pen-types";
 export const AGENT_EXECUTION_CARD_CORNER_RADIUS = 18;
 export const AGENT_EXECUTION_CARD_STROKE_THICKNESS = 1;
 export const AGENT_EXECUTION_CONNECTOR_THICKNESS = 1;
-
-export function createAgentExecutionCardChildren(input: {
-  body: string;
-  bounds: Pick<CanvasBounds, "height" | "width">;
-  kind: AgentExecutionNodeKind;
-  status: AgentExecutionStatus;
-  title: string;
-  toolName?: string;
-  collapsed?: boolean;
-}): PenNode[] {
-  return createAgentExecutionCanvasChildren({
-    body: input.body,
-    bounds: input.bounds,
-    collapsed: input.collapsed ?? true,
-    execution: withAgentExecutionCanvasPresentation(
-      {
-        kind: input.kind,
-        schemaVersion: 1,
-        status: input.status,
-        title: input.title,
-        ...(input.toolName ? { toolName: input.toolName } : {}),
-        summary: input.body,
-      } satisfies AgentExecutionNodeMeta,
-      { collapsed: input.collapsed ?? true },
-    ),
-  });
-}
 
 export function agentExecutionCardFillForKind(
   kind: AgentExecutionNodeKind,

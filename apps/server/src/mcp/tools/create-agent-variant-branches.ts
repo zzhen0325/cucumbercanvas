@@ -20,7 +20,6 @@ import { schemaToJsonSchema } from "../utils.js";
 import {
   agentExecutionConnectorStroke,
   applyAgentExecutionCardVisualStyle,
-  createAgentExecutionCardChildren,
 } from "./agent-execution-visual-style.js";
 import {
   type AiNativeCanvasToolDeps,
@@ -474,13 +473,7 @@ function createCard(input: {
       y: input.bounds.y,
       width: input.bounds.width,
       height: input.bounds.height,
-      children: createAgentExecutionCardChildren({
-        body: input.body,
-        bounds: input.bounds,
-        kind: input.kind,
-        status: input.status,
-        title: input.title,
-      }),
+      children: [],
       clipContent: false,
       containerRole: ["task", "context"],
       contextSlots: { rules: ["agent variant exploration node"] },

@@ -28,6 +28,9 @@ Agent canvas operations must use the live editor state:
 For the current inventory of Web canvas tools, editable properties,
 `CanvasApi` functions, and Agent/MCP callability, see
 [`canvas-tooling-capability-map.md`](./canvas-tooling-capability-map.md).
+For the product and runtime boundary that merges Figma-like editing with
+Flowith-like node execution semantics on the same `PenNode` tree, see
+[`canvas-node-figma-fusion.md`](./canvas-node-figma-fusion.md).
 For the implementation plan that turns the current canvas into a fuller
 AI-native Agent-operated canvas, see
 [`ai-native-canvas-agent-capability-plan.md`](./ai-native-canvas-agent-capability-plan.md).

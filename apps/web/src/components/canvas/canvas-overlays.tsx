@@ -492,6 +492,7 @@ export function CanvasEditorToolbarConnected({
       activeTool={toolbarState.activeTool}
       canRedo={toolbarState.canRedo}
       canUndo={toolbarState.canUndo}
+      onCreateAgentUserGoal={() => api.createAgentUserGoal()}
       onCreateContainer={onCreateContainer}
       onDelete={api.deleteSelection}
       onInsertIcon={onInsertIcon}

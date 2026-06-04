@@ -5,6 +5,7 @@ import {
   getAgentExecutionCanvasCollapsed,
   getAgentExecutionCanvasFrameUpdates,
   getAgentExecutionMeta,
+  getNodeBounds,
   withAgentExecutionCanvasPresentation,
 } from "@cucumber/canvas-core";
 import type { PenNode } from "@cucumber/pen-types";
@@ -94,6 +95,7 @@ export async function recordImageGenerationExecutionNode(args: {
         updates: {
           ...getAgentExecutionCanvasFrameUpdates({
             body,
+            bounds: getNodeBounds(node),
             collapsed: getAgentExecutionCanvasCollapsed(nextExecution),
             execution: nextExecution,
           }),

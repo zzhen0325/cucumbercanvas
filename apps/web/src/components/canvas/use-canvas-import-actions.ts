@@ -11,6 +11,10 @@ import type { PenDocument } from "@cucumber/pen-types";
 import { useCallback, useRef, useState } from "react";
 
 import {
+  hasCanvasNodeTemplateDragPayload,
+  readCanvasNodeTemplateDragPayload,
+} from "./agent-node-template-drag";
+import {
   getClipboardImportStrategy,
   summarizeImportedNodes,
 } from "./canvas-import-diagnostics";
@@ -59,6 +63,7 @@ export function useCanvasImportActions({
   selectedIdsRef,
   setSelection,
   toast,
+  onCreateAgentUserGoal,
 }: {
   accessToken?: string;
   activePageIdRef: MutableRef<string>;
@@ -85,6 +90,11 @@ export function useCanvasImportActions({
     opts?: { notifyScene?: boolean; notifySelection?: boolean },
   ) => void;
   toast: ImportToast;
+  onCreateAgentUserGoal?: (opts: {
+    text?: string;
+    x: number;
+    y: number;
+  }) => void;
 }) {
   const [isFileDragActive, setIsFileDragActive] = useState(false);
   const fileDragDepthRef = useRef(0);
@@ -317,6 +327,12 @@ export function useCanvasImportActions({
 
   const handleDragEnter = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
+      if (hasCanvasNodeTemplateDragPayload(event.dataTransfer)) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.dataTransfer.dropEffect = "copy";
+        return;
+      }
       if (!hasFileDataTransfer(event.dataTransfer)) return;
       event.preventDefault();
       event.stopPropagation();
@@ -329,6 +345,12 @@ export function useCanvasImportActions({
 
   const handleDragOver = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
+      if (hasCanvasNodeTemplateDragPayload(event.dataTransfer)) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.dataTransfer.dropEffect = "copy";
+        return;
+      }
       if (!hasFileDataTransfer(event.dataTransfer)) return;
       event.preventDefault();
       event.stopPropagation();
@@ -352,6 +374,44 @@ export function useCanvasImportActions({
 
   const handleDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
+      if (hasCanvasNodeTemplateDragPayload(event.dataTransfer)) {
+        event.preventDefault();
+        event.stopPropagation();
+        resetFileDragState();
+        try {
+          const payload = readCanvasNodeTemplateDragPayload(event.dataTransfer);
+          const scenePoint = getPointerScenePoint(event);
+          if (!scenePoint) {
+            throw new Error(
+              "无法确定节点放置位置，请把用户目标节点拖到画布区域后再松开。",
+            );
+          }
+          if (!onCreateAgentUserGoal) {
+            throw new Error("当前画布没有接入用户目标节点创建能力。");
+          }
+          onCreateAgentUserGoal({
+            ...(payload.text ? { text: payload.text } : {}),
+            x: scenePoint.x,
+            y: scenePoint.y,
+          });
+          console.info("[skia-canvas] node-template-drop.created", {
+            activePageId: activePageIdRef.current,
+            scenePoint,
+            templateType: payload.type,
+          });
+        } catch (error) {
+          console.warn("[skia-canvas] node-template-drop.failed", {
+            activePageId: activePageIdRef.current,
+            error,
+          });
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : "节点模板创建失败，请从工具栏重新拖出节点。",
+          );
+        }
+        return;
+      }
       if (!hasFileDataTransfer(event.dataTransfer)) return;
       event.preventDefault();
       event.stopPropagation();
@@ -413,6 +473,7 @@ export function useCanvasImportActions({
       activePageIdRef,
       getPointerScenePoint,
       importDropPayloadsInGrid,
+      onCreateAgentUserGoal,
       rendererRef,
       resetFileDragState,
       toast,

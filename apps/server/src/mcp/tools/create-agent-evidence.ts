@@ -20,7 +20,6 @@ import { schemaToJsonSchema } from "../utils.js";
 import {
   agentExecutionConnectorStroke,
   applyAgentExecutionCardVisualStyle,
-  createAgentExecutionCardChildren,
 } from "./agent-execution-visual-style.js";
 import {
   type AiNativeCanvasToolDeps,
@@ -290,13 +289,7 @@ function createEvidenceCard(input: {
   const node = withAgentExecutionNodeSemantics(
     applyAgentExecutionCardVisualStyle(
       {
-        children: createAgentExecutionCardChildren({
-          body: input.body,
-          bounds: input.bounds,
-          kind: "evidence",
-          status: "done",
-          title: input.title,
-        }),
+        children: [],
         clipContent: false,
         containerRole: ["context"],
         contextSlots: {

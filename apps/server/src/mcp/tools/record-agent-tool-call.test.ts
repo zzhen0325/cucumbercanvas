@@ -172,7 +172,7 @@ describe("record_agent_tool_call", () => {
       layoutVersion: 2,
       collapsed: true,
     });
-    expect(textContents(updatedNode)).toEqual(
+    expect(textContents(updatedNode)).not.toEqual(
       expect.arrayContaining(["已完成...", "v"]),
     );
   });

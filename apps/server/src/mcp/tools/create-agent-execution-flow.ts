@@ -23,7 +23,6 @@ import { schemaToJsonSchema } from "../utils.js";
 import {
   agentExecutionConnectorStroke,
   applyAgentExecutionCardVisualStyle,
-  createAgentExecutionCardChildren,
 } from "./agent-execution-visual-style.js";
 import {
   type AiNativeCanvasToolDeps,
@@ -459,15 +458,7 @@ function createExecutionCard(input: {
         y: input.bounds.y,
         width: input.bounds.width,
         height: input.bounds.height,
-        children: createAgentExecutionCardChildren({
-          body: input.body,
-          bounds: input.bounds,
-          collapsed: true,
-          kind: input.kind,
-          status: input.status,
-          title: input.title,
-          toolName: input.toolName,
-        }),
+        children: [],
         clipContent: false,
         containerRole: input.role,
         contextSlots: {

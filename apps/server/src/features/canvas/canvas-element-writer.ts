@@ -10,10 +10,14 @@ import {
   createNodeId,
   findNode,
   flattenNodes,
+  formatAgentExecutionCanvasBody,
+  getAgentExecutionCanvasCollapsed,
+  getAgentExecutionCanvasFrameUpdates,
   getAgentExecutionMeta,
   getNodeBounds,
   isContainerNode,
   isCucumberCanvasDocument,
+  withAgentExecutionCanvasPresentation,
   withAgentExecutionMeta,
 } from "@cucumber/canvas-core";
 import type { Json } from "@cucumber/shared";
@@ -378,7 +382,7 @@ function buildAgentResultCompletionOperation(
   if (!target || !execution || execution.kind !== "final_deliverable") {
     return null;
   }
-  const updatedTarget = withAgentExecutionMeta(target, {
+  const nextExecution = withAgentExecutionCanvasPresentation({
     ...execution,
     downstreamNodeIds: Array.from(
       new Set([...(execution.downstreamNodeIds ?? []), generatedNodeId]),
@@ -386,10 +390,21 @@ function buildAgentResultCompletionOperation(
     status: "done",
     summary: "图片生成完成，最终结果已写入这个容器。",
   });
+  const updatedTarget = withAgentExecutionMeta(target, nextExecution);
+  const targetBounds = getNodeBounds(target);
   return {
     type: "updateNode",
     nodeId: containerId,
     updates: {
+      ...getAgentExecutionCanvasFrameUpdates({
+        body: formatAgentExecutionCanvasBody(nextExecution),
+        bounds: {
+          height: targetBounds.height,
+          width: targetBounds.width,
+        },
+        collapsed: getAgentExecutionCanvasCollapsed(nextExecution),
+        execution: nextExecution,
+      }),
       meta: updatedTarget.meta,
       ...(target.agentBinding
         ? { agentBinding: { ...target.agentBinding, status: "completed" } }

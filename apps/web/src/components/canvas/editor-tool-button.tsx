@@ -1,7 +1,7 @@
 "use client";
 
 import type { LucideProps } from "lucide-react";
-import type { ComponentType, MouseEventHandler } from "react";
+import type { ComponentType, DragEventHandler, MouseEventHandler } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -10,9 +10,12 @@ type EditorToolButtonProps = {
   active?: boolean;
   className?: string;
   disabled?: boolean;
+  draggable?: boolean;
   icon: ComponentType<LucideProps>;
   label: string;
   onClick?: MouseEventHandler<HTMLButtonElement>;
+  onDragEnd?: DragEventHandler<HTMLButtonElement>;
+  onDragStart?: DragEventHandler<HTMLButtonElement>;
   shortcut?: string;
 };
 
@@ -20,9 +23,12 @@ export function EditorToolButton({
   active,
   className,
   disabled = false,
+  draggable,
   icon: Icon,
   label,
   onClick,
+  onDragEnd,
+  onDragStart,
   shortcut,
 }: EditorToolButtonProps) {
   const title = shortcut ? `${label} (${shortcut})` : label;
@@ -41,7 +47,10 @@ export function EditorToolButton({
         className,
       )}
       disabled={disabled}
+      draggable={draggable}
       onClick={onClick}
+      onDragEnd={onDragEnd}
+      onDragStart={onDragStart}
       title={title}
     >
       {active ? (

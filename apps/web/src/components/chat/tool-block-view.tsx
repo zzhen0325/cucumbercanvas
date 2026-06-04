@@ -167,12 +167,10 @@ export const ToolBlockView = React.memo(function ToolBlockView({
     config.showCard && isCompleted && (block.outputSummary || hasOutput);
 
   // Extract artifacts for generate_image / generate_video inline preview
-  const imageArtifact = block.artifacts?.find(
-    (artifact): artifact is ImageArtifact => artifact.type === "image",
-  );
   const isImageTool = block.toolName === "generate_image";
   const isVideoTool = block.toolName === "generate_video";
   const isMediaTool = isImageTool || isVideoTool;
+  const imageArtifact = getImageToolArtifact(block);
   const mediaError =
     isMediaTool && isCompleted && !imageArtifact
       ? ((block.output as Record<string, unknown> | undefined)?.error as
@@ -300,6 +298,47 @@ export const ToolBlockView = React.memo(function ToolBlockView({
     </div>
   );
 });
+
+function getImageToolArtifact(block: ToolBlock): ImageArtifact | undefined {
+  const explicit = block.artifacts?.find(
+    (artifact): artifact is ImageArtifact => artifact.type === "image",
+  );
+  if (explicit) return explicit;
+  if (block.toolName !== "generate_image") return undefined;
+
+  const output = block.output as Record<string, unknown> | undefined;
+  const imageUrl = output?.imageUrl;
+  if (typeof imageUrl !== "string" || imageUrl.trim().length === 0) {
+    return undefined;
+  }
+  const width = output?.width;
+  const height = output?.height;
+  const mimeType = output?.mimeType;
+  if (
+    typeof width !== "number" ||
+    !Number.isFinite(width) ||
+    width <= 0 ||
+    typeof height !== "number" ||
+    !Number.isFinite(height) ||
+    height <= 0 ||
+    typeof mimeType !== "string" ||
+    mimeType.trim().length === 0
+  ) {
+    return undefined;
+  }
+  const title =
+    typeof output?.title === "string" && output.title.trim().length > 0
+      ? output.title
+      : undefined;
+  return {
+    height,
+    mimeType,
+    type: "image",
+    url: imageUrl,
+    width,
+    ...(title ? { title } : {}),
+  };
+}
 
 /* ------------------------------------------------------------------ */
 /*  MediaShimmer — transparent loading surface during media generation */

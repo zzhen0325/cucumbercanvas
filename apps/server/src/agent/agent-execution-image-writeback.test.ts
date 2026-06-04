@@ -101,9 +101,12 @@ describe("recordImageGenerationExecutionNode", () => {
       layoutVersion: 2,
       collapsed: true,
     });
-    expect(textContents(updatedNode)).toEqual(
-      expect.arrayContaining(["已完成...", "v"]),
-    );
+    expect(updatedNode).toMatchObject({
+      clipContent: false,
+      height: expect.any(Number),
+      width: expect.any(Number),
+    });
+    expect(textContents(updatedNode)).toEqual(["generate_image 等待写回。"]);
   });
 
   it("writes failed image job recovery context without throwing", async () => {

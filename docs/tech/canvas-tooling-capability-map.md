@@ -12,6 +12,11 @@ For the forward development plan, use [`ai-native-canvas-agent-capability-plan.m
 ## Runtime Truth
 
 The durable canvas truth is `PenDocument.pages` plus a valid `activePageId`.
+The node-system and Figma-like editing model share this same truth: visual
+editing fields define the physical canvas object, while semantic fields and
+connector bindings explain workflow/dataflow meaning on the same visible
+`PenNode`. See [`canvas-node-figma-fusion.md`](./canvas-node-figma-fusion.md)
+for the full boundary.
 
 - `PenDocument.pages[]`: page list. Each page owns its `children`.
 - `PenDocument.activePageId`: active durable page. It must point to an existing page.

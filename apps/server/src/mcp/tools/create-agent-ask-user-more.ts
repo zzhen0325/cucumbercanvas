@@ -20,7 +20,6 @@ import { schemaToJsonSchema } from "../utils.js";
 import {
   agentExecutionConnectorStroke,
   applyAgentExecutionCardVisualStyle,
-  createAgentExecutionCardChildren,
 } from "./agent-execution-visual-style.js";
 import {
   type AiNativeCanvasToolDeps,
@@ -269,13 +268,7 @@ function createAskUserMoreCard(input: {
   const node = withAgentExecutionNodeSemantics(
     applyAgentExecutionCardVisualStyle(
       {
-        children: createAgentExecutionCardChildren({
-          body: input.body,
-          bounds: input.bounds,
-          kind: "ask_user_more",
-          status: "waiting",
-          title: input.title,
-        }),
+        children: [],
         clipContent: false,
         containerRole: ["task", "context"],
         contextSlots: {

@@ -11,12 +11,12 @@ import {
   formatAgentExecutionCanvasBody,
   getAgentExecutionCanvasCollapsed,
   getAgentExecutionCanvasFrameUpdates,
-  getAgentExecutionCanvasRole,
   getAgentExecutionMeta,
   getLineEndpoints,
   getNodeBounds,
   getNodeSceneBounds,
   isDescendantOf,
+  measureAgentExecutionComponentLayout,
   reparentNodesByDropPoint,
   toggleAgentExecutionCanvasCollapsed,
 } from "@cucumber/canvas-core";
@@ -462,6 +462,7 @@ export function useSkiaPointerInteractions({
               meta: toggled.meta,
               ...getAgentExecutionCanvasFrameUpdates({
                 body: formatAgentExecutionCanvasBody(execution),
+                bounds: { width: getNodeBounds(toggled).width },
                 collapsed: getAgentExecutionCanvasCollapsed(execution),
                 execution,
               }),
@@ -473,9 +474,19 @@ export function useSkiaPointerInteractions({
           suppressNextClickRef.current = true;
           event.preventDefault();
           event.stopPropagation();
+          const nextToggledNode = findNode(next, toggled.id, activePageId);
           console.info("[canvas-agent-execution-layout] toggle", {
             collapsed: getAgentExecutionCanvasCollapsed(execution),
+            height: nextToggledNode
+              ? getNodeBounds(nextToggledNode).height
+              : undefined,
+            kind: execution.kind,
             nodeId: toggled.id,
+            overflowed: measureAgentExecutionComponentLayout(
+              execution,
+              getNodeBounds(toggled).width,
+              !getAgentExecutionCanvasCollapsed(execution),
+            ).hasOverflow,
           });
           return;
         }
@@ -1667,11 +1678,14 @@ function getAgentExecutionToggleTarget(
   while (node) {
     const execution = getAgentExecutionMeta(node);
     if (execution) {
-      if (getAgentExecutionCanvasRole(execution.kind) !== "execution") {
-        return null;
-      }
       const bounds =
         getNodeSceneBounds(doc, node.id, activePageId) ?? getNodeBounds(node);
+      const layout = measureAgentExecutionComponentLayout(
+        execution,
+        bounds.width,
+        !getAgentExecutionCanvasCollapsed(execution),
+      );
+      if (!layout.showToggle) return null;
       const hotZoneStartX = bounds.x + bounds.width - 32;
       const insideHotZone =
         scenePoint.x >= hotZoneStartX &&

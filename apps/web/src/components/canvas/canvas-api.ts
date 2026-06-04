@@ -146,6 +146,12 @@ export type CanvasApi = {
     width?: number;
     height?: number;
   }) => PenNode;
+  createAgentUserGoal: (opts?: {
+    text?: string;
+    x?: number;
+    y?: number;
+    width?: number;
+  }) => PenNode;
   createConnector: (opts: {
     start: { x: number; y: number };
     end: { x: number; y: number };

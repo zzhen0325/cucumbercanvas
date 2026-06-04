@@ -3,6 +3,7 @@
 import {
   Cable,
   Hand,
+  MessageSquareText,
   MousePointer2,
   PanelTop,
   Plus,
@@ -14,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { Separator } from "@/components/ui/separator";
+import { writeCanvasNodeTemplateDragPayload } from "./agent-node-template-drag";
 import type { CanvasTool } from "./canvas-api";
 import { EditorToolButton } from "./editor-tool-button";
 import { ShapeToolDropdown } from "./shape-tool-dropdown";
@@ -34,6 +36,7 @@ export type CanvasEditorToolbarProps = {
   canUndo: boolean;
   selectedCount: number;
   onCreateContainer: () => void;
+  onCreateAgentUserGoal: () => void;
   onDelete: () => void;
   onInsertIcon?: () => void;
   onImportImage: () => void;
@@ -49,6 +52,7 @@ export function CanvasEditorToolbar({
   canUndo,
   selectedCount,
   onCreateContainer,
+  onCreateAgentUserGoal,
   onDelete,
   onInsertIcon,
   onImportImage,
@@ -90,6 +94,18 @@ export function CanvasEditorToolbar({
       <Separator orientation="vertical" className="h-6 w-px bg-border/70" />
 
       <div className="flex items-center gap-1">
+        <EditorToolButton
+          draggable
+          icon={MessageSquareText}
+          label="用户目标"
+          onClick={onCreateAgentUserGoal}
+          onDragStart={(event) => {
+            writeCanvasNodeTemplateDragPayload(event.dataTransfer, {
+              type: "agent_user_goal",
+            });
+            console.info("[skia-canvas] toolbar.agent_user_goal.drag_start");
+          }}
+        />
         <EditorToolButton
           active={activeTool === "sticky"}
           icon={StickyNote}

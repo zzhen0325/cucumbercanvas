@@ -8,6 +8,7 @@ import {
   applyCanvasOperation,
   applyCanvasTransaction,
   copyCanvasSelection,
+  createAgentUserGoalNode,
   createNodeId,
   deleteCanvasPage,
   detachConnectorEndpoint as detachConnectorEndpointBinding,
@@ -283,6 +284,43 @@ export function useSkiaCanvasApi({
   );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: handler reads live canvas refs as synchronous runtime mirrors; `.current` values are not React dependencies.
+  const createAgentUserGoal = useCallback(
+    (opts?: {
+      text?: string;
+      x?: number;
+      y?: number;
+      width?: number;
+    }) => {
+      const placement = getLiveViewportPlacement();
+      const defaultB = getDefaultCanvasNodeBounds(
+        docRef.current,
+        "container",
+        null,
+        placement.viewport,
+        placement.rect,
+      );
+      const node = createAgentUserGoalNode({
+        ...(opts?.text ? { text: opts.text } : {}),
+        ...(typeof opts?.width === "number" ? { width: opts.width } : {}),
+        x: opts?.x ?? defaultB.x,
+        y: opts?.y ?? defaultB.y,
+      });
+      const next = applyCanvasOperation(docRef.current, {
+        type: "insertNode",
+        node,
+        activePageId: activePageIdRef.current,
+      });
+      commitDocument(next, { selection: [node.id] });
+      setSelection([node.id], { notifyScene: false });
+      console.info("[skia-canvas] agent_user_goal.created", {
+        nodeId: node.id,
+      });
+      return node;
+    },
+    [commitDocument, getLiveViewportPlacement, setSelection],
+  );
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: handler reads live canvas refs as synchronous runtime mirrors; `.current` values are not React dependencies.
   const createConnector = useCallback(
     (opts: {
       start: { x: number; y: number };
@@ -479,6 +517,7 @@ export function useSkiaCanvasApi({
     selectedIdsRef,
     setSelection,
     toast,
+    onCreateAgentUserGoal: createAgentUserGoal,
   });
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: handler reads live canvas refs as synchronous runtime mirrors; `.current` values are not React dependencies.
@@ -941,6 +980,7 @@ export function useSkiaCanvasApi({
       createContainer,
       createSection,
       createSticky,
+      createAgentUserGoal,
       createConnector,
       detachConnectorEndpoint: (nodeId, endpoint) => {
         const node = findNode(docRef.current, nodeId, activePageIdRef.current);

@@ -7,12 +7,14 @@ import type {
 
 import {
   AGENT_EXECUTION_META_KEY,
+  AGENT_EXECUTION_SCHEMA_VERSION,
   type AgentExecutionNodeKind,
   type AgentExecutionNodeMeta,
   type AgentExecutionStatus,
   getAgentExecutionKindLabel,
   getAgentExecutionMeta,
   getAgentExecutionStatusLabel,
+  withAgentExecutionNodeSemantics,
 } from "./agent-execution.js";
 import { createNodeId } from "./document.js";
 import type { CanvasBounds } from "./types.js";
@@ -35,6 +37,12 @@ export const AGENT_EXECUTION_RESULT_CARD_SIZE = {
   height: 240,
 } as const;
 
+export const AGENT_EXECUTION_MAX_COLLAPSED_HEIGHT = {
+  user_input: 180,
+  execution: 148,
+  result: 320,
+} as const;
+
 export const AGENT_EXECUTION_BRANCH_GAP = 17;
 export const AGENT_EXECUTION_VERTICAL_GAP = 40;
 export const AGENT_EXECUTION_CHEVRON_HOT_ZONE_WIDTH = 32;
@@ -43,10 +51,21 @@ const CARD_RADIUS = 18;
 const BAR_RADIUS = 18;
 const CARD_STROKE = "rgba(15,23,42,0.08)";
 const CONNECTOR_STROKE = "rgba(15,23,42,0.12)";
-const TEXT_PRIMARY = "rgba(15,23,42,0.92)";
-const TEXT_SECONDARY = "rgba(15,23,42,0.58)";
 const EXECUTION_GREEN = "rgba(41,191,78,1)";
 const EXECUTION_GREEN_SOFT = "rgba(248,255,191,1)";
+const COMPONENT_HORIZONTAL_PADDING = 16;
+const COMPONENT_LINE_HEIGHT = 17;
+const COMPONENT_BODY_FONT_SIZE = 11;
+const DISPLAY_CHILD_NAMES = new Set([
+  "Agent 执行展开按钮",
+  "Agent 执行摘要",
+  "Agent 执行标题",
+  "Agent 执行状态",
+  "Agent 执行状态文本",
+  "用户输入",
+  "结果摘要",
+  "结果标题",
+]);
 
 type AgentExecutionCanvasCardRole = "user_input" | "execution" | "result";
 
@@ -77,6 +96,134 @@ export function getAgentExecutionCanvasSize(input: {
       ? AGENT_EXECUTION_BAR_SIZE.collapsedHeight
       : AGENT_EXECUTION_BAR_SIZE.expandedHeight,
   };
+}
+
+export interface AgentExecutionComponentLayout {
+  body: string;
+  collapsedHeight: number;
+  expanded: boolean;
+  fullHeight: number;
+  hasOverflow: boolean;
+  height: number;
+  maxCollapsedHeight: number;
+  minHeight: number;
+  role: AgentExecutionCanvasCardRole;
+  showToggle: boolean;
+  statusLabel: string;
+  title: string;
+  width: number;
+}
+
+export function measureAgentExecutionComponentLayout(
+  execution: AgentExecutionNodeMeta,
+  width = getAgentExecutionCanvasSize({
+    collapsed: getAgentExecutionCanvasCollapsed(execution),
+    kind: execution.kind,
+  }).width,
+  expanded = !getAgentExecutionCanvasCollapsed(execution),
+  options: { minHeight?: number } = {},
+): AgentExecutionComponentLayout {
+  const role = getAgentExecutionCanvasRole(execution.kind);
+  const minHeight = Math.max(
+    getAgentExecutionCanvasSize({
+      collapsed: true,
+      kind: execution.kind,
+    }).height,
+    options.minHeight ?? 0,
+  );
+  const maxCollapsedHeight = AGENT_EXECUTION_MAX_COLLAPSED_HEIGHT[role];
+  const body = formatAgentExecutionCanvasBody(execution);
+  const title = execution.title;
+  const statusLabel =
+    execution.status === "running"
+      ? "Thinking..."
+      : `${getAgentExecutionStatusLabel(execution.status)}...`;
+  const contentWidth = Math.max(1, width - COMPONENT_HORIZONTAL_PADDING * 2);
+  const bodyLines = estimateWrappedLineCount(
+    body,
+    contentWidth,
+    COMPONENT_BODY_FONT_SIZE,
+  );
+  const titleLines = estimateWrappedLineCount(
+    title,
+    contentWidth,
+    role === "result" ? 13 : 12,
+  );
+  const fullHeight = Math.max(
+    minHeight,
+    fullHeightForRole(role, titleLines, bodyLines),
+  );
+  const hasOverflow = fullHeight > maxCollapsedHeight;
+  const collapsedHeight = hasOverflow
+    ? maxCollapsedHeight
+    : Math.max(minHeight, fullHeight);
+  return {
+    body,
+    collapsedHeight,
+    expanded,
+    fullHeight,
+    hasOverflow,
+    height: expanded && hasOverflow ? fullHeight : collapsedHeight,
+    maxCollapsedHeight,
+    minHeight,
+    role,
+    showToggle: hasOverflow,
+    statusLabel,
+    title,
+    width,
+  };
+}
+
+export function createAgentUserGoalNode(input: {
+  text?: string;
+  x: number;
+  y: number;
+  width?: number;
+}): FrameNode {
+  const title = "用户目标";
+  const summary =
+    input.text?.trim() || "描述你的目标，Agent 会从这里开始执行。";
+  const execution = withAgentExecutionCanvasPresentation(
+    {
+      kind: "user_goal",
+      schemaVersion: AGENT_EXECUTION_SCHEMA_VERSION,
+      status: "waiting",
+      summary,
+      title,
+    },
+    { collapsed: false },
+  );
+  const width = input.width ?? AGENT_EXECUTION_USER_CARD_SIZE.width;
+  const visual = getAgentExecutionCanvasFrameUpdates({
+    execution,
+    bounds: { width },
+  });
+  return withAgentExecutionNodeSemantics(
+    {
+      id: createNodeId("agent_user_goal"),
+      type: "frame",
+      name: title,
+      x: input.x,
+      y: input.y,
+      width,
+      height: visual.height ?? AGENT_EXECUTION_USER_CARD_SIZE.height,
+      children: [],
+      clipContent: false,
+      containerRole: ["context"],
+      contextSlots: {
+        rules: ["agent execution node: user_goal"],
+      },
+      permissions: {
+        owner: "user",
+        canRead: [],
+        canWrite: [],
+        isolationLevel: "open",
+      },
+      ...visual,
+    } as FrameNode,
+    execution,
+    { containerRole: ["context"] },
+  ) as FrameNode;
 }
 
 export function isAgentExecutionCanvasPresentationV2(
@@ -166,32 +313,36 @@ export function getAgentExecutionCanvasFrameUpdates(input: {
 }): Partial<FrameNode> {
   const collapsed =
     input.collapsed ?? getAgentExecutionCanvasCollapsed(input.execution);
+  const execution = withAgentExecutionCanvasPresentation(
+    {
+      ...input.execution,
+      ...(input.body ? { summary: input.body } : {}),
+    },
+    { collapsed },
+  );
   const size = getAgentExecutionCanvasSize({
-    kind: input.execution.kind,
     collapsed,
+    kind: execution.kind,
   });
   const width = input.bounds?.width ?? size.width;
-  const height = input.bounds?.height ?? size.height;
+  const layout = measureAgentExecutionComponentLayout(
+    execution,
+    width,
+    !collapsed,
+    { minHeight: input.bounds?.height },
+  );
   return {
     width,
-    height,
-    children: createAgentExecutionCanvasChildren({
-      body: input.body ?? formatAgentExecutionCanvasBody(input.execution),
-      bounds: { width, height },
-      collapsed,
-      execution: withAgentExecutionCanvasPresentation(input.execution, {
-        collapsed,
-      }),
-    }),
+    height: layout.height,
     clipContent: false,
     cornerRadius:
-      getAgentExecutionCanvasRole(input.execution.kind) === "execution"
+      getAgentExecutionCanvasRole(execution.kind) === "execution"
         ? BAR_RADIUS
         : CARD_RADIUS,
     fill: [
       {
         color:
-          getAgentExecutionCanvasRole(input.execution.kind) === "execution"
+          getAgentExecutionCanvasRole(execution.kind) === "execution"
             ? EXECUTION_GREEN_SOFT
             : "rgba(255,255,255,0.98)",
         type: "solid",
@@ -201,129 +352,16 @@ export function getAgentExecutionCanvasFrameUpdates(input: {
       fill: [
         {
           color:
-            getAgentExecutionCanvasRole(input.execution.kind) === "execution"
+            getAgentExecutionCanvasRole(execution.kind) === "execution"
               ? "rgba(41,191,78,0.22)"
               : CARD_STROKE,
           type: "solid",
         },
       ],
       thickness:
-        getAgentExecutionCanvasRole(input.execution.kind) === "execution"
-          ? 0.5
-          : 1,
+        getAgentExecutionCanvasRole(execution.kind) === "execution" ? 0.5 : 1,
     },
   } as Partial<FrameNode>;
-}
-
-export function createAgentExecutionCanvasChildren(input: {
-  body: string;
-  bounds: Pick<CanvasBounds, "height" | "width">;
-  collapsed: boolean;
-  execution: AgentExecutionNodeMeta;
-}): PenNode[] {
-  const role = getAgentExecutionCanvasRole(input.execution.kind);
-  if (role === "user_input") {
-    return [
-      textNode({
-        content: input.body,
-        fontSize: 11,
-        fontWeight: 500,
-        height: Math.max(32, input.bounds.height - 52),
-        name: "用户输入",
-        width: Math.max(80, input.bounds.width - 54),
-        x: 27,
-        y: 26,
-      }),
-    ];
-  }
-  if (role === "result") {
-    return [
-      textNode({
-        content: input.execution.title,
-        fontSize: 13,
-        fontWeight: 650,
-        height: 20,
-        name: "结果标题",
-        width: Math.max(80, input.bounds.width - 32),
-        x: 16,
-        y: 18,
-      }),
-      textNode({
-        content: input.body,
-        fill: TEXT_SECONDARY,
-        fontSize: 11,
-        fontWeight: 400,
-        height: Math.max(64, input.bounds.height - 58),
-        name: "结果摘要",
-        width: Math.max(80, input.bounds.width - 32),
-        x: 16,
-        y: 46,
-      }),
-    ];
-  }
-
-  const header: PenNode[] = [
-    {
-      id: createNodeId("agent_execution_dot"),
-      type: "ellipse",
-      name: "Agent 执行状态",
-      x: 12,
-      y: 8,
-      width: 20,
-      height: 20,
-      fill: [{ color: EXECUTION_GREEN, type: "solid" }],
-    } as PenNode,
-    textNode({
-      content:
-        input.execution.status === "running"
-          ? "Thinking..."
-          : `${getAgentExecutionStatusLabel(input.execution.status)}...`,
-      fill: EXECUTION_GREEN,
-      fontSize: 11,
-      fontWeight: 600,
-      height: 16,
-      name: "Agent 执行状态文本",
-      width: Math.max(80, input.bounds.width - 74),
-      x: 37,
-      y: 10,
-    }),
-    textNode({
-      content: input.collapsed ? "v" : "^",
-      fill: EXECUTION_GREEN,
-      fontSize: 12,
-      fontWeight: 700,
-      height: 16,
-      name: "Agent 执行展开按钮",
-      width: 10,
-      x: input.bounds.width - 22,
-      y: 10,
-    }),
-  ];
-  if (input.collapsed) return header;
-  return [
-    ...header,
-    textNode({
-      content: `${getAgentExecutionKindLabel(input.execution.kind)} · ${input.execution.title}`,
-      fontSize: 12,
-      fontWeight: 650,
-      height: 18,
-      name: "Agent 执行标题",
-      width: Math.max(80, input.bounds.width - 32),
-      x: 16,
-      y: 48,
-    }),
-    textNode({
-      content: input.body,
-      fill: TEXT_SECONDARY,
-      fontSize: 11,
-      fontWeight: 400,
-      height: Math.max(48, input.bounds.height - 80),
-      name: "Agent 执行摘要",
-      width: Math.max(80, input.bounds.width - 32),
-      x: 16,
-      y: 72,
-    }),
-  ];
 }
 
 export function getAgentExecutionCanvasConnectorStroke(
@@ -377,13 +415,16 @@ export function normalizeAgentExecutionCanvasLayout(doc: PenDocument): {
         return {
           ...node,
           ...(layout ? { x: layout.x, y: layout.y } : {}),
+          children: removeAgentExecutionDisplayChildren(node),
           meta: {
             ...(node.meta ?? {}),
             [AGENT_EXECUTION_META_KEY]: nextExecution,
           },
           ...getAgentExecutionCanvasFrameUpdates({
             body: formatAgentExecutionCanvasBody(nextExecution),
-            bounds: size,
+            bounds: {
+              width: size.width,
+            },
             collapsed: nextExecution.canvasPresentation?.collapsed ?? true,
             execution: nextExecution,
           }),
@@ -399,34 +440,6 @@ export function normalizeAgentExecutionCanvasLayout(doc: PenDocument): {
   };
 }
 
-function textNode(input: {
-  content: string;
-  fill?: string;
-  fontSize: number;
-  fontWeight: number;
-  height: number;
-  name: string;
-  width: number;
-  x: number;
-  y: number;
-}): PenNode {
-  return {
-    id: createNodeId("agent_execution_text"),
-    type: "text",
-    name: input.name,
-    x: input.x,
-    y: input.y,
-    width: input.width,
-    height: input.height,
-    content: input.content,
-    fill: [{ color: input.fill ?? TEXT_PRIMARY, type: "solid" }],
-    fontSize: input.fontSize,
-    fontWeight: input.fontWeight,
-    lineHeight: 1.35,
-    textGrowth: "fixed-width-height",
-  } as PenNode;
-}
-
 function collectExecutionNodes(
   nodes: PenNode[],
 ): Array<{ execution: AgentExecutionNodeMeta; node: PenNode }> {
@@ -440,6 +453,13 @@ function collectExecutionNodes(
     }
   }
   return result;
+}
+
+function removeAgentExecutionDisplayChildren(node: PenNode): PenNode[] {
+  if (!("children" in node) || !Array.isArray(node.children)) return [];
+  return node.children.filter(
+    (child) => !DISPLAY_CHILD_NAMES.has(child.name ?? ""),
+  );
 }
 
 function mapNodes(
@@ -560,4 +580,46 @@ function readableFallbackForExecution(
 
 function isUsefulText(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function fullHeightForRole(
+  role: AgentExecutionCanvasCardRole,
+  titleLines: number,
+  bodyLines: number,
+): number {
+  switch (role) {
+    case "user_input":
+      return 24 + titleLines * 20 + 12 + bodyLines * COMPONENT_LINE_HEIGHT + 24;
+    case "execution":
+      return 40 + titleLines * 18 + 8 + bodyLines * COMPONENT_LINE_HEIGHT + 20;
+    case "result":
+      return 18 + titleLines * 20 + 14 + bodyLines * COMPONENT_LINE_HEIGHT + 24;
+  }
+}
+
+function estimateWrappedLineCount(
+  text: string,
+  width: number,
+  fontSize: number,
+): number {
+  const lines = text.split("\n");
+  return Math.max(
+    1,
+    lines.reduce(
+      (count, line) =>
+        count +
+        Math.max(1, Math.ceil(estimateTextWidth(line, fontSize) / width)),
+      0,
+    ),
+  );
+}
+
+function estimateTextWidth(text: string, fontSize: number): number {
+  return Array.from(text).reduce((sum, char) => {
+    if (/\s/.test(char)) return sum + fontSize * 0.3;
+    if (/[\u3400-\u9fff\u3000-\u303f\uff00-\uffef]/.test(char)) {
+      return sum + fontSize;
+    }
+    return sum + fontSize * 0.58;
+  }, 0);
 }

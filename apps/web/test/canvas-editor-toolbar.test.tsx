@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
+import { CANVAS_NODE_TEMPLATE_MIME } from "@/components/canvas/agent-node-template-drag";
 import { CanvasBooleanToolbar } from "@/components/canvas/boolean-toolbar";
 import type { CanvasTool } from "@/components/canvas/canvas-api";
 import { CanvasEditorToolbar } from "@/components/canvas/editor-toolbar";
@@ -16,6 +17,7 @@ function renderEditorToolbar(
     canRedo: true,
     canUndo: false,
     selectedCount: 1,
+    onCreateAgentUserGoal: vi.fn(),
     onCreateContainer: vi.fn(),
     onDelete: vi.fn(),
     onInsertIcon: vi.fn(),
@@ -70,6 +72,29 @@ describe("CanvasEditorToolbar", () => {
     expect(props.onInsertIcon).toHaveBeenCalledOnce();
     expect(props.onImportImage).toHaveBeenCalledOnce();
     expect(props.onImportSvg).toHaveBeenCalledOnce();
+  });
+
+  it("creates and exposes a draggable user-goal Agent node template", async () => {
+    const user = userEvent.setup();
+    const props = renderEditorToolbar();
+    const userGoalButton = screen.getByRole("button", { name: "用户目标" });
+
+    await user.click(userGoalButton);
+
+    expect(props.onCreateAgentUserGoal).toHaveBeenCalledOnce();
+
+    const dataTransfer = {
+      effectAllowed: "none",
+      setData: vi.fn(),
+    } as unknown as DataTransfer;
+
+    fireEvent.dragStart(userGoalButton, { dataTransfer });
+
+    expect(dataTransfer.effectAllowed).toBe("copy");
+    expect(dataTransfer.setData).toHaveBeenCalledWith(
+      CANVAS_NODE_TEMPLATE_MIME,
+      JSON.stringify({ type: "agent_user_goal" }),
+    );
   });
 
   it("does not expose icon insertion when no icon insertion callback is wired", async () => {
