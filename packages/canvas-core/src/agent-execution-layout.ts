@@ -226,6 +226,86 @@ export function createAgentUserGoalNode(input: {
   ) as FrameNode;
 }
 
+export function createAgentExecutionNode(input: {
+  agentId?: string;
+  runId?: string;
+  sessionId?: string;
+  summary?: string;
+  title?: string;
+  upstreamNodeIds?: string[];
+  width?: number;
+  x: number;
+  y: number;
+}): FrameNode {
+  const title = input.title?.trim() || "Agent 执行";
+  const summary = input.summary?.trim() || "Thinking...";
+  const execution = withAgentExecutionCanvasPresentation(
+    {
+      kind: "agent_execution",
+      schemaVersion: AGENT_EXECUTION_SCHEMA_VERSION,
+      status: "running",
+      summary,
+      title,
+      ...(input.agentId ? { agentId: input.agentId } : {}),
+      ...(input.runId ? { runId: input.runId } : {}),
+      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+      ...(input.upstreamNodeIds
+        ? { upstreamNodeIds: input.upstreamNodeIds }
+        : {}),
+      streamEntries: [],
+    },
+    { collapsed: false },
+  );
+  const width = input.width ?? AGENT_EXECUTION_BAR_SIZE.width;
+  const visual = getAgentExecutionCanvasFrameUpdates({
+    body: summary,
+    bounds: { width },
+    collapsed: false,
+    execution,
+  });
+  return withAgentExecutionNodeSemantics(
+    {
+      id: createNodeId("agent_execution"),
+      type: "frame",
+      name: title,
+      x: input.x,
+      y: input.y,
+      width,
+      height: visual.height ?? AGENT_EXECUTION_BAR_SIZE.expandedHeight,
+      children: [],
+      clipContent: false,
+      containerRole: ["task", "context"],
+      contextSlots: {
+        rules: ["agent execution node: agent_execution"],
+      },
+      permissions: {
+        owner: "agent",
+        canRead: [],
+        canWrite: [],
+        isolationLevel: "open",
+      },
+      ...visual,
+    } as FrameNode,
+    execution,
+    { containerRole: ["task", "context"] },
+  ) as FrameNode;
+}
+
+export function getAgentExecutionNodePresentationUpdates(input: {
+  execution: AgentExecutionNodeMeta;
+  width?: number;
+}): Partial<FrameNode> {
+  const collapsed = getAgentExecutionCanvasCollapsed(input.execution);
+  return getAgentExecutionCanvasFrameUpdates({
+    body: formatAgentExecutionCanvasBody(input.execution),
+    ...(typeof input.width === "number"
+      ? { bounds: { width: input.width } }
+      : {}),
+    collapsed,
+    execution: input.execution,
+  });
+}
+
 export function isAgentExecutionCanvasPresentationV2(
   execution: Pick<AgentExecutionNodeMeta, "canvasPresentation"> | undefined,
 ): boolean {
@@ -541,6 +621,8 @@ function layoutRank(kind: AgentExecutionNodeKind | undefined): number {
   switch (kind) {
     case "user_goal":
       return 0;
+    case "agent_execution":
+      return 5;
     case "recipe_plan":
       return 10;
     case "task_step":

@@ -36,6 +36,26 @@ vi.mock("@/hooks/use-websocket", () => ({
 vi.mock("@/hooks/use-job-fallback-polling", () => ({
   useJobFallbackPolling: () => ({ checkForTimedOutJobs: vi.fn() }),
 }));
+vi.mock("@/hooks/use-agent-run-controller", () => ({
+  useAgentRunController: () => ({
+    addFiles: vi.fn(),
+    attachments: [],
+    canPause: false,
+    canStop: false,
+    handlePause: vi.fn(),
+    handleRemoveAttachment: vi.fn(),
+    handleRemoveAttachmentRetry: vi.fn(),
+    handleStop: vi.fn(),
+    isStreaming: false,
+    isUploading: false,
+    runProgress: null,
+    send: vi.fn(),
+    statusMessage: null,
+  }),
+}));
+vi.mock("@/components/canvas-agent-composer", () => ({
+  CanvasAgentComposer: () => null,
+}));
 
 vi.mock("@/components/canvas-editor", () => ({
   CanvasEditor: ({ onApiReady, onInsertIcon }: Record<string, unknown>) => {

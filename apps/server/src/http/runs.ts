@@ -111,6 +111,9 @@ export async function registerRunRoutes(
           ...(payload.canvasId !== undefined
             ? { canvasId: payload.canvasId }
             : {}),
+          ...(payload.canvasEntry !== undefined
+            ? { canvasEntry: payload.canvasEntry }
+            : {}),
           ...(payload.attachments !== undefined
             ? { attachments: payload.attachments }
             : {}),

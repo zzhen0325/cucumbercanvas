@@ -1166,3 +1166,18 @@ Status:
 - Passed: `pnpm --filter @cucumber/server typecheck`.
 - Passed: `pnpm exec biome check apps/server/src/agent/prompts/cucumber-main.ts apps/server/src/agent/prompts/cucumber-main.test.ts apps/server/src/agent/orchestration-context.ts apps/server/src/agent/orchestration-context.test.ts feature_list.json progress.md`.
 - Passed: `git diff --check -- apps/server/src/agent/prompts/cucumber-main.ts apps/server/src/agent/prompts/cucumber-main.test.ts apps/server/src/agent/orchestration-context.ts apps/server/src/agent/orchestration-context.test.ts feature_list.json progress.md`.
+
+2026-06-04 - Canvas-first Agent input refactor
+
+- Removed the right ChatSidebar from the Canvas page runtime surface and moved Agent input to a bottom `CanvasAgentComposer` backed by a headless `useAgentRunController`.
+- Changed the bottom toolbar into a left vertical rail while keeping existing canvas controls, popovers, zoom, background, layers, files, and design-system entry points.
+- Added draft user-goal node write-back from bottom input: non-empty input creates a durable `user_goal` node, edits update its Agent meta/card presentation, and clearing an unsent draft deletes it.
+- Added compact send chain creation: send marks the user-goal node done, creates one downstream `agent_execution` node, connects/selects it, and sends `canvasEntry.userGoalNodeId/agentExecutionNodeId` through `RunCreateRequest`.
+- Added client-side stream write-back for run/stage/thinking/message/tool/terminal events so the single `agent_execution` node is the streaming execution meta truth; tool outputs may attach artifact node IDs.
+- Updated Agent runtime/prompt handling for compact canvas entries so Agents do not recreate the old multi-node entry chain, and added video generation target/agent execution protocol fields for direct canvas delivery tracing.
+- Follow-up UX audit fixed attachment-only dead sends, duplicate-send risk while a send is in flight, local run-start failures leaving the canvas node stuck at `Thinking...`, stale ChatSidebar comments, and too-narrow mobile composer width.
+- Passed: `pnpm --filter @cucumber/canvas-core test`.
+- Passed: `pnpm --filter web exec vitest run test/canvas-agent-composer.test.tsx test/canvas-agent-execution-stream-writeback.test.ts test/canvas-page-toolbar-icon.test.tsx test/chat-input.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter web typecheck`.
+- Passed: `pnpm --filter server typecheck`.
+- Note: the broad command `pnpm --filter web test -- canvas-agent-composer canvas-agent-execution-stream-writeback canvas-page-toolbar-icon chat-input` still sweeps in legacy `chat-sidebar.test.tsx`, whose existing assertions look for the old English placeholder `/start with an idea/i`; the precise target files above pass.

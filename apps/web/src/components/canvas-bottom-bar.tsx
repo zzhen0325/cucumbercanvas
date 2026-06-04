@@ -155,7 +155,7 @@ function usePopoverDismiss(
   }, [open, onClose, containerRef, triggerRef]);
 }
 
-/* ── Portal popover positioned above its trigger ── */
+/* ── Portal popover positioned beside its trigger ── */
 function Popover({
   open,
   triggerRef,
@@ -178,8 +178,8 @@ function Popover({
     const r = triggerRef.current.getBoundingClientRect();
     setPos({
       position: "fixed",
-      left: r.left,
-      bottom: window.innerHeight - r.top + 8,
+      left: r.right + 8,
+      top: r.top,
       opacity: 1,
       zIndex: 50,
     });
@@ -329,12 +329,12 @@ export function CanvasBottomBar({
 
   return (
     <div
-      className="absolute bottom-4 z-20 transition-[left] duration-200"
+      className="absolute top-1/2 z-20 -translate-y-1/2 transition-[left] duration-200"
       style={{ left: leftPanelOpen ? 296 : 16 }}
       onKeyDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >
-      <div className="flex items-center gap-0.5 rounded-full bg-card/90 backdrop-blur-lg border border-border px-1 py-1 shadow-card">
+      <div className="flex flex-col items-center gap-0.5 rounded-full bg-card/90 backdrop-blur-lg border border-border px-1 py-1 shadow-card">
         {/* ── Background color button ── */}
         <button
           ref={bgBtnRef}
@@ -384,7 +384,7 @@ export function CanvasBottomBar({
         </button>
 
         {/* ── Divider ── */}
-        <span className="mx-1 h-3 w-px bg-border" />
+        <span className="my-1 h-px w-3 bg-border" />
 
         {/* ── Zoom controls ── */}
         <button
@@ -398,7 +398,7 @@ export function CanvasBottomBar({
         <button
           ref={zoomBtnRef}
           type="button"
-          className="min-w-[40px] text-center text-xs text-muted-foreground select-none cursor-pointer hover:text-foreground transition-colors"
+          className="min-h-7 w-7 text-center text-[10px] leading-7 text-muted-foreground select-none cursor-pointer hover:text-foreground transition-colors"
           onClick={toggleZoomMenu}
         >
           {Math.round(zoom * 100)}%

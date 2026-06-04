@@ -5,6 +5,7 @@ export const AGENT_EXECUTION_SCHEMA_VERSION = 1;
 
 export type AgentExecutionNodeKind =
   | "user_goal"
+  | "agent_execution"
   | "recipe_plan"
   | "task_step"
   | "tool_call"
@@ -40,6 +41,8 @@ export interface AgentExecutionNodeMeta {
     reasoningSummary?: string;
     errorReason?: string;
   };
+  streamEntries?: AgentExecutionStreamEntry[];
+  artifactNodeIds?: string[];
   evidence?: {
     sourceType: "url" | "asset" | "canvas_node" | "text" | "search_result";
     url?: string;
@@ -107,6 +110,22 @@ export interface AgentExecutionNodeMeta {
   };
 }
 
+export type AgentExecutionStreamEntryStatus =
+  | "running"
+  | "done"
+  | "failed"
+  | "paused";
+
+export interface AgentExecutionStreamEntry {
+  id: string;
+  type: "stage" | "thinking" | "message" | "tool" | "artifact";
+  label: string;
+  status: AgentExecutionStreamEntryStatus;
+  content?: string;
+  toolName?: string;
+  timestamp: string;
+}
+
 export interface AgentExecutionNodeSemanticOptions {
   agentBindingRole?: AgentBinding["role"];
   agentBindingStatus?: AgentBinding["status"];
@@ -120,6 +139,7 @@ const AGENT_EXECUTION_KIND_LABELS: Record<AgentExecutionNodeKind, string> = {
   critique: "评审",
   evidence: "证据",
   final_deliverable: "最终交付物",
+  agent_execution: "Agent 执行",
   recipe_plan: "Recipe 计划",
   task_step: "任务步骤",
   tool_call: "工具调用",
@@ -284,6 +304,7 @@ function defaultContainerRoleForExecutionKind(
   kind: AgentExecutionNodeKind,
 ): ContainerRole[] {
   switch (kind) {
+    case "agent_execution":
     case "evidence":
     case "user_goal":
       return ["context"];
@@ -308,6 +329,7 @@ function isAgentExecutionNodeKind(
 ): value is AgentExecutionNodeKind {
   return (
     value === "user_goal" ||
+    value === "agent_execution" ||
     value === "recipe_plan" ||
     value === "task_step" ||
     value === "tool_call" ||

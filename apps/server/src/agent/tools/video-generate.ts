@@ -26,6 +26,8 @@ export type SubmitVideoJobFn = (input: {
   placementY?: number;
   placementWidth?: number;
   placementHeight?: number;
+  targetContainerId?: string;
+  agentExecutionNodeId?: string;
 }) => Promise<{
   jobId: string;
   elementId?: string;
@@ -135,6 +137,18 @@ function buildVideoGenerateSchema(models: AvailableModel[]) {
       .number()
       .optional()
       .describe("Height on canvas (default: 360)"),
+    targetContainerId: z
+      .string()
+      .optional()
+      .describe(
+        "Optional canvas container ID related to this video output. Current video writer uses placement coordinates; pass this for traceability when a compact Agent execution node exists.",
+      ),
+    agentExecutionNodeId: z
+      .string()
+      .optional()
+      .describe(
+        "Optional durable Agent execution node ID this video generation belongs to.",
+      ),
   });
 }
 
@@ -157,6 +171,8 @@ type VideoGenerateResult = {
   error?: string;
   jobId?: string;
   jobType?: "video_generation";
+  agentExecutionNodeId?: string;
+  targetContainerId?: string;
 };
 
 // ── Run function ───────────────────────────────────────────────────────────
@@ -216,6 +232,12 @@ export async function runVideoGenerate(
         ...(normalizedInput.placementHeight != null
           ? { placementHeight: normalizedInput.placementHeight }
           : {}),
+        ...(normalizedInput.targetContainerId
+          ? { targetContainerId: normalizedInput.targetContainerId }
+          : {}),
+        ...(normalizedInput.agentExecutionNodeId
+          ? { agentExecutionNodeId: normalizedInput.agentExecutionNodeId }
+          : {}),
       });
 
       if (jobResult.error) {
@@ -247,6 +269,12 @@ export async function runVideoGenerate(
         ...(jobResult.height != null ? { height: jobResult.height } : {}),
         ...(jobResult.durationSeconds != null
           ? { durationSeconds: jobResult.durationSeconds }
+          : {}),
+        ...(normalizedInput.agentExecutionNodeId
+          ? { agentExecutionNodeId: normalizedInput.agentExecutionNodeId }
+          : {}),
+        ...(normalizedInput.targetContainerId
+          ? { targetContainerId: normalizedInput.targetContainerId }
           : {}),
       };
       if (
@@ -305,6 +333,12 @@ export async function runVideoGenerate(
       width: result.width,
       height: result.height,
       durationSeconds: result.durationSeconds,
+      ...(normalizedInput.agentExecutionNodeId
+        ? { agentExecutionNodeId: normalizedInput.agentExecutionNodeId }
+        : {}),
+      ...(normalizedInput.targetContainerId
+        ? { targetContainerId: normalizedInput.targetContainerId }
+        : {}),
     };
     if (
       normalizedInput.placementX != null &&

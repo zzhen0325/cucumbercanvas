@@ -71,11 +71,17 @@ export const videoGenerationPreferenceSchema = z.object({
   models: z.array(z.string().min(1)),
 });
 
+export const canvasEntrySchema = z.object({
+  userGoalNodeId: z.string().min(1),
+  agentExecutionNodeId: z.string().min(1),
+});
+
 export const runCreateRequestSchema = z.object({
   sessionId: sessionIdSchema,
   conversationId: conversationIdSchema,
   prompt: z.string(),
   canvasId: canvasIdSchema.optional(),
+  canvasEntry: canvasEntrySchema.optional(),
   attachments: z.array(imageAttachmentSchema).optional(),
   imageGenerationPreference: imageGenerationPreferenceSchema.optional(),
   videoGenerationPreference: videoGenerationPreferenceSchema.optional(),
@@ -285,6 +291,7 @@ export type ImageGenerationPreference = z.infer<
 export type VideoGenerationPreference = z.infer<
   typeof videoGenerationPreferenceSchema
 >;
+export type CanvasEntry = z.infer<typeof canvasEntrySchema>;
 export type ContentBlock = z.infer<typeof contentBlockSchema>;
 export type ChatSessionSummary = z.infer<typeof chatSessionSummarySchema>;
 export type ChatMessage = z.infer<typeof chatMessageSchema>;

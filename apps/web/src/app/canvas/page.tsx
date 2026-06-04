@@ -15,6 +15,7 @@ import {
   type AgentRunControlState,
 } from "../../components/agent-run-control-bar";
 import { BrandKitSelector } from "../../components/brand-kit-selector";
+import { CanvasAgentComposer } from "../../components/canvas-agent-composer";
 import { CanvasBottomBar } from "../../components/canvas-bottom-bar";
 import {
   CanvasDesignSystemPanel,
@@ -24,7 +25,6 @@ import type { CanvasSelectedElement } from "../../components/canvas-editor";
 import { CanvasEditor } from "../../components/canvas-editor";
 import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
 import { CanvasFilesPanel } from "../../components/canvas-files-panel";
-import type { CanvasImageItem } from "../../components/canvas-image-picker";
 import { CanvasLayersPanel } from "../../components/canvas-layers-panel";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
 import {
@@ -32,22 +32,17 @@ import {
   getAgentRunStoppedNodeUpdates,
 } from "../../components/canvas/agent-run-pause-writeback";
 import { getAgentWaitingResponseSubmittedUpdates } from "../../components/canvas/agent-waiting-response-writeback";
-import type {
-  CanvasApi,
-  CanvasFileRecord,
-  CanvasSceneElement,
-} from "../../components/canvas/canvas-api";
+import type { CanvasApi } from "../../components/canvas/canvas-api";
 import type {
   AgentExecutionContinueIntent,
   AgentExecutionContinueOptions,
 } from "../../components/canvas/property-panel/agent-execution-section";
+import { useCanvasAgentExecutionStreamWriteback } from "../../components/canvas/use-canvas-agent-execution-stream-writeback";
 import type { AgentContinuationMode } from "../../components/chat-input";
-import {
-  type AgentContinuationSubmitSummary,
-  ChatSidebar,
-} from "../../components/chat-sidebar";
 import { EditableProjectName } from "../../components/editable-project-name";
 import { LoadingScreen } from "../../components/loading-screen";
+import { ToastProvider } from "../../components/toast";
+import { useAgentRunController } from "../../hooks/use-agent-run-controller";
 import { useJobFallbackPolling } from "../../hooks/use-job-fallback-polling";
 import { useWebSocket } from "../../hooks/use-websocket";
 import { useAuth } from "../../lib/auth-context";
@@ -57,6 +52,12 @@ import {
   fetchCanvas,
   fetchProject,
 } from "../../lib/server-api";
+
+type AgentContinuationSubmitSummary = {
+  attachmentCount: number;
+  nodeId: string;
+  text: string;
+};
 
 type CanvasImportSummary = {
   warningCount: number;
@@ -141,12 +142,156 @@ function formatAgentContinueContextText(value: string): string {
   return `${normalized.slice(0, 240)}...`;
 }
 
+function createLocalRunFailedEvent(error: unknown): StreamEvent {
+  return {
+    error: {
+      code: "run_failed",
+      message:
+        error instanceof Error && error.message.trim()
+          ? error.message.trim()
+          : "无法启动 Agent run，请检查网络或服务状态后重试。",
+    },
+    runId: `local_run_failed_${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    type: "run.failed",
+  };
+}
+
+type CanvasAgentRuntimeSurfaceProps = {
+  accessToken: string;
+  agentContinueDraftRequest: {
+    continuationTargetElement?: CanvasSelectedElement;
+    intent: AgentExecutionContinueIntent;
+    requestId: number;
+    message: string;
+    mode: AgentContinuationMode;
+    openFilePicker?: boolean;
+    waitingResponseText?: string;
+  } | null;
+  canvasApi: CanvasApi | null;
+  canvasId: string;
+  currentBrandKitId?: string | null;
+  initialPrompt?: string | undefined;
+  initialSessionId?: string | undefined;
+  onAgentContinuationSubmit: (summary: AgentContinuationSubmitSummary) => void;
+  onBeforeRun: () => Promise<void>;
+  onCanvasSync: () => void;
+  onContinueAgentExecution: (
+    nodeId: string,
+    intent?: AgentExecutionContinueIntent,
+  ) => void;
+  onImageGenerated: (artifact: ImageArtifact) => void;
+  onRunPaused: (summary: { runId: string }) => void;
+  onRunStopped: (summary: { runId: string }) => void;
+  onSessionChange: (sessionId: string) => void;
+  onStreamEvent: (event: StreamEvent) => void;
+  onVideoGenerated: (artifact: VideoArtifact) => void;
+  selectedCanvasElements: CanvasSelectedElement[];
+  traceEvents: StreamEvent[];
+};
+
+function CanvasAgentRuntimeSurface({
+  accessToken,
+  agentContinueDraftRequest,
+  canvasApi,
+  canvasId,
+  currentBrandKitId,
+  initialPrompt,
+  initialSessionId,
+  onAgentContinuationSubmit,
+  onBeforeRun,
+  onCanvasSync,
+  onContinueAgentExecution,
+  onImageGenerated,
+  onRunPaused,
+  onRunStopped,
+  onSessionChange,
+  onStreamEvent,
+  onVideoGenerated,
+  selectedCanvasElements,
+  traceEvents,
+}: CanvasAgentRuntimeSurfaceProps) {
+  const [runControlState, setRunControlState] = useState<AgentRunControlState>({
+    streaming: false,
+  });
+  const activeAgentExecutionNodeIdRef = useRef<string | null>(null);
+  const writeExecutionStreamEvent =
+    useCanvasAgentExecutionStreamWriteback(canvasApi);
+  const controller = useAgentRunController({
+    accessToken,
+    canvasId,
+    currentBrandKitId,
+    initialSessionId,
+    onAgentContinuationSubmit,
+    onBeforeRun,
+    onCanvasSync,
+    onImageGenerated,
+    onRunControlStateChange: setRunControlState,
+    onRunPaused,
+    onRunStopped,
+    onSessionChange,
+    onStreamEvent: (event) => {
+      onStreamEvent(event);
+      const nodeId = activeAgentExecutionNodeIdRef.current;
+      if (nodeId) writeExecutionStreamEvent(nodeId, event);
+    },
+    onVideoGenerated,
+    selectedCanvasElements,
+  });
+
+  return (
+    <>
+      <div className="pointer-events-none absolute left-1/2 top-3 z-30 -translate-x-1/2">
+        <AgentRunControlBar
+          runState={runControlState}
+          selectedCanvasElements={selectedCanvasElements}
+          onContinueFromSelection={(nodeId, intent = "continue") =>
+            onContinueAgentExecution(nodeId, intent)
+          }
+          onPauseRun={controller.onPauseRun}
+          onStopRun={controller.onStopRun}
+          traceEvents={traceEvents}
+        />
+      </div>
+      <CanvasAgentComposer
+        attachments={controller.attachments}
+        canvasApi={canvasApi}
+        continuationRequest={agentContinueDraftRequest}
+        disabled={controller.streaming || controller.sessionsLoading}
+        initialPrompt={initialPrompt}
+        isUploading={controller.isUploading}
+        onAddFiles={controller.addFiles}
+        onCanvasEntryCreated={(entry) => {
+          activeAgentExecutionNodeIdRef.current = entry.agentExecutionNodeId;
+        }}
+        onRemoveAttachment={controller.onRemoveAttachment}
+        onRemoveAttachmentRetry={controller.onRetryAttachment}
+        onSend={async (message, context, options) => {
+          try {
+            await controller.send(message, context, options);
+          } catch (error) {
+            writeExecutionStreamEvent(
+              options.canvasEntry.agentExecutionNodeId,
+              createLocalRunFailedEvent(error),
+            );
+            console.warn("[canvas-page] agent_run.start.failed", {
+              agentExecutionNodeId: options.canvasEntry.agentExecutionNodeId,
+              reason: error instanceof Error ? error.message : String(error),
+            });
+            throw error;
+          }
+        }}
+        selectedCanvasElements={selectedCanvasElements}
+      />
+    </>
+  );
+}
+
 function CanvasPageContent() {
   const searchParams = useSearchParams();
   const canvasId = searchParams.get("id");
   const initialSessionId = searchParams.get("session") ?? undefined;
-  // Capture prompt once — router.replace will strip it from URL, but the
-  // value must survive for the auto-send effect in ChatSidebar.
+  // Capture prompt once before router.replace strips it from the URL.
   const [initialPrompt] = useState(
     () => searchParams.get("prompt") ?? undefined,
   );
@@ -161,11 +306,6 @@ function CanvasPageContent() {
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
-  // Default chat open on desktop, closed on mobile/tablet to avoid blocking canvas
-  const [chatOpen, setChatOpen] = useState(() => {
-    if (typeof window === "undefined") return true;
-    return window.innerWidth >= 1024;
-  });
   const [layersOpen, setLayersOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
   const [designOpen, setDesignOpen] = useState(false);
@@ -182,10 +322,6 @@ function CanvasPageContent() {
   const [importSummary, setImportSummary] =
     useState<CanvasImportSummary | null>(null);
   const [showImportWarnings, setShowImportWarnings] = useState(false);
-  const [agentRunControlState, setAgentRunControlState] =
-    useState<AgentRunControlState>({ streaming: false });
-  const pauseAgentRunRef = useRef<(() => void) | null>(null);
-  const stopAgentRunRef = useRef<(() => void) | null>(null);
   const [agentTraceEvents, setAgentTraceEvents] = useState<StreamEvent[]>([]);
   const agentContinueDraftRequestIdRef = useRef(0);
   const [agentContinueDraftRequest, setAgentContinueDraftRequest] = useState<{
@@ -207,8 +343,11 @@ function CanvasPageContent() {
   routerRef.current = router;
 
   // Stable callbacks for panel toggles to prevent re-renders of child components
-  const handleOpenChat = useCallback(() => setChatOpen(true), []);
-  const handleToggleChat = useCallback(() => setChatOpen((v) => !v), []);
+  const handleFocusComposer = useCallback(() => {
+    document
+      .querySelector<HTMLTextAreaElement>("textarea[data-chat-input]")
+      ?.focus();
+  }, []);
   const handleToggleLayers = useCallback(() => {
     setLayersOpen((v) => !v);
     setFilesOpen(false);
@@ -308,7 +447,6 @@ function CanvasPageContent() {
           : {}),
         requestId: ++agentContinueDraftRequestIdRef.current,
       };
-      setChatOpen(true);
       setAgentContinueDraftRequest(request);
       console.info("[canvas-page] agent_continue.request", {
         hasWaitingResponseText: Boolean(options?.waitingResponseText?.trim()),
@@ -536,36 +674,6 @@ function CanvasPageContent() {
     [canvasId],
   );
 
-  const handleRequestCanvasImages = useCallback((): CanvasImageItem[] => {
-    const api = canvasApiRef.current;
-    if (!api) return [];
-    const elements = api.getSceneElements() ?? [];
-    const files: Record<string, CanvasFileRecord> = api.getFiles() ?? {};
-    let idx = 0;
-    return elements
-      .filter(
-        (el): el is CanvasSceneElement & { fileId: string } =>
-          el.type === "image" && !el.isDeleted && Boolean(el.fileId),
-      )
-      .map((el) => {
-        idx++;
-        const file = files[el.fileId];
-        const dataURL = file?.dataURL ?? "";
-        const titleCandidate = el.customData?.title ?? el.customData?.label;
-        const title =
-          typeof titleCandidate === "string" ? titleCandidate : `Image ${idx}`;
-        return {
-          kind: "canvas-image",
-          id: el.id,
-          name: title,
-          thumbnailUrl: dataURL,
-          assetId: el.id,
-          url: dataURL,
-          mimeType: file?.mimeType ?? "image/png",
-        };
-      });
-  }, []);
-
   // Only re-fetch when canvasId changes or on initial auth resolution.
   // Token refreshes (e.g. tab switch back) should NOT trigger a reload —
   // we depend on user.id (stable string) instead of the user object ref.
@@ -669,7 +777,7 @@ function CanvasPageContent() {
           onBrandKitChange={(kitId) => setBrandKitId(kitId)}
         />
       </div>
-      {/* Canvas always takes full width; on mobile/tablet, ChatSidebar overlays instead of side-by-side */}
+      {/* Canvas remains the primary surface; Agent input now floats at the bottom. */}
       <div className="flex-1 relative min-w-0 overflow-hidden">
         {importSummary ? (
           <div className="absolute left-1/2 top-16 z-20 w-95 max-w-[calc(100vw-32px)] -translate-x-1/2 rounded-2xl border border-border bg-card/95 px-4 py-3 text-xs text-foreground shadow-card backdrop-blur">
@@ -716,19 +824,37 @@ function CanvasPageContent() {
           leftPanelOpen={layersOpen || filesOpen || designOpen}
           onSelectionChange={handleSelectionChange}
         />
-        <div className="pointer-events-none absolute left-1/2 top-3 z-30 -translate-x-1/2">
-          <AgentRunControlBar
-            runState={agentRunControlState}
+        <ToastProvider>
+          <CanvasAgentRuntimeSurface
+            accessToken={accessToken}
+            agentContinueDraftRequest={agentContinueDraftRequest}
+            canvasApi={canvasApi}
+            canvasId={canvasData.id}
+            currentBrandKitId={brandKitId}
+            initialPrompt={initialPrompt}
+            initialSessionId={initialSessionId}
+            onAgentContinuationSubmit={handleAgentContinuationSubmit}
+            onBeforeRun={async () => {
+              await canvasApiRef.current?.flushPendingSave();
+            }}
+            onCanvasSync={() => {
+              void handleCanvasSync();
+            }}
+            onContinueAgentExecution={handleContinueAgentExecution}
+            onImageGenerated={handleImageGenerated}
+            onRunPaused={handleAgentRunPaused}
+            onRunStopped={handleAgentRunStopped}
+            onSessionChange={handleSessionChange}
+            onStreamEvent={handleAgentStreamEvent}
+            onVideoGenerated={handleVideoGenerated}
             selectedCanvasElements={selectedCanvasElements}
-            onContinueFromSelection={(nodeId, intent = "continue") =>
-              handleContinueAgentExecution(nodeId, intent)
-            }
-            onPauseRun={() => pauseAgentRunRef.current?.()}
-            onStopRun={() => stopAgentRunRef.current?.()}
             traceEvents={agentTraceEvents}
           />
-        </div>
-        <CanvasEmptyHint canvasApi={canvasApi} onOpenChat={handleOpenChat} />
+        </ToastProvider>
+        <CanvasEmptyHint
+          canvasApi={canvasApi}
+          onOpenChat={handleFocusComposer}
+        />
         <CanvasBottomBar
           canvasApi={canvasApi}
           layersOpen={layersOpen}
@@ -757,37 +883,6 @@ function CanvasPageContent() {
           onClose={handleCloseDesign}
         />
       </div>
-      <ChatSidebar
-        accessToken={accessToken}
-        canvasId={canvasData.id}
-        open={chatOpen}
-        onToggle={handleToggleChat}
-        onImageGenerated={handleImageGenerated}
-        onVideoGenerated={handleVideoGenerated}
-        onBeforeRun={async () => {
-          await canvasApiRef.current?.flushPendingSave();
-        }}
-        onCanvasSync={handleCanvasSync}
-        onStreamEvent={handleAgentStreamEvent}
-        initialPrompt={initialPrompt}
-        initialSessionId={initialSessionId}
-        onSessionChange={handleSessionChange}
-        onRequestCanvasImages={handleRequestCanvasImages}
-        currentBrandKitId={brandKitId}
-        ws={ws}
-        selectedCanvasElements={selectedCanvasElements}
-        agentContinueDraftRequest={agentContinueDraftRequest}
-        onAgentContinuationSubmit={handleAgentContinuationSubmit}
-        onRunControlStateChange={setAgentRunControlState}
-        onRunPauseChange={(handler) => {
-          pauseAgentRunRef.current = handler;
-        }}
-        onRunPaused={handleAgentRunPaused}
-        onRunStopChange={(handler) => {
-          stopAgentRunRef.current = handler;
-        }}
-        onRunStopped={handleAgentRunStopped}
-      />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import type {
   AgentRunContextPayload,
+  CanvasEntry,
   ImageAttachment,
   ImageGenerationPreference,
   MessageMention,
@@ -71,6 +72,7 @@ export function buildUserMessage(
   videoGenerationPreference?: VideoGenerationPreference,
   canvasSummary?: string | null,
   agentRunContext?: AgentRunContextPayload,
+  canvasEntry?: CanvasEntry,
 ): { text: string } {
   const xmlBlocks: string[] = [];
 
@@ -101,8 +103,22 @@ export function buildUserMessage(
     xmlBlocks.push(serializeAgentRunContextXml(agentRunContext));
   }
 
+  const canvasEntryXml = buildCanvasEntryXml(canvasEntry);
+  if (canvasEntryXml) xmlBlocks.push(canvasEntryXml);
+
   if (!xmlBlocks.length) return { text: prompt };
   return { text: `${prompt}\n\n${xmlBlocks.join("\n\n")}` };
+}
+
+function buildCanvasEntryXml(canvasEntry?: CanvasEntry): string | null {
+  if (!canvasEntry) return null;
+  return [
+    '<canvas_agent_entry mode="compact_single_execution_node">',
+    `  <user_goal_node id="${escapeXmlAttribute(canvasEntry.userGoalNodeId)}" />`,
+    `  <agent_execution_node id="${escapeXmlAttribute(canvasEntry.agentExecutionNodeId)}" />`,
+    "  <instruction>前端已经在 live PenDocument.pages 中创建了用户输入节点和单个 Agent 执行节点。不要再调用 create_agent_execution_flow 创建多节点入口链；本轮阶段、工具摘要和文本流由客户端写入 agent_execution_node。实际图片、视频或结构化交付物仍写入画布，并连接到 agent_execution_node。单个媒体输出直接作为交付物节点展示；只有多个输出时才创建 final_deliverable 分组。</instruction>",
+    "</canvas_agent_entry>",
+  ].join("\n");
 }
 
 function buildInputImagesXml(attachments: ImageAttachment[]): string | null {
@@ -795,6 +811,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               ...(input.enableAudio != null
                 ? { enable_audio: input.enableAudio }
                 : {}),
+              ...(input.targetContainerId
+                ? { target_container_id: input.targetContainerId }
+                : {}),
+              ...(input.agentExecutionNodeId
+                ? { agent_execution_node_id: input.agentExecutionNodeId }
+                : {}),
             },
           });
 
@@ -1237,6 +1259,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               run.videoGenerationPreference,
               canvasSummary,
               agentRunContext,
+              run.canvasEntry,
             );
 
             // Build assetId → data URI map for tool-level resolution
@@ -1257,6 +1280,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               run.videoGenerationPreference,
               canvasSummary,
               agentRunContext,
+              run.canvasEntry,
             );
             userMessage = new HumanMessage(enrichedPrompt);
           }
