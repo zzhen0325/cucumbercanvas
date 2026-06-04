@@ -2,8 +2,11 @@ import {
   type CanvasOperation,
   findNode,
   getAgentBindingStatusForExecutionStatus,
+  getAgentExecutionCanvasCollapsed,
+  getAgentExecutionCanvasFrameUpdates,
   getAgentExecutionMeta,
   getAgentExecutionNodeSemanticUpdates,
+  withAgentExecutionCanvasPresentation,
 } from "@cucumber/canvas-core";
 import type { PenNode } from "@cucumber/pen-types";
 import { z } from "zod";
@@ -98,7 +101,6 @@ export function createRecordAgentToolCallMcpTool(
           reasoningSummary: input.reasoningSummary,
           summary: input.summary,
         });
-        const updatedChildren = updateFirstTextChild(node, body);
         const nextFailure = resolveNextFailure({
           appendAttempted: input.appendAttempted,
           appendNextActions: input.appendNextActions,
@@ -110,7 +112,7 @@ export function createRecordAgentToolCallMcpTool(
         });
         const { failure: _previousFailure, ...executionWithoutFailure } =
           execution;
-        const nextExecution = {
+        const nextExecution = withAgentExecutionCanvasPresentation({
           ...executionWithoutFailure,
           details: {
             ...(execution.details ?? {}),
@@ -129,7 +131,7 @@ export function createRecordAgentToolCallMcpTool(
           title: input.title ?? execution.title,
           ...(input.toolCallId ? { toolCallId: input.toolCallId } : {}),
           ...(input.toolName ? { toolName: input.toolName } : {}),
-        };
+        });
         const semanticUpdates = getAgentExecutionNodeSemanticUpdates(
           node,
           nextExecution,
@@ -146,18 +148,12 @@ export function createRecordAgentToolCallMcpTool(
             type: "updateNode",
             updates: {
               ...semanticUpdates,
-              ...(updatedChildren ? { children: updatedChildren } : {}),
+              ...getAgentExecutionCanvasFrameUpdates({
+                body,
+                collapsed: getAgentExecutionCanvasCollapsed(nextExecution),
+                execution: nextExecution,
+              }),
               ...(input.title ? { name: input.title } : {}),
-              stroke: {
-                ...getNodeStroke(node),
-                fill: [
-                  {
-                    color: strokeColorForStatus(input.status),
-                    type: "solid",
-                  },
-                ],
-                thickness: getNodeStroke(node)?.thickness ?? 1.5,
-              },
             } as Partial<PenNode>,
           },
         ];
@@ -328,51 +324,4 @@ function formatToolCallBody(input: {
     input.errorReason ? `失败原因：${input.errorReason}` : undefined,
   ].filter((value): value is string => Boolean(value));
   return sections.length > 0 ? sections.join("\n") : "工具执行状态已更新。";
-}
-
-function updateFirstTextChild(
-  node: PenNode,
-  content: string,
-): PenNode[] | undefined {
-  if (!("children" in node) || !Array.isArray(node.children)) {
-    return undefined;
-  }
-  let updated = false;
-  return node.children.map((child) => {
-    if (updated || child.type !== "text") return child;
-    updated = true;
-    return { ...child, content } as PenNode;
-  });
-}
-
-function getNodeStroke(node: PenNode):
-  | {
-      fill?: Array<{ color: string; type: "solid" }>;
-      thickness?: number;
-    }
-  | undefined {
-  if (!("stroke" in node)) return undefined;
-  return node.stroke as
-    | {
-        fill?: Array<{ color: string; type: "solid" }>;
-        thickness?: number;
-      }
-    | undefined;
-}
-
-function strokeColorForStatus(
-  status: z.infer<typeof recordAgentToolCallSchema>["status"],
-): string {
-  switch (status) {
-    case "done":
-      return "#2f9e44";
-    case "failed":
-      return "#e03131";
-    case "running":
-      return "#1971c2";
-    case "paused":
-      return "#f08c00";
-    case "waiting":
-      return "rgba(15,23,42,0.18)";
-  }
 }

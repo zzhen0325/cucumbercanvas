@@ -10,6 +10,7 @@ export * from "./line-geometry.js";
 export * from "./connector-geometry.js";
 export * from "./sticky-note.js";
 export * from "./agent-execution.js";
+export * from "./agent-execution-layout.js";
 export * from "./agent-recipe-template.js";
 export * from "./history.js";
 export * from "./clipboard.js";

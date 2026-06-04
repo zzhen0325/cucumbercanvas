@@ -101,6 +101,10 @@ export interface AgentExecutionNodeMeta {
     attempted?: string[];
     nextActions?: string[];
   };
+  canvasPresentation?: {
+    layoutVersion: 2;
+    collapsed: boolean;
+  };
 }
 
 export interface AgentExecutionNodeSemanticOptions {

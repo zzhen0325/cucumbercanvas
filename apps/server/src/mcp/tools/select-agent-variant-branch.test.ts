@@ -117,6 +117,15 @@ async function createThreeBranches(
   };
 }
 
+function textContents(node: PenNode | undefined): string[] {
+  if (!node || !("children" in node) || !Array.isArray(node.children)) {
+    return [];
+  }
+  return node.children
+    .filter((child) => child.type === "text")
+    .map((child) => (child as { content?: string }).content ?? "");
+}
+
 describe("select_agent_variant_branch", () => {
   it("selects one branch as the durable mainline and updates the comparison", async () => {
     const { server, state } = createVariantServer();
@@ -184,9 +193,7 @@ describe("select_agent_variant_branch", () => {
     const comparison = findNode(state.doc, created.comparisonNodeId) as
       | FrameNode
       | undefined;
-    expect(comparison?.children?.[0]).toMatchObject({
-      content: expect.stringContaining("推荐选择：方向 C"),
-    });
+    expect(textContents(comparison).join("\n")).toContain("推荐选择：方向 C");
     expect(state.doc.selection).toEqual([branchCId]);
   });
 

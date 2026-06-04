@@ -96,11 +96,14 @@ describe("recordImageGenerationExecutionNode", () => {
       summary: expect.stringContaining("image-1"),
       toolName: "generate_image",
     });
-    expect(
-      (findNode(state.doc, "tool-1") as FrameNode).children?.[0],
-    ).toMatchObject({
-      content: expect.stringContaining("输出：图片生成完成"),
+    const updatedNode = findNode(state.doc, "tool-1") as PenNode | undefined;
+    expect(getAgentExecutionMeta(updatedNode)?.canvasPresentation).toEqual({
+      layoutVersion: 2,
+      collapsed: true,
     });
+    expect(textContents(updatedNode)).toEqual(
+      expect.arrayContaining(["已完成...", "v"]),
+    );
   });
 
   it("writes failed image job recovery context without throwing", async () => {
@@ -180,6 +183,15 @@ function createFrame(id: string, name: string): FrameNode {
     x: 120,
     y: id === "tool-1" ? 80 : 300,
   } as FrameNode;
+}
+
+function textContents(node: PenNode | undefined): string[] {
+  if (!node || !("children" in node) || !Array.isArray(node.children)) {
+    return [];
+  }
+  return node.children
+    .filter((child) => child.type === "text")
+    .map((child) => (child as { content?: string }).content ?? "");
 }
 
 function user() {

@@ -6,6 +6,8 @@ import {
   createNodeId,
   findNode,
   flattenNodes,
+  getAgentExecutionCanvasRole,
+  getAgentExecutionCanvasSize,
   getBoundsUnion,
   getNodeSceneBounds,
   withAgentExecutionNodeSemantics,
@@ -215,6 +217,23 @@ function buildVariantBranchesPlan(args: {
   const recommendedVariant =
     args.variants.find((variant) => variant.recommended) ?? fallbackVariant;
   const recommendedBranchId = branchIdForVariant(recommendedVariant, 0);
+  const executionBarBounds = {
+    x: origin.x,
+    y: origin.y,
+    ...getAgentExecutionCanvasSize({ kind: "task_step", collapsed: true }),
+  };
+  const executionNode = createBranchExecutionCard({
+    agentId: args.agentId,
+    body: "Agent 正在生成并整理多个结果分支。",
+    bounds: executionBarBounds,
+    runId: args.runId,
+    sessionId: args.sessionId,
+    sourceNodeId: args.sourceNodeId,
+  });
+  nodes.push(executionNode);
+  if (sourceNode) {
+    connectors.push(buildConnector("生成分支", sourceNode, executionNode));
+  }
 
   const variantNodes = args.variants.map((variant, index) => {
     const branchId = branchIdForVariant(variant, index);
@@ -224,10 +243,12 @@ function buildVariantBranchesPlan(args: {
       body: buildVariantBody(variant),
       branchLabel: variant.title,
       bounds: {
-        x: origin.x,
-        y: origin.y + index * 280,
-        width: 320,
-        height: 240,
+        x: origin.x + index * 257,
+        y: origin.y + executionBarBounds.height + 40,
+        ...getAgentExecutionCanvasSize({
+          kind: "variant_branch",
+          collapsed: false,
+        }),
       },
       critiqueSummary: variant.critiqueSummary,
       deliverableSummary: variant.deliverableSummary,
@@ -236,7 +257,7 @@ function buildVariantBranchesPlan(args: {
       planSummary: variant.planSummary,
       runId: args.runId,
       sessionId: args.sessionId,
-      sourceNodeId: args.sourceNodeId,
+      sourceNodeId: executionNode.id,
       strengths: variant.strengths,
       risks: variant.risks,
       summary: variant.summary,
@@ -244,9 +265,7 @@ function buildVariantBranchesPlan(args: {
       useCases: variant.useCases,
     });
     nodes.push(node);
-    if (sourceNode) {
-      connectors.push(buildConnector("生成分支", sourceNode, node));
-    }
+    connectors.push(buildConnector("输出分支", executionNode, node));
     return node;
   });
 
@@ -259,10 +278,17 @@ function buildVariantBranchesPlan(args: {
     agentId: args.agentId,
     body: comparisonBody,
     bounds: {
-      x: origin.x + 420,
-      y: origin.y + Math.max(0, (variantNodes.length - 1) * 140),
-      width: 360,
-      height: 240,
+      x: origin.x,
+      y:
+        origin.y +
+        executionBarBounds.height +
+        40 +
+        getAgentExecutionCanvasSize({
+          kind: "variant_branch",
+          collapsed: false,
+        }).height +
+        40,
+      ...getAgentExecutionCanvasSize({ kind: "comparison", collapsed: false }),
     },
     branchNodeIds: variantNodes.map((node) => node.id),
     recommendedBranchId,
@@ -340,6 +366,10 @@ function createVariantCard(input: {
     status: "done",
     summary: input.summary,
     title: input.title,
+    canvasPresentation: {
+      layoutVersion: 2,
+      collapsed: getAgentExecutionCanvasRole("variant_branch") === "execution",
+    },
     ...(input.agentId ? { agentId: input.agentId } : {}),
     ...(input.runId ? { runId: input.runId } : {}),
     ...(input.sessionId ? { sessionId: input.sessionId } : {}),
@@ -380,6 +410,10 @@ function createComparisonCard(input: {
     status: "done",
     summary: input.body,
     title: input.title,
+    canvasPresentation: {
+      layoutVersion: 2,
+      collapsed: getAgentExecutionCanvasRole("comparison") === "execution",
+    },
     ...(input.agentId ? { agentId: input.agentId } : {}),
     ...(input.runId ? { runId: input.runId } : {}),
     ...(input.sessionId ? { sessionId: input.sessionId } : {}),
@@ -387,11 +421,45 @@ function createComparisonCard(input: {
   }) as FrameNode;
 }
 
+function createBranchExecutionCard(input: {
+  agentId?: string;
+  body: string;
+  bounds: CanvasBounds;
+  runId?: string;
+  sessionId?: string;
+  sourceNodeId?: string;
+}): FrameNode {
+  const node = createCard({
+    agentId: input.agentId,
+    body: input.body,
+    bounds: input.bounds,
+    kind: "task_step",
+    runId: input.runId,
+    sessionId: input.sessionId,
+    status: "done",
+    title: "Agent 执行",
+  });
+  return withAgentExecutionNodeSemantics(node, {
+    kind: "task_step",
+    status: "done",
+    summary: input.body,
+    title: "Agent 执行",
+    canvasPresentation: {
+      layoutVersion: 2,
+      collapsed: getAgentExecutionCanvasRole("task_step") === "execution",
+    },
+    ...(input.agentId ? { agentId: input.agentId } : {}),
+    ...(input.runId ? { runId: input.runId } : {}),
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    ...(input.sourceNodeId ? { upstreamNodeIds: [input.sourceNodeId] } : {}),
+  }) as FrameNode;
+}
+
 function createCard(input: {
   agentId?: string;
   body: string;
   bounds: CanvasBounds;
-  kind: "comparison" | "variant_branch";
+  kind: "comparison" | "task_step" | "variant_branch";
   runId?: string;
   sessionId?: string;
   status: "done";
@@ -437,7 +505,13 @@ function createCard(input: {
       ...(input.runId ? { runId: input.runId } : {}),
       ...(input.sessionId ? { sessionId: input.sessionId } : {}),
     },
-    { kind: input.kind, status: input.status },
+    {
+      body: input.body,
+      collapsed: input.kind !== "variant_branch" && input.kind !== "comparison",
+      kind: input.kind,
+      status: input.status,
+      title: input.title,
+    },
   );
 }
 
@@ -483,8 +557,26 @@ function buildConnector(
 ): LineNode {
   const sourceBounds = nodeBounds(source);
   const targetBounds = nodeBounds(target);
-  const start = connectorPointForNodeBounds(source, sourceBounds, "right", 0.5);
-  const end = connectorPointForNodeBounds(target, targetBounds, "left", 0.5);
+  const start =
+    Math.abs((targetBounds.y ?? 0) - (sourceBounds.y ?? 0)) >
+    Math.abs((targetBounds.x ?? 0) - (sourceBounds.x ?? 0))
+      ? connectorPointForNodeBounds(source, sourceBounds, "bottom", 0.5)
+      : connectorPointForNodeBounds(source, sourceBounds, "right", 0.5);
+  const end =
+    Math.abs((targetBounds.y ?? 0) - (sourceBounds.y ?? 0)) >
+    Math.abs((targetBounds.x ?? 0) - (sourceBounds.x ?? 0))
+      ? connectorPointForNodeBounds(target, targetBounds, "top", 0.5)
+      : connectorPointForNodeBounds(target, targetBounds, "left", 0.5);
+  const startSide =
+    Math.abs((targetBounds.y ?? 0) - (sourceBounds.y ?? 0)) >
+    Math.abs((targetBounds.x ?? 0) - (sourceBounds.x ?? 0))
+      ? "bottom"
+      : "right";
+  const endSide =
+    Math.abs((targetBounds.y ?? 0) - (sourceBounds.y ?? 0)) >
+    Math.abs((targetBounds.x ?? 0) - (sourceBounds.x ?? 0))
+      ? "top"
+      : "left";
   return {
     id: createNodeId("connector"),
     type: "line",
@@ -495,10 +587,10 @@ function buildConnector(
     x2: end.x,
     y2: end.y,
     connector: {
-      arrow: true,
+      arrow: false,
       routing: "smooth",
-      start: { nodeId: source.id, ratio: 0.5, side: "right" },
-      end: { nodeId: target.id, ratio: 0.5, side: "left" },
+      start: { nodeId: source.id, ratio: 0.5, side: startSide },
+      end: { nodeId: target.id, ratio: 0.5, side: endSide },
     },
     stroke: agentExecutionConnectorStroke("accent"),
   };

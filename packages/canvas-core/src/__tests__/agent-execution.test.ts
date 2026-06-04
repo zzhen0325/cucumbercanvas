@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  AGENT_EXECUTION_CANVAS_LAYOUT_VERSION,
+  normalizeAgentExecutionCanvasLayout,
+  toggleAgentExecutionCanvasCollapsed,
+  withAgentExecutionCanvasPresentation,
+} from "../agent-execution-layout.js";
+import {
   getAgentExecutionKindLabel,
   getAgentExecutionMeta,
   getAgentExecutionNodeSemanticUpdates,
@@ -16,6 +22,7 @@ import {
   formatAgentRecipeTemplateStartPrompt,
   getAgentRecipeTemplateById,
 } from "../agent-recipe-template.js";
+import { createCanvasDocument, findNode } from "../document.js";
 import type { PenNode } from "../types.js";
 
 describe("agent execution metadata", () => {
@@ -206,6 +213,149 @@ describe("agent execution metadata", () => {
     });
   });
 });
+
+describe("agent execution canvas presentation", () => {
+  it("normalizes old execution nodes to the v2 three-part canvas layout once", () => {
+    const doc = createCanvasDocument("Execution layout migration");
+    const page = doc.pages?.[0];
+    if (!page) throw new Error("Expected default canvas page.");
+    page.children = [
+      withAgentExecutionNodeSemantics(
+        {
+          children: [],
+          height: 160,
+          id: "goal-1",
+          name: "Legacy goal",
+          type: "frame",
+          width: 280,
+          x: 420,
+          y: 220,
+        } as PenNode,
+        {
+          kind: "user_goal",
+          status: "done",
+          summary: "用户希望生成新品海报。",
+          title: "用户目标",
+        },
+      ),
+      withAgentExecutionNodeSemantics(
+        {
+          children: [],
+          height: 180,
+          id: "step-1",
+          name: "Legacy step",
+          type: "frame",
+          width: 320,
+          x: 760,
+          y: 220,
+        } as PenNode,
+        {
+          kind: "task_step",
+          status: "running",
+          summary: "正在拆解执行计划。",
+          title: "Agent 执行",
+          upstreamNodeIds: ["goal-1"],
+        },
+      ),
+      withAgentExecutionNodeSemantics(
+        {
+          children: [],
+          height: 220,
+          id: "result-1",
+          name: "Legacy result",
+          type: "frame",
+          width: 320,
+          x: 1120,
+          y: 220,
+        } as PenNode,
+        {
+          kind: "final_deliverable",
+          status: "waiting",
+          summary: "结果展示区等待写入。",
+          title: "结果展示",
+          upstreamNodeIds: ["step-1"],
+        },
+      ),
+    ];
+
+    const migrated = normalizeAgentExecutionCanvasLayout(doc);
+
+    expect(migrated.changed).toBe(true);
+    expect(migrated.migratedNodeIds).toEqual(["goal-1", "step-1", "result-1"]);
+    expect(
+      getAgentExecutionMeta(findNode(migrated.doc, "goal-1")),
+    ).toMatchObject({
+      canvasPresentation: {
+        collapsed: false,
+        layoutVersion: AGENT_EXECUTION_CANVAS_LAYOUT_VERSION,
+      },
+      kind: "user_goal",
+    });
+    const stepNode = findNode(migrated.doc, "step-1");
+    expect(stepNode).toMatchObject({
+      height: 36,
+      width: 240,
+      x: 420,
+      y: 344,
+    });
+    expect(getAgentExecutionMeta(stepNode)).toMatchObject({
+      canvasPresentation: {
+        collapsed: true,
+        layoutVersion: AGENT_EXECUTION_CANVAS_LAYOUT_VERSION,
+      },
+      kind: "task_step",
+      status: "running",
+    });
+    expect(textContents(stepNode)).toEqual(
+      expect.arrayContaining(["Thinking...", "v"]),
+    );
+
+    const secondPass = normalizeAgentExecutionCanvasLayout(migrated.doc);
+    expect(secondPass.changed).toBe(false);
+    expect(secondPass.migratedNodeIds).toEqual([]);
+  });
+
+  it("toggles canvas collapsed state without changing Agent semantics", () => {
+    const node = withAgentExecutionNodeSemantics(
+      {
+        children: [],
+        id: "tool-1",
+        type: "frame",
+      } as PenNode,
+      withAgentExecutionCanvasPresentation({
+        kind: "tool_call",
+        schemaVersion: 1,
+        status: "running",
+        summary: "正在调用图片生成工具。",
+        title: "generate_image",
+        toolName: "generate_image",
+      }),
+    );
+
+    const toggled = toggleAgentExecutionCanvasCollapsed(node);
+
+    expect(getAgentExecutionMeta(toggled)).toMatchObject({
+      canvasPresentation: {
+        collapsed: false,
+        layoutVersion: AGENT_EXECUTION_CANVAS_LAYOUT_VERSION,
+      },
+      kind: "tool_call",
+      status: "running",
+      summary: "正在调用图片生成工具。",
+      title: "generate_image",
+      toolName: "generate_image",
+    });
+  });
+});
+
+function textContents(node: PenNode | undefined): string[] {
+  if (!node || !("children" in node) || !Array.isArray(node.children)) {
+    return [];
+  }
+  return node.children
+    .filter((child) => child.type === "text")
+    .map((child) => (child as { content?: string }).content ?? "");
+}
 
 describe("agent recipe templates", () => {
   it("defines reusable Recipe starters without becoming runtime canvas truth", () => {

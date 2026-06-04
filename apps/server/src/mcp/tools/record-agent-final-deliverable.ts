@@ -2,8 +2,11 @@ import {
   type CanvasOperation,
   findNode,
   getAgentBindingStatusForExecutionStatus,
+  getAgentExecutionCanvasCollapsed,
+  getAgentExecutionCanvasFrameUpdates,
   getAgentExecutionMeta,
   getAgentExecutionNodeSemanticUpdates,
+  withAgentExecutionCanvasPresentation,
 } from "@cucumber/canvas-core";
 import type { PenNode } from "@cucumber/pen-types";
 import { z } from "zod";
@@ -85,7 +88,6 @@ export function createRecordAgentFinalDeliverableMcpTool(
           outputSummary: input.outputSummary,
           summary: input.summary,
         });
-        const updatedChildren = updateFirstTextChild(node, body);
         const nextFailure = resolveFinalDeliverableFailure({
           errorReason: input.errorReason,
           explicitFailure: input.failure,
@@ -94,7 +96,7 @@ export function createRecordAgentFinalDeliverableMcpTool(
         });
         const { failure: _previousFailure, ...executionWithoutFailure } =
           execution;
-        const nextExecution = {
+        const nextExecution = withAgentExecutionCanvasPresentation({
           ...executionWithoutFailure,
           details: {
             ...(execution.details ?? {}),
@@ -107,7 +109,7 @@ export function createRecordAgentFinalDeliverableMcpTool(
           status: input.status,
           summary: input.summary,
           title: input.title ?? execution.title,
-        };
+        });
         const semanticUpdates = getAgentExecutionNodeSemanticUpdates(
           node,
           nextExecution,
@@ -124,18 +126,12 @@ export function createRecordAgentFinalDeliverableMcpTool(
             type: "updateNode",
             updates: {
               ...semanticUpdates,
-              ...(updatedChildren ? { children: updatedChildren } : {}),
+              ...getAgentExecutionCanvasFrameUpdates({
+                body,
+                collapsed: getAgentExecutionCanvasCollapsed(nextExecution),
+                execution: nextExecution,
+              }),
               ...(input.title ? { name: input.title } : {}),
-              stroke: {
-                ...getNodeStroke(node),
-                fill: [
-                  {
-                    color: input.status === "done" ? "#2f9e44" : "#e03131",
-                    type: "solid",
-                  },
-                ],
-                thickness: getNodeStroke(node)?.thickness ?? 1.5,
-              },
             } as Partial<PenNode>,
           },
         ];
@@ -267,34 +263,4 @@ function formatFinalDeliverableBody(input: {
     input.errorReason ? `失败原因：${input.errorReason}` : undefined,
   ].filter((value): value is string => Boolean(value));
   return sections.join("\n");
-}
-
-function updateFirstTextChild(
-  node: PenNode,
-  content: string,
-): PenNode[] | undefined {
-  if (!("children" in node) || !Array.isArray(node.children)) {
-    return undefined;
-  }
-  let updated = false;
-  return node.children.map((child) => {
-    if (updated || child.type !== "text") return child;
-    updated = true;
-    return { ...child, content } as PenNode;
-  });
-}
-
-function getNodeStroke(node: PenNode):
-  | {
-      fill?: Array<{ color: string; type: "solid" }>;
-      thickness?: number;
-    }
-  | undefined {
-  if (!("stroke" in node)) return undefined;
-  return node.stroke as
-    | {
-        fill?: Array<{ color: string; type: "solid" }>;
-        thickness?: number;
-      }
-    | undefined;
 }

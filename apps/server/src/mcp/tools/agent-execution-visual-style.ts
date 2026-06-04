@@ -1,24 +1,18 @@
 import {
   type AgentExecutionNodeKind,
+  type AgentExecutionNodeMeta,
   type AgentExecutionStatus,
   type CanvasBounds,
-  createNodeId,
-  getAgentExecutionKindLabel,
-  getAgentExecutionStatusLabel,
+  createAgentExecutionCanvasChildren,
+  getAgentExecutionCanvasConnectorStroke,
+  getAgentExecutionCanvasFrameUpdates,
+  withAgentExecutionCanvasPresentation,
 } from "@cucumber/canvas-core";
 import type { FrameNode, LineNode, PenNode } from "@cucumber/pen-types";
 
-export const AGENT_EXECUTION_CARD_CORNER_RADIUS = 22;
-export const AGENT_EXECUTION_CARD_STROKE_THICKNESS = 1.5;
-export const AGENT_EXECUTION_CONNECTOR_THICKNESS = 2;
-
-const CARD_PADDING_X = 26;
-const CARD_PADDING_TOP = 22;
-const TITLE_HEIGHT = 24;
-const META_HEIGHT = 18;
-const META_TOP = CARD_PADDING_TOP + TITLE_HEIGHT + 6;
-const BODY_TOP = META_TOP + META_HEIGHT + 12;
-const BODY_BOTTOM_PADDING = 24;
+export const AGENT_EXECUTION_CARD_CORNER_RADIUS = 18;
+export const AGENT_EXECUTION_CARD_STROKE_THICKNESS = 1;
+export const AGENT_EXECUTION_CONNECTOR_THICKNESS = 1;
 
 export function createAgentExecutionCardChildren(input: {
   body: string;
@@ -27,67 +21,24 @@ export function createAgentExecutionCardChildren(input: {
   status: AgentExecutionStatus;
   title: string;
   toolName?: string;
+  collapsed?: boolean;
 }): PenNode[] {
-  const contentWidth = Math.max(120, input.bounds.width - CARD_PADDING_X * 2);
-  const bodyHeight = Math.max(
-    64,
-    input.bounds.height - BODY_TOP - BODY_BOTTOM_PADDING,
-  );
-  const metaText = [
-    getAgentExecutionKindLabel(input.kind),
-    getAgentExecutionStatusLabel(input.status),
-    input.toolName ? `工具 ${input.toolName}` : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
-
-  return [
-    {
-      content: input.title,
-      fill: [{ color: "rgba(15,23,42,0.92)", type: "solid" }],
-      fontSize: 18,
-      fontWeight: 650,
-      height: TITLE_HEIGHT,
-      id: createNodeId(`agent_${input.kind}_title`),
-      lineHeight: 1.18,
-      name: `${input.title} 标题`,
-      textGrowth: "fixed-width-height",
-      type: "text",
-      width: contentWidth,
-      x: CARD_PADDING_X,
-      y: CARD_PADDING_TOP,
-    },
-    {
-      content: metaText,
-      fill: [{ color: "rgba(15,23,42,0.48)", type: "solid" }],
-      fontSize: 11,
-      fontWeight: 500,
-      height: META_HEIGHT,
-      id: createNodeId(`agent_${input.kind}_meta`),
-      lineHeight: 1.25,
-      name: `${input.title} 状态`,
-      textGrowth: "fixed-width-height",
-      type: "text",
-      width: contentWidth,
-      x: CARD_PADDING_X,
-      y: META_TOP,
-    },
-    {
-      content: input.body,
-      fill: [{ color: "rgba(15,23,42,0.72)", type: "solid" }],
-      fontSize: 14,
-      fontWeight: 400,
-      height: bodyHeight,
-      id: createNodeId(`agent_${input.kind}_body`),
-      lineHeight: 1.48,
-      name: `${input.title} 内容`,
-      textGrowth: "fixed-width-height",
-      type: "text",
-      width: contentWidth,
-      x: CARD_PADDING_X,
-      y: BODY_TOP,
-    },
-  ];
+  return createAgentExecutionCanvasChildren({
+    body: input.body,
+    bounds: input.bounds,
+    collapsed: input.collapsed ?? true,
+    execution: withAgentExecutionCanvasPresentation(
+      {
+        kind: input.kind,
+        schemaVersion: 1,
+        status: input.status,
+        title: input.title,
+        ...(input.toolName ? { toolName: input.toolName } : {}),
+        summary: input.body,
+      } satisfies AgentExecutionNodeMeta,
+      { collapsed: input.collapsed ?? true },
+    ),
+  });
 }
 
 export function agentExecutionCardFillForKind(
@@ -137,18 +88,7 @@ export function agentExecutionCardStrokeForStatus(
 export function agentExecutionConnectorStroke(
   tone: "accent" | "warning" = "accent",
 ): LineNode["stroke"] {
-  return {
-    cap: "round",
-    endTip: "line-arrow",
-    fill: [
-      {
-        color:
-          tone === "warning" ? "rgba(217,119,6,0.56)" : "rgba(79,70,229,0.52)",
-        type: "solid",
-      },
-    ],
-    thickness: AGENT_EXECUTION_CONNECTOR_THICKNESS,
-  };
+  return getAgentExecutionCanvasConnectorStroke(tone);
 }
 
 export function applyAgentExecutionCardVisualStyle(
@@ -156,20 +96,39 @@ export function applyAgentExecutionCardVisualStyle(
   input: {
     kind: AgentExecutionNodeKind;
     status: AgentExecutionStatus;
+    collapsed?: boolean;
+    body?: string;
+    title?: string;
+    toolName?: string;
   },
 ): FrameNode {
+  const execution = withAgentExecutionCanvasPresentation(
+    {
+      kind: input.kind,
+      schemaVersion: 1,
+      status: input.status,
+      title: input.title ?? node.name ?? input.kind,
+      ...(input.toolName ? { toolName: input.toolName } : {}),
+      summary: input.body,
+    } satisfies AgentExecutionNodeMeta,
+    { collapsed: input.collapsed ?? true },
+  );
   return {
     ...node,
-    cornerRadius: AGENT_EXECUTION_CARD_CORNER_RADIUS,
-    fill: [{ color: agentExecutionCardFillForKind(input.kind), type: "solid" }],
-    stroke: {
-      fill: [
-        {
-          color: agentExecutionCardStrokeForStatus(input.status),
-          type: "solid",
-        },
-      ],
-      thickness: AGENT_EXECUTION_CARD_STROKE_THICKNESS,
-    },
+    ...getAgentExecutionCanvasFrameUpdates({
+      body: input.body,
+      bounds: {
+        width: numericDimension(node.width),
+        height: numericDimension(node.height),
+      },
+      collapsed: input.collapsed ?? true,
+      execution,
+    }),
   } as FrameNode;
+}
+
+function numericDimension(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }

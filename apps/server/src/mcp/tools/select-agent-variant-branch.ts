@@ -338,10 +338,17 @@ function updateComparisonChildren(
   ]
     .filter(Boolean)
     .join("\n");
-  let updatedFirstText = false;
-  return comparisonNode.children.map((child) => {
-    if (updatedFirstText || child.type !== "text") return child;
-    updatedFirstText = true;
+  const firstTextIndex = comparisonNode.children.findIndex(
+    (child) => child.type === "text",
+  );
+  const summaryTextIndex = comparisonNode.children.findIndex(
+    (child) => child.type === "text" && child.name === "结果摘要",
+  );
+  const targetTextIndex =
+    summaryTextIndex >= 0 ? summaryTextIndex : firstTextIndex;
+  return comparisonNode.children.map((child, index) => {
+    if (child.type !== "text") return child;
+    if (index !== targetTextIndex) return child;
     return { ...(child as TextNode), content };
   }) as FrameNode["children"];
 }

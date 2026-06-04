@@ -76,6 +76,15 @@ function createVariantServer(
   return { patchDocument, server, state };
 }
 
+function textContents(node: PenNode | undefined): string[] {
+  if (!node || !("children" in node) || !Array.isArray(node.children)) {
+    return [];
+  }
+  return node.children
+    .filter((child) => child.type === "text")
+    .map((child) => (child as { content?: string }).content ?? "");
+}
+
 describe("create_agent_variant_branches", () => {
   it("creates durable variant branches and a comparison node", async () => {
     const { server, state } = createVariantServer();
@@ -124,15 +133,11 @@ describe("create_agent_variant_branches", () => {
 
     expect(result).toMatchObject({
       structuredContent: {
-        appliedOperationCount: 7,
+        appliedOperationCount: 11,
         comparisonNodeId: expect.any(String),
-        connectorNodeIds: [
-          expect.any(String),
-          expect.any(String),
-          expect.any(String),
-        ],
+        connectorNodeIds: expect.arrayContaining([expect.any(String)]),
         nextDocumentVersion: 4,
-        previewedOperationCount: 7,
+        previewedOperationCount: 11,
         recommendedBranchId: "branch-b",
         variantBranchNodeIds: [
           expect.any(String),
@@ -146,8 +151,8 @@ describe("create_agent_variant_branches", () => {
       connectorNodeIds: string[];
       variantBranchNodeIds: string[];
     };
-    expect(state.doc.pages?.[0]?.children).toHaveLength(7);
-    expect(flattenNodes(state.doc)).toHaveLength(19);
+    expect(state.doc.pages?.[0]?.children).toHaveLength(11);
+    expect(flattenNodes(state.doc)).toHaveLength(22);
     const [branchAId, branchBId] = payload.variantBranchNodeIds;
     if (!branchAId || !branchBId) {
       throw new Error("Expected at least two variant branch nodes.");
@@ -163,6 +168,10 @@ describe("create_agent_variant_branches", () => {
         kind: "variant_branch",
         runId: "run-1",
         status: "done",
+        canvasPresentation: {
+          layoutVersion: 2,
+          collapsed: false,
+        },
       },
     );
     expect(getAgentExecutionMeta(findNode(state.doc, branchBId))).toMatchObject(
@@ -179,22 +188,12 @@ describe("create_agent_variant_branches", () => {
       },
     );
     const branchB = findNode(state.doc, branchBId) as PenNode | undefined;
-    const branchBText = Array.isArray(
-      (branchB as { children?: PenNode[] } | undefined)?.children,
-    )
-      ? ((branchB as { children: PenNode[] }).children[2] as
-          | PenNode
-          | undefined)
-      : undefined;
-    expect(
-      (branchBText as { content?: string } | undefined)?.content,
-    ).toContain("计划：先生成高冲击主视觉，再扩展社交媒体比例。");
-    expect(
-      (branchBText as { content?: string } | undefined)?.content,
-    ).toContain("产物：活动首发海报和社交媒体主视觉。");
-    expect(
-      (branchBText as { content?: string } | undefined)?.content,
-    ).toContain("评审：传播张力强，但需要控制制作成本。");
+    const branchBText = textContents(branchB).join("\n");
+    expect(branchBText).toContain(
+      "计划：先生成高冲击主视觉，再扩展社交媒体比例。",
+    );
+    expect(branchBText).toContain("产物：活动首发海报和社交媒体主视觉。");
+    expect(branchBText).toContain("评审：传播张力强，但需要控制制作成本。");
     expect(
       getAgentExecutionMeta(findNode(state.doc, payload.comparisonNodeId)),
     ).toMatchObject({
@@ -206,6 +205,10 @@ describe("create_agent_variant_branches", () => {
       kind: "comparison",
       status: "done",
       upstreamNodeIds: payload.variantBranchNodeIds,
+      canvasPresentation: {
+        layoutVersion: 2,
+        collapsed: false,
+      },
     });
     for (const nodeId of [
       ...payload.variantBranchNodeIds,
@@ -231,17 +234,23 @@ describe("create_agent_variant_branches", () => {
     const connectors = payload.connectorNodeIds.map(
       (id) => findNode(state.doc, id) as LineNode | undefined,
     );
-    expect(connectors).toHaveLength(3);
+    expect(connectors).toHaveLength(6);
     expect(connectors[0]?.stroke).toMatchObject({
-      fill: [{ color: "rgba(79,70,229,0.52)", type: "solid" }],
+      fill: [{ color: "rgba(15,23,42,0.12)", type: "solid" }],
       thickness: AGENT_EXECUTION_CONNECTOR_THICKNESS,
     });
     expect(connectors[0]).toMatchObject({
       connector: {
-        start: { nodeId: branchAId },
-        end: { nodeId: payload.comparisonNodeId },
+        end: { nodeId: branchAId },
       },
     });
+    expect(
+      connectors.some(
+        (connector) =>
+          connector?.connector?.start?.nodeId === branchAId &&
+          connector.connector.end?.nodeId === payload.comparisonNodeId,
+      ),
+    ).toBe(true);
     expect(state.doc.selection).toEqual([payload.comparisonNodeId]);
   });
 
@@ -263,7 +272,7 @@ describe("create_agent_variant_branches", () => {
     ).resolves.toMatchObject({
       structuredContent: {
         appliedOperationCount: 0,
-        previewedOperationCount: 5,
+        previewedOperationCount: 8,
       },
     });
     expect(patchDocument).not.toHaveBeenCalled();

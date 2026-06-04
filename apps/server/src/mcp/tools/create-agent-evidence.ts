@@ -330,7 +330,13 @@ function createEvidenceCard(input: {
         ...(input.runId ? { runId: input.runId } : {}),
         ...(input.sessionId ? { sessionId: input.sessionId } : {}),
       },
-      { kind: "evidence", status: "done" },
+      {
+        body: input.body,
+        collapsed: true,
+        kind: "evidence",
+        status: "done",
+        title: input.title,
+      },
     ),
     {
       evidence: {
@@ -342,6 +348,10 @@ function createEvidenceCard(input: {
         ...(input.confidence != null ? { confidence: input.confidence } : {}),
       },
       kind: "evidence",
+      canvasPresentation: {
+        layoutVersion: 2,
+        collapsed: true,
+      },
       status: "done",
       summary: input.summary,
       title: input.title,

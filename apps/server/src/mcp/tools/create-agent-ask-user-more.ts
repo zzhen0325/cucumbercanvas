@@ -309,10 +309,20 @@ function createAskUserMoreCard(input: {
         ...(input.runId ? { runId: input.runId } : {}),
         ...(input.sessionId ? { sessionId: input.sessionId } : {}),
       },
-      { kind: "ask_user_more", status: "waiting" },
+      {
+        body: input.body,
+        collapsed: true,
+        kind: "ask_user_more",
+        status: "waiting",
+        title: input.title,
+      },
     ),
     {
       kind: "ask_user_more",
+      canvasPresentation: {
+        layoutVersion: 2,
+        collapsed: true,
+      },
       status: "waiting",
       summary: input.body,
       title: input.title,

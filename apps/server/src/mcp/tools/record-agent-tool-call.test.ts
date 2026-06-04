@@ -105,6 +105,15 @@ function createToolCallServer(
   return { patchDocument, server, state };
 }
 
+function textContents(node: PenNode | undefined): string[] {
+  if (!node || !("children" in node) || !Array.isArray(node.children)) {
+    return [];
+  }
+  return node.children
+    .filter((child) => child.type === "text")
+    .map((child) => (child as { content?: string }).content ?? "");
+}
+
 describe("record_agent_tool_call", () => {
   it("records tool input and output details into a durable tool_call node", async () => {
     const { server, state } = createToolCallServer();
@@ -159,9 +168,13 @@ describe("record_agent_tool_call", () => {
       runId: "run-1",
       sessionId: "session-1",
     });
-    expect(updatedNode?.children?.[0]).toMatchObject({
-      content: expect.stringContaining("输出：生成 job img-123"),
+    expect(getAgentExecutionMeta(updatedNode)?.canvasPresentation).toEqual({
+      layoutVersion: 2,
+      collapsed: true,
     });
+    expect(textContents(updatedNode)).toEqual(
+      expect.arrayContaining(["已完成...", "v"]),
+    );
   });
 
   it("records failed task-step recovery context without raw error codes", async () => {

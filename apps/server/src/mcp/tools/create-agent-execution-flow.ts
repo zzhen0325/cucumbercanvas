@@ -8,6 +8,8 @@ import {
   connectorPointForNodeBounds,
   createNodeId,
   flattenNodes,
+  getAgentExecutionCanvasRole,
+  getAgentExecutionCanvasSize,
   getAgentExecutionMeta,
   getBoundsUnion,
   getNodeSceneBounds,
@@ -214,17 +216,24 @@ function buildAgentExecutionFlowPlan(args: {
   const origin = inferFlowOrigin(args.doc, args.pageId);
   const nodes: PenNode[] = [];
   const connectors: LineNode[] = [];
+  const chainX = origin.x;
+  let cursorY = origin.y;
 
   const userGoalNode = createExecutionCard({
     args,
     body: args.userGoal,
-    bounds: { x: origin.x, y: origin.y, width: 300, height: 180 },
+    bounds: {
+      x: chainX,
+      y: cursorY,
+      ...getAgentExecutionCanvasSize({ kind: "user_goal", collapsed: false }),
+    },
     kind: "user_goal",
     role: ["context"],
     status: "done",
     title: "用户目标",
   });
   nodes.push(userGoalNode);
+  cursorY += nodeBounds(userGoalNode).height + 40;
 
   const recipeBody =
     args.recipeSummary ??
@@ -232,7 +241,11 @@ function buildAgentExecutionFlowPlan(args: {
   const recipeNode = createExecutionCard({
     args,
     body: recipeBody,
-    bounds: { x: origin.x + 380, y: origin.y, width: 340, height: 220 },
+    bounds: {
+      x: chainX,
+      y: cursorY,
+      ...getAgentExecutionCanvasSize({ kind: "recipe_plan", collapsed: true }),
+    },
     kind: "recipe_plan",
     role: ["task"],
     status: "done",
@@ -241,16 +254,20 @@ function buildAgentExecutionFlowPlan(args: {
   });
   nodes.push(recipeNode);
   connectors.push(buildFlowConnector("生成 Recipe", userGoalNode, recipeNode));
+  cursorY += nodeBounds(recipeNode).height + 40;
 
   const stepNodeIds: string[] = [];
   const toolCallNodeIds: string[] = [];
   let previous = recipeNode;
   args.steps.forEach((step, index) => {
-    const x = origin.x + 800 + index * 340;
     const stepNode = createExecutionCard({
       args,
       body: step.summary ?? "等待执行这个任务步骤。",
-      bounds: { x, y: origin.y, width: 280, height: 180 },
+      bounds: {
+        x: chainX,
+        y: cursorY,
+        ...getAgentExecutionCanvasSize({ kind: "task_step", collapsed: true }),
+      },
       kind: "task_step",
       role: ["task"],
       status: step.status,
@@ -263,12 +280,20 @@ function buildAgentExecutionFlowPlan(args: {
       buildFlowConnector(`步骤 ${index + 1}`, previous, stepNode),
     );
     previous = stepNode;
+    cursorY += nodeBounds(stepNode).height + 40;
 
     if (step.toolName) {
       const toolNode = createExecutionCard({
         args,
         body: step.summary ?? `${step.toolName} 将处理这个步骤。`,
-        bounds: { x, y: origin.y + 240, width: 280, height: 150 },
+        bounds: {
+          x: chainX,
+          y: cursorY,
+          ...getAgentExecutionCanvasSize({
+            kind: "tool_call",
+            collapsed: true,
+          }),
+        },
         kind: "tool_call",
         role: ["dataflow", "task"],
         status: step.status === "done" ? "done" : "waiting",
@@ -280,6 +305,7 @@ function buildAgentExecutionFlowPlan(args: {
       toolCallNodeIds.push(toolNode.id);
       connectors.push(buildFlowConnector("调用工具", stepNode, toolNode));
       previous = toolNode;
+      cursorY += nodeBounds(toolNode).height + 40;
     }
   });
 
@@ -289,10 +315,9 @@ function buildAgentExecutionFlowPlan(args: {
       args,
       body: args.critiqueSummary ?? "完成主要步骤后运行验证和评审。",
       bounds: {
-        x: (previous.x ?? origin.x) + 360,
-        y: origin.y,
-        width: 300,
-        height: 180,
+        x: chainX,
+        y: cursorY,
+        ...getAgentExecutionCanvasSize({ kind: "critique", collapsed: true }),
       },
       kind: "critique",
       role: ["task", "context"],
@@ -304,6 +329,7 @@ function buildAgentExecutionFlowPlan(args: {
     connectors.push(buildFlowConnector("验证结果", previous, critiqueNode));
     previous = critiqueNode;
     critiqueNodeId = critiqueNode.id;
+    cursorY += nodeBounds(critiqueNode).height + 40;
   }
 
   const hasImageGenerationStep = args.steps.some(
@@ -313,10 +339,10 @@ function buildAgentExecutionFlowPlan(args: {
     args,
     body: args.finalSummary ?? "最终内容会写入这里，并可继续追问或分支。",
     bounds: {
-      x: (previous.x ?? origin.x) + 380,
-      y: origin.y - 20,
-      width: hasImageGenerationStep ? 600 : 360,
-      height: hasImageGenerationStep ? 640 : 240,
+      x: chainX,
+      y: cursorY,
+      width: 240,
+      height: hasImageGenerationStep ? 320 : 240,
     },
     kind: "final_deliverable",
     role: ["visual"],
@@ -328,6 +354,7 @@ function buildAgentExecutionFlowPlan(args: {
   connectors.push(
     buildFlowConnector("形成交付物", previous, finalDeliverableNode),
   );
+  cursorY += nodeBounds(finalDeliverableNode).height + 40;
 
   let checkpointNodeId: string | undefined;
   if (args.includeCheckpoint) {
@@ -335,10 +362,9 @@ function buildAgentExecutionFlowPlan(args: {
       args,
       body: "可从这里继续、重跑或复制为新分支。",
       bounds: {
-        x: finalDeliverableNode.x ?? origin.x,
-        y: origin.y + 300,
-        width: 280,
-        height: 140,
+        x: chainX,
+        y: cursorY,
+        ...getAgentExecutionCanvasSize({ kind: "checkpoint", collapsed: true }),
       },
       checkpoint: {
         canRestartFromHere: true,
@@ -436,6 +462,7 @@ function createExecutionCard(input: {
         children: createAgentExecutionCardChildren({
           body: input.body,
           bounds: input.bounds,
+          collapsed: true,
           kind: input.kind,
           status: input.status,
           title: input.title,
@@ -453,7 +480,14 @@ function createExecutionCard(input: {
           isolationLevel: "open",
         },
       },
-      { kind: input.kind, status: input.status },
+      {
+        body: input.body,
+        collapsed: true,
+        kind: input.kind,
+        status: input.status,
+        title: input.title,
+        toolName: input.toolName,
+      },
     ),
     {
       kind: input.kind,
@@ -467,6 +501,10 @@ function createExecutionCard(input: {
         ? { upstreamNodeIds: input.upstreamNodeIds }
         : {}),
       ...(input.checkpoint ? { checkpoint: input.checkpoint } : {}),
+      canvasPresentation: {
+        layoutVersion: 2,
+        collapsed: getAgentExecutionCanvasRole(input.kind) === "execution",
+      },
       summary: input.body,
     },
     { containerRole: input.role },
@@ -481,8 +519,13 @@ function buildFlowConnector(
 ): LineNode {
   const sourceBounds = nodeBounds(source);
   const targetBounds = nodeBounds(target);
-  const start = connectorPointForNodeBounds(source, sourceBounds, "right", 0.5);
-  const end = connectorPointForNodeBounds(target, targetBounds, "left", 0.5);
+  const start = connectorPointForNodeBounds(
+    source,
+    sourceBounds,
+    "bottom",
+    0.5,
+  );
+  const end = connectorPointForNodeBounds(target, targetBounds, "top", 0.5);
   return {
     id: createNodeId("connector"),
     type: "line",
@@ -493,10 +536,10 @@ function buildFlowConnector(
     x2: end.x,
     y2: end.y,
     connector: {
-      arrow: true,
+      arrow: false,
       routing: "smooth",
-      start: { nodeId: source.id, ratio: 0.5, side: "right" },
-      end: { nodeId: target.id, ratio: 0.5, side: "left" },
+      start: { nodeId: source.id, ratio: 0.5, side: "bottom" },
+      end: { nodeId: target.id, ratio: 0.5, side: "top" },
     },
     stroke: agentExecutionConnectorStroke("accent"),
   };

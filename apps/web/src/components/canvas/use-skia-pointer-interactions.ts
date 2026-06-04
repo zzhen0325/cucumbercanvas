@@ -7,12 +7,18 @@ import {
   applyCanvasTransaction,
   detachConnectorEndpoint as detachConnectorEndpointBinding,
   findNode,
+  findParent,
+  formatAgentExecutionCanvasBody,
+  getAgentExecutionCanvasCollapsed,
+  getAgentExecutionCanvasFrameUpdates,
+  getAgentExecutionCanvasRole,
   getAgentExecutionMeta,
   getLineEndpoints,
   getNodeBounds,
   getNodeSceneBounds,
   isDescendantOf,
   reparentNodesByDropPoint,
+  toggleAgentExecutionCanvasCollapsed,
 } from "@cucumber/canvas-core";
 import type {
   LineNode,
@@ -438,6 +444,42 @@ export function useSkiaPointerInteractions({
       );
 
       if (tool === "select") {
+        const toggledExecutionNode = getAgentExecutionToggleTarget(
+          docRef.current,
+          activePageId,
+          rawHit?.id ?? hit?.id,
+          scenePoint,
+        );
+        if (toggledExecutionNode) {
+          const toggled =
+            toggleAgentExecutionCanvasCollapsed(toggledExecutionNode);
+          const execution = getAgentExecutionMeta(toggled);
+          if (!execution) return;
+          const next = applyCanvasOperation(docRef.current, {
+            type: "updateNode",
+            nodeId: toggled.id,
+            updates: {
+              meta: toggled.meta,
+              ...getAgentExecutionCanvasFrameUpdates({
+                body: formatAgentExecutionCanvasBody(execution),
+                collapsed: getAgentExecutionCanvasCollapsed(execution),
+                execution,
+              }),
+            } as Partial<PenNode>,
+            activePageId,
+          });
+          commitDocument(next, { selection: [toggled.id] });
+          setSelection([toggled.id], { notifyScene: false });
+          suppressNextClickRef.current = true;
+          event.preventDefault();
+          event.stopPropagation();
+          console.info("[canvas-agent-execution-layout] toggle", {
+            collapsed: getAgentExecutionCanvasCollapsed(execution),
+            nodeId: toggled.id,
+          });
+          return;
+        }
+
         const controlHit = renderer.hitTestSelectionControl(
           event.clientX,
           event.clientY,
@@ -655,6 +697,7 @@ export function useSkiaPointerInteractions({
       }
     },
     [
+      commitDocument,
       effectiveTool,
       flushRendererDocumentSyncBeforeInteraction,
       getConnectorSnap,
@@ -1611,4 +1654,33 @@ export function useSkiaPointerInteractions({
     hoveredCheckpoint,
     closeContextMenu: () => setContextMenu(null),
   };
+}
+
+function getAgentExecutionToggleTarget(
+  doc: PenDocument,
+  activePageId: string,
+  hitNodeId: string | undefined,
+  scenePoint: { x: number; y: number },
+): PenNode | null {
+  if (!hitNodeId) return null;
+  let node = findNode(doc, hitNodeId, activePageId);
+  while (node) {
+    const execution = getAgentExecutionMeta(node);
+    if (execution) {
+      if (getAgentExecutionCanvasRole(execution.kind) !== "execution") {
+        return null;
+      }
+      const bounds =
+        getNodeSceneBounds(doc, node.id, activePageId) ?? getNodeBounds(node);
+      const hotZoneStartX = bounds.x + bounds.width - 32;
+      const insideHotZone =
+        scenePoint.x >= hotZoneStartX &&
+        scenePoint.x <= bounds.x + bounds.width &&
+        scenePoint.y >= bounds.y &&
+        scenePoint.y <= bounds.y + Math.min(bounds.height, 36);
+      return insideHotZone ? node : null;
+    }
+    node = findParent(doc, node.id, activePageId);
+  }
+  return null;
 }

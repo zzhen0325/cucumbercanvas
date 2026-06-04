@@ -158,7 +158,6 @@ class SeedreamClient {
       const result = await this.signedPost("CVSync2AsyncGetResult", {
         req_key: reqKey,
         task_id: taskId,
-        req_json: JSON.stringify({ return_url: true }),
       });
       console.log(
         `${tag} poll_response`,
@@ -392,10 +391,25 @@ function assertSeedreamOk(step: string, result: SignedPostResult) {
     const requestId = getRequestId(result.body);
     throw new GenerationError(
       "seedream",
-      "api_error",
+      resolveSeedreamErrorCode(result),
       `Seedream ${step} failed (${result.status}/${String(code)}${requestId ? ` request_id=${requestId}` : ""}): ${message}`,
     );
   }
+}
+
+function resolveSeedreamErrorCode(result: SignedPostResult): string {
+  if (result.status === 400) {
+    if (result.body.code === 50200) return "invalid_input";
+    if (
+      result.body.code === 50411 ||
+      result.body.code === 50412 ||
+      result.body.code === 50511 ||
+      result.body.code === 50512
+    ) {
+      return "safety_filter";
+    }
+  }
+  return "api_error";
 }
 
 function getRequestId(source: Record<string, unknown>): string | undefined {

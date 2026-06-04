@@ -52,6 +52,15 @@ function createRecordServer(doc: PenDocument) {
   return { patchDocument, server, state };
 }
 
+function textContents(node: PenNode | undefined): string[] {
+  if (!node || !("children" in node) || !Array.isArray(node.children)) {
+    return [];
+  }
+  return node.children
+    .filter((child) => child.type === "text")
+    .map((child) => (child as { content?: string }).content ?? "");
+}
+
 function createFinalDeliverableDoc() {
   const doc = createCanvasDocument("Record final deliverable") as PenDocument;
   const page = doc.pages?.[0];
@@ -150,9 +159,9 @@ describe("record_agent_final_deliverable", () => {
       title: "品牌视觉探索最终交付",
       upstreamNodeIds: ["critique-1"],
     });
-    expect((updatedNode as FrameNode).children?.[0]).toMatchObject({
-      content: expect.stringContaining("交付摘要：品牌视觉探索交付完成。"),
-    });
+    expect(textContents(updatedNode as PenNode).join("\n")).toContain(
+      "交付摘要：品牌视觉探索交付完成。",
+    );
   });
 
   it("records failed final deliverable recovery context with a clear reason", async () => {
@@ -200,11 +209,9 @@ describe("record_agent_final_deliverable", () => {
       kind: "final_deliverable",
       status: "failed",
     });
-    expect((updatedNode as FrameNode).children?.[0]).toMatchObject({
-      content: expect.stringContaining(
-        "失败原因：最终导出所需的组件规格缺少移动端布局说明。",
-      ),
-    });
+    expect(textContents(updatedNode as PenNode).join("\n")).toContain(
+      "失败原因：最终导出所需的组件规格缺少移动端布局说明。",
+    );
   });
 
   it("rejects non-final nodes instead of guessing a write target", async () => {

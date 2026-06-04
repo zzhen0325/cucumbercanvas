@@ -1,5 +1,6 @@
 import {
   createEmptyDocument,
+  normalizeAgentExecutionCanvasLayout,
   normalizeCanvasPages,
 } from "@cucumber/canvas-core";
 import type { PenRenderer } from "@cucumber/pen-renderer";
@@ -15,9 +16,17 @@ function normalizePenDocument(raw: unknown): PenDocument {
 }
 
 export function normalizeRuntimeDocument(raw: unknown): PenDocument {
-  return normalizeStickyNotesInDocument(
+  const normalized = normalizeStickyNotesInDocument(
     normalizeCanvasPages(normalizePenDocument(raw)),
   );
+  const agentExecutionLayout = normalizeAgentExecutionCanvasLayout(normalized);
+  if (agentExecutionLayout.changed) {
+    console.info("[canvas-agent-execution-layout] migrate", {
+      migratedCount: agentExecutionLayout.migratedNodeIds.length,
+      nodeIds: agentExecutionLayout.migratedNodeIds,
+    });
+  }
+  return agentExecutionLayout.doc;
 }
 
 export function normalizeRuntimeDocumentForCanvasSet(

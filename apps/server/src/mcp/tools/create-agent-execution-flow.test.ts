@@ -4,6 +4,7 @@ import {
   createCanvasDocument,
   findNode,
   flattenNodes,
+  getAgentExecutionCanvasRole,
   getAgentExecutionMeta,
 } from "@cucumber/canvas-core";
 import type {
@@ -81,6 +82,15 @@ function createExecutionServer(
   return { patchDocument, server, state };
 }
 
+function textContents(node: PenNode | undefined): string[] {
+  if (!node || !("children" in node) || !Array.isArray(node.children)) {
+    return [];
+  }
+  return node.children
+    .filter((child) => child.type === "text")
+    .map((child) => (child as { content?: string }).content ?? "");
+}
+
 describe("create_agent_execution_flow", () => {
   it("creates a durable execution chain with steps, tool calls, critique, final deliverable, and checkpoint", async () => {
     const { server, state } = createExecutionServer();
@@ -138,7 +148,7 @@ describe("create_agent_execution_flow", () => {
     };
     const topLevelNodes = state.doc.pages?.[0]?.children ?? [];
     expect(topLevelNodes).toHaveLength(15);
-    expect(flattenNodes(state.doc)).toHaveLength(39);
+    expect(flattenNodes(state.doc)).toHaveLength(36);
     const [firstStepNodeId, secondStepNodeId] = payload.taskStepNodeIds;
     const [toolCallNodeId] = payload.toolCallNodeIds;
     if (!firstStepNodeId || !secondStepNodeId || !toolCallNodeId) {
@@ -207,8 +217,8 @@ describe("create_agent_execution_flow", () => {
       upstreamNodeIds: [payload.critiqueNodeId],
     });
     expect(findNode(state.doc, payload.finalDeliverableNodeId)).toMatchObject({
-      height: 640,
-      width: 600,
+      height: 320,
+      width: 240,
     });
     expect(
       getAgentExecutionMeta(findNode(state.doc, payload.checkpointNodeId)),
@@ -242,39 +252,42 @@ describe("create_agent_execution_flow", () => {
         sessionId: "session-1",
       });
       expect(node?.containerRole?.length).toBeGreaterThan(0);
+      const execution = getAgentExecutionMeta(node);
+      if (!execution) throw new Error(`Expected ${nodeId} execution meta.`);
+      expect(execution.canvasPresentation).toEqual({
+        layoutVersion: 2,
+        collapsed: getAgentExecutionCanvasRole(execution.kind) === "execution",
+      });
     }
     const recipeNode = findNode(state.doc, payload.recipeNodeId) as
       | FrameNode
       | undefined;
     const recipeChildren = recipeNode?.children as PenNode[] | undefined;
     expect(recipeChildren).toHaveLength(3);
-    expect(recipeChildren?.[0]).toMatchObject({
-      content: "品牌海报 Recipe",
-      fontSize: 18,
-      x: 26,
-      y: 22,
-    });
     expect(recipeChildren?.[1]).toMatchObject({
-      content: "Recipe 计划 · 已完成",
+      content: "已完成...",
       fontSize: 11,
+      x: 37,
+      y: 10,
     });
     expect(recipeChildren?.[2]).toMatchObject({
-      content: expect.stringContaining("1. 理解目标"),
-      fontSize: 14,
-      lineHeight: 1.48,
+      content: "v",
+      name: "Agent 执行展开按钮",
     });
+    expect(textContents(recipeNode)).not.toContain("品牌海报 Recipe");
     const connectors = payload.connectorNodeIds.map(
       (id) => findNode(state.doc, id) as LineNode | undefined,
     );
     expect(connectors).toHaveLength(7);
     expect(connectors[0]?.stroke).toMatchObject({
       cap: "round",
-      endTip: "line-arrow",
-      fill: [{ color: "rgba(79,70,229,0.52)", type: "solid" }],
+      fill: [{ color: "rgba(15,23,42,0.12)", type: "solid" }],
       thickness: AGENT_EXECUTION_CONNECTOR_THICKNESS,
     });
+    expect(connectors[0]?.stroke).not.toHaveProperty("endTip");
     expect(connectors[0]).toMatchObject({
       connector: {
+        arrow: false,
         start: { nodeId: payload.userGoalNodeId },
         end: { nodeId: payload.recipeNodeId },
       },
