@@ -1,11 +1,15 @@
 import {
+  AGENT_EXECUTION_CONTAINER_META_KEY,
   createAgentExecutionNode,
   getAgentExecutionMeta,
 } from "@cucumber/canvas-core";
 import type { StreamEvent } from "@cucumber/shared";
 import { describe, expect, it } from "vitest";
 
-import { reduceAgentExecutionStreamEvent } from "@/components/canvas/use-canvas-agent-execution-stream-writeback";
+import {
+  getAgentExecutionStreamWritebackUpdates,
+  reduceAgentExecutionStreamEvent,
+} from "@/components/canvas/use-canvas-agent-execution-stream-writeback";
 
 describe("reduceAgentExecutionStreamEvent", () => {
   it("merges stage, message, tool, and terminal events into one execution node meta", () => {
@@ -105,5 +109,37 @@ describe("reduceAgentExecutionStreamEvent", () => {
     expect(next.failure?.reason).toBe("图片服务暂时不可用");
     expect(next.summary).toBe("处理失败：图片服务暂时不可用");
     expect(next.summary).not.toContain("undefined");
+  });
+
+  it("builds native container updates without rewriting generated canvas children", () => {
+    const node = createAgentExecutionNode({
+      runId: "run-1",
+      summary: "Thinking...",
+      title: "Run",
+      x: 0,
+      y: 0,
+    });
+
+    const updates = getAgentExecutionStreamWritebackUpdates(node, {
+      delta: "Native stream",
+      messageId: "message-1",
+      runId: "run-1",
+      timestamp: "2026-06-04T00:00:00.000Z",
+      type: "message.delta",
+    });
+
+    expect(updates).not.toBeNull();
+    expect(updates).not.toHaveProperty("children");
+    expect(updates?.meta?.[AGENT_EXECUTION_CONTAINER_META_KEY]).toMatchObject({
+      containerId: node.id,
+      status: "running",
+      streamParts: [
+        expect.objectContaining({
+          content: "Native stream",
+          id: "message:message-1",
+          type: "message",
+        }),
+      ],
+    });
   });
 });

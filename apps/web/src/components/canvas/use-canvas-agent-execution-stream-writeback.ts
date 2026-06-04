@@ -6,10 +6,13 @@ import {
   type AgentExecutionNodeMeta,
   type AgentExecutionStreamEntry,
   type AgentExecutionStreamEntryStatus,
+  createAgentExecutionContainerFromNodeMeta,
   findNode,
+  getAgentExecutionContainerMeta,
+  getAgentExecutionContainerMetaUpdates,
   getAgentExecutionMeta,
-  getAgentExecutionNodePresentationUpdates,
   getAgentExecutionNodeSemanticUpdates,
+  reduceAgentExecutionContainerStreamEvent,
   withAgentExecutionCanvasPresentation,
 } from "@cucumber/canvas-core";
 import type { PenNode } from "@cucumber/pen-types";
@@ -26,24 +29,55 @@ export function useCanvasAgentExecutionStreamWriteback(
     (agentExecutionNodeId: string, event: StreamEvent) => {
       if (!canvasApi) return;
       const node = findNode(canvasApi.getDocument(), agentExecutionNodeId);
-      const execution = getAgentExecutionMeta(node);
-      if (!node || !execution) return;
-      const nextExecution = reduceAgentExecutionStreamEvent(execution, event);
-      if (nextExecution === execution) return;
-      const updates: Partial<PenNode> = {
-        ...getAgentExecutionNodeSemanticUpdates(node, nextExecution, {
-          containerRole: ["task", "context"],
-        }),
-        ...getAgentExecutionNodePresentationUpdates({
-          execution: nextExecution,
-          node,
-          width: getNodeWidth(node),
-        }),
-      } as Partial<PenNode>;
+      if (!node) return;
+      const updates = getAgentExecutionStreamWritebackUpdates(node, event);
+      if (!updates) return;
       canvasApi.updateNode(agentExecutionNodeId, updates);
     },
     [canvasApi],
   );
+}
+
+export function getAgentExecutionStreamWritebackUpdates(
+  node: PenNode,
+  event: StreamEvent,
+): Partial<PenNode> | null {
+  const execution = getAgentExecutionMeta(node);
+  if (!execution) return null;
+  const currentContainer =
+    getAgentExecutionContainerMeta(node) ??
+    createAgentExecutionContainerFromNodeMeta({
+      containerId: node.id,
+      execution,
+      legacyDisplayText: getLegacyExecutionDisplayText(node),
+    });
+  const nextContainer = reduceAgentExecutionContainerStreamEvent(
+    currentContainer,
+    event,
+  );
+  const nextExecution = reduceAgentExecutionStreamEvent(execution, event);
+  if (nextContainer === currentContainer && nextExecution === execution) {
+    return null;
+  }
+  const semanticUpdates = getAgentExecutionNodeSemanticUpdates(
+    node,
+    nextExecution,
+    {
+      containerRole: ["task", "context"],
+    },
+  );
+  const nodeWithSemanticMeta = {
+    ...node,
+    meta: semanticUpdates.meta ?? node.meta,
+  } as PenNode;
+  const containerUpdates = getAgentExecutionContainerMetaUpdates(
+    nodeWithSemanticMeta,
+    nextContainer,
+  );
+  return {
+    ...semanticUpdates,
+    meta: containerUpdates.meta,
+  };
 }
 
 export function reduceAgentExecutionStreamEvent(
@@ -289,9 +323,20 @@ function clampText(value: string): string {
   return value.slice(value.length - MAX_TEXT_LENGTH);
 }
 
-function getNodeWidth(node: PenNode): number | undefined {
-  const width = (node as { width?: unknown }).width;
-  return typeof width === "number" && Number.isFinite(width)
-    ? width
-    : undefined;
+function getLegacyExecutionDisplayText(node: PenNode): string | undefined {
+  const children = (node as { children?: unknown }).children;
+  if (!Array.isArray(children)) return undefined;
+  const text = children
+    .map((child) =>
+      child &&
+      typeof child === "object" &&
+      "characters" in child &&
+      typeof (child as { characters?: unknown }).characters === "string"
+        ? (child as { characters: string }).characters
+        : undefined,
+    )
+    .filter((value): value is string => Boolean(value?.trim()))
+    .join("\n")
+    .trim();
+  return text || undefined;
 }

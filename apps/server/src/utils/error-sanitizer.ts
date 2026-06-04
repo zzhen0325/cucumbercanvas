@@ -133,17 +133,6 @@ export function describeErrorForClient(
         "Agent 配置缺失：服务端缺少必要的模型、数据库或运行时配置，请补齐配置后重试。",
     };
   }
-  if (PROVIDER_PATTERN.test(diagnostics)) {
-    return {
-      details: {
-        diagnosticSummary,
-        reason: "provider_unavailable",
-        retryable: true,
-      },
-      message:
-        "AI 服务暂时不可用：上游模型或工具调用失败，请稍后重试或切换模型。",
-    };
-  }
   if (DB_CONNECTION_PATTERN.test(diagnostics)) {
     return {
       details: {
@@ -153,6 +142,17 @@ export function describeErrorForClient(
       },
       message:
         "Agent 数据服务连接失败：无法初始化会话持久化，请检查服务端数据库连接配置、网络连通性和 Supabase 连接池状态后重试。",
+    };
+  }
+  if (PROVIDER_PATTERN.test(diagnostics)) {
+    return {
+      details: {
+        diagnosticSummary,
+        reason: "provider_unavailable",
+        retryable: true,
+      },
+      message:
+        "AI 服务暂时不可用：上游模型或工具调用失败，请稍后重试或切换模型。",
     };
   }
   if (DB_PATTERN.test(diagnostics)) {

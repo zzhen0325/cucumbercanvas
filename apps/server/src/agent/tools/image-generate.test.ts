@@ -144,4 +144,54 @@ describe("createImageGenerateTool", () => {
       agentExecutionNodeId: "agent_tool_call_1",
     });
   });
+
+  it("lets job-mode runtime resolve an execution trace node target into a visible result container", async () => {
+    let submitted:
+      | {
+          agentExecutionNodeId?: string;
+          targetContainerId?: string;
+        }
+      | undefined;
+    const imageTool = createImageGenerateTool({
+      availableModels,
+      submitImageJob: async (input) => {
+        submitted = input;
+        return { jobId: "job_same_target", error: "stubbed failure" };
+      },
+    });
+
+    const result = await imageTool.invoke({
+      prompt: "A playful puppy",
+      model: "Seedream 4.6",
+      agentExecutionNodeId: "agent_execution_1",
+      targetContainerId: "agent_execution_1",
+    });
+
+    expect(submitted).toMatchObject({
+      agentExecutionNodeId: "agent_execution_1",
+      targetContainerId: "agent_execution_1",
+    });
+    expect(result).toMatchObject({
+      jobId: "job_same_target",
+      jobType: "image_generation",
+    });
+  });
+
+  it("rejects using the execution trace node as the direct image target", async () => {
+    const imageTool = createImageGenerateTool({
+      availableModels,
+      persistImage: async (url) => url,
+    });
+
+    await expect(
+      imageTool.invoke({
+        prompt: "A playful puppy",
+        model: "Seedream 4.6",
+        agentExecutionNodeId: "agent_execution_1",
+        targetContainerId: "agent_execution_1",
+      }),
+    ).rejects.toThrow(
+      "targetContainerId points to the same node as agentExecutionNodeId",
+    );
+  });
 });

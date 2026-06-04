@@ -1,11 +1,13 @@
 import {
   AGENT_EXECUTION_META_KEY,
+  AGENT_EXECUTION_SCHEMA_VERSION,
   type AgentExecutionNodeKind,
   type AgentExecutionStatus,
   type CanvasBounds,
   type CanvasOperation,
   type CucumberCanvasDocument,
   connectorPointForNodeBounds,
+  createAgentExecutionContainerFromNodeMeta,
   createNodeId,
   flattenNodes,
   getAgentExecutionCanvasRole,
@@ -13,11 +15,13 @@ import {
   getAgentExecutionMeta,
   getBoundsUnion,
   getNodeSceneBounds,
+  withAgentExecutionContainerMeta,
   withAgentExecutionNodeSemantics,
 } from "@cucumber/canvas-core";
 import type { FrameNode, LineNode, PenNode } from "@cucumber/pen-types";
 import { z } from "zod";
 
+import { IMAGE_GENERATION_LOADING_META_ROLE } from "../../features/canvas/canvas-element-writer.js";
 import type { CucumberMcpTool } from "../types.js";
 import { schemaToJsonSchema } from "../utils.js";
 import {
@@ -334,21 +338,32 @@ function buildAgentExecutionFlowPlan(args: {
   const hasImageGenerationStep = args.steps.some(
     (step) => step.toolName === "generate_image",
   );
+  const finalDeliverableBounds = {
+    x: chainX,
+    y: cursorY,
+    width: hasImageGenerationStep ? 600 : 240,
+    height: hasImageGenerationStep ? 640 : 240,
+  };
   const finalDeliverableNode = createExecutionCard({
     args,
-    body: args.finalSummary ?? "最终内容会写入这里，并可继续追问或分支。",
-    bounds: {
-      x: chainX,
-      y: cursorY,
-      width: 240,
-      height: hasImageGenerationStep ? 320 : 240,
-    },
+    body:
+      args.finalSummary ??
+      (hasImageGenerationStep
+        ? "图片生成中，结果会自动展示在这个容器里。"
+        : "最终内容会写入这里，并可继续追问或分支。"),
+    bounds: finalDeliverableBounds,
     kind: "final_deliverable",
     role: ["visual"],
-    status: "waiting",
+    status: hasImageGenerationStep ? "running" : "waiting",
     title: args.finalTitle,
     upstreamNodeIds: [previous.id],
   });
+  if (hasImageGenerationStep) {
+    finalDeliverableNode.children = [
+      ...(finalDeliverableNode.children ?? []),
+      ...createImageGenerationLoadingChildren(finalDeliverableBounds),
+    ];
+  }
   nodes.push(finalDeliverableNode);
   connectors.push(
     buildFlowConnector("形成交付物", previous, finalDeliverableNode),
@@ -444,10 +459,31 @@ function createExecutionCard(input: {
   role: Array<"visual" | "task" | "context" | "dataflow">;
   status: AgentExecutionStatus;
   title: string;
+  collapsed?: boolean;
   toolName?: string;
   upstreamNodeIds?: string[];
 }): FrameNode {
   const frameId = createNodeId(`agent_${input.kind}`);
+  const collapsed =
+    input.collapsed ?? getAgentExecutionCanvasRole(input.kind) === "execution";
+  const execution = {
+    kind: input.kind,
+    status: input.status,
+    title: input.title,
+    ...(input.args.agentId ? { agentId: input.args.agentId } : {}),
+    ...(input.args.runId ? { runId: input.args.runId } : {}),
+    ...(input.args.sessionId ? { sessionId: input.args.sessionId } : {}),
+    ...(input.toolName ? { toolName: input.toolName } : {}),
+    ...(input.upstreamNodeIds
+      ? { upstreamNodeIds: input.upstreamNodeIds }
+      : {}),
+    ...(input.checkpoint ? { checkpoint: input.checkpoint } : {}),
+    canvasPresentation: {
+      layoutVersion: 2,
+      collapsed,
+    },
+    summary: input.body,
+  } satisfies Parameters<typeof withAgentExecutionNodeSemantics>[1];
   const node = withAgentExecutionNodeSemantics(
     applyAgentExecutionCardVisualStyle(
       {
@@ -473,34 +509,77 @@ function createExecutionCard(input: {
       },
       {
         body: input.body,
-        collapsed: true,
+        collapsed,
         kind: input.kind,
         status: input.status,
         title: input.title,
         toolName: input.toolName,
       },
     ),
-    {
-      kind: input.kind,
-      status: input.status,
-      title: input.title,
-      ...(input.args.agentId ? { agentId: input.args.agentId } : {}),
-      ...(input.args.runId ? { runId: input.args.runId } : {}),
-      ...(input.args.sessionId ? { sessionId: input.args.sessionId } : {}),
-      ...(input.toolName ? { toolName: input.toolName } : {}),
-      ...(input.upstreamNodeIds
-        ? { upstreamNodeIds: input.upstreamNodeIds }
-        : {}),
-      ...(input.checkpoint ? { checkpoint: input.checkpoint } : {}),
-      canvasPresentation: {
-        layoutVersion: 2,
-        collapsed: getAgentExecutionCanvasRole(input.kind) === "execution",
-      },
-      summary: input.body,
-    },
+    execution,
     { containerRole: input.role },
   );
-  return node as FrameNode;
+  return withAgentExecutionContainerMeta(
+    node as FrameNode,
+    createAgentExecutionContainerFromNodeMeta({
+      containerId: frameId,
+      execution: {
+        ...execution,
+        schemaVersion: AGENT_EXECUTION_SCHEMA_VERSION,
+      },
+    }),
+  ) as FrameNode;
+}
+
+function createImageGenerationLoadingChildren(bounds: CanvasBounds): PenNode[] {
+  const panelWidth = Math.max(120, bounds.width - 88);
+  const panelHeight = Math.max(120, bounds.height - 168);
+  const panelX = Math.round((bounds.width - panelWidth) / 2);
+  const panelY = 88;
+  const centerY = panelY + Math.round(panelHeight / 2);
+  return [
+    {
+      id: createNodeId("image_loading_panel"),
+      type: "rectangle",
+      name: "生成图片加载区域",
+      x: panelX,
+      y: panelY,
+      width: panelWidth,
+      height: panelHeight,
+      cornerRadius: 14,
+      fill: [{ color: "rgba(248,250,252,0.86)", type: "solid" }],
+      stroke: {
+        fill: [{ color: "rgba(79,70,229,0.22)", type: "solid" }],
+        thickness: 1,
+      },
+      meta: {
+        agentCanvasRole: IMAGE_GENERATION_LOADING_META_ROLE,
+        diagnosticRole: "visual_placeholder",
+      },
+    } as PenNode,
+    {
+      id: createNodeId("image_loading_text"),
+      type: "text",
+      name: "生成图片状态",
+      x: panelX + 36,
+      y: Math.max(panelY + 24, centerY - 28),
+      width: Math.max(80, panelWidth - 72),
+      height: 56,
+      content: "图片生成中...",
+      fill: [{ color: "rgba(51,65,85,0.74)", type: "solid" }],
+      fontFamily: "system-ui, sans-serif",
+      fontSize: 18,
+      fontWeight: 500,
+      lineHeight: 1.3,
+      textAlign: "center",
+      textAlignVertical: "middle",
+      textGrowth: "fixed-width-height",
+      meta: {
+        agentCanvasRole: IMAGE_GENERATION_LOADING_META_ROLE,
+        diagnosticRole: "visual_placeholder",
+      },
+    } as PenNode,
+  ];
 }
 
 function buildFlowConnector(

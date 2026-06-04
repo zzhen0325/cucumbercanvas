@@ -315,7 +315,7 @@ describe("agent execution canvas presentation", () => {
     expect(secondPass.migratedNodeIds).toEqual([]);
   });
 
-  it("creates visible compact agent execution text for the canvas node", () => {
+  it("creates a native execution container without canvas text children", () => {
     const node = createAgentExecutionNode({
       summary: "Thinking...",
       x: 120,
@@ -334,7 +334,15 @@ describe("agent execution canvas presentation", () => {
       kind: "agent_execution",
       status: "running",
     });
-    expect(textContents(node)).toContain("Thinking...");
+    expect(node.children).toEqual([]);
+    expect(node.meta?.agentExecutionContainer).toMatchObject({
+      containerId: node.id,
+      kind: "agent_execution",
+      status: "running",
+      summary: "Thinking...",
+      title: "Agent 执行",
+    });
+    expect(textContents(node)).toEqual([]);
   });
 
   it("toggles canvas collapsed state without changing Agent semantics", () => {

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-06-04T21:35:39+08:00",
+  "updatedAt": "2026-06-04T23:10:00+08:00",
   "features": [
     {
       "id": "HARNESS-001",
@@ -64,6 +64,7 @@
         "apps/web/test/canvas-agent-composer.test.tsx",
         "apps/web/test/canvas-agent-execution-stream-writeback.test.ts",
         "packages/canvas-core/src/agent-execution-layout.ts",
+        "packages/canvas-core/src/__tests__/agent-execution.test.ts",
         "packages/canvas-core/src/agent-recipe-template.ts",
         "apps/web/src/components/canvas/property-panel/agent-execution-action-button.tsx",
         "apps/web/src/components/canvas/property-panel/agent-comparison-branch-cards.tsx",
@@ -82,7 +83,13 @@
         "apps/web/test/canvas-overlays.test.tsx",
         "apps/web/test/canvas-property-panel.test.tsx",
         "apps/server/src/features/canvas/canvas-service.ts",
-        "docs/tech/canvas-node-figma-fusion.md"
+        "docs/tech/canvas-node-figma-fusion.md",
+        "docs/tech/agent-native-execution-container-design.md",
+        "docs/tech/agent-native-execution-container-implementation-plan.md",
+        "packages/canvas-core/src/agent-execution-container.ts",
+        "packages/canvas-core/src/__tests__/agent-execution-container.test.ts",
+        "apps/web/src/components/canvas/agent-execution-native-container.tsx",
+        "apps/web/test/agent-execution-native-container.test.tsx"
       ]
     },
     {
@@ -91,7 +98,7 @@
       "status": "active",
       "priority": "P0",
       "owner": "agent-engineering",
-      "summary": "Deep Agents/LangChain runtime with streaming, MCP-compatible typed tools, live editor canvas document access, semantic canvas inspection, live selection context anchoring, real run cancellation and pause control from the canvas run control bar with `run.paused` stream events, enriched Agent execution continuation prompt context for new-branch versus overwrite-current selected-node follow-ups, checkpoint rerun downstream-node scope hints for rebuilding or replacing downstream execution-chain work after live `PenDocument.pages` inspection, `agent_recipe_template` prompt context for reusable Recipe starters with tool-sequence-driven durable evidence/ask/branch/critique/checkpoint node requirements, canvas transaction preview/apply, layout intent primitives, live canvas asset query/replacement, semantic node connectors, durable Agent execution-node metadata for user goals, recipe plans, tool calls, evidence, checkpoints, branches, comparison nodes, critique, ask-user-more, and final deliverables with upstream/downstream execution graph links, shared execution-node semantic binding/update helpers and v2 canvas presentation helpers for writing meta/run/session/agent/container-role fields plus Figma-aligned `用户输入 -> Agent 执行 -> 结果展示` generated layouts across unified execution flow, ask/evidence, variant/comparison creation, and tool-call/critique/final-deliverable write-back paths, generic Agent execution-flow creation for image generation, complex design, structured editing, and continuation-oriented tasks, durable ask-user-more node creation for missing user input, durable evidence-node creation for sources and references, explicit tool-call result write-back into execution nodes with appendable recovery history and stale failure cleanup, explicit final-deliverable completion/failure write-back, concrete failure reasons required before failed execution/final-deliverable write-back, image-generation result correlation through agentExecutionNodeId plus best-effort terminal image job write-back to durable execution nodes, visual final-deliverable sizing and container-local image placement for generate_image steps, multi-variant branch/comparison creation with per-branch plan/product/critique summaries and mainline branch selection for creative exploration, canonical Agent output containers, container fit resizing, deterministic canvas validation and critique with explicit durable critique-node write-back whose failed status keeps structured pass=false, live canvas memory indexing, traceable structured/flow/component deliverable export, read-only canvas run trace inspection, MCP-only screenshot verification, Cucumber structured canvas read/write, page management, layered design/content/refine tools, Figma import, style/variable tools, prompt-to-canvas planning/execution, design-as-code export to React/HTML/Vue, persistence, and workspace skill execution.",
+      "summary": "Deep Agents/LangChain runtime with streaming, MCP-compatible typed tools, live editor canvas document access, semantic canvas inspection, live selection context anchoring, real run cancellation and pause control from the canvas run control bar with `run.paused` stream events, enriched Agent execution continuation prompt context for new-branch versus overwrite-current selected-node follow-ups, checkpoint rerun downstream-node scope hints for rebuilding or replacing downstream execution-chain work after live `PenDocument.pages` inspection, `agent_recipe_template` prompt context for reusable Recipe starters with tool-sequence-driven durable evidence/ask/branch/critique/checkpoint node requirements, canvas transaction preview/apply, layout intent primitives, live canvas asset query/replacement, semantic node connectors, durable Agent execution-node metadata for user goals, recipe plans, tool calls, evidence, checkpoints, branches, comparison nodes, critique, ask-user-more, and final deliverables with upstream/downstream execution graph links, shared execution-node semantic binding/update helpers and v2 canvas presentation helpers for writing meta/run/session/agent/container-role fields plus Figma-aligned `用户输入 -> Agent 执行 -> 结果展示` generated layouts across unified execution flow, ask/evidence, variant/comparison creation, and tool-call/critique/final-deliverable write-back paths, generic Agent execution-flow creation for image generation, complex design, structured editing, and continuation-oriented tasks, durable ask-user-more node creation for missing user input, durable evidence-node creation for sources and references, explicit tool-call result write-back into execution nodes with appendable recovery history and stale failure cleanup, explicit final-deliverable completion/failure write-back, concrete failure reasons required before failed execution/final-deliverable write-back, Seedream URL result lookup for generate_image provider polling, compact generate_image loading target creation, fail-fast distinct direct generate_image target/execution nodes, image-generation result correlation through agentExecutionNodeId plus best-effort terminal image job write-back to durable execution nodes, visual final-deliverable sizing, pre-created loading placeholders, and container-local image placement for generate_image steps, multi-variant branch/comparison creation with per-branch plan/product/critique summaries and mainline branch selection for creative exploration, canonical Agent output containers, container fit resizing, deterministic canvas validation and critique with explicit durable critique-node write-back whose failed status keeps structured pass=false, live canvas memory indexing, traceable structured/flow/component deliverable export, read-only canvas run trace inspection, MCP-only screenshot verification, Cucumber structured canvas read/write, page management, layered design/content/refine tools, Figma import, style/variable tools, prompt-to-canvas planning/execution, design-as-code export to React/HTML/Vue, persistence with data-service run.failed classification that does not mislabel persistence fetch failures as provider outages, and workspace skill execution.",
       "artifacts": [
         "apps/server/src/agent/deep-agent.ts",
         "apps/server/src/agent/runtime.ts",
@@ -183,7 +190,11 @@
         "apps/server/src/mcp/tools/create-agent-evidence.test.ts",
         "packages/canvas-core/src/agent-execution.ts",
         "packages/canvas-core/src/agent-execution-layout.ts",
-        "packages/canvas-core/src/__tests__/agent-execution.test.ts"
+        "packages/canvas-core/src/__tests__/agent-execution.test.ts",
+        "packages/canvas-core/src/agent-execution-container.ts",
+        "packages/canvas-core/src/__tests__/agent-execution-container.test.ts",
+        "docs/tech/agent-native-execution-container-design.md",
+        "docs/tech/agent-native-execution-container-implementation-plan.md"
       ]
     },
     {

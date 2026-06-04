@@ -30,7 +30,11 @@ The only durable canvas truth remains:
 - `PenDocument.styleDefinitions`
 - `PenDocument.assets`
 
-Do not introduce a parallel Agent-only canvas state, hidden metadata source, compatibility fallback, or second layout truth.
+Do not introduce a parallel Agent-only canvas state that mirrors or replaces
+`PenDocument.pages`, hidden metadata source, compatibility fallback, or second
+layout truth. Agent-native execution containers are allowed only as execution
+runtime truth for a canvas shell node's internals; the shell's spatial truth and
+final artifacts remain in `PenDocument.pages`.
 
 Allowed boundary-only inputs:
 
@@ -47,11 +51,14 @@ Forbidden core paths:
 
 ## Agent Execution Canvas Schema
 
-Flowith-like Agent execution UX is represented on the same durable
-`PenDocument.pages` node graph. The fine-grained execution role is stored on
-`PenNode.meta.agentExecution` with `schemaVersion: 1`; it is not a parallel
-Agent-only state source and it does not expand `containerRole` beyond the
-existing coarse runtime roles.
+Flowith-like Agent execution UX is anchored by the durable
+`PenDocument.pages` node graph. As of the Agent-native execution container
+slice, execution internals such as stream parts, structured tool parts, todos,
+artifact refs, waiting state, and failure/checkpoint context move to
+`PenNode.meta.agentExecutionContainer` with `schemaVersion: 1`.
+`PenNode.meta.agentExecution` remains a legacy semantic index and migration
+input during the transition; it is no longer the target runtime truth for
+streaming internals.
 
 Supported execution node kinds:
 

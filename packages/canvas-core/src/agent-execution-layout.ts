@@ -7,6 +7,10 @@ import type {
 } from "@cucumber/pen-types";
 
 import {
+  createAgentExecutionContainerFromNodeMeta,
+  withAgentExecutionContainerMeta,
+} from "./agent-execution-container.js";
+import {
   AGENT_EXECUTION_META_KEY,
   AGENT_EXECUTION_SCHEMA_VERSION,
   type AgentExecutionNodeKind,
@@ -285,7 +289,7 @@ export function createAgentExecutionNode(input: {
     typeof visual.height === "number"
       ? visual.height
       : AGENT_EXECUTION_BAR_SIZE.collapsedHeight;
-  return withAgentExecutionNodeSemantics(
+  const node = withAgentExecutionNodeSemantics(
     {
       id,
       type: "frame",
@@ -294,12 +298,7 @@ export function createAgentExecutionNode(input: {
       y: input.y,
       width,
       height: visualHeight,
-      children: createAgentExecutionDisplayChildren({
-        execution,
-        height: visualHeight,
-        parentId: id,
-        width,
-      }),
+      children: [],
       clipContent: false,
       containerRole: ["task", "context"],
       contextSlots: {
@@ -315,6 +314,13 @@ export function createAgentExecutionNode(input: {
     } as FrameNode,
     execution,
     { containerRole: ["task", "context"] },
+  ) as FrameNode;
+  return withAgentExecutionContainerMeta(
+    node,
+    createAgentExecutionContainerFromNodeMeta({
+      containerId: id,
+      execution,
+    }),
   ) as FrameNode;
 }
 

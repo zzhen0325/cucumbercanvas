@@ -27,6 +27,7 @@ import {
 } from "../features/canvas/canvas-element-writer.js";
 import type { LiveCanvasService } from "../features/canvas/live-canvas-service.js";
 import { insertGeneratedImageIntoLiveCanvas } from "../features/canvas/live-generated-image-writer.js";
+import { ensureImageGenerationTargetContainer } from "../features/canvas/live-image-generation-target.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import type {
   AuthenticatedUser,
@@ -116,7 +117,7 @@ function buildCanvasEntryXml(canvasEntry?: CanvasEntry): string | null {
     '<canvas_agent_entry mode="compact_single_execution_node">',
     `  <user_goal_node id="${escapeXmlAttribute(canvasEntry.userGoalNodeId)}" />`,
     `  <agent_execution_node id="${escapeXmlAttribute(canvasEntry.agentExecutionNodeId)}" />`,
-    "  <instruction>前端已经在 live PenDocument.pages 中创建了用户输入节点和单个 Agent 执行节点。不要再调用 create_agent_execution_flow 创建多节点入口链；本轮阶段、工具摘要和文本流由客户端写入 agent_execution_node。实际图片、视频或结构化交付物仍写入画布，并连接到 agent_execution_node。单个媒体输出直接作为交付物节点展示；只有多个输出时才创建 final_deliverable 分组。</instruction>",
+    "  <instruction>前端已经在 live PenDocument.pages 中创建了用户输入节点和单个 Agent 执行节点。不要再调用 create_agent_execution_flow 创建多节点入口链；本轮阶段、工具摘要和文本流由客户端写入 agent_execution_node。调用 generate_image 时传 agentExecutionNodeId=agent_execution_node，targetContainerId 留空；服务器会在提交生成任务前创建可见图片结果容器、连线和 loading，并把结果写入该容器。不要把 agent_execution_node 当作 targetContainerId。只有多个并列输出时才创建 final_deliverable 分组。</instruction>",
     "</canvas_agent_entry>",
   ].join("\n");
 }
@@ -513,6 +514,46 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           };
 
           const workspaceId = ws.id;
+          let targetResolution:
+            | Awaited<ReturnType<typeof ensureImageGenerationTargetContainer>>
+            | undefined;
+          if (
+            canvasId &&
+            input.agentExecutionNodeId &&
+            options.liveCanvasService
+          ) {
+            try {
+              targetResolution = await ensureImageGenerationTargetContainer({
+                agentExecutionNodeId: input.agentExecutionNodeId,
+                canvasId,
+                liveCanvasService: options.liveCanvasService,
+                requestedTargetContainerId: input.targetContainerId,
+                title: input.title,
+                transactionId: `image_target_${randomUUID()}`,
+                user,
+              });
+              if (targetResolution.createdTargetContainerId) {
+                jobLap("image_target_created", {
+                  targetContainerId: targetResolution.createdTargetContainerId,
+                });
+              }
+            } catch (error) {
+              jobLap("image_target_create_failed", {
+                error: error instanceof Error ? error.message : String(error),
+                requestedTargetContainerId: input.targetContainerId,
+              });
+            }
+          }
+          const targetContainerId =
+            targetResolution?.targetContainerId ??
+            (input.targetContainerId &&
+            input.targetContainerId !== input.agentExecutionNodeId
+              ? input.targetContainerId
+              : undefined);
+          const useExplicitPlacement =
+            targetResolution?.clearExplicitPlacement === true
+              ? false
+              : input.placementX != null && input.placementY != null;
 
           const job = await jobSvc.createJob(user, {
             workspaceId,
@@ -525,20 +566,20 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               model: input.model,
               aspect_ratio: input.aspectRatio,
               ...(input.inputImages ? { input_images: input.inputImages } : {}),
-              ...(input.placementX != null
+              ...(useExplicitPlacement && input.placementX != null
                 ? { placement_x: input.placementX }
                 : {}),
-              ...(input.placementY != null
+              ...(useExplicitPlacement && input.placementY != null
                 ? { placement_y: input.placementY }
                 : {}),
-              ...(input.placementWidth != null
+              ...(useExplicitPlacement && input.placementWidth != null
                 ? { placement_width: input.placementWidth }
                 : {}),
-              ...(input.placementHeight != null
+              ...(useExplicitPlacement && input.placementHeight != null
                 ? { placement_height: input.placementHeight }
                 : {}),
-              ...(input.targetContainerId
-                ? { target_container_id: input.targetContainerId }
+              ...(targetContainerId
+                ? { target_container_id: targetContainerId }
                 : {}),
               ...(input.agentExecutionNodeId
                 ? { agent_execution_node_id: input.agentExecutionNodeId }
@@ -582,7 +623,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   accessToken,
                 ) as UserSupabaseClient;
                 const explicitPlacement =
-                  input.placementX != null && input.placementY != null
+                  useExplicitPlacement &&
+                  input.placementX != null &&
+                  input.placementY != null
                     ? {
                         x: input.placementX,
                         y: input.placementY,
@@ -597,9 +640,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   height: result.height ?? 1024,
                   mimeType: result.mime_type ?? "image/png",
                   title: input.title,
-                  ...(input.targetContainerId
-                    ? { targetContainerId: input.targetContainerId }
-                    : {}),
+                  ...(targetContainerId ? { targetContainerId } : {}),
                 };
                 if (options.liveCanvasService) {
                   try {
@@ -621,13 +662,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                       elementId,
                       nextVersion: liveInsert.nextVersion,
                       operationCount: liveInsert.operationCount,
-                      targetContainerId: input.targetContainerId,
+                      targetContainerId,
                     });
                   } catch (error) {
                     jobLap("live_canvas_image_insert_failed", {
                       error:
                         error instanceof Error ? error.message : String(error),
-                      targetContainerId: input.targetContainerId,
+                      targetContainerId,
                     });
                   }
                 }

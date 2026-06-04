@@ -5,6 +5,7 @@ import {
   findNode,
   flattenNodes,
   getAgentExecutionCanvasRole,
+  getAgentExecutionContainerMeta,
   getAgentExecutionMeta,
 } from "@cucumber/canvas-core";
 import type {
@@ -15,6 +16,7 @@ import type {
 } from "@cucumber/pen-types";
 import { describe, expect, it, vi } from "vitest";
 
+import { IMAGE_GENERATION_LOADING_META_ROLE } from "../../features/canvas/canvas-element-writer.js";
 import { createCucumberMcpServer } from "../server.js";
 import {
   AGENT_EXECUTION_CARD_CORNER_RADIUS,
@@ -148,7 +150,7 @@ describe("create_agent_execution_flow", () => {
     };
     const topLevelNodes = state.doc.pages?.[0]?.children ?? [];
     expect(topLevelNodes).toHaveLength(15);
-    expect(flattenNodes(state.doc)).toHaveLength(15);
+    expect(flattenNodes(state.doc)).toHaveLength(17);
     const [firstStepNodeId, secondStepNodeId] = payload.taskStepNodeIds;
     const [toolCallNodeId] = payload.toolCallNodeIds;
     if (!firstStepNodeId || !secondStepNodeId || !toolCallNodeId) {
@@ -213,13 +215,27 @@ describe("create_agent_execution_flow", () => {
     ).toMatchObject({
       downstreamNodeIds: [payload.checkpointNodeId],
       kind: "final_deliverable",
-      status: "waiting",
+      status: "running",
       upstreamNodeIds: [payload.critiqueNodeId],
     });
-    expect(findNode(state.doc, payload.finalDeliverableNodeId)).toMatchObject({
-      height: 320,
-      width: 240,
+    const finalDeliverable = findNode(
+      state.doc,
+      payload.finalDeliverableNodeId,
+    ) as FrameNode | undefined;
+    expect(finalDeliverable).toMatchObject({
+      height: 640,
+      width: 600,
     });
+    const loadingChildren = finalDeliverable?.children?.filter(
+      (child) =>
+        child.meta?.agentCanvasRole === IMAGE_GENERATION_LOADING_META_ROLE,
+    );
+    expect(loadingChildren).toHaveLength(2);
+    expect(loadingChildren?.map((child) => child.type)).toEqual([
+      "rectangle",
+      "text",
+    ]);
+    expect(textContents(finalDeliverable)).toEqual(["图片生成中..."]);
     expect(
       getAgentExecutionMeta(findNode(state.doc, payload.checkpointNodeId)),
     ).toMatchObject({
@@ -257,6 +273,14 @@ describe("create_agent_execution_flow", () => {
       expect(execution.canvasPresentation).toEqual({
         layoutVersion: 2,
         collapsed: getAgentExecutionCanvasRole(execution.kind) === "execution",
+      });
+      expect(getAgentExecutionContainerMeta(node)).toMatchObject({
+        containerId: nodeId,
+        kind: execution.kind,
+        runId: "run-1",
+        sessionId: "session-1",
+        status: execution.status,
+        title: execution.title,
       });
     }
     const recipeNode = findNode(state.doc, payload.recipeNodeId) as

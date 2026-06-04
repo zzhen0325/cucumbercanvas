@@ -19,6 +19,13 @@ describe("CUCUMBER_SYSTEM_PROMPT", () => {
     expect(CUCUMBER_SYSTEM_PROMPT).toContain(
       "传 targetContainerId: finalDeliverableNodeId，并把对应 generate_image 工具节点 ID 作为 agentExecutionNodeId",
     );
+    expect(CUCUMBER_SYSTEM_PROMPT).toContain(
+      "targetContainerId 与 agentExecutionNodeId 不得相同",
+    );
+    expect(CUCUMBER_SYSTEM_PROMPT).toContain(
+      "服务器会先创建可见图片结果容器、连线和 loading",
+    );
+    expect(CUCUMBER_SYSTEM_PROMPT).toContain("targetContainerId 留空");
     expect(CUCUMBER_SYSTEM_PROMPT).toContain("record_agent_final_deliverable");
     expect(CUCUMBER_SYSTEM_PROMPT).toContain(
       "更新该 final_deliverable 节点的完成/失败状态和交付摘要",

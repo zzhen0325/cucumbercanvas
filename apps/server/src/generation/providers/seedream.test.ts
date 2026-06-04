@@ -22,7 +22,7 @@ describe("SeedreamImageProvider", () => {
     vi.clearAllMocks();
   });
 
-  it("queries image tasks with only the required task lookup fields", async () => {
+  it("queries image tasks with URL output requested for downstream persistence", async () => {
     const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
     const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
       requests.push({
@@ -72,6 +72,7 @@ describe("SeedreamImageProvider", () => {
     });
     expect(requests[1]?.url).toContain("Action=CVSync2AsyncGetResult");
     expect(requests[1]?.body).toEqual({
+      req_json: JSON.stringify({ return_url: true }),
       req_key: "jimeng_seedream46_cvtob",
       task_id: "task-1",
     });

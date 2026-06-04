@@ -101,7 +101,7 @@ function buildImageGenerateSchema(models: AvailableModel[]) {
       .string()
       .optional()
       .describe(
-        "Optional canvas container ID to receive the generated image. When provided, placementX/Y are local to this container.",
+        "Optional final deliverable or image result canvas container ID to receive the generated image. Do not pass the same node as agentExecutionNodeId; placementX/Y are local to this container.",
       ),
     agentExecutionNodeId: z
       .string()
@@ -160,6 +160,20 @@ type ImageGenerateResult = {
 };
 
 type Placement = { x: number; y: number; width: number; height: number };
+
+function assertDistinctImageTargetAndExecutionNode(
+  input: ImageGenerateInput,
+): void {
+  if (
+    input.targetContainerId?.trim() &&
+    input.agentExecutionNodeId?.trim() &&
+    input.targetContainerId.trim() === input.agentExecutionNodeId.trim()
+  ) {
+    throw new Error(
+      "Invalid generate_image target: targetContainerId points to the same node as agentExecutionNodeId. targetContainerId must be the visible final deliverable or image result container; agentExecutionNodeId is only for execution trace write-back.",
+    );
+  }
+}
 
 function normalizeModelToken(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -436,6 +450,10 @@ export async function runImageGenerate(
   attachmentMap?: Record<string, string>,
   availableModels: AvailableModel[] = getAvailableImageModels(),
 ): Promise<ImageGenerateResult> {
+  if (!submitImageJob) {
+    assertDistinctImageTargetAndExecutionNode(input);
+  }
+
   const t0 = Date.now();
   const lap = (label: string, extra?: Record<string, unknown>) => {
     console.log(

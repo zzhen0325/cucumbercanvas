@@ -158,6 +158,10 @@ class SeedreamClient {
       const result = await this.signedPost("CVSync2AsyncGetResult", {
         req_key: reqKey,
         task_id: taskId,
+        // Downstream persistence and canvas insertion use provider URLs as the
+        // runtime contract. Seedream returns base64 by default unless this flag
+        // is requested on the result lookup.
+        req_json: JSON.stringify({ return_url: true }),
       });
       console.log(
         `${tag} poll_response`,

@@ -85,4 +85,29 @@ describe("sanitizeErrorForClient", () => {
       errorSpy.mockRestore();
     }
   });
+
+  it("keeps persistence fetch failures classified as data service failures", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const error = new AgentPersistenceInitializationError({
+        cause: new Error("fetch failed"),
+        component: "checkpointer",
+        target:
+          "postgres@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres",
+      });
+      const description = describeErrorForClient(error);
+
+      expect(description).toMatchObject({
+        details: {
+          reason: "data_service",
+          retryable: true,
+        },
+        message:
+          "Agent 数据服务连接失败：无法初始化会话持久化，请检查服务端数据库连接配置、网络连通性和 Supabase 连接池状态后重试。",
+      });
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
 });
