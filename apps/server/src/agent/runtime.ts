@@ -117,7 +117,7 @@ function buildCanvasEntryXml(canvasEntry?: CanvasEntry): string | null {
     '<canvas_agent_entry mode="compact_single_execution_node">',
     `  <input_node id="${escapeXmlAttribute(canvasEntry.userGoalNodeId)}" />`,
     `  <agent_run_node id="${escapeXmlAttribute(canvasEntry.agentExecutionNodeId)}" />`,
-    "  <instruction>前端已经在 live PenDocument.pages 中创建了 InputNode 输入节点和单个 AgentRunNode。不要再调用 create_agent_execution_flow 创建多节点入口链；本轮阶段、工具摘要和文本流由客户端写入 agent_run_node。调用 generate_image 时传 agentExecutionNodeId=agent_run_node，targetContainerId 留空；服务器会在提交生成任务前创建可见图片结果容器、连线和 loading，并把结果写入该容器。不要把 agent_run_node 当作 targetContainerId。只有多个并列输出时才创建 final_deliverable 分组。</instruction>",
+    "  <instruction>前端已经在 live PenDocument.pages 中创建了 InputNode 输入节点和唯一 AgentRunNode；agent_run_node 是本轮执行状态、工具摘要和文本流的运行时真值。不要再调用 create_agent_execution_flow 创建多节点入口链，也不要调用 record_agent_tool_call 写 agent_run_node。调用 generate_image 时传 agentExecutionNodeId=agent_run_node，targetContainerId 留空；服务器会在提交生成任务前创建可见图片结果容器、连线和 loading，把结果写入该容器，并把图像生成状态写回同一个 agent_run_node。不要把 agent_run_node 当作 targetContainerId。只有多个并列输出需要统一承载时才创建 final_deliverable 分组。</instruction>",
     "</canvas_agent_entry>",
   ].join("\n");
 }

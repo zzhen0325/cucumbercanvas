@@ -1,6 +1,7 @@
 import {
   type CanvasOperation,
   applyCanvasTransaction,
+  createAgentRunNode,
   createCanvasDocument,
   findNode,
   getAgentExecutionMeta,
@@ -156,11 +157,54 @@ describe("recordImageGenerationExecutionNode", () => {
         user: user(),
       }),
     ).resolves.toEqual({
-      reason: "not_tool_call_or_task_step",
+      reason: "not_image_generation_writeback_node",
       updated: false,
     });
 
     expect(state.patches).toHaveLength(0);
+  });
+
+  it("writes image job details into the compact AgentRunNode", async () => {
+    const doc = createCanvasDocument("Compact image writeback") as PenDocument;
+    const agentRunNode = createAgentRunNode({
+      summary: "正在生成图片。",
+      title: "AgentRunNode",
+      x: 120,
+      y: 80,
+    });
+    doc.pages = doc.pages?.map((page) =>
+      page.id === doc.activePageId
+        ? { ...page, children: [agentRunNode] }
+        : page,
+    );
+    const { liveCanvasService, state } = createHarness(doc);
+
+    await expect(
+      recordImageGenerationExecutionNode({
+        canvasId: "canvas-1",
+        elementId: "image-compact-1",
+        jobId: "job-compact-1",
+        liveCanvasService: liveCanvasService as never,
+        nodeId: agentRunNode.id,
+        status: "done",
+        title: "生成小狗图片",
+        user: user(),
+      }),
+    ).resolves.toEqual({ updated: true });
+
+    expect(state.patches).toHaveLength(1);
+    expect(state.doc.selection).toEqual([agentRunNode.id]);
+    expect(
+      getAgentExecutionMeta(findNode(state.doc, agentRunNode.id)),
+    ).toMatchObject({
+      details: {
+        outputSummary: expect.stringContaining("image-compact-1"),
+      },
+      kind: "agent_run_node",
+      status: "done",
+      summary: expect.stringContaining("图片生成完成"),
+      toolName: "generate_image",
+    });
   });
 });
 

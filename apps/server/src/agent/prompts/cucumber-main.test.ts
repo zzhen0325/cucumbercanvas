@@ -11,10 +11,22 @@ describe("CUCUMBER_SYSTEM_PROMPT", () => {
       "不需要等待用户额外说明“在画布上展示”",
     );
     expect(CUCUMBER_SYSTEM_PROMPT).toContain(
-      "所有图片生成、设计、结构化画布编辑、长链路生成或需要后续复盘/继续执行的任务，都必须先调用 create_agent_execution_flow",
+      "`agent_run_node` 是唯一执行状态真值",
     );
     expect(CUCUMBER_SYSTEM_PROMPT).toContain(
-      "简单图片生成任务（例如“帮我生成一张小狗的图片”）也走 create_agent_execution_flow",
+      "禁止调用 record_agent_tool_call 写这个 `agent_run_node`",
+    );
+    expect(CUCUMBER_SYSTEM_PROMPT).toContain(
+      '当本轮没有 `<canvas_agent_entry mode="compact_single_execution_node">`',
+    );
+    expect(CUCUMBER_SYSTEM_PROMPT).toContain(
+      "才先调用 create_agent_execution_flow",
+    );
+    expect(CUCUMBER_SYSTEM_PROMPT).toContain(
+      "简单图片生成任务（例如“帮我生成一张小狗的图片”）如果已经带有 compact canvas entry",
+    );
+    expect(CUCUMBER_SYSTEM_PROMPT).toContain(
+      "如果没有 compact canvas entry，才走 create_agent_execution_flow",
     );
     expect(CUCUMBER_SYSTEM_PROMPT).toContain(
       "传 targetContainerId: finalDeliverableNodeId，并把对应 generate_image 工具节点 ID 作为 agentExecutionNodeId",
@@ -92,6 +104,9 @@ describe("CUCUMBER_SYSTEM_PROMPT", () => {
     expect(CUCUMBER_SYSTEM_PROMPT).toContain("record_agent_tool_call");
     expect(CUCUMBER_SYSTEM_PROMPT).toContain(
       "不要只把工具结果留在聊天或 run trace",
+    );
+    expect(CUCUMBER_SYSTEM_PROMPT).toContain(
+      "不能对 `agent_run_node` 调用 record_agent_tool_call",
     );
     expect(CUCUMBER_SYSTEM_PROMPT).toContain("agentExecutionNodeId");
     expect(CUCUMBER_SYSTEM_PROMPT).toContain("create_agent_ask_user_more");

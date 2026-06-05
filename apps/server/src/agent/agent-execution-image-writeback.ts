@@ -40,14 +40,19 @@ export async function recordImageGenerationExecutionNode(args: {
     const execution = getAgentExecutionMeta(node);
     if (
       !node ||
-      (execution?.kind !== "tool_call" && execution?.kind !== "task_step")
+      !execution ||
+      !isWritableImageGenerationExecutionKind(execution.kind)
     ) {
       console.warn("[agent-execution] image_writeback skipped", {
         canvasId: args.canvasId,
+        executionKind: execution?.kind,
         nodeId: args.nodeId,
-        reason: "not_tool_call_or_task_step",
+        reason: "not_image_generation_writeback_node",
       });
-      return { updated: false, reason: "not_tool_call_or_task_step" };
+      return {
+        updated: false,
+        reason: "not_image_generation_writeback_node",
+      };
     }
 
     const outputSummary =
@@ -87,6 +92,8 @@ export async function recordImageGenerationExecutionNode(args: {
       title: execution.title,
       toolName: execution.toolName ?? "generate_image",
     });
+    const containerRole =
+      execution.kind === "agent_run_node" ? ["task", "context"] : undefined;
     const operations: CanvasOperation[] = [
       {
         activePageId: pageId,
@@ -103,6 +110,7 @@ export async function recordImageGenerationExecutionNode(args: {
             ...(node.meta ?? {}),
             [AGENT_EXECUTION_META_KEY]: nextExecution,
           },
+          ...(containerRole ? { containerRole } : {}),
         } as Partial<PenNode>,
       },
     ];
@@ -136,6 +144,19 @@ export async function recordImageGenerationExecutionNode(args: {
       reason: error instanceof Error ? error.message : "writeback_failed",
     };
   }
+}
+
+function isWritableImageGenerationExecutionKind(
+  kind: NonNullable<ReturnType<typeof getAgentExecutionMeta>>["kind"],
+): boolean {
+  return (
+    kind === "tool_call" ||
+    kind === "task_step" ||
+    // Compact canvas entry mode has one durable AgentRunNode. Image jobs write
+    // their final state back into that same node instead of requiring a second
+    // tool_call node.
+    kind === "agent_run_node"
+  );
 }
 
 function formatImageExecutionBody(input: {

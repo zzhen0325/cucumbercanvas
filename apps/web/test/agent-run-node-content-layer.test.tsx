@@ -120,6 +120,7 @@ describe("AgentRunNodeContentLayer", () => {
         container: expect.objectContaining({ containerId: node.id }),
         height: expect.any(Number),
         node: expect.objectContaining({ id: node.id }),
+        collapsed: false,
         width: expect.any(Number),
         x: 90,
         y: 180,
@@ -151,6 +152,7 @@ describe("AgentRunNodeContentLayer", () => {
     expect(screen.getByText("读取画布")).toBeVisible();
     expect(screen.getByText("生成图片")).toBeVisible();
     expect(screen.getByText(/图片已经放到画布/)).toBeVisible();
+    expect(screen.getByLabelText("收起 AgentRunNode")).toBeVisible();
 
     fireEvent.wheel(screen.getByLabelText("AgentRunNode：生成封面图"));
     expect(onWheel).not.toHaveBeenCalled();
@@ -217,9 +219,10 @@ describe("AgentRunNodeContentLayer", () => {
     );
 
     expect(screen.queryByLabelText("AgentRunNode：生成封面图")).toBeNull();
+    expect(screen.getByLabelText("展开 AgentRunNode")).toBeVisible();
   });
 
-  it("writes collapsed state back to the durable AgentRunNode", async () => {
+  it("writes collapsed and expanded state back to the durable AgentRunNode", async () => {
     const user = userEvent.setup();
     const node = createRichAgentRunNode();
     const document = createDocument(node);
@@ -240,5 +243,24 @@ describe("AgentRunNodeContentLayer", () => {
       : null;
     expect(vi.mocked(api.updateNode).mock.calls[0]?.[0]).toBe(node.id);
     expect(execution?.canvasPresentation?.collapsed).toBe(true);
+
+    const collapsedNode = setAgentExecutionCanvasCollapsed(node, true);
+    const collapsedDocument = createDocument(collapsedNode);
+    const collapsedStore = createCanvasRuntimeStore(collapsedDocument);
+    const collapsedApi = { updateNode: vi.fn() } as unknown as CanvasApi;
+    render(
+      <CanvasRuntimeStoreProvider store={collapsedStore}>
+        <AgentRunNodeContentLayer api={collapsedApi} />
+      </CanvasRuntimeStoreProvider>,
+    );
+
+    await user.click(screen.getByLabelText("展开 AgentRunNode"));
+
+    const expandUpdates = vi.mocked(collapsedApi.updateNode).mock.calls[0]?.[1];
+    const expandedExecution = expandUpdates?.meta
+      ? getAgentExecutionMeta({ ...collapsedNode, meta: expandUpdates.meta })
+      : null;
+    expect(vi.mocked(collapsedApi.updateNode).mock.calls[0]?.[0]).toBe(node.id);
+    expect(expandedExecution?.canvasPresentation?.collapsed).toBe(false);
   });
 });

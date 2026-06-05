@@ -17,6 +17,7 @@ import {
 import { type ViewportState, sceneToCanvasLocal } from "@cucumber/pen-renderer";
 import type { PenNode } from "@cucumber/pen-types";
 import {
+  ChevronDown,
   ChevronUp,
   CircleCheck,
   CircleDashed,
@@ -26,6 +27,7 @@ import {
 } from "lucide-react";
 import {
   type ReactNode,
+  type SyntheticEvent,
   useCallback,
   useLayoutEffect,
   useMemo,
@@ -64,6 +66,7 @@ type AgentRunNodeContentLayerProps = {
 };
 
 type AgentRunNodeOverlayState = {
+  collapsed: boolean;
   container: AgentExecutionContainer;
   height: number;
   node: PenNode;
@@ -116,9 +119,9 @@ export function AgentRunNodeContentLayer({
     [activePageId, document, viewport],
   );
 
-  const handleCollapse = useCallback(
-    (node: PenNode) => {
-      const toggled = setAgentExecutionCanvasCollapsed(node, true);
+  const handleToggle = useCallback(
+    (node: PenNode, collapsed: boolean) => {
+      const toggled = setAgentExecutionCanvasCollapsed(node, collapsed);
       const execution = getAgentExecutionMeta(toggled);
       if (!execution) return;
       const container = getAgentExecutionContainerMeta(toggled);
@@ -133,9 +136,10 @@ export function AgentRunNodeContentLayer({
       } satisfies Partial<PenNode>;
       api.updateNode(node.id, updates);
       store.getState().setSelection([node.id], {
-        source: "agent-run-node-content.collapse",
+        source: "agent-run-node-content.toggle",
       });
-      console.info("[canvas-agent-run-node] content.collapse", {
+      console.info("[canvas-agent-run-node] content.toggle", {
+        collapsed,
         nodeId: node.id,
         runId: container?.runId,
       });
@@ -173,21 +177,24 @@ export function AgentRunNodeContentLayer({
       data-canvas-overlay="agent-run-node-content-layer"
     >
       {overlays.map((overlay) => (
-        <AgentRunNodeContentOverlay
-          key={overlay.node.id}
-          overlay={overlay}
-          onCollapse={handleCollapse}
-          onResize={handleResize}
-          onSelectArtifact={(nodeId) => {
-            store.getState().setSelection([nodeId], {
-              source: "agent-run-node-content.artifact.select",
-            });
-            console.info("[canvas-agent-run-node] artifact.select", {
-              agentRunNodeId: overlay.node.id,
-              artifactNodeId: nodeId,
-            });
-          }}
-        />
+        <div key={overlay.node.id}>
+          <AgentRunNodeToggleButton overlay={overlay} onToggle={handleToggle} />
+          {overlay.collapsed ? null : (
+            <AgentRunNodeContentOverlay
+              overlay={overlay}
+              onResize={handleResize}
+              onSelectArtifact={(nodeId) => {
+                store.getState().setSelection([nodeId], {
+                  source: "agent-run-node-content.artifact.select",
+                });
+                console.info("[canvas-agent-run-node] artifact.select", {
+                  agentRunNodeId: overlay.node.id,
+                  artifactNodeId: nodeId,
+                });
+              }}
+            />
+          )}
+        </div>
       ))}
     </div>
   );
@@ -203,14 +210,10 @@ export function getAgentRunNodeOverlayStates(input: {
     .map((node) => {
       const execution = getAgentExecutionMeta(node);
       const container = getAgentExecutionContainerMeta(node);
-      if (
-        !execution ||
-        !container ||
-        execution.kind !== "agent_run_node" ||
-        getAgentExecutionCanvasCollapsed(execution)
-      ) {
+      if (!execution || !container || execution.kind !== "agent_run_node") {
         return null;
       }
+      const collapsed = getAgentExecutionCanvasCollapsed(execution);
       const bounds = getNodeSceneBounds(
         input.document,
         node.id,
@@ -226,6 +229,7 @@ export function getAgentRunNodeOverlayStates(input: {
       const width = Math.max(1, bottomRight.x - topLeft.x);
       const height = Math.max(1, bottomRight.y - topLeft.y);
       return {
+        collapsed,
         container,
         height,
         node,
@@ -240,12 +244,10 @@ export function getAgentRunNodeOverlayStates(input: {
 
 function AgentRunNodeContentOverlay({
   overlay,
-  onCollapse,
   onResize,
   onSelectArtifact,
 }: {
   overlay: AgentRunNodeOverlayState;
-  onCollapse: (node: PenNode) => void;
   onResize: (node: PenNode, size: { height: number; width: number }) => void;
   onSelectArtifact: (nodeId: string) => void;
 }) {
@@ -321,17 +323,7 @@ function AgentRunNodeContentOverlay({
               Agent 执行 · {viewModel.title}
             </h3>
           </div>
-          <Button
-            aria-label="收起 AgentRunNode"
-            className="h-7 shrink-0 gap-1 rounded-full bg-background/80 px-2 text-[11px]"
-            onClick={() => onCollapse(overlay.node)}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            <ChevronUp className="size-3" />
-            收起
-          </Button>
+          <div aria-hidden="true" className="h-7 w-16 shrink-0" />
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pr-3 text-sm [scrollbar-gutter:stable]">
@@ -475,6 +467,51 @@ function AgentRunNodeContentOverlay({
         </div>
       </div>
     </section>
+  );
+}
+
+function AgentRunNodeToggleButton({
+  overlay,
+  onToggle,
+}: {
+  overlay: AgentRunNodeOverlayState;
+  onToggle: (node: PenNode, collapsed: boolean) => void;
+}) {
+  const nextCollapsed = !overlay.collapsed;
+  const label = overlay.collapsed ? "展开 AgentRunNode" : "收起 AgentRunNode";
+  const Icon = overlay.collapsed ? ChevronDown : ChevronUp;
+  const stopCanvasPropagation = (event: SyntheticEvent) => {
+    event.stopPropagation();
+  };
+
+  return (
+    <Button
+      aria-label={label}
+      aria-pressed={!overlay.collapsed}
+      className="pointer-events-auto absolute z-30 h-8 gap-1 rounded-full border-border bg-background/95 px-3 text-xs font-semibold text-foreground shadow-card ring-1 ring-foreground/5 backdrop-blur-lg hover:bg-background focus-visible:ring-2 focus-visible:ring-ring"
+      data-canvas-overlay="agent-run-node-toggle"
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle(overlay.node, nextCollapsed);
+      }}
+      onContextMenu={stopCanvasPropagation}
+      onDoubleClick={stopCanvasPropagation}
+      onKeyDown={stopCanvasPropagation}
+      onPointerCancel={stopCanvasPropagation}
+      onPointerDown={stopCanvasPropagation}
+      onPointerMove={stopCanvasPropagation}
+      onPointerUp={stopCanvasPropagation}
+      size="sm"
+      style={{
+        left: overlay.x + overlay.width + 8,
+        top: overlay.y + 2,
+      }}
+      type="button"
+      variant="outline"
+    >
+      <Icon className="size-3.5" />
+      {overlay.collapsed ? "展开" : "收起"}
+    </Button>
   );
 }
 

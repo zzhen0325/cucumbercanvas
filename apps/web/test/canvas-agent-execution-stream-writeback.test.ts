@@ -2,6 +2,7 @@ import {
   AGENT_EXECUTION_CONTAINER_META_KEY,
   createAgentRunNode,
   getAgentExecutionMeta,
+  setAgentExecutionCanvasCollapsed,
 } from "@cucumber/canvas-core";
 import type { StreamEvent } from "@cucumber/shared";
 import { describe, expect, it } from "vitest";
@@ -139,6 +140,40 @@ describe("reduceAgentExecutionStreamEvent", () => {
         expect.objectContaining({
           content: "Native stream",
           id: "message:message-1",
+          type: "message",
+        }),
+      ],
+    });
+  });
+
+  it("preserves manual collapsed state while streaming content updates", () => {
+    const node = setAgentExecutionCanvasCollapsed(
+      createAgentRunNode({
+        runId: "run-1",
+        summary: "Thinking...",
+        title: "Run",
+        x: 0,
+        y: 0,
+      }),
+      true,
+    );
+
+    const updates = getAgentExecutionStreamWritebackUpdates(node, {
+      delta: "收起后继续写入。",
+      messageId: "message-1",
+      runId: "run-1",
+      timestamp: "2026-06-04T00:00:00.000Z",
+      type: "message.delta",
+    });
+
+    const nextExecution = updates?.meta
+      ? getAgentExecutionMeta({ ...node, meta: updates.meta })
+      : null;
+    expect(nextExecution?.canvasPresentation?.collapsed).toBe(true);
+    expect(updates?.meta?.[AGENT_EXECUTION_CONTAINER_META_KEY]).toMatchObject({
+      streamParts: [
+        expect.objectContaining({
+          content: "收起后继续写入。",
           type: "message",
         }),
       ],

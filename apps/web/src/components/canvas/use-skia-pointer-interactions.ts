@@ -1688,6 +1688,7 @@ function getAgentExecutionToggleTarget(
   while (node) {
     const execution = getAgentExecutionMeta(node);
     if (execution) {
+      if (execution.kind === "agent_run_node") return null;
       const executionContainer = getAgentExecutionContainerMeta(node);
       const bounds =
         getNodeSceneBounds(doc, node.id, activePageId) ?? getNodeBounds(node);

@@ -179,3 +179,21 @@ Maintenance:
 - Passed: `pnpm exec biome check` for the touched code, tests, docs, `feature_list.json`, and `progress.md`.
 - Passed: `pnpm --filter @cucumber/canvas-core typecheck`, `pnpm --filter @cucumber/web typecheck`, and `pnpm --filter @cucumber/server typecheck`.
 - Build still blocked by existing Web build issues outside this change: `paper` optional dependency resolution warnings for `acorn` / `canvas`, then Next prerender fails with `<Html> should not be imported outside of pages/_document` on `/404`.
+
+## 2026-06-05 - compact AgentRunNode image generation unification
+
+- Cleaned up the compact canvas-entry path so `agent_run_node` is the single runtime truth for bottom-composer Agent execution state; prompt context now forbids creating a parallel `create_agent_execution_flow` chain or calling `record_agent_tool_call` against the compact node.
+- Extended image-generation terminal write-back to update compact `agent_run_node` nodes directly, while keeping multi-node execution-chain write-back scoped to `tool_call` and `task_step` nodes.
+- Preserved the separate visible image result container responsibility: compact `generate_image` still leaves `targetContainerId` empty so the runtime creates one result frame, connector, and loading state beside the single AgentRunNode.
+- Passed: `pnpm exec vitest run --project server apps/server/src/agent/runtime.test.ts apps/server/src/agent/prompts/cucumber-main.test.ts apps/server/src/agent/agent-execution-image-writeback.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/server typecheck`.
+- Passed: `pnpm exec biome check apps/server/src/agent/agent-execution-image-writeback.ts apps/server/src/agent/agent-execution-image-writeback.test.ts apps/server/src/agent/runtime.ts apps/server/src/agent/runtime.test.ts apps/server/src/agent/prompts/cucumber-main.ts apps/server/src/agent/prompts/cucumber-main.test.ts`.
+
+## 2026-06-05 - AgentRunNode inline stream content and external toggle
+
+- Fixed AgentRunNode stream/tool text leaking below the node by keeping the native canvas shell clipped and compact, while preserving full reasoning/tool/message details in the React AgentRunNode content layer.
+- Moved AgentRunNode expand/collapse to a separate DOM overlay button outside the canvas node, with pointer propagation blocked so the click no longer competes with canvas selection/drag behavior.
+- Preserved manual collapsed state across later stream write-backs; incoming stream events now update content without reopening a node the user has collapsed.
+- Disabled the old Skia hot-zone toggle for AgentRunNode specifically; other execution-node canvas toggles remain unchanged.
+- Passed: `pnpm exec vitest run apps/web/test/agent-run-node-content-layer.test.tsx apps/web/test/canvas-agent-execution-stream-writeback.test.ts packages/canvas-core/src/__tests__/agent-execution-container.test.ts packages/canvas-core/src/__tests__/agent-execution.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/web typecheck` and `pnpm --filter @cucumber/canvas-core typecheck`.

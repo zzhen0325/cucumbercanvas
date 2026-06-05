@@ -22,6 +22,10 @@ describe("buildUserMessage", () => {
     expect(message.text).toContain('<agent_run_node id="agent_run_node_1" />');
     expect(message.text).toContain("InputNode 输入节点");
     expect(message.text).toContain("AgentRunNode");
+    expect(message.text).toContain("唯一 AgentRunNode");
+    expect(message.text).toContain(
+      "不要调用 record_agent_tool_call 写 agent_run_node",
+    );
     expect(message.text).not.toContain("<user_goal_node");
   });
 });

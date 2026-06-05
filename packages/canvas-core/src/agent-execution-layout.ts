@@ -475,7 +475,7 @@ export function getAgentExecutionCanvasFrameUpdates(input: {
   return {
     width,
     height: layout.height,
-    clipContent: false,
+    clipContent: getAgentExecutionCanvasRole(execution.kind) === "execution",
     cornerRadius:
       getAgentExecutionCanvasRole(execution.kind) === "execution"
         ? BAR_RADIUS

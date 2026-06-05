@@ -102,6 +102,40 @@ describe("AgentExecutionContainer", () => {
     expect(next.artifactRefs).toEqual([{ nodeId: "artifact-1" }]);
   });
 
+  it("keeps compact AgentRunNode canvas body short while details stay in the container", () => {
+    const initial = createAgentExecutionContainerFromNodeMeta({
+      containerId: "agent_run_node_1",
+      execution: legacyExecution,
+    });
+    const withNoisySummary = {
+      ...initial,
+      summary: [
+        "完成！一只小狗已经生成。",
+        '工具 generate_image：已完成 · {"input":{"prompt":"puppy"},"agentExecutionNodeId":"agent_run_node_1"}',
+        '工具 record_agent_tool_call：失败 · {"error":"record_agent_tool_call_failed"}',
+      ].join("\n"),
+      toolParts: [
+        {
+          id: "tool:tool-1",
+          input: { prompt: "puppy" },
+          output: { elementId: "image-1" },
+          outputSummary: "图片已写入画布。",
+          status: "done",
+          timestamp: "2026-06-04T01:00:03.000Z",
+          toolCallId: "tool-1",
+          toolName: "generate_image",
+        },
+      ],
+    } satisfies typeof initial;
+
+    const body = formatAgentExecutionContainerCanvasBody(withNoisySummary);
+
+    expect(body).toBe("完成！一只小狗已经生成。");
+    expect(body).not.toContain("record_agent_tool_call_failed");
+    expect(body).not.toContain("agentExecutionNodeId");
+    expect(withNoisySummary.toolParts[0]?.input).toEqual({ prompt: "puppy" });
+  });
+
   it("maps container content into an AgentRunNode React view model", () => {
     const initial = createAgentExecutionContainerFromNodeMeta({
       containerId: "agent_run_node_1",

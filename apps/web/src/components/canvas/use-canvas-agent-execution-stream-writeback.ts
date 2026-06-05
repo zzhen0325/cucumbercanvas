@@ -232,7 +232,7 @@ export function reduceAgentExecutionStreamEvent(
 }
 
 function present(execution: AgentExecutionNodeMeta): AgentExecutionNodeMeta {
-  return withAgentExecutionCanvasPresentation(execution, { collapsed: false });
+  return withAgentExecutionCanvasPresentation(execution);
 }
 
 function upsertEntry(

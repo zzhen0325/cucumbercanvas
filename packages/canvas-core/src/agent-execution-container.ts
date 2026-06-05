@@ -149,9 +149,7 @@ export function formatAgentExecutionContainerCanvasBody(
       container.waitingForUser?.prompt
         ? `等待补充：${container.waitingForUser.prompt}`
         : undefined,
-      isReadableCanvasSummary(container.summary)
-        ? container.summary
-        : undefined,
+      getCompactAgentRunCanvasSummary(container.summary),
       container.artifactRefs.length > 0
         ? `产物：${container.artifactRefs.length} 个画布产物`
         : undefined,
@@ -699,6 +697,21 @@ function isReadableCanvasSummary(value: string | undefined): value is string {
   const trimmed = value.trim();
   if (trimmed.startsWith("{") || trimmed.startsWith("[")) return false;
   return trimmed.length <= 180;
+}
+
+function getCompactAgentRunCanvasSummary(
+  value: string | undefined,
+): string | undefined {
+  if (!isReadableCanvasSummary(value)) return undefined;
+  const firstLine = value
+    .split("\n")
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!firstLine) return undefined;
+  if (firstLine.startsWith("工具 ")) return undefined;
+  if (firstLine.includes("record_agent_tool_call_failed")) return undefined;
+  if (firstLine.length > 96) return `${firstLine.slice(0, 96)}...`;
+  return firstLine;
 }
 
 function dedupeConsecutiveLines(lines: string[]): string[] {
