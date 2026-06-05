@@ -62,7 +62,6 @@ import {
 import { useStore } from "zustand";
 
 import { useToast } from "@/components/toast";
-import { CanvasAgentExecutionStatusLayerConnected } from "./agent-execution-status-overlays";
 import { AgentRunNodeContentLayer } from "./agent-run-node-content-layer";
 import type {
   AlignMode,
@@ -99,8 +98,6 @@ import { exportDocumentImage } from "./canvas-export";
 import { createLegacyShapeNode } from "./canvas-legacy-shape-node";
 import { getDefaultCanvasNodeBounds } from "./canvas-node-placement";
 import {
-  AgentCheckpointHoverToolbar,
-  AgentExecutionHoverCard,
   CanvasBooleanToolbarConnected,
   CanvasContextMenu,
   CanvasEditorToolbarConnected,
@@ -839,8 +836,6 @@ export const SkiaCanvas = memo(
       handlePointerLeave,
       handlePointerMove,
       handlePointerUp,
-      hoveredAgentExecution,
-      hoveredCheckpoint,
       closeContextMenu,
     } = useSkiaPointerInteractions({
       activePageIdRef,
@@ -855,7 +850,6 @@ export const SkiaCanvas = memo(
       effectiveTool,
       flushRendererDocumentSyncBeforeInteraction,
       getConnectorSnap,
-      hasAgentContinuationHandler: Boolean(onContinueAgentExecution),
       getPointerScenePoint,
       marqueeRafRef,
       marqueeSelectionRef,
@@ -1126,15 +1120,6 @@ export const SkiaCanvas = memo(
           />
 
           <AgentRunNodeContentLayer api={api} />
-
-          <CanvasAgentExecutionStatusLayerConnected />
-
-          <AgentCheckpointHoverToolbar
-            checkpoint={hoveredCheckpoint}
-            onContinueAgentExecution={onContinueAgentExecution}
-          />
-
-          <AgentExecutionHoverCard execution={hoveredAgentExecution} />
 
           <CanvasContextMenu
             api={api}

@@ -234,11 +234,6 @@ Current status:
   visible user message clean. The chip itself shows execution kind/status and
   includes waiting, failure, and checkpoint restart reasons in its hover title
   so users can understand the selected continuation anchor before sending.
-  The canvas selection surface also exposes a Flowith-inspired animated
-  follow-up pill below the selected durable Agent execution node; it is derived
-  from `meta.agentExecution`, uses contextual labels such as `修复失败`,
-  `继续补充`, `继续深化`, or `从这里继续`, and routes to the same continuation
-  draft instead of creating any new Agent-only state.
   Submitted `ask_user_more` answers also enter the
   same block as `waiting_response_text`, so the Agent can treat the answer as
   structured continuation input instead of only parsing the draft sentence.
@@ -270,41 +265,12 @@ Current status:
   itself shows the Agent execution kind/status and includes waiting, failure,
   and checkpoint restart reasons in its hover title so users can verify the
   referenced execution context before sending.
-- The canvas page has a top Agent run control bar that reflects active run
-  streaming state, selected execution-node context, waiting-for-user prompts,
-  whether the waiting node accepts files/images, submitted response text,
-  submitted attachment counts, and failed-node reasons. `Stop` is wired to the real run cancel endpoint and
-  SSE cleanup; `Pause` is wired to the real run pause endpoint, emits
-  `run.paused`, and stops the active SSE stream while preserving continuation on
-  selected durable execution nodes. After a successful pause request, the Web
-  canvas writes `paused` back to currently `running` / `waiting` durable
-  execution nodes for that run through `PenDocument.pages`, so overlays,
-  property panels, and status summaries do not keep showing stale active work.
-  After a successful stop request, the same durable write-back path marks active
-  nodes `paused` with an explicit stopped summary instead of adding a separate
-  Agent-only canceled state, keeping the user-visible recovery entry anchored on
-  the execution node.
-  `继续` opens the same selected-node continuation draft when a run is not
-  actively streaming. When the selected durable execution node is already
-  `paused`, the control bar labels this as `从暂停点继续` and explains that it
-  will read the current canvas context and start a new Agent run from that node,
-  rather than silently resuming the old SSE stream. `从 checkpoint 重跑`
-  opens a restartable checkpoint rerun draft that preserves the checkpoint as
-  the durable context anchor, shows the downstream node IDs that will be
-  rebuilt when the checkpoint records them, and sends
-  `checkpoint_rerun_downstream_node_ids` plus a concrete rerun instruction in
-  `<agent_execution_continue_context>`. Those IDs are prompt-only scope hints:
-  the Agent still has to inspect the live `PenDocument.pages` nodes before
-  rewriting downstream work through a new Agent run. The run trace panel remains
-  a live diagnostic view: it shows recent SSE events, tool and patch counts, the
-  selected durable canvas node ID, upstream/downstream counts from
-  `meta.agentExecution`, and affected node IDs for canvas patches, but it does
-  not become a runtime canvas state source. The Web UI keeps that boundary split
-  as `AgentRunControlBar` for run actions and
-  `apps/web/src/components/agent-run-trace-panel.tsx` for read-only trace
-  rendering. Same-generator resume still requires
-  deeper runtime/checkpointer work, and the current paused continuation UI keeps
-  that boundary visible to users.
+- The canvas page no longer mounts the top Agent run control bar or its live
+  trace panel. Selected execution nodes no longer expose generic canvas
+  continuation shortcuts, checkpoint rerun shortcuts, or copy-as-branch
+  shortcuts from the canvas toolbar. Runtime pause/cancel endpoints remain
+  server capabilities, but this canvas UI slice does not provide those controls
+  until the interaction model is redesigned around a clearer source of truth.
 - `create_agent_variant_branches` creates durable `variant_branch` nodes plus a
   `comparison` node for multi-direction work. Branch metadata records
   plan/product/critique summaries, strengths, risks, use cases, and
@@ -346,26 +312,14 @@ Current status:
   actionable without requiring the user to locate the matching branch card.
   The Agent must still inspect the referenced live `PenDocument.pages` node
   before editing.
-- Generic execution-node continuation actions now use the same path: `从这里继续`
-  and `复制为分支` open editable chat drafts from the selected node, failed nodes
-  can start `重试此步骤`, `改写输入后继续`, `跳过此步骤`, or `新建分支尝试`, and
-  `ask_user_more` text submission writes the response before opening a
-  continuation draft. Failed-node cards show readable failure step/reason,
-  attempted actions, and user next actions without surfacing raw error codes in
-  the panel.
-- Selected `checkpoint` nodes now have a dedicated recovery panel in the Web
-  property panel. It shows whether the node is restartable, why it is a safe
-  restart/fork point, routes `从这里继续` and `复制为新分支` into continuation
-  drafts, and routes restartable `从 checkpoint 重跑` into a rerun draft.
-- Selected `checkpoint` nodes also expose canvas-level selection-toolbar and
-  hover-toolbar actions: `继续` opens the continuation draft, `新分支` opens a
-  branch draft, and restartable `重跑` opens the checkpoint rerun draft.
-- The Agent run control bar can now open a read-only `Run trace` panel from
-  recent front-end SSE events plus selected execution-node metadata. It shows
-  event count, tool events, canvas patch counts/details, and selected node
-  context; this is a diagnostic view and does not become canvas runtime truth.
-  Pause now uses the real run controller and `run.paused`; same-generator resume
-  still waits for deeper runtime/checkpointer support.
+- Generic selected-node continuation actions have been removed from the Web
+  property panel. Failed nodes still keep explicit recovery choices, and
+  `ask_user_more` still writes submitted response text before opening the
+  continuation draft because those controls map to concrete user blockers.
+- Selected `checkpoint` nodes now show checkpoint record context only. The
+  property panel no longer exposes continue, rerun, or copy-as-branch actions
+  for checkpoints, and the canvas selection/hover toolbars no longer expose
+  checkpoint actions.
 
 ## Development Order
 

@@ -1733,7 +1733,7 @@ describe("CanvasPropertyPanel", () => {
     );
   });
 
-  it("shows Agent execution metadata and disables unavailable run actions with reasons", () => {
+  it("shows Agent execution metadata without generic continuation actions", () => {
     const executionNode = withAgentExecutionMeta(
       {
         ...frameNode,
@@ -1766,11 +1766,15 @@ describe("CanvasPropertyPanel", () => {
     expect(screen.getAllByText("运行中")).toHaveLength(2);
     expect(screen.queryByText("run-1")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "显示开发诊断" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "从这里继续" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "重跑此步骤" })).toHaveAttribute(
-      "title",
-      "当前页面暂时不能继续生成。",
-    );
+    expect(
+      screen.queryByRole("button", { name: "从这里继续" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "重跑此步骤" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "复制为分支" }),
+    ).not.toBeInTheDocument();
   });
 
   it("resolves Agent execution upstream and downstream nodes into readable selectable chain context", async () => {
@@ -2360,8 +2364,7 @@ describe("CanvasPropertyPanel", () => {
     );
   });
 
-  it("shows checkpoint restart context and routes continuation actions into drafts", async () => {
-    const user = userEvent.setup();
+  it("shows checkpoint context without continuation actions", () => {
     const onContinueAgentExecution = vi.fn();
     const checkpointNode = withAgentExecutionMeta(frameNode, {
       checkpoint: {
@@ -2376,29 +2379,20 @@ describe("CanvasPropertyPanel", () => {
     renderPropertyPanel(checkpointNode, { onContinueAgentExecution });
 
     expect(screen.getAllByText("保存点").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("可从此处继续")).toBeInTheDocument();
+    expect(screen.getByText("重启信息已记录")).toBeInTheDocument();
     expect(
       screen.getByText("设计方向已经收敛，可从这里继续。"),
     ).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "从这里继续" }));
-    await user.click(screen.getByRole("button", { name: "从保存点重跑" }));
-    await user.click(screen.getByRole("button", { name: "复制为新分支" }));
-
-    expect(onContinueAgentExecution).toHaveBeenNthCalledWith(
-      1,
-      "frame-1",
-      "continue",
-    );
-    expect(onContinueAgentExecution).toHaveBeenNthCalledWith(
-      2,
-      "frame-1",
-      "rerun_checkpoint",
-    );
-    expect(onContinueAgentExecution).toHaveBeenNthCalledWith(
-      3,
-      "frame-1",
-      "new_branch",
-    );
+    expect(
+      screen.queryByRole("button", { name: "从这里继续" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "从保存点重跑" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "复制为新分支" }),
+    ).not.toBeInTheDocument();
+    expect(onContinueAgentExecution).not.toHaveBeenCalled();
   });
 
   it("explains when a checkpoint is only a progress marker", () => {
@@ -2415,13 +2409,13 @@ describe("CanvasPropertyPanel", () => {
 
     expect(screen.getByText("仅记录进度")).toBeInTheDocument();
     expect(
-      screen.getByText(
-        "这个保存点已记录当前进度，可用于继续、复制分支或重新生成后续结果。",
-      ),
+      screen.getByText("这个保存点用于标记当前执行进度。"),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "从保存点重跑" }),
-    ).toHaveAttribute("title", "这个保存点还不能从此处重跑。");
-    expect(screen.getByRole("button", { name: "从这里继续" })).toBeDisabled();
+      screen.queryByRole("button", { name: "从保存点重跑" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "从这里继续" }),
+    ).not.toBeInTheDocument();
   });
 });

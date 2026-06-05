@@ -36,7 +36,7 @@ that treats stale run trace as canvas truth.
 | Execution visual layout | `packages/canvas-core/src/agent-execution-layout.ts` | Execution-card sizes, body formatting, generated card presentation, layout normalization | Agent run decisions or property-panel action policy |
 | Execution node creation | `apps/server/src/mcp/tools/create-agent-execution-flow.ts`, `create-agent-ask-user-more.ts`, `create-agent-evidence.ts`, `create-agent-variant-branches.ts` | Creating visible execution nodes and connectors on the live page | Parallel run graph persistence |
 | Execution write-back | `apps/server/src/mcp/tools/record-agent-tool-call.ts`, `record-agent-critique.ts`, `record-agent-final-deliverable.ts`, web write-back hooks | Updating existing durable execution nodes after runtime events | Reading chat transcript as execution-node truth |
-| Execution UI affordances | `apps/web/src/components/canvas/agent-execution-status-overlays.tsx`, `canvas-overlays.tsx`, `agent-execution-follow-up-pill.tsx`, `property-panel/agent-execution-*.tsx` | Status badges, checkpoint actions, branch cards, continuation affordances | Mutating hover/overlay state into document truth |
+| Execution UI affordances | `apps/web/src/components/canvas/agent-execution-status-overlays.tsx`, `canvas-overlays.tsx`, `property-panel/agent-execution-*.tsx` | Status badges, checkpoint status details, branch cards, supported recovery affordances | Mutating hover/overlay state into document truth |
 | Live Agent read/write | `apps/server/src/features/canvas/live-canvas-service.ts`, `apps/server/src/mcp/tools/inspect-canvas-semantic.ts`, `apply-canvas-transaction.ts`, `validate-canvas.ts` | Reading and mutating the current editor document through live RPC | Replacing `PenDocument.pages` with another canvas model |
 | Agent prompt/tool routing | `apps/server/src/agent/prompts/cucumber-main.ts`, `apps/server/src/mcp/server.ts`, `apps/server/src/mcp/deepagents-bridge.ts` | Telling Agent which canvas tools to call and registering MCP tools | Canvas document normalization |
 
@@ -144,4 +144,3 @@ Before changing fusion code, answer:
 7. Are connector relationships represented on visible line/connector nodes?
 8. Does the failure path show a concrete reason instead of leaking raw IDs,
    `null`, `undefined`, default values, or opaque codes?
-

@@ -34,10 +34,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { formatAgentFailureReason } from "./agent-execution-failure-copy";
-import {
-  AgentExecutionFollowUpPill,
-  getAgentExecutionFollowUpState,
-} from "./agent-execution-follow-up-pill";
 import { CanvasBooleanToolbar } from "./boolean-toolbar";
 import type { CanvasApi, CanvasTool } from "./canvas-api";
 import {
@@ -107,35 +103,11 @@ type WindowWithLocalFonts = Window & {
   queryLocalFonts?: () => Promise<BrowserLocalFontData[]>;
 };
 
-export type AgentCheckpointToolbarState = {
-  canContinue: boolean;
-  canRerun: boolean;
-  continueReason: string;
-  rerunReason: string;
-  visible: boolean;
-};
-
-export type AgentCheckpointHoverState = AgentCheckpointToolbarState & {
-  nodeId: string;
-  title: string;
-  x: number;
-  y: number;
-};
-
 export type AgentExecutionStatusBadgeState = {
   kindLabel: string;
   statusLabel: string;
   title: string;
   tone: "done" | "failed" | "paused" | "running" | "waiting";
-};
-
-export type AgentExecutionHoverState = AgentExecutionStatusBadgeState & {
-  nodeId: string;
-  summary?: string;
-  statusReason?: string;
-  toolName?: string;
-  x: number;
-  y: number;
 };
 
 export type CanvasContextMenuState = {
@@ -148,36 +120,6 @@ export type CanvasContextMenuState = {
 type ConnectorLineNode = LineNode & {
   connector: NonNullable<LineNode["connector"]>;
 };
-
-export function getAgentCheckpointToolbarState(
-  node: PenNode | null | undefined,
-  hasContinuationHandler: boolean,
-): AgentCheckpointToolbarState {
-  const execution = getAgentExecutionMeta(node);
-  if (execution?.kind !== "checkpoint") {
-    return {
-      canContinue: false,
-      canRerun: false,
-      continueReason: "",
-      rerunReason: "",
-      visible: false,
-    };
-  }
-  const restartable = execution.checkpoint?.canRestartFromHere === true;
-  return {
-    canContinue: hasContinuationHandler,
-    canRerun: restartable && hasContinuationHandler,
-    continueReason: hasContinuationHandler
-      ? ""
-      : "当前画布没有接入 Agent 输入框，不能从此 checkpoint 继续。",
-    rerunReason: restartable
-      ? hasContinuationHandler
-        ? ""
-        : "当前画布没有接入 Agent 输入框，不能从此 checkpoint 重跑。"
-      : "这个 checkpoint 只是进度记录，没有标记为可从此处重跑。",
-    visible: true,
-  };
-}
 
 export function getAgentExecutionStatusBadgeState(
   node: PenNode | null | undefined,
@@ -211,25 +153,6 @@ export function getAgentExecutionStatusReason(
   return undefined;
 }
 
-export function getAgentExecutionHoverState(
-  node: PenNode | null | undefined,
-  point: { x: number; y: number },
-): AgentExecutionHoverState | null {
-  const execution = getAgentExecutionMeta(node);
-  const badge = getAgentExecutionStatusBadgeState(node);
-  if (!node || !execution || !badge) return null;
-  const statusReason = getAgentExecutionStatusReason(node);
-  return {
-    ...badge,
-    nodeId: node.id,
-    ...(execution.summary ? { summary: execution.summary } : {}),
-    ...(statusReason ? { statusReason } : {}),
-    ...(execution.toolName ? { toolName: execution.toolName } : {}),
-    x: point.x,
-    y: point.y,
-  };
-}
-
 export function AgentExecutionStatusBadge({
   badge,
 }: {
@@ -258,53 +181,6 @@ export function AgentExecutionStatusBadge({
         ·
       </span>
       <span className="shrink-0">{badge.statusLabel}</span>
-    </div>
-  );
-}
-
-export function AgentExecutionHoverCard({
-  execution,
-}: {
-  execution: AgentExecutionHoverState | null;
-}) {
-  if (!execution) return null;
-  const detail =
-    execution.toolName ??
-    (execution.summary !== execution.statusReason
-      ? execution.summary
-      : undefined);
-  const statusReasonLabel =
-    execution.tone === "failed"
-      ? "失败原因"
-      : execution.tone === "waiting"
-        ? "等待原因"
-        : execution.tone === "paused"
-          ? "暂停原因"
-          : undefined;
-  return (
-    <div
-      aria-label={`Agent 执行节点悬停摘要：${execution.kindLabel}，状态：${execution.statusLabel}`}
-      className="pointer-events-none absolute z-30 w-64 rounded-xl border border-border bg-card/95 p-2 shadow-card ring-1 ring-foreground/5 backdrop-blur-lg"
-      data-canvas-overlay="agent-execution-hover-card"
-      style={{
-        left: execution.x + 12,
-        top: Math.max(12, execution.y + 12),
-      }}
-    >
-      <AgentExecutionStatusBadge badge={execution} />
-      <div className="mt-1 truncate text-xs font-medium text-foreground">
-        {execution.title}
-      </div>
-      {execution.statusReason && statusReasonLabel ? (
-        <div className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-muted-foreground">
-          {statusReasonLabel}：{execution.statusReason}
-        </div>
-      ) : null}
-      {detail ? (
-        <div className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-muted-foreground">
-          {detail}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -341,88 +217,6 @@ function agentExecutionBadgeDotClassName(
     case "waiting":
       return "bg-muted-foreground";
   }
-}
-
-export function AgentCheckpointHoverToolbar({
-  checkpoint,
-  onContinueAgentExecution,
-}: {
-  checkpoint: AgentCheckpointHoverState | null;
-  onContinueAgentExecution?: (
-    nodeId: string,
-    intent?: AgentExecutionContinueIntent,
-    options?: AgentExecutionContinueOptions,
-  ) => void;
-}) {
-  if (!checkpoint?.visible) return null;
-  return (
-    <div
-      aria-label={`Checkpoint hover actions: ${checkpoint.title}`}
-      className="pointer-events-auto absolute z-30 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-border bg-card/95 px-2 py-1 shadow-card ring-1 ring-foreground/5 backdrop-blur-lg"
-      data-canvas-overlay="checkpoint-hover-toolbar"
-      onClick={(event) => event.stopPropagation()}
-      onContextMenu={(event) => event.preventDefault()}
-      onKeyDown={(event) => event.stopPropagation()}
-      onPointerDown={(event) => event.stopPropagation()}
-      onPointerMove={(event) => event.stopPropagation()}
-      style={{
-        left: checkpoint.x,
-        top: Math.max(12, checkpoint.y - 48),
-      }}
-    >
-      <span
-        className="max-w-36 truncate px-1 text-[11px] font-medium text-muted-foreground"
-        title={checkpoint.title}
-      >
-        {checkpoint.title}
-      </span>
-      <ToolbarMiniButton
-        disabled={!checkpoint.canContinue}
-        label="继续"
-        onClick={() => {
-          onContinueAgentExecution?.(checkpoint.nodeId, "continue");
-          console.info("[skia-canvas] checkpoint.hover.continue", {
-            nodeId: checkpoint.nodeId,
-          });
-        }}
-        title={
-          checkpoint.canContinue
-            ? "从这个 checkpoint 继续"
-            : checkpoint.continueReason
-        }
-      />
-      <ToolbarMiniButton
-        disabled={!checkpoint.canRerun}
-        label="重跑"
-        onClick={() => {
-          onContinueAgentExecution?.(checkpoint.nodeId, "rerun_checkpoint");
-          console.info("[skia-canvas] checkpoint.hover.rerun", {
-            nodeId: checkpoint.nodeId,
-          });
-        }}
-        title={
-          checkpoint.canRerun
-            ? "从这个 checkpoint 重跑后续执行链"
-            : checkpoint.rerunReason
-        }
-      />
-      <ToolbarMiniButton
-        disabled={!checkpoint.canContinue}
-        label="新分支"
-        onClick={() => {
-          onContinueAgentExecution?.(checkpoint.nodeId, "new_branch");
-          console.info("[skia-canvas] checkpoint.hover.branch", {
-            nodeId: checkpoint.nodeId,
-          });
-        }}
-        title={
-          checkpoint.canContinue
-            ? "从这个 checkpoint 复制为新分支"
-            : checkpoint.continueReason
-        }
-      />
-    </div>
-  );
 }
 
 function getBooleanToolbarRejectionReason({
@@ -630,10 +424,6 @@ export function CanvasSelectionToolbarConnected({
   )
     ? (selectedNode as ConnectorLineNode)
     : null;
-  const checkpointToolbarState = getAgentCheckpointToolbarState(
-    selectedNode,
-    Boolean(onContinueAgentExecution),
-  );
   const agentExecutionStatusBadge =
     getAgentExecutionStatusBadgeState(selectedNode);
   const isLocked = Boolean(selectedNode?.locked);
@@ -691,16 +481,6 @@ export function CanvasSelectionToolbarConnected({
     bounds.x + bounds.width / 2,
     bounds.y,
     viewport,
-  );
-  const bottomCenter = sceneToCanvasLocal(
-    bounds.x + bounds.width / 2,
-    bounds.y + bounds.height,
-    viewport,
-  );
-  const agentExecutionFollowUp = getAgentExecutionFollowUpState(
-    selectedNode,
-    bottomCenter,
-    Boolean(onContinueAgentExecution),
   );
   const isStickyBackgroundMenuOpen =
     openStickyColorMenu?.kind === "background" &&
@@ -971,56 +751,6 @@ export function CanvasSelectionToolbarConnected({
             <div className="h-5 w-px bg-border" />
           </>
         ) : null}
-        {checkpointToolbarState.visible && selectedNode ? (
-          <>
-            <ToolbarMiniButton
-              disabled={!checkpointToolbarState.canContinue}
-              label="继续"
-              onClick={() => {
-                onContinueAgentExecution?.(selectedNode.id, "continue");
-                console.info("[skia-canvas] checkpoint.toolbar.continue", {
-                  nodeId: selectedNode.id,
-                });
-              }}
-              title={
-                checkpointToolbarState.canContinue
-                  ? "从这个 checkpoint 继续"
-                  : checkpointToolbarState.continueReason
-              }
-            />
-            <ToolbarMiniButton
-              disabled={!checkpointToolbarState.canRerun}
-              label="重跑"
-              onClick={() => {
-                onContinueAgentExecution?.(selectedNode.id, "rerun_checkpoint");
-                console.info("[skia-canvas] checkpoint.toolbar.rerun", {
-                  nodeId: selectedNode.id,
-                });
-              }}
-              title={
-                checkpointToolbarState.canRerun
-                  ? "从这个 checkpoint 重跑后续执行链"
-                  : checkpointToolbarState.rerunReason
-              }
-            />
-            <ToolbarMiniButton
-              disabled={!checkpointToolbarState.canContinue}
-              label="新分支"
-              onClick={() => {
-                onContinueAgentExecution?.(selectedNode.id, "new_branch");
-                console.info("[skia-canvas] checkpoint.toolbar.branch", {
-                  nodeId: selectedNode.id,
-                });
-              }}
-              title={
-                checkpointToolbarState.canContinue
-                  ? "从这个 checkpoint 复制为新分支"
-                  : checkpointToolbarState.continueReason
-              }
-            />
-            <div className="h-5 w-px bg-border" />
-          </>
-        ) : null}
         <ToolbarMiniButton label="Copy" onClick={() => api.copySelection()} />
         <ToolbarMiniButton
           label="Duplicate"
@@ -1068,10 +798,6 @@ export function CanvasSelectionToolbarConnected({
           onClick={() => api.deleteSelection()}
         />
       </div>
-      <AgentExecutionFollowUpPill
-        followUp={agentExecutionFollowUp}
-        onContinueAgentExecution={onContinueAgentExecution}
-      />
     </>
   );
 }

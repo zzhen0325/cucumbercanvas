@@ -11,14 +11,13 @@ import type {
   StreamEvent,
   VideoArtifact,
 } from "@cucumber/shared";
-import type { AgentRunControlState } from "../components/agent-run-control-bar";
 import type { CanvasSelectedElement } from "../components/canvas-editor";
 import {
   type ChatInputSendContext,
   formatAgentExecutionContinuationPrompt,
 } from "../components/chat-input";
 import { useToast } from "../components/toast";
-import { cancelRun, createRun, pauseRun, saveMessage } from "../lib/server-api";
+import { createRun, saveMessage } from "../lib/server-api";
 import { useAgentModel } from "./use-agent-model";
 import { useChatSessions } from "./use-chat-sessions";
 import { useChatStream } from "./use-chat-stream";
@@ -48,9 +47,6 @@ type UseAgentRunControllerOptions = {
   onBeforeRun?: () => Promise<void>;
   onCanvasSync?: () => void;
   onImageGenerated?: (artifact: ImageArtifact) => void;
-  onRunControlStateChange?: (state: AgentRunControlState) => void;
-  onRunPaused?: (summary: { runId: string }) => void;
-  onRunStopped?: (summary: { runId: string }) => void;
   onSessionChange?: (sessionId: string) => void;
   onStreamEvent?: (event: StreamEvent) => void;
   onVideoGenerated?: (artifact: VideoArtifact) => void;
@@ -65,9 +61,6 @@ export function useAgentRunController({
   onBeforeRun,
   onCanvasSync,
   onImageGenerated,
-  onRunControlStateChange,
-  onRunPaused,
-  onRunStopped,
   onSessionChange,
   onStreamEvent,
   onVideoGenerated,
@@ -98,7 +91,6 @@ export function useAgentRunController({
   const { model: agentModel } = useAgentModel();
   const { toast: showToast } = useToast();
   const [messageMentions, setMessageMentions] = useState<MessageMention[]>([]);
-  const [, setCancelingRunId] = useState<string | null>(null);
 
   const accessTokenRef = useRef(accessToken);
   accessTokenRef.current = accessToken;
@@ -117,8 +109,6 @@ export function useAgentRunController({
   messageMentionsRef.current = messageMentions;
   const selectedCanvasElementsRef = useRef(selectedCanvasElements);
   selectedCanvasElementsRef.current = selectedCanvasElements;
-  const pauseAgentRunRef = useRef<(() => void) | null>(null);
-  const stopAgentRunRef = useRef<(() => void) | null>(null);
 
   const send = useCallback(
     async (
@@ -341,74 +331,6 @@ export function useAgentRunController({
               event.type === "run.paused"),
         });
 
-        const pauseCurrentRun = async () => {
-          onRunControlStateChange?.({
-            activeRunId: run.runId,
-            pausing: true,
-            streaming: true,
-          });
-          try {
-            await pauseRun(run.runId, { accessToken: accessTokenRef.current });
-            onRunPaused?.({ runId: run.runId });
-            abortRef.current = true;
-            streamHandle.stop();
-            setStreaming(false);
-            console.info("[agent-run-controller] run.pause.requested", {
-              canvasId,
-              runId: run.runId,
-            });
-          } catch (error) {
-            showToast(
-              error instanceof Error
-                ? `暂停失败：${error.message}`
-                : "暂停失败：无法暂停当前 Agent run。",
-              "error",
-            );
-          } finally {
-            pauseAgentRunRef.current = null;
-            stopAgentRunRef.current = null;
-            onRunControlStateChange?.({ streaming: false });
-          }
-        };
-        const stopCurrentRun = async () => {
-          setCancelingRunId(run.runId);
-          onRunControlStateChange?.({
-            activeRunId: run.runId,
-            canceling: true,
-            streaming: true,
-          });
-          try {
-            await cancelRun(run.runId, { accessToken: accessTokenRef.current });
-            onRunStopped?.({ runId: run.runId });
-            abortRef.current = true;
-            streamHandle.stop();
-            setStreaming(false);
-            console.info("[agent-run-controller] run.cancel.requested", {
-              canvasId,
-              runId: run.runId,
-            });
-          } catch (error) {
-            showToast(
-              error instanceof Error
-                ? `停止失败：${error.message}`
-                : "停止失败：无法取消当前 Agent run。",
-              "error",
-            );
-          } finally {
-            setCancelingRunId(null);
-            pauseAgentRunRef.current = null;
-            stopAgentRunRef.current = null;
-            onRunControlStateChange?.({ streaming: false });
-          }
-        };
-        pauseAgentRunRef.current = () => void pauseCurrentRun();
-        stopAgentRunRef.current = () => void stopCurrentRun();
-        onRunControlStateChange?.({
-          activeRunId: run.runId,
-          canceling: false,
-          streaming: true,
-        });
-
         attachments.clearAll();
         setMessageMentions([]);
         await streamHandle.done;
@@ -433,10 +355,6 @@ export function useAgentRunController({
         throw error;
       } finally {
         setStreaming(false);
-        setCancelingRunId(null);
-        pauseAgentRunRef.current = null;
-        stopAgentRunRef.current = null;
-        onRunControlStateChange?.({ streaming: false });
       }
     },
     [
@@ -449,9 +367,6 @@ export function useAgentRunController({
       onBeforeRun,
       onCanvasSync,
       onImageGenerated,
-      onRunControlStateChange,
-      onRunPaused,
-      onRunStopped,
       onStreamEvent,
       onVideoGenerated,
       setStreaming,
@@ -469,7 +384,6 @@ export function useAgentRunController({
     isUploading: attachments.isUploading,
     messages,
     messageMentions,
-    onPauseRun: () => pauseAgentRunRef.current?.(),
     onRemoveAttachment: attachments.removeAttachment,
     onRemoveMention: (mention: MessageMention) =>
       setMessageMentions((prev) =>
@@ -481,7 +395,6 @@ export function useAgentRunController({
         ),
       ),
     onRetryAttachment: attachments.retryUpload,
-    onStopRun: () => stopAgentRunRef.current?.(),
     readyAttachments: attachments.readyAttachments,
     send,
     sessions,

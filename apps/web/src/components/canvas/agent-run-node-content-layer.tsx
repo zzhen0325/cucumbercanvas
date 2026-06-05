@@ -8,17 +8,13 @@ import {
   getAgentExecutionCanvasCollapsed,
   getAgentExecutionContainerMeta,
   getAgentExecutionMeta,
-  getAgentExecutionNodePresentationUpdates,
   getAgentRunNodeViewModel,
   getNodeBounds,
   getNodeSceneBounds,
-  setAgentExecutionCanvasCollapsed,
 } from "@cucumber/canvas-core";
 import { type ViewportState, sceneToCanvasLocal } from "@cucumber/pen-renderer";
 import type { PenNode } from "@cucumber/pen-types";
 import {
-  ChevronDown,
-  ChevronUp,
   CircleCheck,
   CircleDashed,
   CircleDotDashed,
@@ -27,7 +23,6 @@ import {
 } from "lucide-react";
 import {
   type ReactNode,
-  type SyntheticEvent,
   useCallback,
   useLayoutEffect,
   useMemo,
@@ -53,7 +48,6 @@ import {
   ReasoningTrigger,
 } from "@/components/ai-elements/reasoning";
 import { Tool, ToolContent, ToolHeader } from "@/components/ai-elements/tool";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { CanvasApi } from "./canvas-api";
 import {
@@ -119,33 +113,6 @@ export function AgentRunNodeContentLayer({
     [activePageId, document, viewport],
   );
 
-  const handleToggle = useCallback(
-    (node: PenNode, collapsed: boolean) => {
-      const toggled = setAgentExecutionCanvasCollapsed(node, collapsed);
-      const execution = getAgentExecutionMeta(toggled);
-      if (!execution) return;
-      const container = getAgentExecutionContainerMeta(toggled);
-      const updates = {
-        meta: toggled.meta,
-        ...getAgentExecutionNodePresentationUpdates({
-          ...(container ? { container } : {}),
-          execution,
-          node: toggled,
-          width: getNodeBounds(toggled).width,
-        }),
-      } satisfies Partial<PenNode>;
-      api.updateNode(node.id, updates);
-      store.getState().setSelection([node.id], {
-        source: "agent-run-node-content.toggle",
-      });
-      console.info("[canvas-agent-run-node] content.toggle", {
-        collapsed,
-        nodeId: node.id,
-        runId: container?.runId,
-      });
-    },
-    [api, store],
-  );
   const handleResize = useCallback(
     (node: PenNode, size: { height: number; width: number }) => {
       const currentBounds = getNodeBounds(node);
@@ -178,7 +145,6 @@ export function AgentRunNodeContentLayer({
     >
       {overlays.map((overlay) => (
         <div key={overlay.node.id}>
-          <AgentRunNodeToggleButton overlay={overlay} onToggle={handleToggle} />
           {overlay.collapsed ? null : (
             <AgentRunNodeContentOverlay
               overlay={overlay}
@@ -467,51 +433,6 @@ function AgentRunNodeContentOverlay({
         </div>
       </div>
     </section>
-  );
-}
-
-function AgentRunNodeToggleButton({
-  overlay,
-  onToggle,
-}: {
-  overlay: AgentRunNodeOverlayState;
-  onToggle: (node: PenNode, collapsed: boolean) => void;
-}) {
-  const nextCollapsed = !overlay.collapsed;
-  const label = overlay.collapsed ? "展开 AgentRunNode" : "收起 AgentRunNode";
-  const Icon = overlay.collapsed ? ChevronDown : ChevronUp;
-  const stopCanvasPropagation = (event: SyntheticEvent) => {
-    event.stopPropagation();
-  };
-
-  return (
-    <Button
-      aria-label={label}
-      aria-pressed={!overlay.collapsed}
-      className="pointer-events-auto absolute z-30 h-8 gap-1 rounded-full border-border bg-background/95 px-3 text-xs font-semibold text-foreground shadow-card ring-1 ring-foreground/5 backdrop-blur-lg hover:bg-background focus-visible:ring-2 focus-visible:ring-ring"
-      data-canvas-overlay="agent-run-node-toggle"
-      onClick={(event) => {
-        event.stopPropagation();
-        onToggle(overlay.node, nextCollapsed);
-      }}
-      onContextMenu={stopCanvasPropagation}
-      onDoubleClick={stopCanvasPropagation}
-      onKeyDown={stopCanvasPropagation}
-      onPointerCancel={stopCanvasPropagation}
-      onPointerDown={stopCanvasPropagation}
-      onPointerMove={stopCanvasPropagation}
-      onPointerUp={stopCanvasPropagation}
-      size="sm"
-      style={{
-        left: overlay.x + overlay.width + 8,
-        top: overlay.y + 2,
-      }}
-      type="button"
-      variant="outline"
-    >
-      <Icon className="size-3.5" />
-      {overlay.collapsed ? "展开" : "收起"}
-    </Button>
   );
 }
 

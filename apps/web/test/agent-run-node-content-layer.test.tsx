@@ -7,12 +7,10 @@ import {
   createAgentRunNode,
   createEmptyDocument,
   getAgentExecutionContainerMeta,
-  getAgentExecutionMeta,
   reduceAgentExecutionContainerStreamEvent,
   setAgentExecutionCanvasCollapsed,
 } from "@cucumber/canvas-core";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -152,7 +150,7 @@ describe("AgentRunNodeContentLayer", () => {
     expect(screen.getByText("读取画布")).toBeVisible();
     expect(screen.getByText("生成图片")).toBeVisible();
     expect(screen.getByText(/图片已经放到画布/)).toBeVisible();
-    expect(screen.getByLabelText("收起 AgentRunNode")).toBeVisible();
+    expect(screen.queryByLabelText("收起 AgentRunNode")).toBeNull();
 
     fireEvent.wheel(screen.getByLabelText("AgentRunNode：生成封面图"));
     expect(onWheel).not.toHaveBeenCalled();
@@ -219,48 +217,6 @@ describe("AgentRunNodeContentLayer", () => {
     );
 
     expect(screen.queryByLabelText("AgentRunNode：生成封面图")).toBeNull();
-    expect(screen.getByLabelText("展开 AgentRunNode")).toBeVisible();
-  });
-
-  it("writes collapsed and expanded state back to the durable AgentRunNode", async () => {
-    const user = userEvent.setup();
-    const node = createRichAgentRunNode();
-    const document = createDocument(node);
-    const store = createCanvasRuntimeStore(document);
-    const api = { updateNode: vi.fn() } as unknown as CanvasApi;
-
-    render(
-      <CanvasRuntimeStoreProvider store={store}>
-        <AgentRunNodeContentLayer api={api} />
-      </CanvasRuntimeStoreProvider>,
-    );
-
-    await user.click(screen.getByLabelText("收起 AgentRunNode"));
-
-    const updates = vi.mocked(api.updateNode).mock.calls[0]?.[1];
-    const execution = updates?.meta
-      ? getAgentExecutionMeta({ ...node, meta: updates.meta })
-      : null;
-    expect(vi.mocked(api.updateNode).mock.calls[0]?.[0]).toBe(node.id);
-    expect(execution?.canvasPresentation?.collapsed).toBe(true);
-
-    const collapsedNode = setAgentExecutionCanvasCollapsed(node, true);
-    const collapsedDocument = createDocument(collapsedNode);
-    const collapsedStore = createCanvasRuntimeStore(collapsedDocument);
-    const collapsedApi = { updateNode: vi.fn() } as unknown as CanvasApi;
-    render(
-      <CanvasRuntimeStoreProvider store={collapsedStore}>
-        <AgentRunNodeContentLayer api={collapsedApi} />
-      </CanvasRuntimeStoreProvider>,
-    );
-
-    await user.click(screen.getByLabelText("展开 AgentRunNode"));
-
-    const expandUpdates = vi.mocked(collapsedApi.updateNode).mock.calls[0]?.[1];
-    const expandedExecution = expandUpdates?.meta
-      ? getAgentExecutionMeta({ ...collapsedNode, meta: expandUpdates.meta })
-      : null;
-    expect(vi.mocked(collapsedApi.updateNode).mock.calls[0]?.[0]).toBe(node.id);
-    expect(expandedExecution?.canvasPresentation?.collapsed).toBe(false);
+    expect(screen.queryByLabelText("展开 AgentRunNode")).toBeNull();
   });
 });

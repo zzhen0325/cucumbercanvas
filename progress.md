@@ -12,6 +12,13 @@ Maintenance:
 - Run `pnpm progress:rotate` from the repository root when the threshold is reached.
 - Historical entries live under `docs/progress/`; do not duplicate archived history back into this file.
 
+## 2026-06-05 - Remove Agent run control shortcuts
+
+- Removed the canvas-level `AgentRunControlBar`, its run trace panel, and the dedicated test file so the top floating pause/continue/stop/rerun/trace strip no longer appears.
+- Removed selected-checkpoint canvas toolbar actions and the selected-node follow-up pill entry so `继续` / `重跑` / `新分支` are not exposed from the canvas overlay layer.
+- Changed the Agent checkpoint property-panel section to show checkpoint record context only, and removed generic selected-node `从这里继续` / `重跑此步骤` / `复制为分支` buttons from the Agent execution panel.
+- Moved the remaining shared run-control state type to `agent-run-control-state.ts` for the chat sidebar path, and updated `feature_list.json` plus current technical docs to stop listing deleted control-bar/follow-up artifacts.
+
 ## 2026-06-05 - AgentRunNode React content host
 
 - Upgraded expanded `agent_run_node` presentation from Skia text aggregation to a React content host overlay aligned to the durable canvas node bounds; the PenNode remains the source of truth for position, size, selection, links, collapse state, and persistence.

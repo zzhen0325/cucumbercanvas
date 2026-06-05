@@ -7,7 +7,7 @@ import {
   getAgentExecutionStatusLabel,
 } from "@cucumber/canvas-core";
 import type { PenNode } from "@cucumber/pen-types";
-import { Copy, FilePlus, GitBranch, Play, RotateCcw, Send } from "lucide-react";
+import { Copy, FilePlus, GitBranch, Play, Send } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { cn } from "../../../lib/utils";
@@ -137,7 +137,6 @@ export function AgentExecutionSection({
 
   if (!execution) return null;
 
-  const unavailableReason = "当前页面暂时不能继续生成。";
   const hasExpandableDetails =
     execution.kind === "task_step" ||
     execution.kind === "tool_call" ||
@@ -149,7 +148,6 @@ export function AgentExecutionSection({
   );
   const waitingAttachmentCount =
     execution.waitingForUser?.response?.attachmentCount ?? 0;
-  const showGenericContinuationActions = execution.kind !== "checkpoint";
   const branchContinueRequiresMainlineSelection =
     execution.branch && !execution.branch.isMainline;
   const branchContinueDisabled =
@@ -404,38 +402,7 @@ export function AgentExecutionSection({
         </div>
       ) : null}
 
-      <AgentExecutionCheckpointSection
-        execution={execution}
-        nodeId={node.id}
-        onContinueFromNode={onContinueFromNode}
-      />
-
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        {showGenericContinuationActions ? (
-          <>
-            <AgentExecutionActionButton
-              disabled={!onContinueFromNode}
-              icon={Play}
-              label="从这里继续"
-              onClick={() => onContinueFromNode?.(node.id, "continue")}
-              reason="当前页面暂时不能继续生成。"
-            />
-            <AgentExecutionActionButton
-              disabled
-              icon={RotateCcw}
-              label="重跑此步骤"
-              reason={unavailableReason}
-            />
-            <AgentExecutionActionButton
-              disabled={!onContinueFromNode}
-              icon={GitBranch}
-              label="复制为分支"
-              onClick={() => onContinueFromNode?.(node.id, "new_branch")}
-              reason="当前页面暂时不能继续生成。"
-            />
-          </>
-        ) : null}
-      </div>
+      <AgentExecutionCheckpointSection execution={execution} />
       <button
         type="button"
         className="mt-3 w-full rounded-md border border-border bg-background px-2 py-1.5 text-left text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"

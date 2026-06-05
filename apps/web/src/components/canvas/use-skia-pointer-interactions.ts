@@ -45,13 +45,7 @@ import {
   pointToAngle,
   shouldAttachConnectorForTool,
 } from "./canvas-draw-geometry";
-import {
-  type AgentCheckpointHoverState,
-  type AgentExecutionHoverState,
-  type CanvasContextMenuState,
-  getAgentCheckpointToolbarState,
-  getAgentExecutionHoverState,
-} from "./canvas-overlays";
+import type { CanvasContextMenuState } from "./canvas-overlays";
 import type {
   CanvasRuntimeCommitResult,
   CanvasRuntimeStore,
@@ -129,7 +123,6 @@ type UseSkiaPointerInteractionsOptions = {
   ) => ReturnType<
     typeof import("@cucumber/canvas-core").findConnectorSnapTarget
   >;
-  hasAgentContinuationHandler?: boolean;
   getPointerScenePoint: (event: { clientX: number; clientY: number }) => {
     x: number;
     y: number;
@@ -177,7 +170,6 @@ export function useSkiaPointerInteractions({
   effectiveTool,
   flushRendererDocumentSyncBeforeInteraction,
   getConnectorSnap,
-  hasAgentContinuationHandler,
   getPointerScenePoint,
   marqueeRafRef,
   marqueeSelectionRef,
@@ -199,10 +191,6 @@ export function useSkiaPointerInteractions({
   const [contextMenu, setContextMenu] = useState<CanvasContextMenuState | null>(
     null,
   );
-  const [hoveredCheckpoint, setHoveredCheckpoint] =
-    useState<AgentCheckpointHoverState | null>(null);
-  const [hoveredAgentExecution, setHoveredAgentExecution] =
-    useState<AgentExecutionHoverState | null>(null);
   useEffect(
     () => () => {
       if (viewportPanRafRef.current !== null) {
@@ -388,8 +376,6 @@ export function useSkiaPointerInteractions({
       const renderer = rendererRef.current;
       if (!renderer) return;
       setContextMenu(null);
-      setHoveredCheckpoint(null);
-      setHoveredAgentExecution(null);
       flushRendererDocumentSyncBeforeInteraction();
       const rect = canvasContainerRef.current?.getBoundingClientRect();
       if (!rect) return;
@@ -738,46 +724,9 @@ export function useSkiaPointerInteractions({
       if (!renderer) return;
       if (!drag) {
         const tool = effectiveTool === "hand" ? "hand" : activeToolRef.current;
-        if (tool !== "select" && tool !== "hand") {
-          setHoveredCheckpoint(null);
-          setHoveredAgentExecution(null);
-          return;
-        }
+        if (tool !== "select" && tool !== "hand") return;
         const target = event.target as HTMLElement;
         if (target.closest("[data-canvas-overlay]")) return;
-        const rawHit = renderer.hitTest(event.clientX, event.clientY);
-        const hit = getSelectableStickyHitNode(
-          docRef.current as CucumberCanvasDocument,
-          rawHit,
-          activePageIdRef.current,
-        );
-        const execution = getAgentExecutionMeta(hit);
-        if (hit && execution?.kind === "checkpoint") {
-          const rootRect = canvasRootRef.current?.getBoundingClientRect();
-          setHoveredCheckpoint({
-            ...getAgentCheckpointToolbarState(
-              hit,
-              Boolean(hasAgentContinuationHandler),
-            ),
-            nodeId: hit.id,
-            title: execution.title,
-            x: event.clientX - (rootRect?.left ?? 0),
-            y: event.clientY - (rootRect?.top ?? 0),
-          });
-          setHoveredAgentExecution(null);
-        } else if (hit && execution) {
-          const rootRect = canvasRootRef.current?.getBoundingClientRect();
-          setHoveredCheckpoint(null);
-          setHoveredAgentExecution(
-            getAgentExecutionHoverState(hit, {
-              x: event.clientX - (rootRect?.left ?? 0),
-              y: event.clientY - (rootRect?.top ?? 0),
-            }),
-          );
-        } else {
-          setHoveredCheckpoint(null);
-          setHoveredAgentExecution(null);
-        }
         return;
       }
 
@@ -1025,7 +974,6 @@ export function useSkiaPointerInteractions({
       endViewportPan,
       getConnectorSnap,
       getPointerScenePoint,
-      hasAgentContinuationHandler,
       penTool,
       setEditorOverlay,
       setMarqueeDomOverlay,
@@ -1552,12 +1500,7 @@ export function useSkiaPointerInteractions({
     [endViewportPan],
   );
 
-  const handlePointerLeave = useCallback(() => {
-    if (!dragRef.current) {
-      setHoveredCheckpoint(null);
-      setHoveredAgentExecution(null);
-    }
-  }, [dragRef]);
+  const handlePointerLeave = useCallback(() => {}, []);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: handler reads live canvas refs as synchronous runtime mirrors; `.current` values are not React dependencies.
   const handleContextMenu = useCallback(
@@ -1671,8 +1614,6 @@ export function useSkiaPointerInteractions({
     handlePointerLeave,
     handlePointerMove,
     handlePointerUp,
-    hoveredAgentExecution,
-    hoveredCheckpoint,
     closeContextMenu: () => setContextMenu(null),
   };
 }

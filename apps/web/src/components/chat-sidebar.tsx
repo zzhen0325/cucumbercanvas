@@ -36,7 +36,7 @@ import {
   pauseRun,
   saveMessage,
 } from "../lib/server-api";
-import type { AgentRunControlState } from "./agent-run-control-bar";
+import type { AgentRunControlState } from "./agent-run-control-state";
 import type { CanvasSelectedElement } from "./canvas-editor";
 import {
   type BrandKitMentionItem,

@@ -10,10 +10,6 @@ import type {
   StreamEvent,
   VideoArtifact,
 } from "@cucumber/shared";
-import {
-  AgentRunControlBar,
-  type AgentRunControlState,
-} from "../../components/agent-run-control-bar";
 import { BrandKitSelector } from "../../components/brand-kit-selector";
 import { CanvasAgentComposer } from "../../components/canvas-agent-composer";
 import { CanvasBottomBar } from "../../components/canvas-bottom-bar";
@@ -27,10 +23,6 @@ import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
 import { CanvasFilesPanel } from "../../components/canvas-files-panel";
 import { CanvasLayersPanel } from "../../components/canvas-layers-panel";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
-import {
-  getAgentRunPausedNodeUpdates,
-  getAgentRunStoppedNodeUpdates,
-} from "../../components/canvas/agent-run-pause-writeback";
 import { getAgentWaitingResponseSubmittedUpdates } from "../../components/canvas/agent-waiting-response-writeback";
 import type { CanvasApi } from "../../components/canvas/canvas-api";
 import type {
@@ -176,18 +168,11 @@ type CanvasAgentRuntimeSurfaceProps = {
   onAgentContinuationSubmit: (summary: AgentContinuationSubmitSummary) => void;
   onBeforeRun: () => Promise<void>;
   onCanvasSync: () => void;
-  onContinueAgentExecution: (
-    nodeId: string,
-    intent?: AgentExecutionContinueIntent,
-  ) => void;
   onImageGenerated: (artifact: ImageArtifact) => void;
-  onRunPaused: (summary: { runId: string }) => void;
-  onRunStopped: (summary: { runId: string }) => void;
   onSessionChange: (sessionId: string) => void;
   onStreamEvent: (event: StreamEvent) => void;
   onVideoGenerated: (artifact: VideoArtifact) => void;
   selectedCanvasElements: CanvasSelectedElement[];
-  traceEvents: StreamEvent[];
 };
 
 function CanvasAgentRuntimeSurface({
@@ -201,19 +186,12 @@ function CanvasAgentRuntimeSurface({
   onAgentContinuationSubmit,
   onBeforeRun,
   onCanvasSync,
-  onContinueAgentExecution,
   onImageGenerated,
-  onRunPaused,
-  onRunStopped,
   onSessionChange,
   onStreamEvent,
   onVideoGenerated,
   selectedCanvasElements,
-  traceEvents,
 }: CanvasAgentRuntimeSurfaceProps) {
-  const [runControlState, setRunControlState] = useState<AgentRunControlState>({
-    streaming: false,
-  });
   const activeAgentExecutionNodeIdRef = useRef<string | null>(null);
   const writeExecutionStreamEvent =
     useCanvasAgentExecutionStreamWriteback(canvasApi);
@@ -226,9 +204,6 @@ function CanvasAgentRuntimeSurface({
     onBeforeRun,
     onCanvasSync,
     onImageGenerated,
-    onRunControlStateChange: setRunControlState,
-    onRunPaused,
-    onRunStopped,
     onSessionChange,
     onStreamEvent: (event) => {
       onStreamEvent(event);
@@ -241,18 +216,6 @@ function CanvasAgentRuntimeSurface({
 
   return (
     <>
-      <div className="pointer-events-none absolute left-1/2 top-3 z-30 -translate-x-1/2">
-        <AgentRunControlBar
-          runState={runControlState}
-          selectedCanvasElements={selectedCanvasElements}
-          onContinueFromSelection={(nodeId, intent = "continue") =>
-            onContinueAgentExecution(nodeId, intent)
-          }
-          onPauseRun={controller.onPauseRun}
-          onStopRun={controller.onStopRun}
-          traceEvents={traceEvents}
-        />
-      </div>
       <CanvasAgentComposer
         attachments={controller.attachments}
         canvasApi={canvasApi}
@@ -322,7 +285,6 @@ function CanvasPageContent() {
   const [importSummary, setImportSummary] =
     useState<CanvasImportSummary | null>(null);
   const [showImportWarnings, setShowImportWarnings] = useState(false);
-  const [agentTraceEvents, setAgentTraceEvents] = useState<StreamEvent[]>([]);
   const agentContinueDraftRequestIdRef = useRef(0);
   const [agentContinueDraftRequest, setAgentContinueDraftRequest] = useState<{
     continuationTargetElement?: CanvasSelectedElement;
@@ -525,52 +487,6 @@ function CanvasPageContent() {
     [],
   );
 
-  const handleAgentRunPaused = useCallback((summary: { runId: string }) => {
-    const api = canvasApiRef.current;
-    if (!api) {
-      console.warn("[canvas-page] agent_run.pause.writeback.skipped", {
-        reason: "canvas_api_unavailable",
-        runId: summary.runId,
-      });
-      return;
-    }
-    const updates = getAgentRunPausedNodeUpdates(
-      api.getDocument(),
-      api.getActivePageId(),
-      summary.runId,
-    );
-    for (const update of updates) {
-      api.updateNode(update.nodeId, update.updates);
-    }
-    console.info("[canvas-page] agent_run.pause.writeback", {
-      nodeCount: updates.length,
-      runId: summary.runId,
-    });
-  }, []);
-
-  const handleAgentRunStopped = useCallback((summary: { runId: string }) => {
-    const api = canvasApiRef.current;
-    if (!api) {
-      console.warn("[canvas-page] agent_run.stop.writeback.skipped", {
-        reason: "canvas_api_unavailable",
-        runId: summary.runId,
-      });
-      return;
-    }
-    const updates = getAgentRunStoppedNodeUpdates(
-      api.getDocument(),
-      api.getActivePageId(),
-      summary.runId,
-    );
-    for (const update of updates) {
-      api.updateNode(update.nodeId, update.updates);
-    }
-    console.info("[canvas-page] agent_run.stop.writeback", {
-      nodeCount: updates.length,
-      runId: summary.runId,
-    });
-  }, []);
-
   useEffect(() => {
     if (selectedCanvasElements.length === 0) return;
     const imported = selectedCanvasElements.filter((element) =>
@@ -659,7 +575,6 @@ function CanvasPageContent() {
 
   const handleAgentStreamEvent = useCallback(
     (event: StreamEvent) => {
-      setAgentTraceEvents((events) => [...events, event].slice(-120));
       checkForTimedOutJobs(event);
     },
     [checkForTimedOutJobs],
@@ -840,15 +755,11 @@ function CanvasPageContent() {
             onCanvasSync={() => {
               void handleCanvasSync();
             }}
-            onContinueAgentExecution={handleContinueAgentExecution}
             onImageGenerated={handleImageGenerated}
-            onRunPaused={handleAgentRunPaused}
-            onRunStopped={handleAgentRunStopped}
             onSessionChange={handleSessionChange}
             onStreamEvent={handleAgentStreamEvent}
             onVideoGenerated={handleVideoGenerated}
             selectedCanvasElements={selectedCanvasElements}
-            traceEvents={agentTraceEvents}
           />
         </ToastProvider>
         <CanvasEmptyHint
