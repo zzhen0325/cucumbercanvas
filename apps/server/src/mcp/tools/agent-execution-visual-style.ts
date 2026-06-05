@@ -20,6 +20,7 @@ export function agentExecutionCardFillForKind(
     case "agent_execution":
       return "rgba(248,255,191,1)";
     case "ask_user_more":
+    case "input_node":
     case "user_goal":
       return "rgba(255,247,214,0.94)";
     case "checkpoint":

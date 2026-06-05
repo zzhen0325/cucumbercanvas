@@ -63,7 +63,7 @@ export function useCanvasImportActions({
   selectedIdsRef,
   setSelection,
   toast,
-  onCreateAgentUserGoal,
+  onCreateAgentInputNode,
 }: {
   accessToken?: string;
   activePageIdRef: MutableRef<string>;
@@ -90,7 +90,7 @@ export function useCanvasImportActions({
     opts?: { notifyScene?: boolean; notifySelection?: boolean },
   ) => void;
   toast: ImportToast;
-  onCreateAgentUserGoal?: (opts: {
+  onCreateAgentInputNode?: (opts: {
     text?: string;
     x: number;
     y: number;
@@ -383,13 +383,13 @@ export function useCanvasImportActions({
           const scenePoint = getPointerScenePoint(event);
           if (!scenePoint) {
             throw new Error(
-              "无法确定节点放置位置，请把用户目标节点拖到画布区域后再松开。",
+              "无法确定节点放置位置，请把 InputNode 拖到画布区域后再松开。",
             );
           }
-          if (!onCreateAgentUserGoal) {
-            throw new Error("当前画布没有接入用户目标节点创建能力。");
+          if (!onCreateAgentInputNode) {
+            throw new Error("当前画布没有接入 InputNode 创建能力。");
           }
-          onCreateAgentUserGoal({
+          onCreateAgentInputNode({
             ...(payload.text ? { text: payload.text } : {}),
             x: scenePoint.x,
             y: scenePoint.y,
@@ -473,7 +473,7 @@ export function useCanvasImportActions({
       activePageIdRef,
       getPointerScenePoint,
       importDropPayloadsInGrid,
-      onCreateAgentUserGoal,
+      onCreateAgentInputNode,
       rendererRef,
       resetFileDragState,
       toast,

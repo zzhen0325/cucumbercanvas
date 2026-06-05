@@ -17,7 +17,7 @@ function renderEditorToolbar(
     canRedo: true,
     canUndo: false,
     selectedCount: 1,
-    onCreateAgentUserGoal: vi.fn(),
+    onCreateAgentInputNode: vi.fn(),
     onCreateContainer: vi.fn(),
     onDelete: vi.fn(),
     onInsertIcon: vi.fn(),
@@ -74,26 +74,26 @@ describe("CanvasEditorToolbar", () => {
     expect(props.onImportSvg).toHaveBeenCalledOnce();
   });
 
-  it("creates and exposes a draggable user-goal Agent node template", async () => {
+  it("creates and exposes a draggable InputNode Agent node template", async () => {
     const user = userEvent.setup();
     const props = renderEditorToolbar();
-    const userGoalButton = screen.getByRole("button", { name: "用户目标" });
+    const inputNodeButton = screen.getByRole("button", { name: "InputNode" });
 
-    await user.click(userGoalButton);
+    await user.click(inputNodeButton);
 
-    expect(props.onCreateAgentUserGoal).toHaveBeenCalledOnce();
+    expect(props.onCreateAgentInputNode).toHaveBeenCalledOnce();
 
     const dataTransfer = {
       effectAllowed: "none",
       setData: vi.fn(),
     } as unknown as DataTransfer;
 
-    fireEvent.dragStart(userGoalButton, { dataTransfer });
+    fireEvent.dragStart(inputNodeButton, { dataTransfer });
 
     expect(dataTransfer.effectAllowed).toBe("copy");
     expect(dataTransfer.setData).toHaveBeenCalledWith(
       CANVAS_NODE_TEMPLATE_MIME,
-      JSON.stringify({ type: "agent_user_goal" }),
+      JSON.stringify({ type: "agent_input_node" }),
     );
   });
 

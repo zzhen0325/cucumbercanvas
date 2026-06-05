@@ -633,6 +633,7 @@ function isAgentExecutionContainerKind(
   value: unknown,
 ): value is AgentExecutionNodeKind {
   return (
+    value === "input_node" ||
     value === "user_goal" ||
     value === "agent_execution" ||
     value === "recipe_plan" ||

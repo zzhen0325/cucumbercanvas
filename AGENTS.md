@@ -4,16 +4,15 @@ AI 原生无限画布，画布不是先存在的空白空间，而是 AI Agent �
 
 ## 核心设计理念
 
-Agent 优先：所有内容由 Agent 生成，用户仅提供目标和反馈
 容器即输出：每个 Agent 的执行结果都以独立容器的形式呈现在画布上
-空间即上下文：容器的位置、大小、连接关系天然表达了 Agent 的思考逻辑和数据流动
+画布即上下文：节点/容器的位置、大小、连接关系天然表达了上下文和数据流动
 
 ## 核心要求
 
-- 代码旨在为高效生产和高质量要求而不是 MVP 搭建 DEMO 完成，完成功能要考虑产品特性和整体交互，阅读以及撰写时思维需要有大局观，以第一性原理直击痛点。
+- 代码旨在为高效生产和高质量要求完成，完成功能要考虑产品特性和整体交互，阅读以及撰写时思维需要有大局观，以第一性原理直击痛点。
 - 当提出加入新功能时，要从用户真实体验交互的视角完善考虑，不要只是代码没问题，但是视觉上或者操作交互上缺出现点不到或者别的低级问题。
 - 在相关代码加入对应日志便于后续线上或本地排查，以及 TODO 或相关备注，为后续他人接手提供更好的桥梁。
-- 不做无关改动，不重写架构，不碰未被请求的设计 token、全局样式、依赖、认证、支付、生产迁移和部署配置。
+- 不做无关改动，不重写架构，不碰未被请求的设计 token、全局样式、依赖、生产迁移和部署配置。
 - 每次开始编码前先读相关文件和现有模式，优先复用项目已有组件、工具函数、服务边界和测试习惯。
 - 不做降级或兜底方案，将错误抛出
 - 不要在界面上直接返回任何错误码、null、undefined或默认值。要返回具体错误说明和原因。
@@ -26,7 +25,7 @@ Agent 优先：所有内容由 Agent 生成，用户仅提供目标和反馈
   - 运行时真值：真正驱动业务、布局、渲染、持久化或工具执行的字段。
   - 迁移输入：仅用于读取旧数据并转换到新真值。
   - 诊断/来源信息：仅用于展示、排查或导入记录，不得参与运行时决策。
-- 如果旧字段需要兼容，只能在规范化、导入、load-time migration 等边界层读取，并立即转换为当前真值。核心运行时、UI 编辑、渲染、服务逻辑不得继续依赖旧字段。
+- 当前处于开发阶段，旧字段不需要兼容，可以直接抛弃。核心运行时、UI 编辑、渲染、服务逻辑不得继续依赖旧字段。
 - UI 控件必须和实际功能一一对应：能生效才允许编辑；不满足生效前提时必须收起、置灰或显示明确原因，不能给用户一个看似可操作但实际无效的控件。
 - 跨模块功能必须同步切换职责边界，包括类型定义、导入/迁移、UI、运行时计算、渲染、持久化、测试和文档。不能只改其中一层。
 
@@ -43,7 +42,7 @@ Agent 优先：所有内容由 Agent 生成，用户仅提供目标和反馈
 
 ## Responsibility And Data Flow Discipline
 
-- 修改功能前必须先画清数据流：用户输入/导入数据 → 规范化 → 持久化 → 运行时读取 → UI 展示/编辑 → 渲染或服务执行。任何字段只应在自己所属阶段承担职责。
+
 - 命名必须体现职责。运行时字段、导入来源字段、诊断字段、展示字段不能用含混名称混在一起。
 - 不允许为了兼容旧逻辑在核心路径里增加隐式 fallback。兼容逻辑必须集中在边界层，并带有明确注释。
 - 当某个字段不再是真值时，必须从核心消费链路移除；不能留下“可能读一下”的备用路径。
@@ -93,7 +92,6 @@ A task is done only when:
 - The requested behavior is implemented and no unrelated files are changed.
 - TypeScript has no errors for the affected workspace.
 - Lint passes, or any existing unrelated lint failures are called out with file paths.
-- Relevant tests pass, or missing coverage is explicitly documented.
 - Build passes when the change can affect runtime bundling or deployment.
 - UI changes follow existing Tailwind/shadcn/Base UI/component conventions.
 - New product behavior is documented when it changes workflow, contracts, persistence, or agent/tool behavior.
@@ -102,13 +100,13 @@ A task is done only when:
 ## File Size And Module Growth Discipline
 
 - 修改前先检查目标文件职责和体积。若文件已经明显承载多个职责，不允许继续把新业务逻辑、状态管理、复杂 UI 分支或协议处理直接追加进去。
-- 单个文件超过约 500 行时，新增功能前必须评估是否应拆分为：
+- 单个文件超过约 800 行时，新增功能前必须评估是否应拆分为：
   - 纯展示组件
   - 状态/交互 hook
   - 数据转换/normalize 工具
   - 类型与常量
   - 测试辅助或 fixtures
-- 单个文件超过约 800 行时，除非只是非常小的修复，不应继续扩写主文件；应优先抽出局部模块，并保持原有对外 API 稳定。
+- 单个文件超过约 1500 行时，除非只是非常小的修复，不应继续扩写主文件；应优先抽出局部模块，并保持原有对外 API 稳定。
 - 不允许为了“快”把以下内容混在同一个文件：
   - UI 渲染
   - 业务状态
@@ -134,8 +132,6 @@ For complex tasks:
 
 1. Read the relevant files first, including nearby tests and shared contracts.
 2. Write a short plan before editing.
-3. Implement in small, reviewable steps.
-4. Add focused logs where production or local diagnosis would otherwise be opaque.
 5. Add TODO comments only when they identify a real follow-up owner/problem, not as decoration.
 6. Run the narrowest useful verification first, then the full check when risk or scope justifies it.
 7. Summarize changed files, verification result, and remaining risks.
@@ -169,9 +165,6 @@ Canvas persistence rule: `PenDocument.pages` with a valid `activePageId` is the 
 
 When changing agent runtime code under `apps/server/src/agent/`, inspect the current Deep Agents/LangGraph patterns in the repository before editing. Do not change framework-level orchestration, checkpointer/store behavior, or tool protocol shape without documenting the reason in `docs/architecture.md` or an adjacent technical note.
 
-## External Frameworks
-
-对于其他框架包括 Next.js、Excalidraw、Supabase、shadcn/Base UI 等不理解或者不熟悉的地方，一定要先看文档或者源码再开始，确保先获取信息上下文再开干，不然容易导致返工。
 
 <br />
 
@@ -184,17 +177,4 @@ When changing agent runtime code under `apps/server/src/agent/`, inspect the cur
 如果测试失败，只总结失败测试名、核心错误、最短相关堆栈。\
 除非我明确要求，不要运行全量测试、coverage、snapshot 全量更新。
 
-<br />
 
-## Forbidden Changes
-
-Do not modify these unless explicitly requested:
-
-- `.env`
-- `.env.local`
-- Package manager lockfile, unless dependencies change.
-- Production database migrations.
-- Auth logic.
-- Payment logic.
-- Global design tokens.
-- Deployment configuration.

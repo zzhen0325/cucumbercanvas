@@ -10,6 +10,7 @@
 - [`docs/tech/`](./tech/)：具体能力的技术计划和专题说明。
 - [`docs/tech/canvas-node-figma-fusion.md`](./tech/canvas-node-figma-fusion.md)：节点系统与 Figma-like 画布能力的同一真值融合边界。
 - [`docs/tech/canvas-node-figma-fusion-code-map.md`](./tech/canvas-node-figma-fusion-code-map.md)：按执行节点语义和 Figma-like 物理编辑整理当前代码归属。
+- [`docs/tech/ui-page-code-sync-plan.md`](./tech/ui-page-code-sync-plan.md)：UI 页面型画布结果的代码同步计划，覆盖 Agent 产物、普通 Figma-like UI 根节点和导入 Figma 页面/Frame。
 
 ## 使用方式
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AGENT_EXECUTION_CANVAS_LAYOUT_VERSION,
   createAgentExecutionNode,
+  createAgentInputNode,
   measureAgentExecutionComponentLayout,
   normalizeAgentExecutionCanvasLayout,
   toggleAgentExecutionCanvasCollapsed,
@@ -336,6 +337,31 @@ describe("agent execution canvas presentation", () => {
     expect(textContents(node)).toEqual([]);
   });
 
+  it("creates InputNode as the Agent-first input container", () => {
+    const node = createAgentInputNode({
+      text: "生成一张产品海报",
+      x: 120,
+      y: 180,
+    });
+
+    expect(node).toMatchObject({
+      id: expect.stringMatching(/^agent_input_node_/),
+      name: "InputNode",
+      type: "frame",
+      width: 240,
+    });
+    expect(getAgentExecutionMeta(node)).toMatchObject({
+      canvasPresentation: {
+        collapsed: false,
+        layoutVersion: AGENT_EXECUTION_CANVAS_LAYOUT_VERSION,
+      },
+      kind: "input_node",
+      status: "waiting",
+      summary: "生成一张产品海报",
+      title: "InputNode",
+    });
+  });
+
   it("toggles canvas collapsed state without changing Agent semantics", () => {
     const node = withAgentExecutionNodeSemantics(
       {
@@ -370,11 +396,11 @@ describe("agent execution canvas presentation", () => {
 
   it("measures auto-height Agent components and only shows toggles on overflow", () => {
     const shortExecution = withAgentExecutionCanvasPresentation({
-      kind: "user_goal",
+      kind: "input_node",
       schemaVersion: 1,
       status: "waiting",
       summary: "生成一张小狗插画。",
-      title: "用户目标",
+      title: "InputNode",
     });
     const shortLayout = measureAgentExecutionComponentLayout(
       shortExecution,

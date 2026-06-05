@@ -36,7 +36,7 @@ export type CanvasEditorToolbarProps = {
   canUndo: boolean;
   selectedCount: number;
   onCreateContainer: () => void;
-  onCreateAgentUserGoal: () => void;
+  onCreateAgentInputNode: () => void;
   onDelete: () => void;
   onInsertIcon?: () => void;
   onImportImage: () => void;
@@ -52,7 +52,7 @@ export function CanvasEditorToolbar({
   canUndo,
   selectedCount,
   onCreateContainer,
-  onCreateAgentUserGoal,
+  onCreateAgentInputNode,
   onDelete,
   onInsertIcon,
   onImportImage,
@@ -97,13 +97,13 @@ export function CanvasEditorToolbar({
         <EditorToolButton
           draggable
           icon={MessageSquareText}
-          label="用户目标"
-          onClick={onCreateAgentUserGoal}
+          label="InputNode"
+          onClick={onCreateAgentInputNode}
           onDragStart={(event) => {
             writeCanvasNodeTemplateDragPayload(event.dataTransfer, {
-              type: "agent_user_goal",
+              type: "agent_input_node",
             });
-            console.info("[skia-canvas] toolbar.agent_user_goal.drag_start");
+            console.info("[skia-canvas] toolbar.agent_input_node.drag_start");
           }}
         />
         <EditorToolButton

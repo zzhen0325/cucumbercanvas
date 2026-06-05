@@ -4,6 +4,7 @@ export const AGENT_EXECUTION_META_KEY = "agentExecution";
 export const AGENT_EXECUTION_SCHEMA_VERSION = 1;
 
 export type AgentExecutionNodeKind =
+  | "input_node"
   | "user_goal"
   | "agent_execution"
   | "recipe_plan"
@@ -140,6 +141,7 @@ const AGENT_EXECUTION_KIND_LABELS: Record<AgentExecutionNodeKind, string> = {
   evidence: "证据",
   final_deliverable: "最终交付物",
   agent_execution: "Agent 执行",
+  input_node: "InputNode",
   recipe_plan: "Recipe 计划",
   task_step: "任务步骤",
   tool_call: "工具调用",
@@ -306,6 +308,7 @@ function defaultContainerRoleForExecutionKind(
   switch (kind) {
     case "agent_execution":
     case "evidence":
+    case "input_node":
     case "user_goal":
       return ["context"];
     case "final_deliverable":
@@ -328,6 +331,7 @@ function isAgentExecutionNodeKind(
   value: unknown,
 ): value is AgentExecutionNodeKind {
   return (
+    value === "input_node" ||
     value === "user_goal" ||
     value === "agent_execution" ||
     value === "recipe_plan" ||

@@ -146,7 +146,7 @@ export type CanvasApi = {
     width?: number;
     height?: number;
   }) => PenNode;
-  createAgentUserGoal: (opts?: {
+  createAgentInputNode: (opts?: {
     text?: string;
     x?: number;
     y?: number;

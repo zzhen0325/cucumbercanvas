@@ -579,6 +579,7 @@ type RenderableAgentExecutionKind =
   | "critique"
   | "evidence"
   | "final_deliverable"
+  | "input_node"
   | "recipe_plan"
   | "task_step"
   | "tool_call"
@@ -638,6 +639,7 @@ const AGENT_EXECUTION_KIND_LABELS: Record<
   critique: "评审",
   evidence: "证据",
   final_deliverable: "最终交付物",
+  input_node: "InputNode",
   recipe_plan: "Recipe 计划",
   task_step: "任务步骤",
   tool_call: "工具调用",
@@ -677,7 +679,7 @@ function getRenderableAgentExecution(
 function getAgentComponentRole(
   kind: RenderableAgentExecutionKind,
 ): AgentComponentRole {
-  if (kind === "user_goal") return "user_input";
+  if (kind === "input_node" || kind === "user_goal") return "user_input";
   if (
     kind === "comparison" ||
     kind === "final_deliverable" ||
@@ -985,7 +987,7 @@ export class SkiaNodeRenderer {
           fontSize: layout.role === "result" ? 13 : 12,
           fontWeight: 600,
           height: 22,
-          name: layout.role === "result" ? "结果标题" : "用户目标",
+          name: layout.role === "result" ? "结果标题" : "InputNode 标题",
           text: execution.title,
           width: Math.max(40, w - 32),
           x: x + 16,
@@ -1003,7 +1005,7 @@ export class SkiaNodeRenderer {
           fontSize: 11,
           fontWeight: layout.role === "user_input" ? 500 : 400,
           height: Math.max(24, h - (layout.role === "result" ? 52 : 54)),
-          name: layout.role === "result" ? "结果摘要" : "用户输入",
+          name: layout.role === "result" ? "结果摘要" : "InputNode 内容",
           text: layout.body,
           width: Math.max(40, w - 32),
           x: x + 16,

@@ -70,7 +70,7 @@ const DISPLAY_CHILD_NAMES = new Set([
   "Agent 执行标题",
   "Agent 执行状态",
   "Agent 执行状态文本",
-  "用户输入",
+  "InputNode 内容",
   "结果摘要",
   "结果标题",
 ]);
@@ -80,7 +80,7 @@ type AgentExecutionCanvasCardRole = "user_input" | "execution" | "result";
 export function getAgentExecutionCanvasRole(
   kind: AgentExecutionNodeKind,
 ): AgentExecutionCanvasCardRole {
-  if (kind === "user_goal") return "user_input";
+  if (kind === "input_node" || kind === "user_goal") return "user_input";
   if (
     kind === "comparison" ||
     kind === "final_deliverable" ||
@@ -185,18 +185,18 @@ export function measureAgentExecutionComponentLayout(
   };
 }
 
-export function createAgentUserGoalNode(input: {
+export function createAgentInputNode(input: {
   text?: string;
   x: number;
   y: number;
   width?: number;
 }): FrameNode {
-  const title = "用户目标";
+  const title = "InputNode";
   const summary =
     input.text?.trim() || "描述你的目标，Agent 会从这里开始执行。";
   const execution = withAgentExecutionCanvasPresentation(
     {
-      kind: "user_goal",
+      kind: "input_node",
       schemaVersion: AGENT_EXECUTION_SCHEMA_VERSION,
       status: "waiting",
       summary,
@@ -205,7 +205,7 @@ export function createAgentUserGoalNode(input: {
     { collapsed: false },
   );
   const width = input.width ?? AGENT_EXECUTION_USER_CARD_SIZE.width;
-  const id = createNodeId("agent_user_goal");
+  const id = createNodeId("agent_input_node");
   const visual = getAgentExecutionCanvasFrameUpdates({
     execution,
     bounds: { width },
@@ -232,7 +232,7 @@ export function createAgentUserGoalNode(input: {
       clipContent: false,
       containerRole: ["context"],
       contextSlots: {
-        rules: ["agent execution node: user_goal"],
+        rules: ["agent input node"],
       },
       permissions: {
         owner: "user",
@@ -245,6 +245,15 @@ export function createAgentUserGoalNode(input: {
     execution,
     { containerRole: ["context"] },
   ) as FrameNode;
+}
+
+export function createAgentUserGoalNode(input: {
+  text?: string;
+  x: number;
+  y: number;
+  width?: number;
+}): FrameNode {
+  return createAgentInputNode(input);
 }
 
 export function createAgentExecutionNode(input: {
@@ -526,7 +535,7 @@ function createUserGoalDisplayChildren(input: {
       height: Math.max(16, input.height - 52),
       id: `${input.parentId}__user_input_text`,
       lineHeight: 1.3,
-      name: "用户输入",
+      name: "InputNode 内容",
       width: Math.max(1, input.width - 54),
       x: 27,
       y: 26,
@@ -851,6 +860,7 @@ function compareExecutionLayoutOrder(a: PenNode, b: PenNode): number {
 
 function layoutRank(kind: AgentExecutionNodeKind | undefined): number {
   switch (kind) {
+    case "input_node":
     case "user_goal":
       return 0;
     case "agent_execution":

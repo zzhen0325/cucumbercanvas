@@ -1,0 +1,28 @@
+import { describe, expect, it } from "vitest";
+
+import { buildUserMessage } from "./runtime.js";
+
+describe("buildUserMessage", () => {
+  it("serializes compact canvas entry with InputNode semantics", () => {
+    const message = buildUserMessage(
+      "生成一张产品海报",
+      [],
+      undefined,
+      [],
+      undefined,
+      null,
+      undefined,
+      {
+        agentExecutionNodeId: "agent_execution_1",
+        userGoalNodeId: "agent_input_node_1",
+      },
+    );
+
+    expect(message.text).toContain('<input_node id="agent_input_node_1" />');
+    expect(message.text).toContain(
+      '<agent_execution_node id="agent_execution_1" />',
+    );
+    expect(message.text).toContain("InputNode 输入节点");
+    expect(message.text).not.toContain("<user_goal_node");
+  });
+});

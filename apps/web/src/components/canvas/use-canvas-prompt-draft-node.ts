@@ -36,7 +36,7 @@ function getNodeHeight(node: PenNode): number | undefined {
 export function useCanvasPromptDraftNode(canvasApi: CanvasApi | null) {
   const draftRef = useRef<DraftState | null>(null);
 
-  const updateUserGoalNode = useCallback(
+  const updateInputNode = useCallback(
     (nodeId: string, text: string, status: "waiting" | "done") => {
       if (!canvasApi) {
         throw new Error("画布尚未初始化，无法同步底部输入节点。");
@@ -77,7 +77,7 @@ export function useCanvasPromptDraftNode(canvasApi: CanvasApi | null) {
       if (!text) {
         if (draft && !draft.committed) {
           canvasApi.deleteNode(draft.nodeId);
-          console.info("[canvas-agent-composer] draft_user_goal.deleted", {
+          console.info("[canvas-agent-composer] draft_input_node.deleted", {
             nodeId: draft.nodeId,
           });
         }
@@ -85,18 +85,18 @@ export function useCanvasPromptDraftNode(canvasApi: CanvasApi | null) {
         return;
       }
       if (!draft) {
-        const node = canvasApi.createAgentUserGoal({ text });
+        const node = canvasApi.createAgentInputNode({ text });
         draftRef.current = { committed: false, nodeId: node.id };
-        console.info("[canvas-agent-composer] draft_user_goal.created", {
+        console.info("[canvas-agent-composer] draft_input_node.created", {
           nodeId: node.id,
         });
         return;
       }
       if (!draft.committed) {
-        updateUserGoalNode(draft.nodeId, text, "waiting");
+        updateInputNode(draft.nodeId, text, "waiting");
       }
     },
-    [canvasApi, updateUserGoalNode],
+    [canvasApi, updateInputNode],
   );
 
   const prepareEntryForSend = useCallback(
@@ -109,12 +109,12 @@ export function useCanvasPromptDraftNode(canvasApi: CanvasApi | null) {
         throw new Error("请输入明确目标后再发送。");
       }
       if (!draftRef.current) {
-        const node = canvasApi.createAgentUserGoal({ text });
+        const node = canvasApi.createAgentInputNode({ text });
         draftRef.current = { committed: false, nodeId: node.id };
       }
       const userGoalNodeId = draftRef.current.nodeId;
       draftRef.current.committed = true;
-      updateUserGoalNode(userGoalNodeId, text, "done");
+      updateInputNode(userGoalNodeId, text, "done");
       const userGoalNode = findNode(canvasApi.getDocument(), userGoalNodeId);
       if (!userGoalNode) {
         throw new Error(
@@ -156,7 +156,7 @@ export function useCanvasPromptDraftNode(canvasApi: CanvasApi | null) {
         userGoalNodeId,
       };
     },
-    [canvasApi, updateUserGoalNode],
+    [canvasApi, updateInputNode],
   );
 
   useEffect(() => {

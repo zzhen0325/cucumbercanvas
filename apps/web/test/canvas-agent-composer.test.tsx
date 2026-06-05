@@ -3,7 +3,7 @@
 import {
   type CucumberCanvasDocument,
   type PenNode,
-  createAgentUserGoalNode,
+  createAgentInputNode,
   findNode,
   getAgentExecutionMeta,
 } from "@cucumber/canvas-core";
@@ -72,10 +72,11 @@ describe("CanvasAgentComposer", () => {
     await user.type(textarea, "生成一张产品海报");
 
     await waitFor(() => {
-      expect(canvasApi.createAgentUserGoal).toHaveBeenCalledTimes(1);
+      expect(canvasApi.createAgentInputNode).toHaveBeenCalledTimes(1);
     });
     const draftNode = canvasApi.getDocument().pages?.[0]?.children[0];
-    if (!draftNode) throw new Error("expected draft user goal node");
+    if (!draftNode) throw new Error("expected draft InputNode");
+    expect(getAgentExecutionMeta(draftNode)?.kind).toBe("input_node");
     expect(getAgentExecutionMeta(draftNode)?.summary).toBe("生成一张产品海报");
 
     await user.type(textarea, "，绿色调");
@@ -98,7 +99,8 @@ describe("CanvasAgentComposer", () => {
     });
     const sentEntry = onSend.mock.calls[0]?.[2]?.canvasEntry;
     if (!sentEntry) throw new Error("expected canvas entry payload");
-    expect(sentEntry.userGoalNodeId).toMatch(/^agent_user_goal_/);
+    expect(textarea).toHaveValue("");
+    expect(sentEntry.userGoalNodeId).toMatch(/^agent_input_node_/);
     expect(sentEntry.agentExecutionNodeId).toMatch(/^agent_execution_/);
     expect(onCanvasEntryCreated).toHaveBeenCalledWith(sentEntry);
     expect(canvasApi.insertNode).toHaveBeenCalledTimes(1);
@@ -116,8 +118,19 @@ describe("CanvasAgentComposer", () => {
       sentEntry.agentExecutionNodeId,
     );
     expect(getAgentExecutionMeta(userGoal)?.status).toBe("done");
+    expect(getAgentExecutionMeta(userGoal)?.kind).toBe("input_node");
     expect(getAgentExecutionMeta(executionNode)?.kind).toBe("agent_execution");
     expect(getAgentExecutionMeta(executionNode)?.summary).toBe("Thinking...");
+
+    await user.type(textarea, "再生成一版社媒横图");
+    await waitFor(() => {
+      expect(canvasApi.createAgentInputNode).toHaveBeenCalledTimes(3);
+    });
+    const nextInputNode = canvasApi.getDocument().pages?.[0]?.children.at(-1);
+    expect(getAgentExecutionMeta(nextInputNode)?.kind).toBe("input_node");
+    expect(getAgentExecutionMeta(nextInputNode)?.summary).toBe(
+      "再生成一版社媒横图",
+    );
   });
 
   it("keeps the prompt editable when sending fails", async () => {
@@ -168,9 +181,9 @@ function createCanvasApiHarness(): CanvasApi {
   };
   const api = {
     getDocument: () => document,
-    createAgentUserGoal: vi.fn(
-      (opts?: Parameters<CanvasApi["createAgentUserGoal"]>[0]) => {
-        const node = createAgentUserGoalNode({
+    createAgentInputNode: vi.fn(
+      (opts?: Parameters<CanvasApi["createAgentInputNode"]>[0]) => {
+        const node = createAgentInputNode({
           text: opts?.text,
           x: opts?.x ?? 160,
           y: opts?.y ?? 120,

@@ -8,7 +8,7 @@ import {
   applyCanvasOperation,
   applyCanvasTransaction,
   copyCanvasSelection,
-  createAgentUserGoalNode,
+  createAgentInputNode,
   createNodeId,
   deleteCanvasPage,
   detachConnectorEndpoint as detachConnectorEndpointBinding,
@@ -284,7 +284,7 @@ export function useSkiaCanvasApi({
   );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: handler reads live canvas refs as synchronous runtime mirrors; `.current` values are not React dependencies.
-  const createAgentUserGoal = useCallback(
+  const createAgentInputNodeOnCanvas = useCallback(
     (opts?: {
       text?: string;
       x?: number;
@@ -299,7 +299,7 @@ export function useSkiaCanvasApi({
         placement.viewport,
         placement.rect,
       );
-      const node = createAgentUserGoalNode({
+      const node = createAgentInputNode({
         ...(opts?.text ? { text: opts.text } : {}),
         ...(typeof opts?.width === "number" ? { width: opts.width } : {}),
         x: opts?.x ?? defaultB.x,
@@ -312,7 +312,7 @@ export function useSkiaCanvasApi({
       });
       commitDocument(next, { selection: [node.id] });
       setSelection([node.id], { notifyScene: false });
-      console.info("[skia-canvas] agent_user_goal.created", {
+      console.info("[skia-canvas] agent_input_node.created", {
         nodeId: node.id,
       });
       return node;
@@ -517,7 +517,7 @@ export function useSkiaCanvasApi({
     selectedIdsRef,
     setSelection,
     toast,
-    onCreateAgentUserGoal: createAgentUserGoal,
+    onCreateAgentInputNode: createAgentInputNodeOnCanvas,
   });
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: handler reads live canvas refs as synchronous runtime mirrors; `.current` values are not React dependencies.
@@ -980,7 +980,7 @@ export function useSkiaCanvasApi({
       createContainer,
       createSection,
       createSticky,
-      createAgentUserGoal,
+      createAgentInputNode: createAgentInputNodeOnCanvas,
       createConnector,
       detachConnectorEndpoint: (nodeId, endpoint) => {
         const node = findNode(docRef.current, nodeId, activePageIdRef.current);

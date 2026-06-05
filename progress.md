@@ -1,6 +1,6 @@
 # Cucumber Studio Progress
 
-Last updated: 2026-06-04 CST
+Last updated: 2026-06-05 CST
 
 Current window line threshold: 300 lines.
 
@@ -11,6 +11,31 @@ Maintenance:
 - Keep this file focused on the current handoff window and rotate it before it grows past 300 lines.
 - Run `pnpm progress:rotate` from the repository root when the threshold is reached.
 - Historical entries live under `docs/progress/`; do not duplicate archived history back into this file.
+
+## 2026-06-05 - Agent InputNode entry split
+
+- Split the bottom-composer Agent entry light node from the old `user_goal` kind by introducing `input_node` / `InputNode` as the new Agent input container truth while preserving the existing Skia custom card visual role.
+- Updated the Web canvas API, bottom prompt draft hook, toolbar click/drag template, renderer kind recognition, and compact Agent prompt XML so new user-entered prompt nodes are created and described as `agent_input_node_*` / `<input_node>` with `meta.agentExecution.kind = "input_node"`.
+- Preserved one-way composer-to-canvas sync: typing creates/updates the draft InputNode, successful send marks it done and clears the composer, the next prompt creates a fresh InputNode, and selecting the canvas InputNode does not refill the bottom composer.
+- Updated `docs/tech/agent-runtime-workflow.md` and `feature_list.json` to document the InputNode source-of-truth boundary and one-way interaction behavior.
+- Passed: `pnpm exec vitest run packages/canvas-core/src/__tests__/agent-execution.test.ts packages/canvas-core/src/__tests__/agent-execution-container.test.ts packages/pen-renderer/src/node-renderer.test.ts apps/web/test/canvas-agent-composer.test.tsx apps/web/test/canvas-editor-toolbar.test.tsx --reporter=dot`.
+- Passed: `pnpm --dir apps/server exec vitest run src/agent/runtime.test.ts src/agent/prompts/cucumber-main.test.ts --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`, `pnpm --filter @cucumber/pen-renderer typecheck`, `pnpm --filter web typecheck`, and `pnpm --filter @cucumber/server typecheck`.
+- Passed: targeted `pnpm exec biome check ...`, `node` JSON parse for `feature_list.json`, and `git diff --check`.
+- Browser QA on `http://localhost:3000/canvas?id=6be355ad-be24-4e89-8f67-e8c5a604f686`: page rendered the canvas shell and left toolbar `InputNode` button; typing in the composer created a visible selected InputNode with `节点类型 InputNode`; clearing the unsent draft restored an empty composer and disabled send button; creating/selecting an empty toolbar InputNode left the composer empty and send disabled, then undo restored the empty canvas.
+
+## 2026-06-05 - Agent runtime workflow documentation
+
+- Rebuilt `docs/tech/agent-runtime-workflow.md` from the current code paths, covering frontend run submission, compact canvas entry creation, continuation contexts, server runtime setup, Deep Agent/MCP registration, live canvas RPC, stream events, SSE replay, chat persistence, image/video job workers, and failure/pause recovery.
+- Clarified source-of-truth boundaries: persisted `canvases.content` only feeds automatic `<canvas_state>`, while Agent tool reads/writes use `LiveCanvasService` against the open editor's live `PenDocument.pages`.
+- `feature_list.json` was not changed because the tracked artifact list already includes the Agent runtime workflow document and no feature status/scope changed.
+
+## 2026-06-05 - UI page code sync plan
+
+- Added `docs/tech/ui-page-code-sync-plan.md` to scope code synchronization to UI page or UI section roots regardless of source: Agent-generated UI deliverables, ordinary Figma-like canvas roots, and normalized imported Figma page/frame roots are all in scope when they represent UI pages.
+- The plan keeps `PenDocument.pages` as the canvas truth, treats generated code as a manifest-backed projection of a syncable UI root, and requires code-to-canvas updates to become previewed `CanvasOperation[]` patches before applying through the live canvas transaction boundary.
+- Linked the plan from `docs/code-map.md` so future design-to-code work can find the narrowed-but-source-inclusive sync boundary.
+- No runtime code was changed in this slice.
 
 ## 2026-06-04
 
