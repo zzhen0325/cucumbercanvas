@@ -41,7 +41,7 @@ import type { StreamEvent } from "@cucumber/shared";
 
 describe("AgentExecutionContainer", () => {
   const legacy: AgentExecutionNodeMeta = {
-    kind: "agent_execution",
+    kind: "agent_run_node",
     schemaVersion: 1,
     status: "waiting",
     title: "Generate moodboard",
@@ -52,14 +52,14 @@ describe("AgentExecutionContainer", () => {
 
   it("normalizes legacy execution node meta into a first-class container", () => {
     const container = createAgentExecutionContainerFromNodeMeta({
-      containerId: "agent_execution_1",
+      containerId: "agent_run_node_1",
       execution: legacy,
     });
 
     expect(AGENT_EXECUTION_CONTAINER_META_KEY).toBe("agentExecutionContainer");
     expect(container).toMatchObject({
-      containerId: "agent_execution_1",
-      kind: "agent_execution",
+      containerId: "agent_run_node_1",
+      kind: "agent_run_node",
       runId: "run-1",
       sessionId: "session-1",
       status: "waiting",
@@ -72,7 +72,7 @@ describe("AgentExecutionContainer", () => {
 
   it("reduces message and tool events into container stream/tool parts", () => {
     const initial = createAgentExecutionContainerFromNodeMeta({
-      containerId: "agent_execution_1",
+      containerId: "agent_run_node_1",
       execution: legacy,
     });
     const events: StreamEvent[] = [
@@ -188,7 +188,7 @@ Add a test proving stream write-back returns semantic/container updates without 
 
 ```ts
 it("builds container updates without rewriting generated canvas children", () => {
-  const node = createAgentExecutionNode({
+  const node = createAgentRunNode({
     runId: "run-1",
     title: "Run",
     x: 0,
@@ -336,7 +336,7 @@ Added `withAgentExecutionContainerMeta` so creation paths do not hand-write
 
 - [x] **Step 2: Stop composing new compact execution shells from text children**
 
-`createAgentExecutionNode` now creates an empty canvas shell and writes
+`createAgentRunNode` now creates an empty canvas shell and writes
 `AgentExecutionContainer` state for native React rendering. The canvas shell
 still owns position, size, connector anchoring, and selection.
 

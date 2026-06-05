@@ -11,7 +11,9 @@ import {
   getAgentExecutionContainerMeta,
   getAgentExecutionContainerMetaUpdates,
   getAgentExecutionMeta,
+  getAgentExecutionNodePresentationUpdates,
   getAgentExecutionNodeSemanticUpdates,
+  getNodeBounds,
   reduceAgentExecutionContainerStreamEvent,
   withAgentExecutionCanvasPresentation,
 } from "@cucumber/canvas-core";
@@ -74,10 +76,16 @@ export function getAgentExecutionStreamWritebackUpdates(
     nodeWithSemanticMeta,
     nextContainer,
   );
+  const presentationUpdates = getAgentExecutionNodePresentationUpdates({
+    container: nextContainer,
+    execution: nextExecution,
+    width: getNodeBounds(node).width,
+  });
   return {
     ...semanticUpdates,
+    ...presentationUpdates,
     meta: containerUpdates.meta,
-  };
+  } as Partial<PenNode>;
 }
 
 export function reduceAgentExecutionStreamEvent(

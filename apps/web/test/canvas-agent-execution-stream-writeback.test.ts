@@ -1,6 +1,6 @@
 import {
   AGENT_EXECUTION_CONTAINER_META_KEY,
-  createAgentExecutionNode,
+  createAgentRunNode,
   getAgentExecutionMeta,
 } from "@cucumber/canvas-core";
 import type { StreamEvent } from "@cucumber/shared";
@@ -13,7 +13,7 @@ import {
 
 describe("reduceAgentExecutionStreamEvent", () => {
   it("merges stage, message, tool, and terminal events into one execution node meta", () => {
-    const node = createAgentExecutionNode({
+    const node = createAgentRunNode({
       summary: "Thinking...",
       x: 0,
       y: 0,
@@ -71,7 +71,7 @@ describe("reduceAgentExecutionStreamEvent", () => {
 
     const next = events.reduce(reduceAgentExecutionStreamEvent, initial);
 
-    expect(next.kind).toBe("agent_execution");
+    expect(next.kind).toBe("agent_run_node");
     expect(next.status).toBe("done");
     expect(next.details?.reasoningSummary).toBe("先确认输出类型。");
     expect(next.details?.outputSummary).toBe("我会生成一张封面图。");
@@ -90,7 +90,7 @@ describe("reduceAgentExecutionStreamEvent", () => {
   });
 
   it("shows a Chinese failure reason without raw fallback values", () => {
-    const node = createAgentExecutionNode({
+    const node = createAgentRunNode({
       summary: "Thinking...",
       x: 0,
       y: 0,
@@ -112,7 +112,7 @@ describe("reduceAgentExecutionStreamEvent", () => {
   });
 
   it("builds native container updates without rewriting generated canvas children", () => {
-    const node = createAgentExecutionNode({
+    const node = createAgentRunNode({
       runId: "run-1",
       summary: "Thinking...",
       title: "Run",
@@ -130,6 +130,8 @@ describe("reduceAgentExecutionStreamEvent", () => {
 
     expect(updates).not.toBeNull();
     expect(updates).not.toHaveProperty("children");
+    const nextHeight = (updates as { height?: unknown } | null)?.height;
+    expect(typeof nextHeight === "number" ? nextHeight : 0).toBeGreaterThan(0);
     expect(updates?.meta?.[AGENT_EXECUTION_CONTAINER_META_KEY]).toMatchObject({
       containerId: node.id,
       status: "running",

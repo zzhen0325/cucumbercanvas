@@ -3,13 +3,14 @@ import { describe, expect, it } from "vitest";
 import {
   AGENT_EXECUTION_CONTAINER_META_KEY,
   createAgentExecutionContainerFromNodeMeta,
+  formatAgentExecutionContainerCanvasBody,
   reduceAgentExecutionContainerStreamEvent,
 } from "../agent-execution-container.js";
 import type { AgentExecutionNodeMeta } from "../agent-execution.js";
 
 describe("AgentExecutionContainer", () => {
   const legacyExecution: AgentExecutionNodeMeta = {
-    kind: "agent_execution",
+    kind: "agent_run_node",
     runId: "run-1",
     schemaVersion: 1,
     sessionId: "session-1",
@@ -20,14 +21,14 @@ describe("AgentExecutionContainer", () => {
 
   it("normalizes legacy execution meta into a first-class container", () => {
     const container = createAgentExecutionContainerFromNodeMeta({
-      containerId: "agent_execution_1",
+      containerId: "agent_run_node_1",
       execution: legacyExecution,
     });
 
     expect(AGENT_EXECUTION_CONTAINER_META_KEY).toBe("agentExecutionContainer");
     expect(container).toMatchObject({
-      containerId: "agent_execution_1",
-      kind: "agent_execution",
+      containerId: "agent_run_node_1",
+      kind: "agent_run_node",
       runId: "run-1",
       sessionId: "session-1",
       status: "waiting",
@@ -40,7 +41,7 @@ describe("AgentExecutionContainer", () => {
 
   it("reduces message and tool events into container stream and tool parts", () => {
     const initial = createAgentExecutionContainerFromNodeMeta({
-      containerId: "agent_execution_1",
+      containerId: "agent_run_node_1",
       execution: legacyExecution,
     });
     const events = [
@@ -100,7 +101,7 @@ describe("AgentExecutionContainer", () => {
 
   it("keeps legacy display text out of runtime container decisions", () => {
     const container = createAgentExecutionContainerFromNodeMeta({
-      containerId: "agent_execution_1",
+      containerId: "agent_run_node_1",
       execution: legacyExecution,
       legacyDisplayText: "输出：old generated child text",
     });
@@ -113,7 +114,7 @@ describe("AgentExecutionContainer", () => {
 
   it("normalizes write_todos tool output into container todo state", () => {
     const initial = createAgentExecutionContainerFromNodeMeta({
-      containerId: "agent_execution_1",
+      containerId: "agent_run_node_1",
       execution: legacyExecution,
     });
 
@@ -143,5 +144,31 @@ describe("AgentExecutionContainer", () => {
         status: "in_progress",
       },
     ]);
+  });
+
+  it("formats the first-class container as the canvas node body", () => {
+    const initial = createAgentExecutionContainerFromNodeMeta({
+      containerId: "agent_run_node_1",
+      execution: legacyExecution,
+    });
+    const withTool = reduceAgentExecutionContainerStreamEvent(initial, {
+      output: { artifactNodeIds: ["image-node-1"] },
+      outputSummary: "Generated image (1024x1024)",
+      runId: "run-1",
+      timestamp: "2026-06-04T01:00:03.000Z",
+      toolCallId: "tool-1",
+      toolName: "generate_image",
+      type: "tool.completed",
+    });
+
+    expect(formatAgentExecutionContainerCanvasBody(withTool)).toContain(
+      "工具 generate image：已完成 · Generated image (1024x1024)",
+    );
+    expect(formatAgentExecutionContainerCanvasBody(withTool)).toContain(
+      "产物：1 个画布产物",
+    );
+    expect(formatAgentExecutionContainerCanvasBody(withTool)).not.toMatch(
+      /\bnull\b|\bundefined\b/,
+    );
   });
 });

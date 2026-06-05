@@ -3,11 +3,13 @@ import type {
   LineNode,
   PenDocument,
   PenNode,
-  TextNode,
 } from "@cucumber/pen-types";
 
 import {
+  type AgentExecutionContainer,
   createAgentExecutionContainerFromNodeMeta,
+  formatAgentExecutionContainerCanvasBody,
+  getAgentExecutionContainerMeta,
   withAgentExecutionContainerMeta,
 } from "./agent-execution-container.js";
 import {
@@ -56,7 +58,6 @@ const CARD_RADIUS = 18;
 const BAR_RADIUS = 18;
 const CARD_STROKE = "rgba(15,23,42,0.08)";
 const CONNECTOR_STROKE = "rgba(15,23,42,0.12)";
-const EXECUTION_GREEN = "rgba(41,191,78,1)";
 const EXECUTION_GREEN_SOFT = "rgba(248,255,191,1)";
 const COMPONENT_HORIZONTAL_PADDING = 16;
 const COMPONENT_LINE_HEIGHT = 17;
@@ -132,12 +133,16 @@ export function measureAgentExecutionComponentLayout(
   options: { minHeight?: number } = {},
 ): AgentExecutionComponentLayout {
   const role = getAgentExecutionCanvasRole(execution.kind);
+  const defaultExpandedMinHeight =
+    role === "execution" && expanded
+      ? AGENT_EXECUTION_BAR_SIZE.expandedHeight
+      : 0;
   const minHeight = Math.max(
     getAgentExecutionCanvasSize({
       collapsed: true,
       kind: execution.kind,
     }).height,
-    options.minHeight ?? 0,
+    options.minHeight ?? defaultExpandedMinHeight,
   );
   const maxCollapsedHeight = AGENT_EXECUTION_MAX_COLLAPSED_HEIGHT[role];
   const body = formatAgentExecutionCanvasBody(execution);
@@ -223,12 +228,7 @@ export function createAgentInputNode(input: {
       y: input.y,
       width,
       height: visualHeight,
-      children: createAgentExecutionDisplayChildren({
-        execution,
-        height: visualHeight,
-        parentId: id,
-        width,
-      }),
+      children: [],
       clipContent: false,
       containerRole: ["context"],
       contextSlots: {
@@ -256,7 +256,7 @@ export function createAgentUserGoalNode(input: {
   return createAgentInputNode(input);
 }
 
-export function createAgentExecutionNode(input: {
+export function createAgentRunNode(input: {
   agentId?: string;
   runId?: string;
   sessionId?: string;
@@ -267,11 +267,11 @@ export function createAgentExecutionNode(input: {
   x: number;
   y: number;
 }): FrameNode {
-  const title = input.title?.trim() || "Agent 执行";
+  const title = input.title?.trim() || "AgentRunNode";
   const summary = input.summary?.trim() || "Thinking...";
   const execution = withAgentExecutionCanvasPresentation(
     {
-      kind: "agent_execution",
+      kind: "agent_run_node",
       schemaVersion: AGENT_EXECUTION_SCHEMA_VERSION,
       status: "running",
       summary,
@@ -284,14 +284,14 @@ export function createAgentExecutionNode(input: {
         : {}),
       streamEntries: [],
     },
-    { collapsed: true },
+    { collapsed: false },
   );
   const width = input.width ?? AGENT_EXECUTION_BAR_SIZE.width;
-  const id = createNodeId("agent_execution");
+  const id = createNodeId("agent_run_node");
   const visual = getAgentExecutionCanvasFrameUpdates({
     body: summary,
     bounds: { width },
-    collapsed: true,
+    collapsed: false,
     execution,
   });
   const visualHeight =
@@ -311,7 +311,7 @@ export function createAgentExecutionNode(input: {
       clipContent: false,
       containerRole: ["task", "context"],
       contextSlots: {
-        rules: ["agent execution node: agent_execution"],
+        rules: ["agent run node: agent_run_node"],
       },
       permissions: {
         owner: "agent",
@@ -334,13 +334,16 @@ export function createAgentExecutionNode(input: {
 }
 
 export function getAgentExecutionNodePresentationUpdates(input: {
+  container?: AgentExecutionContainer;
   execution: AgentExecutionNodeMeta;
   node?: PenNode;
   width?: number;
 }): Partial<FrameNode> {
   const collapsed = getAgentExecutionCanvasCollapsed(input.execution);
+  const container =
+    input.container ?? getAgentExecutionContainerMeta(input.node);
   const visual = getAgentExecutionCanvasFrameUpdates({
-    body: formatAgentExecutionCanvasBody(input.execution),
+    body: formatAgentExecutionCanvasBody(input.execution, container),
     ...(typeof input.width === "number"
       ? { bounds: { width: input.width } }
       : {}),
@@ -353,13 +356,7 @@ export function getAgentExecutionNodePresentationUpdates(input: {
     ...visual,
     ...(input.node && typeof width === "number" && typeof height === "number"
       ? {
-          children: createAgentExecutionDisplayChildren({
-            existingChildren: getRetainedDisplayChildren(input.node),
-            execution: input.execution,
-            height,
-            parentId: input.node.id,
-            width,
-          }),
+          children: getRetainedDisplayChildren(input.node),
         }
       : {}),
   };
@@ -425,7 +422,12 @@ export function toggleAgentExecutionCanvasCollapsed<T extends PenNode>(
 
 export function formatAgentExecutionCanvasBody(
   execution: AgentExecutionNodeMeta,
+  container?: AgentExecutionContainer,
 ): string {
+  if (container) {
+    const body = formatAgentExecutionContainerCanvasBody(container);
+    if (body.trim().length > 0) return body;
+  }
   const lines = [
     execution.details?.inputSummary
       ? `输入：${execution.details.inputSummary}`
@@ -501,183 +503,6 @@ export function getAgentExecutionCanvasFrameUpdates(input: {
         getAgentExecutionCanvasRole(execution.kind) === "execution" ? 0.5 : 1,
     },
   } as Partial<FrameNode>;
-}
-
-function createAgentExecutionDisplayChildren(input: {
-  existingChildren?: PenNode[];
-  execution: AgentExecutionNodeMeta;
-  height: number;
-  parentId: string;
-  width: number;
-}): PenNode[] {
-  const role = getAgentExecutionCanvasRole(input.execution.kind);
-  const children =
-    role === "user_input"
-      ? createUserGoalDisplayChildren(input)
-      : role === "execution"
-        ? createExecutionBarDisplayChildren(input)
-        : createResultDisplayChildren(input);
-  return [...(input.existingChildren ?? []), ...children];
-}
-
-function createUserGoalDisplayChildren(input: {
-  execution: AgentExecutionNodeMeta;
-  height: number;
-  parentId: string;
-  width: number;
-}): PenNode[] {
-  const body = formatAgentExecutionCanvasBody(input.execution);
-  return [
-    createDisplayTextNode({
-      color: "#000000",
-      content: body,
-      fontSize: 12,
-      height: Math.max(16, input.height - 52),
-      id: `${input.parentId}__user_input_text`,
-      lineHeight: 1.3,
-      name: "InputNode 内容",
-      width: Math.max(1, input.width - 54),
-      x: 27,
-      y: 26,
-    }),
-  ];
-}
-
-function createExecutionBarDisplayChildren(input: {
-  execution: AgentExecutionNodeMeta;
-  height: number;
-  parentId: string;
-  width: number;
-}): PenNode[] {
-  const body = formatAgentExecutionCanvasBody(input.execution);
-  const collapsed = getAgentExecutionCanvasCollapsed(input.execution);
-  const children: PenNode[] = [
-    {
-      cornerRadius: 999,
-      fill: [{ color: EXECUTION_GREEN, type: "solid" }],
-      height: 20,
-      id: `${input.parentId}__execution_icon`,
-      name: "Agent 执行图标",
-      type: "ellipse",
-      width: 20,
-      x: 12,
-      y: 8,
-    } as PenNode,
-    createDisplayTextNode({
-      color: "#ffffff",
-      content: "✦",
-      fontSize: 10,
-      height: 12,
-      id: `${input.parentId}__execution_icon_mark`,
-      lineHeight: 1,
-      name: "Agent 执行图标标记",
-      textAlign: "center",
-      width: 12,
-      x: 16,
-      y: 12,
-    }),
-    createDisplayTextNode({
-      color: EXECUTION_GREEN,
-      content: body,
-      fontSize: 12,
-      height: collapsed ? 16 : Math.max(16, input.height - 52),
-      id: `${input.parentId}__execution_summary`,
-      lineHeight: 1.3,
-      name: "Agent 执行摘要",
-      width: Math.max(1, input.width - 62),
-      x: 36.5,
-      y: collapsed ? 10 : 10,
-    }),
-    createDisplayTextNode({
-      color: EXECUTION_GREEN,
-      content: "⌄",
-      fontSize: 12,
-      height: 14,
-      id: `${input.parentId}__execution_arrow`,
-      lineHeight: 1,
-      name: "Agent 执行箭头",
-      textAlign: "center",
-      width: 12,
-      x: input.width - 21,
-      y: 11,
-    }),
-  ];
-  if (!collapsed && input.execution.streamEntries?.length) {
-    children.push(
-      createDisplayTextNode({
-        color: "#334155",
-        content: input.execution.streamEntries
-          .slice(-5)
-          .map((entry) => `${entry.label}：${entry.content ?? entry.status}`)
-          .join("\n"),
-        fontSize: 11,
-        height: Math.max(16, input.height - 48),
-        id: `${input.parentId}__execution_details`,
-        lineHeight: 1.35,
-        name: "Agent 执行状态文本",
-        width: Math.max(1, input.width - 32),
-        x: 16,
-        y: 44,
-      }),
-    );
-  }
-  return children;
-}
-
-function createResultDisplayChildren(input: {
-  execution: AgentExecutionNodeMeta;
-  parentId: string;
-  width: number;
-}): PenNode[] {
-  const body = formatAgentExecutionCanvasBody(input.execution);
-  if (!body) return [];
-  return [
-    createDisplayTextNode({
-      color: "#737373",
-      content: body,
-      fontSize: 12,
-      height: 36,
-      id: `${input.parentId}__result_summary`,
-      lineHeight: 1.3,
-      name: "结果摘要",
-      width: Math.max(1, input.width - 32),
-      x: 16,
-      y: 16,
-    }),
-  ];
-}
-
-function createDisplayTextNode(input: {
-  color: string;
-  content: string;
-  fontSize: number;
-  height: number;
-  id: string;
-  lineHeight: number;
-  name: string;
-  textAlign?: TextNode["textAlign"];
-  width: number;
-  x: number;
-  y: number;
-}): TextNode {
-  return {
-    content: input.content,
-    fill: [{ color: input.color, type: "solid" }],
-    fontFamily: "system-ui, sans-serif",
-    fontSize: input.fontSize,
-    fontWeight: 400,
-    height: input.height,
-    id: input.id,
-    lineHeight: input.lineHeight,
-    name: input.name,
-    textAlign: input.textAlign ?? "left",
-    textAlignVertical: "top",
-    textGrowth: "fixed-width-height",
-    type: "text",
-    width: input.width,
-    x: input.x,
-    y: input.y,
-  };
 }
 
 function getRetainedDisplayChildren(node: PenNode): PenNode[] {
@@ -863,7 +688,7 @@ function layoutRank(kind: AgentExecutionNodeKind | undefined): number {
     case "input_node":
     case "user_goal":
       return 0;
-    case "agent_execution":
+    case "agent_run_node":
       return 5;
     case "recipe_plan":
       return 10;

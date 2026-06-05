@@ -573,6 +573,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 type RenderableAgentExecutionKind =
+  | "agent_run_node"
   | "ask_user_more"
   | "checkpoint"
   | "comparison"
@@ -616,6 +617,35 @@ type RenderableAgentExecution = {
   };
 };
 
+type RenderableAgentExecutionContainer = {
+  artifactRefs: Array<{ nodeId: string }>;
+  failure?: {
+    reason: string;
+  };
+  schemaVersion: 1;
+  status: RenderableAgentExecutionStatus;
+  streamParts: Array<{
+    content?: string;
+    label: string;
+    status: "running" | "done" | "failed" | "paused";
+  }>;
+  summary?: string;
+  todos: Array<{
+    activeForm?: string;
+    content: string;
+    status: "pending" | "in_progress" | "completed";
+  }>;
+  toolParts: Array<{
+    inputSummary?: string;
+    outputSummary?: string;
+    status: "running" | "done" | "failed" | "paused";
+    toolName: string;
+  }>;
+  waitingForUser?: {
+    prompt: string;
+  };
+};
+
 type AgentComponentRole = "user_input" | "execution" | "result";
 
 const AGENT_EXECUTION_STATUS_LABELS: Record<
@@ -633,6 +663,7 @@ const AGENT_EXECUTION_KIND_LABELS: Record<
   RenderableAgentExecutionKind,
   string
 > = {
+  agent_run_node: "AgentRunNode",
   ask_user_more: "等待用户补充",
   checkpoint: "检查点",
   comparison: "方案对比",
@@ -676,6 +707,28 @@ function getRenderableAgentExecution(
   return record as RenderableAgentExecution;
 }
 
+function getRenderableAgentExecutionContainer(
+  node: PenNode,
+): RenderableAgentExecutionContainer | null {
+  const value = node.meta?.agentExecutionContainer;
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  if (record.schemaVersion !== 1) return null;
+  if (typeof record.status !== "string") return null;
+  if (!Object.hasOwn(AGENT_EXECUTION_STATUS_LABELS, record.status)) {
+    return null;
+  }
+  if (
+    !Array.isArray(record.streamParts) ||
+    !Array.isArray(record.todos) ||
+    !Array.isArray(record.toolParts) ||
+    !Array.isArray(record.artifactRefs)
+  ) {
+    return null;
+  }
+  return record as RenderableAgentExecutionContainer;
+}
+
 function getAgentComponentRole(
   kind: RenderableAgentExecutionKind,
 ): AgentComponentRole {
@@ -690,7 +743,14 @@ function getAgentComponentRole(
   return "execution";
 }
 
-function formatAgentExecutionBody(execution: RenderableAgentExecution): string {
+function formatAgentExecutionBody(
+  execution: RenderableAgentExecution,
+  container?: RenderableAgentExecutionContainer | null,
+): string {
+  const containerBody = container
+    ? formatAgentExecutionContainerBody(container)
+    : undefined;
+  if (containerBody) return containerBody;
   return (
     [
       execution.details?.inputSummary
@@ -712,6 +772,74 @@ function formatAgentExecutionBody(execution: RenderableAgentExecution): string {
     ].find((value) => typeof value === "string" && value.trim().length > 0) ??
     fallbackAgentExecutionBody(execution)
   );
+}
+
+function formatAgentExecutionContainerBody(
+  container: RenderableAgentExecutionContainer,
+): string | undefined {
+  const lines = [
+    container.failure?.reason
+      ? `失败原因：${container.failure.reason}`
+      : undefined,
+    container.waitingForUser?.prompt
+      ? `等待补充：${container.waitingForUser.prompt}`
+      : undefined,
+    container.summary,
+    ...container.todos.slice(-4).map((todo) => {
+      const activeForm = todo.activeForm ? `${todo.activeForm} · ` : "";
+      return `待办：${formatTodoStatus(todo.status)} · ${activeForm}${todo.content}`;
+    }),
+    ...container.toolParts
+      .slice(-4)
+      .map((tool) =>
+        [
+          `工具 ${tool.toolName.replace(/_/g, " ")}：${formatPartStatus(tool.status)}`,
+          tool.outputSummary ?? tool.inputSummary,
+        ]
+          .filter(isUsefulAgentText)
+          .join(" · "),
+      ),
+    ...container.streamParts
+      .slice(-4)
+      .map((part) =>
+        [part.label, part.content].filter(isUsefulAgentText).join("："),
+      ),
+    container.artifactRefs.length > 0
+      ? `产物：${container.artifactRefs.length} 个画布产物`
+      : undefined,
+  ].filter(isUsefulAgentText);
+  if (lines.length === 0) return undefined;
+  return dedupeConsecutiveAgentLines(lines).join("\n");
+}
+
+function formatTodoStatus(
+  status: RenderableAgentExecutionContainer["todos"][number]["status"],
+): string {
+  if (status === "completed") return "已完成";
+  if (status === "in_progress") return "进行中";
+  return "待处理";
+}
+
+function formatPartStatus(
+  status: RenderableAgentExecutionContainer["toolParts"][number]["status"],
+): string {
+  if (status === "done") return "已完成";
+  if (status === "failed") return "失败";
+  if (status === "paused") return "已暂停";
+  return "进行中";
+}
+
+function dedupeConsecutiveAgentLines(lines: string[]): string[] {
+  const result: string[] = [];
+  for (const line of lines) {
+    if (result.at(-1) === line) continue;
+    result.push(line);
+  }
+  return result;
+}
+
+function isUsefulAgentText(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function fallbackAgentExecutionBody(
@@ -749,6 +877,7 @@ function estimateAgentLineCount(
 function measureRenderableAgentExecution(
   execution: RenderableAgentExecution,
   width: number,
+  container?: RenderableAgentExecutionContainer | null,
 ): {
   body: string;
   expanded: boolean;
@@ -757,7 +886,7 @@ function measureRenderableAgentExecution(
 } {
   const role = getAgentComponentRole(execution.kind);
   const expanded = execution.canvasPresentation?.collapsed === false;
-  const body = formatAgentExecutionBody(execution);
+  const body = formatAgentExecutionBody(execution, container);
   const contentWidth = Math.max(1, width - 32);
   const titleLines = estimateAgentLineCount(
     execution.title,
@@ -905,7 +1034,8 @@ export class SkiaNodeRenderer {
     h: number,
     opacity: number,
   ) {
-    const layout = measureRenderableAgentExecution(execution, w);
+    const container = getRenderableAgentExecutionContainer(node);
+    const layout = measureRenderableAgentExecution(execution, w, container);
     const isExecution = layout.role === "execution";
     const background = isExecution
       ? "rgba(248,255,191,1)"

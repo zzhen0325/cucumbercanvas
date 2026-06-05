@@ -1,7 +1,6 @@
 import {
   AGENT_EXECUTION_META_KEY,
   type AgentBinding,
-  type AgentExecutionContainer,
   type CanvasOperation,
   type CucumberCanvasDocument,
   applyCanvasTransaction,
@@ -9,7 +8,6 @@ import {
   findParent,
   flattenNodes,
   getActiveChildren,
-  getAgentExecutionContainerMeta,
   getAgentExecutionKindLabel,
   getAgentExecutionMeta,
   getAgentExecutionStatusLabel,
@@ -40,7 +38,6 @@ import {
   AgentExecutionFollowUpPill,
   getAgentExecutionFollowUpState,
 } from "./agent-execution-follow-up-pill";
-import { AgentExecutionNativeContainer } from "./agent-execution-native-container";
 import { CanvasBooleanToolbar } from "./boolean-toolbar";
 import type { CanvasApi, CanvasTool } from "./canvas-api";
 import {
@@ -141,13 +138,6 @@ export type AgentExecutionHoverState = AgentExecutionStatusBadgeState & {
   y: number;
 };
 
-export type AgentExecutionNativeContainerOverlayState = {
-  container: AgentExecutionContainer;
-  nodeId: string;
-  x: number;
-  y: number;
-};
-
 export type CanvasContextMenuState = {
   x: number;
   y: number;
@@ -237,20 +227,6 @@ export function getAgentExecutionHoverState(
     ...(execution.toolName ? { toolName: execution.toolName } : {}),
     x: point.x,
     y: point.y,
-  };
-}
-
-export function getAgentExecutionNativeContainerOverlayState(
-  node: PenNode | null | undefined,
-  position: { x: number; y: number },
-): AgentExecutionNativeContainerOverlayState | null {
-  const container = getAgentExecutionContainerMeta(node);
-  if (!node || !container) return null;
-  return {
-    container,
-    nodeId: node.id,
-    x: position.x,
-    y: position.y,
   };
 }
 
@@ -726,11 +702,6 @@ export function CanvasSelectionToolbarConnected({
     bottomCenter,
     Boolean(onContinueAgentExecution),
   );
-  const agentExecutionNativeContainer =
-    getAgentExecutionNativeContainerOverlayState(selectedNode, {
-      x: bottomCenter.x,
-      y: bottomCenter.y + 16,
-    });
   const isStickyBackgroundMenuOpen =
     openStickyColorMenu?.kind === "background" &&
     openStickyColorMenu.nodeId === selectedNode?.id;
@@ -1101,25 +1072,6 @@ export function CanvasSelectionToolbarConnected({
         followUp={agentExecutionFollowUp}
         onContinueAgentExecution={onContinueAgentExecution}
       />
-      {agentExecutionNativeContainer ? (
-        <div
-          className="pointer-events-auto absolute z-20 w-[360px] max-w-[calc(100vw-32px)] -translate-x-1/2"
-          data-canvas-overlay="agent-execution-native-container-host"
-          onContextMenu={(event) => event.preventDefault()}
-          onKeyDown={(event) => event.stopPropagation()}
-          onPointerDown={(event) => event.stopPropagation()}
-          onPointerMove={(event) => event.stopPropagation()}
-          onPointerUp={(event) => event.stopPropagation()}
-          style={{
-            left: agentExecutionNativeContainer.x,
-            top: agentExecutionNativeContainer.y,
-          }}
-        >
-          <AgentExecutionNativeContainer
-            container={agentExecutionNativeContainer.container}
-          />
-        </div>
-      ) : null}
     </>
   );
 }

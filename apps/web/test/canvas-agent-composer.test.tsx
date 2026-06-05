@@ -101,7 +101,7 @@ describe("CanvasAgentComposer", () => {
     if (!sentEntry) throw new Error("expected canvas entry payload");
     expect(textarea).toHaveValue("");
     expect(sentEntry.userGoalNodeId).toMatch(/^agent_input_node_/);
-    expect(sentEntry.agentExecutionNodeId).toMatch(/^agent_execution_/);
+    expect(sentEntry.agentExecutionNodeId).toMatch(/^agent_run_node_/);
     expect(onCanvasEntryCreated).toHaveBeenCalledWith(sentEntry);
     expect(canvasApi.insertNode).toHaveBeenCalledTimes(1);
     expect(canvasApi.createConnector).toHaveBeenCalledTimes(1);
@@ -119,7 +119,7 @@ describe("CanvasAgentComposer", () => {
     );
     expect(getAgentExecutionMeta(userGoal)?.status).toBe("done");
     expect(getAgentExecutionMeta(userGoal)?.kind).toBe("input_node");
-    expect(getAgentExecutionMeta(executionNode)?.kind).toBe("agent_execution");
+    expect(getAgentExecutionMeta(executionNode)?.kind).toBe("agent_run_node");
     expect(getAgentExecutionMeta(executionNode)?.summary).toBe("Thinking...");
 
     await user.type(textarea, "再生成一版社媒横图");

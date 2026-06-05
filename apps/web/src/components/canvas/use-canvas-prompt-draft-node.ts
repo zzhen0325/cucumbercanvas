@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef } from "react";
 
 import {
-  createAgentExecutionNode,
+  createAgentRunNode,
   findNode,
   getAgentExecutionMeta,
   getAgentExecutionNodePresentationUpdates,
@@ -102,7 +102,7 @@ export function useCanvasPromptDraftNode(canvasApi: CanvasApi | null) {
   const prepareEntryForSend = useCallback(
     (value: string): CanvasEntry => {
       if (!canvasApi) {
-        throw new Error("画布尚未初始化，无法创建 Agent 执行节点。");
+        throw new Error("画布尚未初始化，无法创建 AgentRunNode。");
       }
       const text = value.trim();
       if (!text) {
@@ -126,9 +126,9 @@ export function useCanvasPromptDraftNode(canvasApi: CanvasApi | null) {
       const y =
         (userGoalNode.y ?? 0) + (getNodeHeight(userGoalNode) ?? 84) + 40;
       const width = getNodeWidth(userGoalNode) ?? 240;
-      const executionNode = createAgentExecutionNode({
+      const executionNode = createAgentRunNode({
         summary: "Thinking...",
-        title: "Agent 执行",
+        title: "AgentRunNode",
         upstreamNodeIds: [userGoalNodeId],
         width,
         x,
@@ -147,7 +147,7 @@ export function useCanvasPromptDraftNode(canvasApi: CanvasApi | null) {
       });
       canvasApi.setSelection([executionNode.id]);
       draftRef.current = null;
-      console.info("[canvas-agent-composer] agent_execution.created", {
+      console.info("[canvas-agent-composer] agent_run_node.created", {
         agentExecutionNodeId: executionNode.id,
         userGoalNodeId,
       });

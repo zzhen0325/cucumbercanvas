@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   AGENT_EXECUTION_CANVAS_LAYOUT_VERSION,
-  createAgentExecutionNode,
   createAgentInputNode,
+  createAgentRunNode,
+  getAgentExecutionNodePresentationUpdates,
   measureAgentExecutionComponentLayout,
   normalizeAgentExecutionCanvasLayout,
   toggleAgentExecutionCanvasCollapsed,
@@ -299,8 +300,9 @@ describe("agent execution canvas presentation", () => {
       },
       kind: "task_step",
       status: "running",
+      summary: "正在拆解执行计划。",
     });
-    expect(textContents(stepNode)).toContain("正在拆解执行计划。");
+    expect(textContents(stepNode)).toEqual([]);
 
     const secondPass = normalizeAgentExecutionCanvasLayout(migrated.doc);
     expect(secondPass.changed).toBe(false);
@@ -308,31 +310,31 @@ describe("agent execution canvas presentation", () => {
   });
 
   it("creates a native execution container without canvas text children", () => {
-    const node = createAgentExecutionNode({
+    const node = createAgentRunNode({
       summary: "Thinking...",
       x: 120,
       y: 240,
     });
 
     expect(node).toMatchObject({
-      height: 36,
+      height: 148,
       width: 240,
     });
     expect(getAgentExecutionMeta(node)).toMatchObject({
       canvasPresentation: {
-        collapsed: true,
+        collapsed: false,
         layoutVersion: AGENT_EXECUTION_CANVAS_LAYOUT_VERSION,
       },
-      kind: "agent_execution",
+      kind: "agent_run_node",
       status: "running",
     });
     expect(node.children).toEqual([]);
     expect(node.meta?.agentExecutionContainer).toMatchObject({
       containerId: node.id,
-      kind: "agent_execution",
+      kind: "agent_run_node",
       status: "running",
       summary: "Thinking...",
-      title: "Agent 执行",
+      title: "AgentRunNode",
     });
     expect(textContents(node)).toEqual([]);
   });
@@ -360,6 +362,51 @@ describe("agent execution canvas presentation", () => {
       summary: "生成一张产品海报",
       title: "InputNode",
     });
+    expect(textContents(node)).toEqual([]);
+  });
+
+  it("updates InputNode presentation without duplicating canvas text children", () => {
+    const node = createAgentInputNode({
+      text: "生成一张产品海报",
+      x: 120,
+      y: 180,
+    });
+    const legacyDisplayText = {
+      content: "旧的展示文本",
+      id: `${node.id}__user_input_text`,
+      name: "InputNode 内容",
+      type: "text",
+      x: 0,
+      y: 0,
+    } as PenNode;
+    const realChild = {
+      height: 24,
+      id: "real-child",
+      name: "真实子节点",
+      type: "rectangle",
+      width: 24,
+      x: 4,
+      y: 4,
+    } as PenNode;
+    const nodeWithLegacyChild = {
+      ...node,
+      children: [legacyDisplayText, realChild],
+    } as PenNode;
+    const execution = getAgentExecutionMeta(nodeWithLegacyChild);
+    if (!execution) throw new Error("expected InputNode execution metadata");
+
+    const updates = getAgentExecutionNodePresentationUpdates({
+      execution: {
+        ...execution,
+        status: "done",
+        summary: "换一张更暖色的产品海报",
+      },
+      node: nodeWithLegacyChild,
+      width: 240,
+    });
+
+    expect(textContents(updates as PenNode)).toEqual([]);
+    expect(updates.children).toEqual([realChild]);
   });
 
   it("toggles canvas collapsed state without changing Agent semantics", () => {

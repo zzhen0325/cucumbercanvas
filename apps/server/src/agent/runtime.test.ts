@@ -13,16 +13,15 @@ describe("buildUserMessage", () => {
       null,
       undefined,
       {
-        agentExecutionNodeId: "agent_execution_1",
+        agentExecutionNodeId: "agent_run_node_1",
         userGoalNodeId: "agent_input_node_1",
       },
     );
 
     expect(message.text).toContain('<input_node id="agent_input_node_1" />');
-    expect(message.text).toContain(
-      '<agent_execution_node id="agent_execution_1" />',
-    );
+    expect(message.text).toContain('<agent_run_node id="agent_run_node_1" />');
     expect(message.text).toContain("InputNode 输入节点");
+    expect(message.text).toContain("AgentRunNode");
     expect(message.text).not.toContain("<user_goal_node");
   });
 });

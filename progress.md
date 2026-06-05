@@ -12,6 +12,26 @@ Maintenance:
 - Run `pnpm progress:rotate` from the repository root when the threshold is reached.
 - Historical entries live under `docs/progress/`; do not duplicate archived history back into this file.
 
+## 2026-06-05 - Agent execution node owns execution aggregation
+
+- Renamed the compact downstream execution light node to `agent_run_node` / `AgentRunNode`, matching `input_node` / `InputNode` as the same class of Agent entry-chain nodes while keeping `agentExecutionContainer` as the node-local execution content truth.
+- Updated compact canvas entry XML to emit `<agent_run_node>` beside `<input_node>` so prompt context and canvas semantics use the same light-node naming.
+- Moved Agent execution aggregation back into the green Agent execution node by making `agentExecutionContainer` the display aggregation source for stream/tool/todo/artifact summaries.
+- Removed the selected-node native execution container overlay so execution details no longer appear in a floating card detached from the canvas node.
+- Fixed renderer support for `agent_run_node` custom Agent components and kept expanded AgentRunNode nodes at the light-container height instead of the old 36px status bar.
+- Updated stream writeback and expand/collapse sizing so live events resize the selected Agent node from the same container truth.
+- Passed: `pnpm --filter @cucumber/canvas-core test -- --run src/__tests__/agent-execution.test.ts src/__tests__/agent-execution-container.test.ts --reporter=dot`, `pnpm --dir apps/web exec vitest run test/canvas-agent-execution-stream-writeback.test.ts test/canvas-overlays.test.tsx --reporter=dot`, `pnpm --filter @cucumber/canvas-core typecheck`, `pnpm --filter @cucumber/web typecheck`, `pnpm --filter @cucumber/pen-renderer typecheck`, and targeted `pnpm exec biome check ...`.
+- Browser QA on `http://localhost:3000/canvas?id=6be355ad-be24-4e89-8f67-e8c5a604f686`: page rendered with one canvas, creating a temporary InputNode showed selection toolbar/status badge while `agent-execution-native-container-host` and `agent-execution-native-container` stayed at 0; the temporary node was deleted afterward.
+
+## 2026-06-05 - InputNode duplicate text sync fix
+
+- Fixed InputNode draft sync persistence so `meta.agentExecution.summary` stays the only display truth for the custom-rendered card; new and updated InputNodes no longer create an extra ordinary text child that overlaps the Skia-rendered summary.
+- Kept real non-display children intact while presentation updates clean old generated Agent display children from earlier data.
+- Added canvas-core regression coverage for creating an InputNode without text children and updating a legacy InputNode without duplicating display text.
+- Passed: `pnpm exec vitest run packages/canvas-core/src/__tests__/agent-execution.test.ts apps/web/test/canvas-agent-composer.test.tsx --reporter=dot`.
+- Passed: `pnpm --filter @cucumber/canvas-core typecheck`, targeted `pnpm exec biome check ...`, `node` JSON parse for `feature_list.json`, and `git diff --check`.
+- Browser QA on `http://localhost:3000/canvas?id=6be355ad-be24-4e89-8f67-e8c5a604f686`: typing in the composer created a selected InputNode with one rendered title and one rendered prompt body, with no overlapping selected ordinary text object; the QA draft node was deleted afterward.
+
 ## 2026-06-05 - Agent InputNode entry split
 
 - Split the bottom-composer Agent entry light node from the old `user_goal` kind by introducing `input_node` / `InputNode` as the new Agent input container truth while preserving the existing Skia custom card visual role.
@@ -94,7 +114,7 @@ Maintenance:
 
 ## 2026-06-04 - Agent-native execution container creation paths
 
-- Updated `createAgentExecutionNode` so new compact Agent execution shells no longer compose runtime output from generated canvas text children; the shell keeps spatial/editor fields while `meta.agentExecutionContainer` stores the live execution content.
+- Updated the compact Agent run-node factory so new compact Agent execution shells no longer compose runtime output from generated canvas text children; the shell keeps spatial/editor fields while `meta.agentExecutionContainer` stores the live execution content.
 - Added `withAgentExecutionContainerMeta` in canvas-core and used it from both Web-facing node creation and server MCP execution-flow creation, so new execution chains are born with Agent-native container truth instead of waiting for stream write-back to create it later.
 - Normalized Deep Agents `write_todos` tool completion output into `AgentExecutionContainer.todos` when the tool returns an explicit `output.todos` array, matching the native renderer's todo surface without adding inert edit controls.
 - Updated tests so MCP-created user goal, recipe, task, tool, critique, final-deliverable, and checkpoint cards all assert matching `meta.agentExecutionContainer` metadata alongside legacy semantic indexes.

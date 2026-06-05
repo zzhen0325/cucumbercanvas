@@ -17,7 +17,7 @@ export function agentExecutionCardFillForKind(
   kind: AgentExecutionNodeKind,
 ): string {
   switch (kind) {
-    case "agent_execution":
+    case "agent_run_node":
       return "rgba(248,255,191,1)";
     case "ask_user_more":
     case "input_node":

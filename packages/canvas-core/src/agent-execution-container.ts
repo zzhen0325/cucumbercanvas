@@ -10,6 +10,7 @@ export const AGENT_EXECUTION_CONTAINER_SCHEMA_VERSION = 1;
 
 const MAX_PART_COUNT = 24;
 const MAX_TEXT_LENGTH = 4000;
+const MAX_CANVAS_BODY_LENGTH = 1600;
 
 export type AgentExecutionContainerPartStatus =
   | "running"
@@ -132,6 +133,27 @@ export function withAgentExecutionContainerMeta<T extends PenNode>(
       [AGENT_EXECUTION_CONTAINER_META_KEY]: container,
     },
   };
+}
+
+export function formatAgentExecutionContainerCanvasBody(
+  container: AgentExecutionContainer,
+): string {
+  const lines = [
+    container.failure?.reason
+      ? `失败原因：${container.failure.reason}`
+      : undefined,
+    container.waitingForUser?.prompt
+      ? `等待补充：${container.waitingForUser.prompt}`
+      : undefined,
+    container.summary,
+    ...container.todos.slice(-4).map(formatTodoLine),
+    ...container.toolParts.slice(-4).map(formatToolLine),
+    ...container.streamParts.slice(-4).map(formatStreamLine),
+    container.artifactRefs.length > 0
+      ? `产物：${container.artifactRefs.length} 个画布产物`
+      : undefined,
+  ].filter(isUsefulText);
+  return clampCanvasBody(dedupeConsecutiveLines(lines).join("\n"));
 }
 
 export type AgentExecutionContainerEvent =
@@ -604,6 +626,74 @@ function clampText(value: string): string {
     : value;
 }
 
+function clampCanvasBody(value: string): string {
+  return value.length > MAX_CANVAS_BODY_LENGTH
+    ? `${value.slice(0, MAX_CANVAS_BODY_LENGTH)}...`
+    : value;
+}
+
+function dedupeConsecutiveLines(lines: string[]): string[] {
+  const result: string[] = [];
+  for (const line of lines) {
+    if (result.at(-1) === line) continue;
+    result.push(line);
+  }
+  return result;
+}
+
+function formatTodoLine(todo: AgentExecutionContainerTodo): string {
+  const activeForm = todo.activeForm ? `${todo.activeForm} · ` : "";
+  return `待办：${getTodoStatusLabel(todo.status)} · ${activeForm}${todo.content}`;
+}
+
+function formatToolLine(tool: AgentExecutionContainerToolPart): string {
+  const content = tool.outputSummary ?? tool.inputSummary;
+  return [
+    `工具 ${formatToolName(tool.toolName)}：${getPartStatusLabel(tool.status)}`,
+    content,
+  ]
+    .filter(isUsefulText)
+    .join(" · ");
+}
+
+function formatStreamLine(part: AgentExecutionContainerStreamPart): string {
+  return [part.label, part.content].filter(isUsefulText).join("：");
+}
+
+function getTodoStatusLabel(
+  status: AgentExecutionContainerTodo["status"],
+): string {
+  switch (status) {
+    case "completed":
+      return "已完成";
+    case "in_progress":
+      return "进行中";
+    case "pending":
+      return "待处理";
+  }
+}
+
+function getPartStatusLabel(status: AgentExecutionContainerPartStatus): string {
+  switch (status) {
+    case "done":
+      return "已完成";
+    case "failed":
+      return "失败";
+    case "paused":
+      return "已暂停";
+    case "running":
+      return "进行中";
+  }
+}
+
+function formatToolName(toolName: string): string {
+  return toolName.replace(/_/g, " ");
+}
+
+function isUsefulText(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
 function isAgentExecutionContainerStreamPart(
   value: unknown,
 ): value is AgentExecutionContainerStreamPart {
@@ -635,7 +725,7 @@ function isAgentExecutionContainerKind(
   return (
     value === "input_node" ||
     value === "user_goal" ||
-    value === "agent_execution" ||
+    value === "agent_run_node" ||
     value === "recipe_plan" ||
     value === "task_step" ||
     value === "tool_call" ||

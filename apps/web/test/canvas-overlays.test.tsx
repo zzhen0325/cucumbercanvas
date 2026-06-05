@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
 import { type PenNode, withAgentExecutionMeta } from "@cucumber/canvas-core";
-import type { AgentExecutionContainer } from "@cucumber/canvas-core";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -16,7 +15,6 @@ import {
   AgentExecutionStatusBadge,
   getAgentCheckpointToolbarState,
   getAgentExecutionHoverState,
-  getAgentExecutionNativeContainerOverlayState,
   getAgentExecutionStatusBadgeState,
   getAgentExecutionStatusReason,
 } from "@/components/canvas/canvas-overlays";
@@ -239,58 +237,6 @@ describe("Agent execution status badge", () => {
     expect(
       screen.queryByText(/HTTP 503|\bnull\b|\bundefined\b/),
     ).not.toBeInTheDocument();
-  });
-});
-
-describe("Agent native execution container overlay", () => {
-  const nativeContainer: AgentExecutionContainer = {
-    artifactRefs: [],
-    containerId: "agent_execution_1",
-    kind: "agent_execution",
-    schemaVersion: 1,
-    status: "running",
-    streamParts: [],
-    title: "Agent 执行",
-    todos: [],
-    toolParts: [],
-  };
-
-  it("shows only when the selected shell has native container state", () => {
-    const nodeWithContainer: PenNode = {
-      ...frameNode,
-      id: "agent_execution_1",
-      meta: {
-        agentExecutionContainer: nativeContainer,
-      },
-    };
-
-    expect(
-      getAgentExecutionNativeContainerOverlayState(nodeWithContainer, {
-        x: 120,
-        y: 220,
-      }),
-    ).toEqual({
-      container: nativeContainer,
-      nodeId: "agent_execution_1",
-      x: 120,
-      y: 220,
-    });
-  });
-
-  it("does not fall back to legacy agentExecution metadata", () => {
-    const legacyNode = withAgentExecutionMeta(frameNode, {
-      kind: "agent_execution",
-      status: "running",
-      summary: "legacy only",
-      title: "Legacy Agent",
-    });
-
-    expect(
-      getAgentExecutionNativeContainerOverlayState(legacyNode, {
-        x: 120,
-        y: 220,
-      }),
-    ).toBeNull();
   });
 });
 

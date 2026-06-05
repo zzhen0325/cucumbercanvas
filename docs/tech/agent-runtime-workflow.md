@@ -102,7 +102,7 @@ Last reviewed: 2026-06-05
 1. 用户在画布底部输入时，`syncDraftText()` 创建或更新一个 `input_node` draft 节点。该节点是 Agent 轻节点的一等输入容器，使用 Skia 自定义组件视觉，不是普通 Figma-like 子节点拼装。
 2. 发送时 `prepareEntryForSend()`：
    - 将 `input_node` 标记为 `done`。
-   - 在其下方创建一个 `agent_execution` 节点，summary 初始为 `Thinking...`。
+   - 在其下方创建一个 `agent_run_node` / `AgentRunNode` 节点，summary 初始为 `Thinking...`。
    - 创建一条连接线。
    - 返回 `canvasEntry = { userGoalNodeId, agentExecutionNodeId }`。
 3. 底部输入框发送成功后清空，下一次输入会创建新的 `input_node`。点击画布中的 `input_node` 只选择画布节点，不会反向同步到底部输入框；同步方向是输入框 -> 画布节点。
@@ -113,12 +113,12 @@ Last reviewed: 2026-06-05
 ```xml
 <canvas_agent_entry mode="compact_single_execution_node">
   <input_node id="..." />
-  <agent_execution_node id="..." />
+  <agent_run_node id="..." />
   <instruction>...</instruction>
 </canvas_agent_entry>
 ```
 
-7. 系统 prompt 明确要求：这条 compact 流程已经有入口节点，模型不要再调用 `create_agent_execution_flow` 创建多节点入口链；本轮 `agent.stage`、工具摘要和 assistant 文本由客户端写回同一个 `agent_execution` 节点。
+7. 系统 prompt 明确要求：这条 compact 流程已经有入口节点，模型不要再调用 `create_agent_execution_flow` 创建多节点入口链；本轮 `agent.stage`、工具摘要和 assistant 文本由客户端写回同一个 `agent_run_node` 节点。
 8. `useCanvasAgentExecutionStreamWriteback()` 根据 `run.started`、`agent.stage`、`thinking.delta`、`message.delta`、`tool.started`、`tool.completed`、`run.completed`、`run.failed` 等事件持续更新该节点的 `meta.agentExecution` 和展示子节点。
 
 ### 选中执行节点继续、暂停后继续、等待补充后继续
@@ -406,12 +406,12 @@ Agent 获取信息有五条路径：
 ### 简单图片生成，画布 compact 入口
 
 ```text
-前端先创建 input_node + agent_execution
+前端先创建 input_node + agent_run_node
   -> 请求携带 canvasEntry
   -> prompt 注入 canvas_agent_entry
   -> 模型禁止再 create_agent_execution_flow
   -> 模型直接调用 generate_image 或必要的结构化画布工具
-  -> 前端 useCanvasAgentExecutionStreamWriteback 把阶段、工具、文本写入同一个 agent_execution 节点
+  -> 前端 useCanvasAgentExecutionStreamWriteback 把阶段、工具、文本写入同一个 agent_run_node 节点
   -> 单个媒体输出直接作为交付物展示；多个并列输出才创建 final_deliverable 分组
 ```
 
@@ -479,7 +479,7 @@ Agent 获取信息有五条路径：
   -> POST /api/agent/runs/:runId/pause
   -> runtime AbortController abort
   -> adaptDeepAgentStream / runtime 产出 run.paused
-  -> 前端把 compact agent_execution 节点状态写成 paused
+  -> 前端把 compact agent_run_node 节点状态写成 paused
   -> 用户选中该节点继续
   -> 新 run 带 paused_continuation_instruction
   -> 模型先回读目标节点和上下游，不恢复旧 SSE 流

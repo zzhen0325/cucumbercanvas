@@ -11,6 +11,7 @@ import {
   formatAgentExecutionCanvasBody,
   getAgentExecutionCanvasCollapsed,
   getAgentExecutionCanvasFrameUpdates,
+  getAgentExecutionContainerMeta,
   getAgentExecutionMeta,
   getLineEndpoints,
   getNodeBounds,
@@ -455,13 +456,17 @@ export function useSkiaPointerInteractions({
             toggleAgentExecutionCanvasCollapsed(toggledExecutionNode);
           const execution = getAgentExecutionMeta(toggled);
           if (!execution) return;
+          const executionContainer = getAgentExecutionContainerMeta(toggled);
           const next = applyCanvasOperation(docRef.current, {
             type: "updateNode",
             nodeId: toggled.id,
             updates: {
               meta: toggled.meta,
               ...getAgentExecutionCanvasFrameUpdates({
-                body: formatAgentExecutionCanvasBody(execution),
+                body: formatAgentExecutionCanvasBody(
+                  execution,
+                  executionContainer,
+                ),
                 bounds: { width: getNodeBounds(toggled).width },
                 collapsed: getAgentExecutionCanvasCollapsed(execution),
                 execution,
@@ -486,6 +491,11 @@ export function useSkiaPointerInteractions({
               execution,
               getNodeBounds(toggled).width,
               !getAgentExecutionCanvasCollapsed(execution),
+              executionContainer
+                ? {
+                    minHeight: getNodeBounds(toggled).height,
+                  }
+                : {},
             ).hasOverflow,
           });
           return;
@@ -1678,10 +1688,19 @@ function getAgentExecutionToggleTarget(
   while (node) {
     const execution = getAgentExecutionMeta(node);
     if (execution) {
+      const executionContainer = getAgentExecutionContainerMeta(node);
       const bounds =
         getNodeSceneBounds(doc, node.id, activePageId) ?? getNodeBounds(node);
       const layout = measureAgentExecutionComponentLayout(
-        execution,
+        executionContainer
+          ? {
+              ...execution,
+              summary: formatAgentExecutionCanvasBody(
+                execution,
+                executionContainer,
+              ),
+            }
+          : execution,
         bounds.width,
         !getAgentExecutionCanvasCollapsed(execution),
       );
