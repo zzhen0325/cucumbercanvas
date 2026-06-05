@@ -2,11 +2,13 @@
 
 import {
   AGENT_EXECUTION_CONTAINER_META_KEY,
+  AGENT_EXECUTION_META_KEY,
   type PenDocument,
   applyCanvasOperation,
   createAgentRunNode,
   createEmptyDocument,
   getAgentExecutionContainerMeta,
+  getAgentExecutionMeta,
   reduceAgentExecutionContainerStreamEvent,
   setAgentExecutionCanvasCollapsed,
 } from "@cucumber/canvas-core";
@@ -126,15 +128,74 @@ describe("AgentRunNodeContentLayer", () => {
     ]);
   });
 
-  it("renders reasoning, tools, queue tasks, messages, and blocks wheel bubbling", async () => {
+  it("keeps expanded agent_run_node content aligned with canvas transform preview", () => {
+    const node = createRichAgentRunNode();
+    const document = createDocument(node);
+
+    expect(
+      getAgentRunNodeOverlayStates({
+        activePageId: document.activePageId,
+        document,
+        transformPreview: {
+          dx: 12,
+          dy: -5,
+          kind: "move",
+          nodeIds: [node.id],
+        },
+        viewport: { backgroundColor: "#fff", x: 10, y: 20, zoom: 2 },
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        node: expect.objectContaining({ id: node.id }),
+        x: 114,
+        y: 170,
+      }),
+    ]);
+  });
+
+  it("uses agentExecutionContainer as the render-content truth even when legacy shell metadata is stale", () => {
+    const node = createRichAgentRunNode();
+    const legacyExecution = getAgentExecutionMeta(node);
+    if (!legacyExecution) throw new Error("missing legacy shell metadata");
+    const document = createDocument({
+      ...node,
+      meta: {
+        ...(node.meta ?? {}),
+        [AGENT_EXECUTION_META_KEY]: {
+          ...legacyExecution,
+          kind: "input_node",
+          title: "旧执行标题",
+        },
+      },
+    });
+
+    expect(
+      getAgentRunNodeOverlayStates({
+        activePageId: document.activePageId,
+        document,
+        viewport: { backgroundColor: "#fff", x: 0, y: 0, zoom: 1 },
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        container: expect.objectContaining({
+          kind: "agent_run_node",
+          title: "生成封面图",
+        }),
+        collapsed: false,
+      }),
+    ]);
+  });
+
+  it("renders reasoning, tools, queue tasks, messages, and keeps canvas drag gestures available", async () => {
     const node = createRichAgentRunNode();
     const document = createDocument(node);
     const store = createCanvasRuntimeStore(document);
     const api = { updateNode: vi.fn() } as unknown as CanvasApi;
+    const onPointerDown = vi.fn();
     const onWheel = vi.fn();
 
     render(
-      <div onWheel={onWheel}>
+      <div onPointerDown={onPointerDown} onWheel={onWheel}>
         <CanvasRuntimeStoreProvider store={store}>
           <AgentRunNodeContentLayer api={api} />
         </CanvasRuntimeStoreProvider>
@@ -152,7 +213,11 @@ describe("AgentRunNodeContentLayer", () => {
     expect(screen.getByText(/图片已经放到画布/)).toBeVisible();
     expect(screen.queryByLabelText("收起 AgentRunNode")).toBeNull();
 
-    fireEvent.wheel(screen.getByLabelText("AgentRunNode：生成封面图"));
+    const overlay = screen.getByLabelText("AgentRunNode：生成封面图");
+    fireEvent.pointerDown(overlay);
+    expect(onPointerDown).toHaveBeenCalled();
+
+    fireEvent.wheel(overlay);
     expect(onWheel).not.toHaveBeenCalled();
   });
 
@@ -218,5 +283,6 @@ describe("AgentRunNodeContentLayer", () => {
 
     expect(screen.queryByLabelText("AgentRunNode：生成封面图")).toBeNull();
     expect(screen.queryByLabelText("展开 AgentRunNode")).toBeNull();
+    expect(api.updateNode).not.toHaveBeenCalled();
   });
 });

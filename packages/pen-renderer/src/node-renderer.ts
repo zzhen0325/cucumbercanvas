@@ -1034,6 +1034,10 @@ export class SkiaNodeRenderer {
     h: number,
     opacity: number,
   ) {
+    if (execution.kind === "agent_run_node") {
+      this.drawAgentRunNodeShell(canvas, node, execution, x, y, w, h, opacity);
+      return;
+    }
     const container = getRenderableAgentExecutionContainer(node);
     const layout = measureRenderableAgentExecution(execution, w, container);
     const isExecution = layout.role === "execution";
@@ -1155,6 +1159,70 @@ export class SkiaNodeRenderer {
       x: x + Math.max(12, w - 56),
       y: y + 8,
     });
+  }
+
+  private drawAgentRunNodeShell(
+    canvas: Canvas,
+    node: PenNode,
+    execution: RenderableAgentExecution,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    opacity: number,
+  ) {
+    this.drawRect(
+      canvas,
+      {
+        ...node,
+        cornerRadius: 18,
+        fill: [{ color: "rgba(248,255,191,1)", type: "solid" }],
+        stroke: {
+          fill: [{ color: "rgba(41,191,78,0.22)", type: "solid" }],
+          thickness: 0.5,
+        },
+      } as PenNode,
+      x,
+      y,
+      w,
+      h,
+      opacity,
+    );
+
+    this.drawAgentExecutionStatusDot(canvas, x + 12, y + 8, 20, opacity);
+    this.drawAgentExecutionText(
+      canvas,
+      {
+        color: "rgba(41,191,78,1)",
+        fontSize: 11,
+        fontWeight: 600,
+        height: 16,
+        name: "AgentRunNode 状态",
+        text:
+          execution.status === "running"
+            ? "Thinking..."
+            : `${AGENT_EXECUTION_STATUS_LABELS[execution.status]}...`,
+        width: Math.max(40, w - 76),
+        x: x + 37,
+        y: y + 10,
+      },
+      opacity,
+    );
+    this.drawAgentExecutionText(
+      canvas,
+      {
+        color: "rgba(15,23,42,0.92)",
+        fontSize: 12,
+        fontWeight: 600,
+        height: Math.max(18, h - 42),
+        name: "AgentRunNode 标题",
+        text: `${AGENT_EXECUTION_KIND_LABELS[execution.kind]} · ${execution.title}`,
+        width: Math.max(40, w - 32),
+        x: x + 16,
+        y: y + 46,
+      },
+      opacity,
+    );
   }
 
   private drawAgentExecutionText(

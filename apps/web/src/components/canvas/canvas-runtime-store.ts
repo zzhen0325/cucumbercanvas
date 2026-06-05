@@ -11,6 +11,7 @@ import {
   normalizeCanvasPages,
   resolveActivePageId,
 } from "@cucumber/canvas-core";
+import type { TransformPreviewState } from "@cucumber/pen-renderer";
 import type { PenNode } from "@cucumber/pen-types";
 import { produce } from "immer";
 import {
@@ -74,6 +75,7 @@ export type CanvasRuntimeState = {
   lastSelectionCommit: CanvasRuntimeSelectionCommit | null;
   selection: string[];
   selectionRevision: number;
+  transformPreview: TransformPreviewState | null;
   version: number;
   viewport: Partial<CanvasViewport>;
   applyTransaction: (
@@ -95,6 +97,7 @@ export type CanvasRuntimeState = {
     selection: string[],
     opts?: SelectionUpdateOptions,
   ) => string[];
+  setTransformPreview: (preview: TransformPreviewState | null) => void;
   setViewport: (viewport: Partial<CanvasViewport>) => void;
   setViewportSnapshot: (viewport: Partial<CanvasViewport>) => void;
   undo: () => CanvasRuntimeCommitResult | null;
@@ -338,6 +341,7 @@ export function createCanvasRuntimeStore(initialDocument: PenDocument) {
       lastSelectionCommit: null,
       selection: initialSelection,
       selectionRevision: 0,
+      transformPreview: null,
       version: 0,
       viewport: initial.viewport ?? {},
       applyTransaction: (operations, opts) => {
@@ -467,6 +471,13 @@ export function createCanvasRuntimeStore(initialDocument: PenDocument) {
           source: opts?.source ?? "selection.set",
         });
         return validSelection;
+      },
+      setTransformPreview: (preview) => {
+        set(
+          produce<CanvasRuntimeState>((draft) => {
+            draft.transformPreview = preview;
+          }),
+        );
       },
       setViewport: (viewport) => {
         get().setViewportSnapshot(viewport);

@@ -710,6 +710,7 @@ export function useSkiaPointerInteractions({
       getConnectorSnap,
       getPointerScenePoint,
       penTool,
+      runtimeStore,
       setEditorOverlay,
       setMarqueeDomOverlay,
       setSelection,
@@ -911,12 +912,14 @@ export function useSkiaPointerInteractions({
         }
         drag.hasMoved = true;
         drag.sceneDelta = { x: dx, y: dy };
-        renderer.setTransformPreview({
+        const preview = {
           kind: "move",
           nodeIds: drag.nodeIds,
           dx,
           dy,
-        });
+        } as const;
+        renderer.setTransformPreview(preview);
+        runtimeStore.getState().setTransformPreview(preview);
       }
 
       if (drag.kind === "resize") {
@@ -939,7 +942,7 @@ export function useSkiaPointerInteractions({
         );
         const updates = getResizeNodeUpdates(node, bounds, drag.handle);
         const previewUpdates = updates as Record<string, unknown>;
-        renderer.setTransformPreview({
+        const preview = {
           kind: "resize",
           nodeId: drag.nodeId,
           bounds: {
@@ -951,7 +954,9 @@ export function useSkiaPointerInteractions({
               (previewUpdates.height as number | undefined) ??
               drag.origin.height,
           },
-        });
+        } as const;
+        renderer.setTransformPreview(preview);
+        runtimeStore.getState().setTransformPreview(preview);
         return;
       }
 
@@ -962,11 +967,13 @@ export function useSkiaPointerInteractions({
           drag.originRotation +
           pointToAngle(drag.center, point) -
           drag.startAngle;
-        renderer.setTransformPreview({
+        const preview = {
           kind: "rotate",
           nodeId: drag.nodeId,
           rotation: Math.round(rotation),
-        });
+        } as const;
+        renderer.setTransformPreview(preview);
+        runtimeStore.getState().setTransformPreview(preview);
       }
     },
     [
@@ -1440,6 +1447,13 @@ export function useSkiaPointerInteractions({
           nodeCount: drag.kind === "move" ? drag.nodeIds.length : 1,
         });
       }
+      if (
+        drag?.kind === "move" ||
+        drag?.kind === "resize" ||
+        drag?.kind === "rotate"
+      ) {
+        runtimeStore.getState().setTransformPreview(null);
+      }
       if (drag?.kind === "move" && drag.hasMoved) {
         suppressNextClickRef.current = true;
       }
@@ -1483,6 +1497,7 @@ export function useSkiaPointerInteractions({
       getConnectorSnap,
       getPointerScenePoint,
       penTool,
+      runtimeStore,
       scheduleRendererIdle,
       setEditorOverlay,
       setMarqueeDomOverlay,

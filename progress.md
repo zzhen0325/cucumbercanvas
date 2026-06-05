@@ -25,6 +25,7 @@ Maintenance:
 - Installed the needed AI Elements registry components (`reasoning`, `tool`, `task`, `queue`, `message`) without overwriting existing `button`/`separator` primitives, then formatted the generated files to the repo Biome rules.
 - Extended `agentExecutionContainer.toolParts` to preserve structured tool `input`, `output`, and readable `errorText`, and added `getAgentRunNodeViewModel()` so Reasoning, Tool, Queue tasks, markdown messages, and artifact refs all render from the same container truth.
 - Added `AgentRunNodeContentLayer` inside the canvas overlay stack; expanded nodes render scrollable/clickable React content, collapsed nodes do not mount the heavy content, and overlay pointer/wheel events stop before reaching canvas drag/zoom handlers.
+- Kept the React AgentRunNode projection aligned with Skia transform preview during drag/resize/rotate and let non-interactive overlay background pointer gestures bubble back to the canvas, so the visible content host and durable shell no longer split during movement.
 - Tightened the live display path after visual testing: terminal run events now close running tool cards, stringified tool parameter payloads are normalized before display, readable tool output summaries appear as messages when no message delta exists, expanded React content writes measured width/height back to the durable node, and collapsed Skia fallback only paints a compact summary instead of overflowing raw stream/tool text.
 - Added regression coverage for view-model mapping, repeated/stringified tool parts, missing structured tool detail reasons, stream writeback preserving tool input/output, overlay positioning, content-size write-back, collapse write-back, folded nodes, and event bubbling.
 - Passed: `pnpm --filter @cucumber/web typecheck`, `pnpm --filter @cucumber/canvas-core typecheck`, `pnpm exec vitest run test/canvas-agent-execution-stream-writeback.test.ts test/agent-run-node-content-layer.test.tsx --reporter=dot` from `apps/web`, `pnpm --filter @cucumber/canvas-core test -- --run src/__tests__/agent-execution-container.test.ts --reporter=dot`, targeted `pnpm exec biome check ...`, and `git diff --check`.
@@ -204,3 +205,9 @@ Maintenance:
 - Disabled the old Skia hot-zone toggle for AgentRunNode specifically; other execution-node canvas toggles remain unchanged.
 - Passed: `pnpm exec vitest run apps/web/test/agent-run-node-content-layer.test.tsx apps/web/test/canvas-agent-execution-stream-writeback.test.ts packages/canvas-core/src/__tests__/agent-execution-container.test.ts packages/canvas-core/src/__tests__/agent-execution.test.ts --reporter=dot`.
 - Passed: `pnpm --filter @cucumber/web typecheck` and `pnpm --filter @cucumber/canvas-core typecheck`.
+
+## 2026-06-05 - AgentRunNode overlay responsibility split
+
+- Split the expanded AgentRunNode React overlay into three responsibilities: pure PenDocument/viewport overlay selection, pure AI Elements content rendering from `meta.agentExecutionContainer`, and expanded-only DOM autosize write-back to durable node bounds.
+- Added a stale legacy shell metadata regression test so React content selection follows `agentExecutionContainer.kind/title` even when `meta.agentExecution` is no longer a reliable content source.
+- Reduced Skia `agent_run_node` rendering to a lightweight frame shell with status and title; detailed stream/tool/todo/message/artifact content now belongs to the React overlay.
