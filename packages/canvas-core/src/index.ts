@@ -11,6 +11,7 @@ export * from "./connector-geometry.js";
 export * from "./sticky-note.js";
 export * from "./agent-execution.js";
 export * from "./agent-execution-container.js";
+export * from "./agent-run-node-view-model.js";
 export * from "./agent-execution-layout.js";
 export * from "./history.js";
 export * from "./clipboard.js";

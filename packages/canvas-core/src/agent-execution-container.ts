@@ -46,7 +46,10 @@ export interface AgentExecutionContainerTodo {
 
 export interface AgentExecutionContainerToolPart {
   id: string;
+  errorText?: string;
+  input?: Record<string, unknown>;
   inputSummary?: string;
+  output?: Record<string, unknown>;
   outputSummary?: string;
   status: AgentExecutionContainerPartStatus;
   timestamp: string;
@@ -138,6 +141,26 @@ export function withAgentExecutionContainerMeta<T extends PenNode>(
 export function formatAgentExecutionContainerCanvasBody(
   container: AgentExecutionContainer,
 ): string {
+  if (container.kind === "agent_run_node") {
+    const compactLines = [
+      container.failure?.reason
+        ? `失败原因：${container.failure.reason}`
+        : undefined,
+      container.waitingForUser?.prompt
+        ? `等待补充：${container.waitingForUser.prompt}`
+        : undefined,
+      isReadableCanvasSummary(container.summary)
+        ? container.summary
+        : undefined,
+      container.artifactRefs.length > 0
+        ? `产物：${container.artifactRefs.length} 个画布产物`
+        : undefined,
+    ].filter(isUsefulText);
+    return (
+      clampCanvasBody(dedupeConsecutiveLines(compactLines).join("\n")) ||
+      "展开查看 Agent 执行详情。"
+    );
+  }
   const lines = [
     container.failure?.reason
       ? `失败原因：${container.failure.reason}`
@@ -330,6 +353,7 @@ export function reduceAgentExecutionContainerStreamEvent(
     case "tool.started": {
       const part: AgentExecutionContainerToolPart = {
         id: `tool:${event.toolCallId}`,
+        ...(event.input ? { input: event.input } : {}),
         ...(summarizeObject(event.input)
           ? { inputSummary: summarizeObject(event.input) }
           : {}),
@@ -358,14 +382,24 @@ export function reduceAgentExecutionContainerStreamEvent(
     case "tool.completed": {
       const outputSummary =
         event.outputSummary ?? summarizeObject(event.output);
+      const errorText = getToolOutputErrorText(event.output);
       const todoUpdates =
         event.toolName === "write_todos"
           ? collectTodoUpdates(event.output)
           : null;
+      const previousPart = container.toolParts.find(
+        (tool) => tool.id === `tool:${event.toolCallId}`,
+      );
       const part: AgentExecutionContainerToolPart = {
         id: `tool:${event.toolCallId}`,
+        ...(errorText ? { errorText } : {}),
+        ...(previousPart?.input ? { input: previousPart.input } : {}),
+        ...(previousPart?.inputSummary
+          ? { inputSummary: previousPart.inputSummary }
+          : {}),
+        ...(event.output ? { output: event.output } : {}),
         ...(outputSummary ? { outputSummary } : {}),
-        status: "done",
+        status: errorText ? "failed" : "done",
         timestamp: event.timestamp,
         toolCallId: event.toolCallId,
         toolName: event.toolName,
@@ -397,6 +431,7 @@ export function reduceAgentExecutionContainerStreamEvent(
         ...container,
         status: "done",
         streamParts: markRunningParts(container.streamParts, "done"),
+        toolParts: markRunningToolParts(container.toolParts, "done"),
         summary: container.summary || "Agent 执行完成。",
       };
     case "run.paused":
@@ -404,6 +439,7 @@ export function reduceAgentExecutionContainerStreamEvent(
         ...container,
         status: "paused",
         streamParts: markRunningParts(container.streamParts, "paused"),
+        toolParts: markRunningToolParts(container.toolParts, "paused"),
         summary: event.reason ?? "用户已暂停当前 Agent 执行。",
       };
     case "run.canceled":
@@ -411,6 +447,7 @@ export function reduceAgentExecutionContainerStreamEvent(
         ...container,
         status: "paused",
         streamParts: markRunningParts(container.streamParts, "paused"),
+        toolParts: markRunningToolParts(container.toolParts, "paused"),
         summary: "用户已停止当前 Agent 执行。",
       };
     case "run.failed":
@@ -422,6 +459,7 @@ export function reduceAgentExecutionContainerStreamEvent(
         },
         status: "failed",
         streamParts: markRunningParts(container.streamParts, "failed"),
+        toolParts: markRunningToolParts(container.toolParts, "failed"),
         summary: `处理失败：${event.error.message}`,
       };
     case "canvas.patch":
@@ -505,6 +543,21 @@ function collectTodoUpdates(
     .filter((todo): todo is AgentExecutionContainerTodo => todo !== null);
 }
 
+function getToolOutputErrorText(
+  output: Record<string, unknown> | undefined,
+): string | undefined {
+  if (!output) return undefined;
+  const error = output.error;
+  if (typeof error === "string" && error.trim()) return clampText(error.trim());
+  if (isRecord(error)) {
+    const message = error.message;
+    if (typeof message === "string" && message.trim()) {
+      return clampText(message.trim());
+    }
+  }
+  return undefined;
+}
+
 function normalizeTodoStatus(
   status: unknown,
 ): AgentExecutionContainerTodo["status"] | null {
@@ -520,6 +573,15 @@ function markRunningParts(
   parts: AgentExecutionContainerStreamPart[],
   status: AgentExecutionContainerPartStatus,
 ): AgentExecutionContainerStreamPart[] {
+  return parts.map((part) =>
+    part.status === "running" ? { ...part, status } : part,
+  );
+}
+
+function markRunningToolParts(
+  parts: AgentExecutionContainerToolPart[],
+  status: AgentExecutionContainerPartStatus,
+): AgentExecutionContainerToolPart[] {
   return parts.map((part) =>
     part.status === "running" ? { ...part, status } : part,
   );
@@ -630,6 +692,13 @@ function clampCanvasBody(value: string): string {
   return value.length > MAX_CANVAS_BODY_LENGTH
     ? `${value.slice(0, MAX_CANVAS_BODY_LENGTH)}...`
     : value;
+}
+
+function isReadableCanvasSummary(value: string | undefined): value is string {
+  if (!value?.trim()) return false;
+  const trimmed = value.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) return false;
+  return trimmed.length <= 180;
 }
 
 function dedupeConsecutiveLines(lines: string[]): string[] {

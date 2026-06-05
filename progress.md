@@ -12,6 +12,17 @@ Maintenance:
 - Run `pnpm progress:rotate` from the repository root when the threshold is reached.
 - Historical entries live under `docs/progress/`; do not duplicate archived history back into this file.
 
+## 2026-06-05 - AgentRunNode React content host
+
+- Upgraded expanded `agent_run_node` presentation from Skia text aggregation to a React content host overlay aligned to the durable canvas node bounds; the PenNode remains the source of truth for position, size, selection, links, collapse state, and persistence.
+- Installed the needed AI Elements registry components (`reasoning`, `tool`, `task`, `queue`, `message`) without overwriting existing `button`/`separator` primitives, then formatted the generated files to the repo Biome rules.
+- Extended `agentExecutionContainer.toolParts` to preserve structured tool `input`, `output`, and readable `errorText`, and added `getAgentRunNodeViewModel()` so Reasoning, Tool, Queue tasks, markdown messages, and artifact refs all render from the same container truth.
+- Added `AgentRunNodeContentLayer` inside the canvas overlay stack; expanded nodes render scrollable/clickable React content, collapsed nodes do not mount the heavy content, and overlay pointer/wheel events stop before reaching canvas drag/zoom handlers.
+- Tightened the live display path after visual testing: terminal run events now close running tool cards, stringified tool parameter payloads are normalized before display, readable tool output summaries appear as messages when no message delta exists, expanded React content writes measured width/height back to the durable node, and collapsed Skia fallback only paints a compact summary instead of overflowing raw stream/tool text.
+- Added regression coverage for view-model mapping, repeated/stringified tool parts, missing structured tool detail reasons, stream writeback preserving tool input/output, overlay positioning, content-size write-back, collapse write-back, folded nodes, and event bubbling.
+- Passed: `pnpm --filter @cucumber/web typecheck`, `pnpm --filter @cucumber/canvas-core typecheck`, `pnpm exec vitest run test/canvas-agent-execution-stream-writeback.test.ts test/agent-run-node-content-layer.test.tsx --reporter=dot` from `apps/web`, `pnpm --filter @cucumber/canvas-core test -- --run src/__tests__/agent-execution-container.test.ts --reporter=dot`, targeted `pnpm exec biome check ...`, and `git diff --check`.
+- Browser smoke: `http://localhost:3000/canvas` and the visual fixture URL opened without module/runtime compile errors, but current local canvas data returned “缺少画布信息” / `[canvas-page] failed to load canvas Object`, so real in-canvas visual verification of an expanded AgentRunNode remains blocked by local canvas data/access state.
+
 ## 2026-06-05 - Agent execution node owns execution aggregation
 
 - Renamed the compact downstream execution light node to `agent_run_node` / `AgentRunNode`, matching `input_node` / `InputNode` as the same class of Agent entry-chain nodes while keeping `agentExecutionContainer` as the node-local execution content truth.

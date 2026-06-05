@@ -144,4 +144,51 @@ describe("reduceAgentExecutionStreamEvent", () => {
       ],
     });
   });
+
+  it("keeps structured tool input and output in the native container", () => {
+    const node = createAgentRunNode({
+      runId: "run-1",
+      summary: "Thinking...",
+      title: "Run",
+      x: 0,
+      y: 0,
+    });
+
+    const started = getAgentExecutionStreamWritebackUpdates(node, {
+      input: { prompt: "cover", size: "1024x1024" },
+      runId: "run-1",
+      timestamp: "2026-06-04T00:00:00.000Z",
+      toolCallId: "tool-1",
+      toolName: "generate_image",
+      type: "tool.started",
+    });
+    const nodeAfterStart = {
+      ...node,
+      meta: started?.meta ?? node.meta,
+    };
+    const completed = getAgentExecutionStreamWritebackUpdates(nodeAfterStart, {
+      output: { elementId: "image-node-1", model: "seedream" },
+      outputSummary: "图片容器已创建",
+      runId: "run-1",
+      timestamp: "2026-06-04T00:00:01.000Z",
+      toolCallId: "tool-1",
+      toolName: "generate_image",
+      type: "tool.completed",
+    });
+
+    expect(completed?.meta?.[AGENT_EXECUTION_CONTAINER_META_KEY]).toMatchObject(
+      {
+        toolParts: [
+          expect.objectContaining({
+            input: { prompt: "cover", size: "1024x1024" },
+            output: { elementId: "image-node-1", model: "seedream" },
+            outputSummary: "图片容器已创建",
+            status: "done",
+            toolCallId: "tool-1",
+            toolName: "generate_image",
+          }),
+        ],
+      },
+    );
+  });
 });

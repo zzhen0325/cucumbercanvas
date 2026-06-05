@@ -63,6 +63,7 @@ import { useStore } from "zustand";
 
 import { useToast } from "@/components/toast";
 import { CanvasAgentExecutionStatusLayerConnected } from "./agent-execution-status-overlays";
+import { AgentRunNodeContentLayer } from "./agent-run-node-content-layer";
 import type {
   AlignMode,
   CanvasApi,
@@ -1123,6 +1124,8 @@ export const SkiaCanvas = memo(
             canvasRect={canvasContainerRef.current?.getBoundingClientRect()}
             onContinueAgentExecution={onContinueAgentExecution}
           />
+
+          <AgentRunNodeContentLayer api={api} />
 
           <CanvasAgentExecutionStatusLayerConnected />
 
